@@ -5,11 +5,10 @@ import { ThemedView } from '@/components/themed-view';
 export default function HomeScreen() {
   return (
     <ThemedView style={styles.container}>
-      <ThemedText type="title">Feedverse</ThemedText>
-      <ThemedText type="default">
+      <ThemedText type="subtitle">
         a social network for fictional worlds 
       </ThemedText>
-      <ThemedText type="subtitle" style={styles.subtitle}>
+      <ThemedText type="default" style={styles.subtitle}>
         tell stories socially and build your universe in a feed
       </ThemedText>
     </ThemedView>

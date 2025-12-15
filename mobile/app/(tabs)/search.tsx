@@ -5,8 +5,7 @@ import { ThemedView } from '@/components/themed-view';
 export default function SearchScreen() {
   return (
     <ThemedView style={styles.container}>
-      <ThemedText type="title">Search</ThemedText>
-      <ThemedText>
+      <ThemedText type="subtitle">
         search profiles or posts
       </ThemedText>
     </ThemedView>

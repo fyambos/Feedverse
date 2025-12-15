@@ -1,5 +1,6 @@
 import { Tabs } from 'expo-router';
 import React from 'react';
+import { Image } from 'react-native';
 
 import { HapticTab } from '@/components/haptic-tab';
 import { IconSymbol } from '@/components/ui/icon-symbol';
@@ -13,13 +14,21 @@ export default function TabLayout() {
     <Tabs
       screenOptions={{
         tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
-        headerShown: false,
+        headerShown: true,
+        headerTitleAlign: 'center', 
         tabBarButton: HapticTab,
       }}>
       <Tabs.Screen
         name="index"
         options={{
           title: 'Home',
+          headerTitle: () => ( 
+            <Image
+              source={require('@/assets/images/favicon.png')}
+              style={{ width: 32, height: 32 }}
+              resizeMode="contain"
+            />
+          ),
           tabBarIcon: ({ color }) => <IconSymbol size={28} name="house.fill" color={color} />,
         }}
       />
@@ -41,6 +50,7 @@ export default function TabLayout() {
         name="messages"
         options={{
           title: 'Messages',
+          headerTitle: 'Direct Messages',
           tabBarIcon: ({ color }) => <IconSymbol size={28} name="envelope.fill" color={color} />,
         }}
       />

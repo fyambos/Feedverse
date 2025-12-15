@@ -5,8 +5,7 @@ import { ThemedView } from '@/components/themed-view';
 export default function NotificationsScreen() {
   return (
     <ThemedView style={styles.container}>
-      <ThemedText type="title">Notifications</ThemedText>
-      <ThemedText>
+      <ThemedText type="subtitle">
         see mentions, replies and activities linked to your profile
       </ThemedText>
     </ThemedView>

@@ -5,8 +5,7 @@ import { ThemedView } from '@/components/themed-view';
 export default function MessagesScreen() {
   return (
     <ThemedView style={styles.container}>
-      <ThemedText type="title">Messages</ThemedText>
-      <ThemedText>
+      <ThemedText type="subtitle">
         see private conversation of your profile
       </ThemedText>
     </ThemedView>
