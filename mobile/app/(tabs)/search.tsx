@@ -2,12 +2,12 @@ import { StyleSheet } from 'react-native';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 
-export default function ExploreScreen() {
+export default function SearchScreen() {
   return (
     <ThemedView style={styles.container}>
-      <ThemedText type="title">Explore</ThemedText>
+      <ThemedText type="title">Search</ThemedText>
       <ThemedText>
-        recherche des profiles ou des posts
+        search profiles or posts
       </ThemedText>
     </ThemedView>
   );
