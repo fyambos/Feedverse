@@ -1,15 +1,10 @@
-import { StyleSheet, FlatList, Pressable } from 'react-native';
+import { StyleSheet, FlatList, Pressable, Image, View } from 'react-native';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { router, Stack } from 'expo-router';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-
-const MOCK_SCENARIOS = [
-  { id: 'demo-kpop', name: 'K-pop College AU' },
-  { id: 'demo-royalty', name: 'Modern Royalty AU' },
-  { id: 'demo-mafia', name: 'Mafia Cityverse' },
-];
+import { MOCK_SCENARIOS } from '@/mocks/scenarios';
 
 export default function ScenarioListScreen() {
   const colorScheme = useColorScheme() ?? 'light';
@@ -45,20 +40,44 @@ export default function ScenarioListScreen() {
               style={({ pressed }) => [
                 styles.card,
                 {
-                  backgroundColor: colors.background,
+                  backgroundColor: colors.card,
                   borderColor: colors.border,
                 },
-                pressed && styles.cardPressed,
+                pressed && { backgroundColor: colors.pressed },
               ]}
             >
-              <ThemedText type="defaultSemiBold">{item.name}</ThemedText>
-              <ThemedText
-                style={[styles.cardHint, { color: colors.textSecondary }]} 
-              >
-                Tap to enter scenario
-              </ThemedText>
+              {/* Scenario image */}
+              <Image
+                source={{ uri: item.cover }}
+                style={styles.cover}
+                resizeMode="cover"
+              />
+
+              <View style={styles.cardContent}>
+                <ThemedText type="defaultSemiBold">{item.name}</ThemedText>
+
+                <View style={styles.playersRow}>
+                  <View style={styles.avatars}>
+                    {item.players.slice(0, 4).map((player, index) => (
+                      <Image
+                        key={player.id}
+                        source={{ uri: player.avatar }}
+                        style={[
+                          styles.avatar,
+                          { marginLeft: index === 0 ? 0 : -8 },
+                        ]}
+                      />
+                    ))}
+                  </View>
+
+                  <ThemedText style={[styles.playerCount, { color: colors.textMuted }]}>
+                    {item.players.length} players
+                  </ThemedText>
+                </View>
+              </View>
             </Pressable>
           )}
+
         />
       </ThemedView>
     </>
@@ -80,11 +99,44 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   card: {
-    borderRadius: 12,
-    paddingVertical: 14,
-    paddingHorizontal: 14,
-    borderWidth: 1,
+  borderRadius: 14,
+  borderWidth: 1,
+  overflow: 'hidden',
   },
+
+  cover: {
+    width: '100%',
+    height: 120,
+  },
+
+  cardContent: {
+    padding: 12,
+    gap: 8,
+  },
+
+  playersRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+
+  avatars: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+
+  avatar: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#000',
+  },
+
+  playerCount: {
+    fontSize: 12,
+  },
+
   cardPressed: {
     opacity: 0.7,
   },
