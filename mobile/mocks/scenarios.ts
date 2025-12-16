@@ -54,12 +54,12 @@ export const MOCK_SCENARIOS: MockScenario[] = [
   {
     id: 'demo-mafia',
     name: 'Mafia Cityverse',
-    cover: 'https://picsum.photos/600/400?random=3',
+    cover: 'https://loremflickr.com/800/400/castle',
     players: [
       {
         id: 'p6',
         name: 'Boss',
-        avatar: 'https://i.pravatar.cc/100?img=6',
+        avatar: 'https://i.pravatar.cc/100?img=5',
       },
       {
         id: 'p7',

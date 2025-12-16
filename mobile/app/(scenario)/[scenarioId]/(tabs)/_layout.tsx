@@ -22,10 +22,10 @@ export default function TabLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Home',
+          title: 'Home',  
           headerTitle: () => ( 
             <Image
-              source={require('@/assets/images/favicon.png')}
+              source={require('../../../../assets/images/FeedverseIcon.png')}
               style={{ width: 32, height: 32 }}
               resizeMode="contain"
             />
