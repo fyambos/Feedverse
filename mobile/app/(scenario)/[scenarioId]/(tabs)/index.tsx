@@ -1,8 +1,11 @@
 import { StyleSheet } from 'react-native';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { useLocalSearchParams } from 'expo-router';
 
 export default function HomeScreen() {
+  const { scenarioId } = useLocalSearchParams<{ scenarioId: string }>();
+  
   return (
     <ThemedView style={styles.container}>
       <ThemedText type="subtitle">

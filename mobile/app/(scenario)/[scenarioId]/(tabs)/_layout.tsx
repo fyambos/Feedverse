@@ -6,8 +6,9 @@ import { HapticTab } from '@/components/haptic-tab';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-
+import { useLocalSearchParams } from 'expo-router';
 export default function TabLayout() {
+  const { scenarioId } = useLocalSearchParams<{ scenarioId: string }>();
   const colorScheme = useColorScheme();
 
   return (
