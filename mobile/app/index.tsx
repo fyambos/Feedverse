@@ -2,6 +2,7 @@ import { StyleSheet, FlatList, Pressable } from 'react-native';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { router, Stack } from 'expo-router';
+import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
 const MOCK_SCENARIOS = [
@@ -11,25 +12,23 @@ const MOCK_SCENARIOS = [
 ];
 
 export default function ScenarioListScreen() {
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === 'dark';
+  const colorScheme = useColorScheme() ?? 'light';
+  const colors = Colors[colorScheme];
 
-  const cardBg = isDark ? '#111111' : '#ffffff';
-  const cardBorder = isDark ? '#555555' : '#e5e5e5';
   const openScenario = (scenarioId: string) => {
-    router.push((`/(scenario)/${scenarioId}`) as unknown as any);
+    router.push(`/(scenario)/${scenarioId}` as any);
   };
 
   return (
     <>
       <Stack.Screen
-          options={{
-            headerShown: true,
-            headerTitle: 'Scenarios',
-            headerTitleAlign: 'center',
-            headerBackVisible: false, // no back arrow
-          }}
-        />
+        options={{
+          headerShown: true,
+          headerTitle: 'Scenarios',
+          headerTitleAlign: 'center',
+          headerBackVisible: false,
+        }}
+      />
 
       <ThemedView style={styles.container}>
         <ThemedText style={styles.subtitle}>
@@ -45,11 +44,17 @@ export default function ScenarioListScreen() {
               onPress={() => openScenario(item.id)}
               style={({ pressed }) => [
                 styles.card,
+                {
+                  backgroundColor: colors.background,
+                  borderColor: colors.border,
+                },
                 pressed && styles.cardPressed,
               ]}
             >
               <ThemedText type="defaultSemiBold">{item.name}</ThemedText>
-              <ThemedText style={styles.cardHint}>
+              <ThemedText
+                style={[styles.cardHint, { color: colors.textSecondary }]} 
+              >
                 Tap to enter scenario
               </ThemedText>
             </Pressable>
