@@ -1,9 +1,10 @@
-import { Tabs } from 'expo-router';
+import { Tabs, router } from 'expo-router';
 import React from 'react';
-import { Image } from 'react-native';
+import { Image, Pressable } from 'react-native';
 
 import { HapticTab } from '@/components/haptic-tab';
 import { IconSymbol } from '@/components/ui/icon-symbol';
+import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useLocalSearchParams } from 'expo-router';
@@ -24,11 +25,18 @@ export default function TabLayout() {
         options={{
           title: 'Home',  
           headerTitle: () => ( 
+            <Pressable
+            onPress={() => router.replace('/')}
+            hitSlop={12}
+            accessibilityRole="button"
+            accessibilityLabel="Back to scenarios"
+          >
             <Image
-              source={require('../../../../assets/images/FeedverseIcon.png')}
+              source={require('@/assets/images/FeedverseIcon.png')}
               style={{ width: 32, height: 32 }}
               resizeMode="contain"
             />
+            </Pressable>
           ),
           tabBarIcon: ({ color }) => <IconSymbol size={28} name="house.fill" color={color} />,
         }}
@@ -53,6 +61,23 @@ export default function TabLayout() {
           title: 'Messages',
           headerTitle: 'Direct Messages',
           tabBarIcon: ({ color }) => <IconSymbol size={28} name="envelope.fill" color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="post/[postId]"
+        options={{
+          href: null,
+          title: 'Post',
+          headerShown: true,
+          headerLeft: () => (
+            <Pressable onPress={() => router.back()} hitSlop={12}>
+              <Ionicons
+                name="chevron-back"
+                size={26}
+                color={Colors[colorScheme ?? 'light'].text}
+              />
+            </Pressable>
+          ),
         }}
       />
     </Tabs>

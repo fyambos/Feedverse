@@ -18,7 +18,7 @@ export const Colors = {
 
     surface: '#FFFFFF',
     card: '#FFFFFF',
-    border: '#EFF3F4',
+    border: '#d4d7d8',
 
     textSecondary: '#536471',
     textMuted: '#8B98A5',
