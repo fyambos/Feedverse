@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import { StyleSheet, FlatList, Pressable, Image, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { router, Stack } from 'expo-router';
@@ -7,10 +8,18 @@ import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { MOCK_SCENARIOS } from '@/mocks/scenarios';
 import { MOCK_USERS } from '@/mocks/users';
+import { useAuth } from '@/context/auth';
 
 export default function ScenarioListScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
+
+  const { signOut } = useAuth();
+
+  const onLogout = async () => {
+    await signOut();
+    router.replace('/(auth)/login');
+  };
 
   const userById = useMemo(() => {
     const map = new Map(MOCK_USERS.map((u) => [u.id, u]));
@@ -29,6 +38,27 @@ export default function ScenarioListScreen() {
           headerTitle: 'Scenarios',
           headerTitleAlign: 'center',
           headerBackVisible: false,
+          headerRight: () => (
+            <View style={styles.headerRight}>
+              <Pressable
+                onPress={() => {}}
+                hitSlop={10}
+                accessibilityRole="button"
+                accessibilityLabel="Settings"
+              >
+                <Ionicons name="settings-outline" size={22} color={colors.icon} />
+              </Pressable>
+
+              <Pressable
+                onPress={onLogout}
+                hitSlop={10}
+                accessibilityRole="button"
+                accessibilityLabel="Log out"
+              >
+                <Ionicons name="log-out-outline" size={22} color={colors.icon} />
+              </Pressable>
+            </View>
+          ),
         }}
       />
 
@@ -94,6 +124,12 @@ export default function ScenarioListScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, paddingHorizontal: 16, paddingTop: 32 },
   subtitle: { marginTop: 4, marginBottom: 16 },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    paddingRight: 8,
+  },
   list: { paddingVertical: 8, gap: 12 },
 
   card: { borderRadius: 14, borderWidth: 1, overflow: 'hidden' },

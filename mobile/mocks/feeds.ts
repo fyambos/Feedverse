@@ -30,7 +30,7 @@ export const MOCK_FEEDS: Record<string, FeedPost[]> = {
       createdAt: '2025-11-27T14:06:00.000Z',
       text: "i forgot to do groceries so we made buldak ramyun instead… but it’s so good!!",
       imageUrl:
-        'https://images.unsplash.com/photo-1604908554027-7a24b4ff9f0b?auto=format&fit=crop&w=1200&q=80',
+        'https://images.unsplash.com/photo-1491961865842-98f7befd1a60?auto=format&fit=crop&w=1200&q=80',
       replyCount: 2,
       repostCount: 0,
       likeCount: 0,
@@ -42,7 +42,7 @@ export const MOCK_FEEDS: Record<string, FeedPost[]> = {
       createdAt: '2025-11-27T10:10:00.000Z',
       text: "that was the quickest setup",
       imageUrl:
-        'https://images.unsplash.com/photo-1540189549336-e6e99c3679fe?auto=format&fit=crop&w=1200&q=80',
+        'https://plus.unsplash.com/premium_photo-1673580742890-4af144293960?auto=format&fit=crop&w=1200&q=80',
       replyCount: 1,
       repostCount: 0,
       likeCount: 0,
