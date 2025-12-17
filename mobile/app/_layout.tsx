@@ -6,6 +6,7 @@ import 'react-native-reanimated';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { AuthProvider, useAuth } from '@/context/auth';
+import { NavDarkTheme, NavLightTheme } from '@/constants/navigation-theme';
 
 function AuthGate() {
   const { isReady, isLoggedIn } = useAuth();
@@ -28,13 +29,7 @@ function AuthGate() {
     }
   }, [isReady, isLoggedIn, segments, router]);
 
-  return (
-    <Stack screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="index" />
-      <Stack.Screen name="(auth)" />
-      <Stack.Screen name="(scenario)" />
-    </Stack>
-  );
+return <Stack screenOptions={{ headerShown: false }} />;
 }
 
 export default function RootLayout() {
@@ -42,10 +37,10 @@ export default function RootLayout() {
 
   return (
     <AuthProvider>
-      <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-        <AuthGate />
-        <StatusBar style="auto" />
-      </ThemeProvider>
+      <ThemeProvider value={colorScheme === 'dark' ? NavDarkTheme : NavLightTheme}>
+      <Stack screenOptions={{ headerShown: false }} />
+      <StatusBar style="auto" />
+    </ThemeProvider>
     </AuthProvider>
   );
 }

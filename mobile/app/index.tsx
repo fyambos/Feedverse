@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { StyleSheet, FlatList, Pressable, Image, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { router, Stack } from 'expo-router';
@@ -13,6 +14,7 @@ import { useAuth } from '@/context/auth';
 export default function ScenarioListScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
+  const insets = useSafeAreaInsets();
 
   const { signOut } = useAuth();
 
@@ -32,37 +34,51 @@ export default function ScenarioListScreen() {
 
   return (
     <>
-      <Stack.Screen
-        options={{
-          headerShown: true,
-          headerTitle: 'Scenarios',
-          headerTitleAlign: 'center',
-          headerBackVisible: false,
-          headerRight: () => (
-            <View style={styles.headerRight}>
-              <Pressable
-                onPress={() => {}}
-                hitSlop={10}
-                accessibilityRole="button"
-                accessibilityLabel="Settings"
-              >
-                <Ionicons name="settings-outline" size={22} color={colors.icon} />
-              </Pressable>
+      <Stack.Screen options={{ headerShown: false }} />
 
-              <Pressable
-                onPress={onLogout}
-                hitSlop={10}
-                accessibilityRole="button"
-                accessibilityLabel="Log out"
-              >
-                <Ionicons name="log-out-outline" size={22} color={colors.icon} />
-              </Pressable>
-            </View>
-          ),
-        }}
-      />
+      <View
+        style={[
+          styles.topBar,
+          {
+            paddingTop: insets.top,
+            backgroundColor: colors.background,
+            borderBottomColor: colors.border,
+          },
+        ]}
+      >
+        <View style={styles.topBarRow}>
+          {/* left spacer to keep title centered */}
+          <View style={styles.topBarSide} />
 
-      <ThemedView style={styles.container}>
+          <ThemedText type="defaultSemiBold" style={styles.topBarTitle}>
+            Scenarios
+          </ThemedText>
+
+          <View style={[styles.topBarSide, styles.topBarActions]}>
+            <Pressable
+              onPress={() => {}}
+              hitSlop={10}
+              style={({ pressed }) => [styles.headerIconBtn, pressed && { opacity: 0.6 }]}
+              accessibilityRole="button"
+              accessibilityLabel="Settings"
+            >
+              <Ionicons name="settings-outline" size={22} color={colors.icon} />
+            </Pressable>
+
+            <Pressable
+              onPress={onLogout}
+              hitSlop={10}
+              style={({ pressed }) => [styles.headerIconBtn, pressed && { opacity: 0.6 }]}
+              accessibilityRole="button"
+              accessibilityLabel="Log out"
+            >
+              <Ionicons name="log-out-outline" size={22} color={colors.icon} />
+            </Pressable>
+          </View>
+        </View>
+      </View>
+
+      <ThemedView style={[styles.container, { backgroundColor: colors.background }]}>
         <ThemedText style={styles.subtitle}>
           Choose a scenario to enter its universe
         </ThemedText>
@@ -122,13 +138,11 @@ export default function ScenarioListScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, paddingHorizontal: 16, paddingTop: 32 },
+  container: { flex: 1, paddingHorizontal: 16, paddingTop: 16 },
   subtitle: { marginTop: 4, marginBottom: 16 },
-  headerRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-    paddingRight: 8,
+  headerIconBtn: {
+    padding: 6,
+    backgroundColor: 'transparent',
   },
   list: { paddingVertical: 8, gap: 12 },
 
@@ -147,4 +161,27 @@ const styles = StyleSheet.create({
   },
 
   playerCount: { fontSize: 12 },
+
+  topBar: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  topBarRow: {
+    height: 56,
+    paddingHorizontal: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  topBarSide: {
+    width: 88,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+  },
+  topBarActions: {
+    gap: 14,
+  },
+  topBarTitle: {
+    fontSize: 18,
+  },
 });
