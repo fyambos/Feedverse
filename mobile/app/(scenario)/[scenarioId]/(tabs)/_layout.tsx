@@ -22,7 +22,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Home',  
+          title: '',  
           headerTitle: () => ( 
             <Pressable
             onPress={() => router.push({
@@ -47,21 +47,23 @@ export default function TabLayout() {
       <Tabs.Screen
         name="search"
         options={{
-          title: 'Search',
+          title: '',
+          headerTitle: 'Search',
           tabBarIcon: ({ color }) => <IconSymbol size={28} name="magnifyingglass" color={color} />,
         }}
       />
       <Tabs.Screen
         name="notifications"
         options={{
-          title: 'Notifications',
+          title: '',
+          headerTitle: 'Notifications',
           tabBarIcon: ({ color }) => <IconSymbol size={28} name="bell.fill" color={color} />,
         }}
       />
       <Tabs.Screen
         name="messages"
         options={{
-          title: 'Messages',
+          title: '',
           headerTitle: 'Direct Messages',
           tabBarIcon: ({ color }) => <IconSymbol size={28} name="envelope.fill" color={color} />,
         }}
@@ -70,7 +72,7 @@ export default function TabLayout() {
         name="post/[postId]"
         options={{
           href: null,
-          title: 'Post',
+          title: '',
           headerShown: true,
           headerLeft: () => (
             <Pressable onPress={() => router.back()} hitSlop={12}>

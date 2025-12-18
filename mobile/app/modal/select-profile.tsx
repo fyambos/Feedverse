@@ -58,7 +58,7 @@ export default function SelectProfileModal() {
 
                     <View style={{ flex: 1 }}>
                     <ThemedText type="defaultSemiBold">{item.displayName}</ThemedText>
-                    <ThemedText style={{ color: colors.textSecondary }}>{item.handle}</ThemedText>
+                    <ThemedText style={{ color: colors.textSecondary }}>@{item.handle}</ThemedText>
                     </View>
 
                     {active ? (

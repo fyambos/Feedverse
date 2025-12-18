@@ -85,7 +85,7 @@ export function Post({
               {profile.displayName}
             </ThemedText>
             <ThemedText style={[styles.handle, { color: colors.textSecondary }]}>
-              {profile.handle}
+              @{profile.handle}
             </ThemedText>
           </View>
         ) : (
@@ -94,7 +94,7 @@ export function Post({
               {profile.displayName}
             </ThemedText>
             <ThemedText style={[styles.handleInline, { color: colors.textSecondary }]} numberOfLines={1}>
-              {profile.handle} · {formatRelativeTime(item.createdAt)}
+              @{profile.handle} · {formatRelativeTime(item.createdAt)}
             </ThemedText>
           </View>
         )}
@@ -250,7 +250,7 @@ const styles = StyleSheet.create({
   },
 
   handle: {
-    fontSize: 13,
+    fontSize: 15,
     opacity: 0.9,
   },
 
@@ -263,14 +263,14 @@ const styles = StyleSheet.create({
   },
 
   handleInline: {
-    fontSize: 13,
+    fontSize: 15,
     opacity: 0.9,
     flexShrink: 1,
   },
 
   replyingRow: {
     marginLeft: 56,
-    marginTop: 2,
+    marginTop: 0,
   },
 
   replyingText: {
