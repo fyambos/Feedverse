@@ -14,7 +14,7 @@ export const MOCK_PROFILES: Profile[] = [
     scenarioId: 'demo-kpop',
     ownerUserId: 'u5',
     displayName: 'jinnie',
-    handle: '@jiniret',
+    handle: 'jiniret',
     avatarUrl: 'https://i.pravatar.cc/200?img=47',
     bio: 'dance major menace',
   },
@@ -23,7 +23,7 @@ export const MOCK_PROFILES: Profile[] = [
     scenarioId: 'demo-kpop',
     ownerUserId: 'u7',
     displayName: 'minho',
-    handle: '@leenosaurus',
+    handle: 'leenosaurus',
     avatarUrl: 'https://i.pravatar.cc/200?img=14',
     bio: 'i know where the snacks are',
   },
@@ -32,7 +32,7 @@ export const MOCK_PROFILES: Profile[] = [
     scenarioId: 'demo-kpop',
     ownerUserId: 'u6',
     displayName: 'jisung',
-    handle: '@therealhan',
+    handle: 'therealhan',
     avatarUrl: 'https://i.pravatar.cc/200?img=22',
     bio: 'unhinged but helpful',
   },
@@ -42,7 +42,7 @@ export const MOCK_PROFILES: Profile[] = [
     scenarioId: 'demo-royalty',
     ownerUserId: 'u8',
     displayName: 'prince hj',
-    handle: '@crownrebellion',
+    handle: 'crownrebellion',
     avatarUrl: 'https://i.pravatar.cc/200?img=9',
   },
   {
@@ -50,7 +50,7 @@ export const MOCK_PROFILES: Profile[] = [
     scenarioId: 'demo-royalty',
     ownerUserId: 'u9',
     displayName: 'seungmin',
-    handle: '@protocolmin',
+    handle: 'protocolmin',
     avatarUrl: 'https://i.pravatar.cc/200?img=21',
   },
   {
@@ -58,7 +58,7 @@ export const MOCK_PROFILES: Profile[] = [
     scenarioId: 'demo-royalty',
     ownerUserId: 'u9',
     displayName: 'linda',
-    handle: '@chamberaid',
+    handle: 'chamberaid',
     avatarUrl: 'https://i.pravatar.cc/200?img=28',
   },
 
@@ -67,7 +67,7 @@ export const MOCK_PROFILES: Profile[] = [
     scenarioId: 'demo-mafia',
     ownerUserId: 'u12',
     displayName: 'hwangjin',
-    handle: '@jiniret',
+    handle: 'jiniret',
     avatarUrl: 'https://i.pravatar.cc/200?img=19',
   },
   {
@@ -75,7 +75,7 @@ export const MOCK_PROFILES: Profile[] = [
     scenarioId: 'demo-mafia',
     ownerUserId: 'u10',
     displayName: 'changbin',
-    handle: '@bullalpha',
+    handle: 'bullalpha',
     avatarUrl: 'https://i.pravatar.cc/200?img=37',
   },
   {
@@ -83,7 +83,7 @@ export const MOCK_PROFILES: Profile[] = [
     scenarioId: 'demo-mafia',
     ownerUserId: 'u11',
     displayName: 'chan',
-    handle: '@scopezero',
+    handle: 'scopezero',
     avatarUrl: 'https://i.pravatar.cc/200?img=41',
   },
   {
@@ -91,7 +91,7 @@ export const MOCK_PROFILES: Profile[] = [
     scenarioId: 'demo-mafia',
     ownerUserId: 'u13',
     displayName: 'minho',
-    handle: '@pharmacist',
+    handle: 'pharmacist',
     avatarUrl: 'https://i.pravatar.cc/200?img=45',
   },
   {
@@ -99,7 +99,7 @@ export const MOCK_PROFILES: Profile[] = [
   scenarioId: 'demo-kpop', 
   ownerUserId: 'u14',
   displayName: 'winter',
-  handle: '@bbunnll',
+  handle: 'bbunnll',
   avatarUrl: 'https://i.pravatar.cc/150?img=15',
 },
   {
@@ -107,7 +107,7 @@ export const MOCK_PROFILES: Profile[] = [
   scenarioId: 'demo-kpop', 
   ownerUserId: 'u14',
   displayName: 'admin',
-  handle: '@admin',
+  handle: 'admin',
   avatarUrl: 'https://i.pravatar.cc/150?img=16',
 },
 {
@@ -115,7 +115,7 @@ export const MOCK_PROFILES: Profile[] = [
   scenarioId: 'demo-royalty',
   ownerUserId: 'u14',
   displayName: 'winter',
-  handle: '@bbunnll',
+  handle: 'bbunnll',
   avatarUrl: 'https://i.pravatar.cc/150?img=17',
 },
 {
@@ -123,7 +123,7 @@ export const MOCK_PROFILES: Profile[] = [
   scenarioId: 'demo-mafia',
   ownerUserId: 'u14',
   displayName: 'winter',
-  handle: '@bbunnll',
+  handle: 'bbunnll',
   avatarUrl: 'https://i.pravatar.cc/150?img=18',
 },
 ];

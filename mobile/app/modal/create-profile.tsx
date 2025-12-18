@@ -42,6 +42,7 @@ export default function CreateProfileModal() {
       scenarioId: String(scenarioId),
       displayName: name.trim(),
       handle: handle.trim(),
+      avatarUrl,
       bio: bio.trim() || undefined,
     });
     router.back();
