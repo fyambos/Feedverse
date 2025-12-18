@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { FlatList, StyleSheet, View, Pressable } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { ThemedView } from '@/components/themed-view';
@@ -9,21 +9,63 @@ import { MOCK_PROFILES } from '@/mocks/profiles';
 import { Post } from '@/components/Post';
 import { Ionicons } from '@expo/vector-icons';
 import { Animated } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useFocusEffect } from '@react-navigation/native';
 
 export default function HomeScreen() {
   const { scenarioId } = useLocalSearchParams<{ scenarioId: string }>();
   const scheme = useColorScheme() ?? 'light';
   const colors = Colors[scheme];
 
-  const posts = (MOCK_FEEDS[scenarioId ?? ''] ?? [])
-    .filter((p) => p.scenarioId === scenarioId)
-    .filter((p) => !p.parentPostId);
+  const [storedPosts, setStoredPosts] = useState<any[]>([]);
+  const [postsReady, setPostsReady] = useState(false);
+
+  const sid = String(scenarioId ?? '');
+  const STORAGE_KEY = `feedverse.posts.${sid}`;
+
+  const loadStoredPosts = useCallback(async () => {
+    try {
+      setPostsReady(false);
+      const raw = await AsyncStorage.getItem(STORAGE_KEY);
+      const parsed = raw ? JSON.parse(raw) : [];
+      const list = Array.isArray(parsed) ? parsed : [];
+      setStoredPosts(list);
+    } catch {
+      setStoredPosts([]);
+    } finally {
+      setPostsReady(true);
+    }
+  }, [STORAGE_KEY]);
+
+  useFocusEffect(
+    useCallback(() => {
+      // refresh when returning from modals (e.g., create-post)
+      void loadStoredPosts();
+      return () => {};
+    }, [loadStoredPosts])
+  );
+
+  const posts = useMemo(() => {
+    const mock = MOCK_FEEDS[sid] ?? [];
+    const combined = [...storedPosts, ...mock];
+
+    // de-dupe by id (prefer stored version if same id)
+    const byId = new Map<string, any>();
+    for (const p of combined) {
+      if (!p?.id) continue;
+      if (!byId.has(p.id)) byId.set(p.id, p);
+    }
+
+    return Array.from(byId.values())
+      .filter((p) => p.scenarioId === sid)
+      .filter((p) => !p.parentPostId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }, [sid, storedPosts]);
 
   const profileById = useMemo(() => {
-    const sid = scenarioId ?? '';
     const list = MOCK_PROFILES.filter((p) => p.scenarioId === sid);
     return new Map(list.map((p) => [p.id, p]));
-  }, [scenarioId]);
+  }, [sid]);
   const scale = React.useRef(new Animated.Value(1)).current;
   const navLock = React.useRef(false);
 
@@ -62,6 +104,7 @@ export default function HomeScreen() {
     <ThemedView style={[styles.container, { backgroundColor: colors.background }]}>
       <FlatList
         data={posts}
+        extraData={postsReady}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.list}
         ItemSeparatorComponent={() => (

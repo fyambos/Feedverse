@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   View,
   StyleSheet,
@@ -71,9 +72,7 @@ function RowCard({
   colors: any;
 }) {
   return (
-    <View
-      style={[styles.rowCard, { backgroundColor: colors.card, borderColor: colors.border }]}
-    >
+    <View style={[styles.rowCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
       <View style={{ flex: 1 }}>
         <ThemedText style={[styles.rowLabel, { color: colors.textSecondary }]}>{label}</ThemedText>
         {children}
@@ -81,6 +80,45 @@ function RowCard({
       {right ? <View style={{ marginLeft: 12 }}>{right}</View> : null}
     </View>
   );
+}
+
+type StoredPost = {
+  id: string;
+  scenarioId: string;
+  authorProfileId: string;
+  text: string;
+  createdAt: string;
+  imageUrl?: string | null;
+  replyCount?: number;
+  repostCount?: number;
+  likeCount?: number;
+  parentPostId?: string;
+};
+
+function postsKey(scenarioId: string) {
+  return `feedverse.posts.${scenarioId}`;
+}
+
+async function appendPost(scenarioId: string, post: StoredPost) {
+  const key = postsKey(scenarioId);
+  const raw = await AsyncStorage.getItem(key);
+  let list: StoredPost[] = [];
+  if (raw) {
+    try {
+      list = JSON.parse(raw) as StoredPost[];
+      if (!Array.isArray(list)) list = [];
+    } catch {
+      list = [];
+    }
+  }
+  // newest first
+  const next = [post, ...list];
+  await AsyncStorage.setItem(key, JSON.stringify(next));
+}
+
+function makeId(prefix = 'po') {
+  // simple local id: po_<base36time>_<rand>
+  return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
 export default function CreatePostModal() {
@@ -105,7 +143,7 @@ export default function CreatePostModal() {
   const [repostCount, setRepostCount] = useState('');
   const [likeCount, setLikeCount] = useState('');
 
-  const canPost = text.trim().length > 0;
+  const canPost = text.trim().length > 0 && !!profileId;
 
   const counts = useMemo(() => {
     const r1 = clampInt(Number(replyCount || 0), 0, 99000000);
@@ -116,7 +154,24 @@ export default function CreatePostModal() {
 
   const onPost = async () => {
     if (!canPost) return;
-    // TODO: append to mock feed / storage
+    if (!profileId) {
+      router.back();
+      return;
+    }
+
+    const post: StoredPost = {
+      id: makeId('po'),
+      scenarioId: sid,
+      authorProfileId: profileId,
+      text: text.trim(),
+      createdAt: date.toISOString(),
+      imageUrl: null,
+      replyCount: counts.reply,
+      repostCount: counts.repost,
+      likeCount: counts.like,
+    };
+
+    await appendPost(sid, post);
     router.back();
   };
 
@@ -128,189 +183,191 @@ export default function CreatePostModal() {
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           keyboardVerticalOffset={Platform.OS === 'ios' ? 6 : 0}
         >
-        {/* HEADER */}
-        <View style={[styles.header, { borderBottomColor: colors.border }]}>
-          <Pressable
-            onPress={() => router.back()}
-            hitSlop={12}
-            style={({ pressed }) => [pressed && { opacity: 0.7 }]}
-          >
-            <ThemedText style={{ color: colors.text, fontSize: 16 }}>Cancel</ThemedText>
-          </Pressable>
-
-          <Pressable
-            onPress={onPost}
-            disabled={!canPost}
-            hitSlop={10}
-            style={({ pressed }) => [
-              styles.postBtn,
-              {
-                backgroundColor: colors.tint,
-                opacity: !canPost ? 0.45 : pressed ? 0.85 : 1,
-              },
-            ]}
-          >
-            <ThemedText style={{ color: '#fff', fontWeight: '800', fontSize: 15 }}>Post</ThemedText>
-          </Pressable>
-        </View>
-
-        <ScrollView
-          style={{ flex: 1 }}
-          contentContainerStyle={{ paddingBottom: 24 }}
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
-        >
-          {/* COMPOSER */}
-          <View style={styles.composer}>
-            {profile ? (
-              <Image source={{ uri: profile.avatarUrl }} style={styles.avatar} />
-            ) : (
-              <View style={[styles.avatar, { backgroundColor: colors.border }]} />
-            )}
-
-            <View style={{ flex: 1 }}>
-              <TextInput
-                value={text}
-                onChangeText={(v) => setText(v.slice(0, 250))}
-                placeholder="What’s happening?"
-                placeholderTextColor={colors.textMuted}
-                multiline
-                style={[styles.input, { color: colors.text }]}
-                selectionColor={colors.tint}
-                maxLength={250}
-                scrollEnabled
-                textAlignVertical="top"
-              />
-            </View>
-          </View>
-
-          <View style={{ alignItems: 'flex-end', marginTop: 4 }}>
-            <ThemedText style={{ color: colors.textSecondary, fontSize: 12 }}>
-              {text.length}/250
-            </ThemedText>
-          </View>
-
-          <View style={[styles.softDivider, { backgroundColor: colors.border }]} />
-          
-          {/* TOOLBAR */}
-          <View style={[styles.toolbar, { borderTopColor: colors.border }]}>
-            <Pressable hitSlop={10} style={({ pressed }) => [styles.toolBtn, pressed && { opacity: 0.7 }]}>
-              <Ionicons name="image-outline" size={22} color={colors.tint} />
-            </Pressable>
-            <Pressable hitSlop={10} style={({ pressed }) => [styles.toolBtn, pressed && { opacity: 0.7 }]}>
-              <MaterialIcons name="gif" size={22} color={colors.tint} />
-            </Pressable>
-            <Pressable hitSlop={10} style={({ pressed }) => [styles.toolBtn, pressed && { opacity: 0.7 }]}>
-              <Ionicons name="location-outline" size={22} color={colors.tint} />
-            </Pressable>
-          </View>
-          
-          {/* META CONTROLS */}
-          <View style={styles.section}>
-            <ThemedText style={[styles.sectionTitle, { color: colors.textSecondary }]}>Post settings</ThemedText>
-
-            <RowCard label="Date" colors={colors}>
-              <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-                <Pressable
-                  onPress={() => {
-                    setPickerMode('date');
-                    setShowDatePicker(true);
-                  }}
-                  style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}
-                >
-                  <ThemedText style={{ color: colors.tint, fontWeight: '700' }}>
-                    {date.toLocaleDateString(undefined, {
-                      day: '2-digit',
-                      month: 'short',
-                      year: 'numeric',
-                    })}
-                  </ThemedText>
-                </Pressable>
-
-                <Pressable
-                  onPress={() => {
-                    setPickerMode('time');
-                    setShowDatePicker(true);
-                  }}
-                  style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}
-                >
-                  <ThemedText style={{ color: colors.tint, fontWeight: '700' }}>
-                    {date.toLocaleTimeString(undefined, {
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}
-                  </ThemedText>
-                </Pressable>
-              </View>
-            </RowCard>
-
-            <View style={styles.rowGrid}>
-              <View style={{ flex: 1 }}>
-                <RowCard
-                  label="Replies"
-                  colors={colors}
-                  right={<ThemedText style={{ color: colors.textSecondary }}>{formatCount(counts.reply)}</ThemedText>}
-                >
-                  <TextInput
-                    value={replyCount}
-                    onChangeText={setReplyCount}
-                    placeholder="0"
-                    placeholderTextColor={colors.textMuted}
-                    keyboardType="number-pad"
-                    style={[styles.rowInput, { color: colors.text }]}
-                    selectionColor={colors.tint}
-                  />
-                </RowCard>
-              </View>
-
-              <View style={{ flex: 1 }}>
-                <RowCard
-                  label="Reposts"
-                  colors={colors}
-                  right={<ThemedText style={{ color: colors.textSecondary }}>{formatCount(counts.repost)}</ThemedText>}
-                >
-                  <TextInput
-                    value={repostCount}
-                    onChangeText={setRepostCount}
-                    placeholder="0"
-                    placeholderTextColor={colors.textMuted}
-                    keyboardType="number-pad"
-                    style={[styles.rowInput, { color: colors.text }]}
-                    selectionColor={colors.tint}
-                  />
-                </RowCard>
-              </View>
-            </View>
-
-            <RowCard
-              label="Likes"
-              colors={colors}
-              right={<ThemedText style={{ color: colors.textSecondary }}>{formatCount(counts.like)}</ThemedText>}
+          {/* HEADER */}
+          <View style={[styles.header, { borderBottomColor: colors.border }]}>
+            <Pressable
+              onPress={() => router.back()}
+              hitSlop={12}
+              style={({ pressed }) => [pressed && { opacity: 0.7 }]}
             >
-              <TextInput
-                value={likeCount}
-                onChangeText={setLikeCount}
-                placeholder="0"
-                placeholderTextColor={colors.textMuted}
-                keyboardType="number-pad"
-                style={[styles.rowInput, { color: colors.text }]}
-                selectionColor={colors.tint}
-              />
-            </RowCard>
+              <ThemedText style={{ color: colors.text, fontSize: 16 }}>Cancel</ThemedText>
+            </Pressable>
+
+            <Pressable
+              onPress={onPost}
+              disabled={!canPost}
+              hitSlop={10}
+              style={({ pressed }) => [
+                styles.postBtn,
+                {
+                  backgroundColor: colors.tint,
+                  opacity: !canPost ? 0.45 : pressed ? 0.85 : 1,
+                },
+              ]}
+            >
+              <ThemedText style={{ color: '#fff', fontWeight: '800', fontSize: 15 }}>Post</ThemedText>
+            </Pressable>
           </View>
 
-          {showDatePicker && (
-            <DateTimePicker
-              value={date}
-              mode={pickerMode}
-              display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-              onChange={(_: any, selected: Date | undefined) => {
-                setShowDatePicker(false);
-                if (selected) setDate(selected);
-              }}
-            />
-          )}
-        </ScrollView>
+          <ScrollView
+            style={{ flex: 1 }}
+            contentContainerStyle={{ paddingBottom: 24 }}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+          >
+            {/* COMPOSER */}
+            <View style={styles.composer}>
+              {profile ? (
+                <Image source={{ uri: profile.avatarUrl }} style={styles.avatar} />
+              ) : (
+                <View style={[styles.avatar, { backgroundColor: colors.border }]} />
+              )}
+
+              <View style={{ flex: 1 }}>
+                <TextInput
+                  value={text}
+                  onChangeText={(v) => setText(v.slice(0, 500))}
+                  placeholder="What’s happening?"
+                  placeholderTextColor={colors.textMuted}
+                  multiline
+                  style={[styles.input, { color: colors.text }]}
+                  selectionColor={colors.tint}
+                  maxLength={500}
+                  scrollEnabled
+                  textAlignVertical="top"
+                />
+              </View>
+            </View>
+
+            <View style={{ alignItems: 'flex-end', marginTop: 4 }}>
+              <ThemedText style={{ color: colors.textSecondary, fontSize: 12 }}>
+                {text.length}/500
+              </ThemedText>
+            </View>
+
+            <View style={[styles.softDivider, { backgroundColor: colors.border }]} />
+
+            {/* TOOLBAR */}
+            <View style={[styles.toolbar, { borderTopColor: colors.border }]}>
+              <Pressable hitSlop={10} style={({ pressed }) => [styles.toolBtn, pressed && { opacity: 0.7 }]}>
+                <Ionicons name="camera-outline" size={22} color={colors.tint} />
+              </Pressable>
+
+              <Pressable hitSlop={10} style={({ pressed }) => [styles.toolBtn, pressed && { opacity: 0.7 }]}>
+                <Ionicons name="image-outline" size={22} color={colors.tint} />
+              </Pressable>
+
+              <Pressable hitSlop={10} style={({ pressed }) => [styles.toolBtn, pressed && { opacity: 0.7 }]}>
+                <MaterialIcons name="gif" size={22} color={colors.tint} />
+              </Pressable>
+            </View>
+
+            {/* META CONTROLS */}
+            <View style={styles.section}>
+              <ThemedText style={[styles.sectionTitle, { color: colors.textSecondary }]}>Post settings</ThemedText>
+
+              <RowCard label="Date" colors={colors}>
+                <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <Pressable
+                    onPress={() => {
+                      setPickerMode('date');
+                      setShowDatePicker(true);
+                    }}
+                    style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}
+                  >
+                    <ThemedText style={{ color: colors.tint, fontWeight: '700' }}>
+                      {date.toLocaleDateString(undefined, {
+                        day: '2-digit',
+                        month: 'short',
+                        year: 'numeric',
+                      })}
+                    </ThemedText>
+                  </Pressable>
+
+                  <Pressable
+                    onPress={() => {
+                      setPickerMode('time');
+                      setShowDatePicker(true);
+                    }}
+                    style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}
+                  >
+                    <ThemedText style={{ color: colors.tint, fontWeight: '700' }}>
+                      {date.toLocaleTimeString(undefined, {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                    </ThemedText>
+                  </Pressable>
+                </View>
+              </RowCard>
+
+              <View style={styles.rowGrid}>
+                <View style={{ flex: 1 }}>
+                  <RowCard
+                    label="Replies"
+                    colors={colors}
+                    right={<ThemedText style={{ color: colors.textSecondary }}>{formatCount(counts.reply)}</ThemedText>}
+                  >
+                    <TextInput
+                      value={replyCount}
+                      onChangeText={setReplyCount}
+                      placeholder="0"
+                      placeholderTextColor={colors.textMuted}
+                      keyboardType="number-pad"
+                      style={[styles.rowInput, { color: colors.text }]}
+                      selectionColor={colors.tint}
+                    />
+                  </RowCard>
+                </View>
+
+                <View style={{ flex: 1 }}>
+                  <RowCard
+                    label="Reposts"
+                    colors={colors}
+                    right={<ThemedText style={{ color: colors.textSecondary }}>{formatCount(counts.repost)}</ThemedText>}
+                  >
+                    <TextInput
+                      value={repostCount}
+                      onChangeText={setRepostCount}
+                      placeholder="0"
+                      placeholderTextColor={colors.textMuted}
+                      keyboardType="number-pad"
+                      style={[styles.rowInput, { color: colors.text }]}
+                      selectionColor={colors.tint}
+                    />
+                  </RowCard>
+                </View>
+              </View>
+
+              <RowCard
+                label="Likes"
+                colors={colors}
+                right={<ThemedText style={{ color: colors.textSecondary }}>{formatCount(counts.like)}</ThemedText>}
+              >
+                <TextInput
+                  value={likeCount}
+                  onChangeText={setLikeCount}
+                  placeholder="0"
+                  placeholderTextColor={colors.textMuted}
+                  keyboardType="number-pad"
+                  style={[styles.rowInput, { color: colors.text }]}
+                  selectionColor={colors.tint}
+                />
+              </RowCard>
+            </View>
+
+            {showDatePicker && (
+              <DateTimePicker
+                value={date}
+                mode={pickerMode}
+                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                onChange={(_: any, selected: Date | undefined) => {
+                  setShowDatePicker(false);
+                  if (selected) setDate(selected);
+                }}
+              />
+            )}
+          </ScrollView>
         </KeyboardAvoidingView>
       </ThemedView>
     </SafeAreaView>

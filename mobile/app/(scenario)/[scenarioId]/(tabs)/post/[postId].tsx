@@ -1,7 +1,11 @@
-import React, { useMemo } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { FlatList, StyleSheet, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useFocusEffect } from '@react-navigation/native';
+
 import { ThemedView } from '@/components/themed-view';
+import { ThemedText } from '@/components/themed-text';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { MOCK_FEEDS } from '@/mocks/feeds';
@@ -13,17 +17,59 @@ export default function PostScreen() {
   const scheme = useColorScheme() ?? 'light';
   const colors = Colors[scheme];
 
-  const all = MOCK_FEEDS[scenarioId ?? ''] ?? [];
+  const sid = String(scenarioId ?? '');
+  const pid = String(postId ?? '');
+
+  const STORAGE_KEY = `feedverse.posts.${sid}`;
+
+  const [storedPosts, setStoredPosts] = useState<any[]>([]);
+  const [postsReady, setPostsReady] = useState(false);
+
+  const loadStoredPosts = useCallback(async () => {
+    try {
+      setPostsReady(false);
+      const raw = await AsyncStorage.getItem(STORAGE_KEY);
+      const parsed = raw ? JSON.parse(raw) : [];
+      setStoredPosts(Array.isArray(parsed) ? parsed : []);
+    } catch {
+      setStoredPosts([]);
+    } finally {
+      setPostsReady(true);
+    }
+  }, [STORAGE_KEY]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void loadStoredPosts();
+      return () => {};
+    }, [loadStoredPosts])
+  );
+
+  const all = useMemo(() => {
+    const mock = MOCK_FEEDS[sid] ?? [];
+    const combined = [...storedPosts, ...mock];
+
+    // de-dupe by id (prefer stored if duplicate)
+    const byId = new Map<string, any>();
+    for (const p of combined) {
+      if (!p?.id) continue;
+      const id = String(p.id);
+      if (!byId.has(id)) byId.set(id, p);
+    }
+
+    return Array.from(byId.values()).filter((p) => String(p.scenarioId) === sid);
+  }, [sid, storedPosts]);
   
   function buildThread(posts: any[], rootId: string) {
     const byParent = new Map<string, any[]>();
 
-    posts.forEach(p => {
-      if (!p.parentPostId) return;
-      if (!byParent.has(p.parentPostId)) {
-        byParent.set(p.parentPostId, []);
+    posts.forEach((p) => {
+      if (!p?.parentPostId) return;
+      const key = String(p.parentPostId);
+      if (!byParent.has(key)) {
+        byParent.set(key, []);
       }
-      byParent.get(p.parentPostId)!.push(p);
+      byParent.get(key)!.push(p);
     });
 
     byParent.forEach(list =>
@@ -36,7 +82,7 @@ export default function PostScreen() {
       const children = byParent.get(parentId) ?? [];
       for (const child of children) {
         result.push(child);
-        walk(child.id);
+        walk(String(child.id));
       }
     }
 
@@ -45,16 +91,32 @@ export default function PostScreen() {
   }
 
   const profileById = useMemo(() => {
-    const list = MOCK_PROFILES.filter((p) => p.scenarioId === (scenarioId ?? ''));
+    const list = MOCK_PROFILES.filter((p) => p.scenarioId === sid);
     return new Map(list.map((p) => [p.id, p]));
-  }, [scenarioId]);
+  }, [sid]);
 
-  const root = all.find((p) => p.id === postId);
-  if (!root) return null;
+  if (!postsReady) {
+    return (
+      <ThemedView style={[styles.container, { backgroundColor: colors.background, padding: 16 }]}>
+        <ThemedText style={{ color: colors.textSecondary }}>Loading…</ThemedText>
+      </ThemedView>
+    );
+  }
 
-  const replies = buildThread(all, root.id)
-    .filter((p) => p.parentPostId)
-    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  const root = all.find((p) => String(p.id) === pid);
+  if (!root) {
+    return (
+      <ThemedView style={[styles.container, { backgroundColor: colors.background, padding: 16 }]}>
+        <ThemedText style={{ color: colors.textSecondary }}>
+          Post not found.
+        </ThemedText>
+      </ThemedView>
+    );
+  }
+
+  const replies = buildThread(all, String(root.id))
+    .filter((p) => !!p.parentPostId)
+    .sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
 
   const data = [root, ...replies];
 
@@ -62,16 +124,15 @@ export default function PostScreen() {
     <ThemedView style={[styles.container, { backgroundColor: colors.background }]}>
       <FlatList
         data={data}
-        keyExtractor={(i) => i.id}
+        keyExtractor={(i: any) => String(i.id)}
         ItemSeparatorComponent={() => <View style={[styles.sep, { backgroundColor: colors.border }]} />}
         renderItem={({ item }) => {
           const profile = profileById.get(item.authorProfileId);
           if (!profile) return null;
 
-          const parent =
-            item.parentPostId
-              ? all.find(p => p.id === item.parentPostId)
-              : null;
+          const parent = item.parentPostId
+            ? all.find((p) => String(p.id) === String(item.parentPostId))
+            : null;
 
           const parentProfile =
             parent ? profileById.get(parent.authorProfileId) : null;
@@ -80,7 +141,7 @@ export default function PostScreen() {
             <Post
               profile={profile}
               item={item}
-              variant={item.id === root.id ? 'detail' : 'reply'}
+              variant={String(item.id) === String(root.id) ? 'detail' : 'reply'}
               replyingTo={parentProfile?.handle}
               showActions
             />

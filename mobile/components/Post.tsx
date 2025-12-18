@@ -68,6 +68,7 @@ export function Post({
   const replyCount = item.replyCount ?? 0;
   const repostCount = item.repostCount ?? 0;
   const likeCount = item.likeCount ?? 0;
+  const hasDetailCounts = isDetail && (repostCount > 0 || likeCount > 0);
 
   const showActionCounts = !isDetail; // show counts in feed/reply, hide in detail
 
@@ -85,7 +86,7 @@ export function Post({
               {profile.displayName}
             </ThemedText>
             <ThemedText style={[styles.handle, { color: colors.textSecondary }]}>
-              @{profile.handle}
+              {profile.handle}
             </ThemedText>
           </View>
         ) : (
@@ -94,7 +95,7 @@ export function Post({
               {profile.displayName}
             </ThemedText>
             <ThemedText style={[styles.handleInline, { color: colors.textSecondary }]} numberOfLines={1}>
-              @{profile.handle} · {formatRelativeTime(item.createdAt)}
+              {profile.handle} · {formatRelativeTime(item.createdAt)}
             </ThemedText>
           </View>
         )}
@@ -131,24 +132,26 @@ export function Post({
           </ThemedText>
         )}
 
-        {isDetail && <View style={[styles.divider, { backgroundColor: colors.border }]} />}
+        {hasDetailCounts && (
+          <>
+            <View style={[styles.divider, { backgroundColor: colors.border }]} />
 
-        {isDetail && (
-          <View style={styles.countsRow}>
-            {repostCount > 0 && (
-              <ThemedText style={[styles.countItem, { color: colors.text }]}>
-                <ThemedText type="defaultSemiBold">{repostCount}</ThemedText> Reposts
-              </ThemedText>
-            )}
-            {likeCount > 0 && (
-              <ThemedText style={[styles.countItem, { color: colors.text }]}>
-                <ThemedText type="defaultSemiBold">{likeCount}</ThemedText> Likes
-              </ThemedText>
-            )}
-          </View>
+            <View style={styles.countsRow}>
+              {repostCount > 0 && (
+                <ThemedText style={[styles.countItem, { color: colors.text }]}>
+                  <ThemedText type="defaultSemiBold">{repostCount}</ThemedText> Reposts
+                </ThemedText>
+              )}
+              {likeCount > 0 && (
+                <ThemedText style={[styles.countItem, { color: colors.text }]}>
+                  <ThemedText type="defaultSemiBold">{likeCount}</ThemedText> Likes
+                </ThemedText>
+              )}
+            </View>
+
+            <View style={[styles.divider, { backgroundColor: colors.border }]} />
+          </>
         )}
-
-        {isDetail && <View style={[styles.divider, { backgroundColor: colors.border }]} />}
 
         {showActions && (
           <View style={styles.actions}>
