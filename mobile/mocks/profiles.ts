@@ -68,7 +68,7 @@ export const MOCK_PROFILES: Profile[] = [
     ownerUserId: 'u12',
     displayName: 'hwangjin',
     handle: '@jiniret',
-    avatarUrl: 'https://i.pravatar.cc/200?img=16',
+    avatarUrl: 'https://i.pravatar.cc/200?img=19',
   },
   {
     id: 'pr_mafia_boss',
@@ -100,7 +100,7 @@ export const MOCK_PROFILES: Profile[] = [
   ownerUserId: 'u14',
   displayName: 'winter',
   handle: '@bbunnll',
-  avatarUrl: 'https://i.pravatar.cc/150?img=14',
+  avatarUrl: 'https://i.pravatar.cc/150?img=15',
 },
   {
   id: 'pr_kpop_admin',
@@ -108,7 +108,7 @@ export const MOCK_PROFILES: Profile[] = [
   ownerUserId: 'u14',
   displayName: 'admin',
   handle: '@admin',
-  avatarUrl: 'https://i.pravatar.cc/150?img=14',
+  avatarUrl: 'https://i.pravatar.cc/150?img=16',
 },
 {
   id: 'pr_royalty_winter',
@@ -116,7 +116,7 @@ export const MOCK_PROFILES: Profile[] = [
   ownerUserId: 'u14',
   displayName: 'winter',
   handle: '@bbunnll',
-  avatarUrl: 'https://i.pravatar.cc/150?img=14',
+  avatarUrl: 'https://i.pravatar.cc/150?img=17',
 },
 {
   id: 'pr_mafia_winter',
@@ -124,6 +124,6 @@ export const MOCK_PROFILES: Profile[] = [
   ownerUserId: 'u14',
   displayName: 'winter',
   handle: '@bbunnll',
-  avatarUrl: 'https://i.pravatar.cc/150?img=14',
+  avatarUrl: 'https://i.pravatar.cc/150?img=18',
 },
 ];
