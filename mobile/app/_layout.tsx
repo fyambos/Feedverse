@@ -7,6 +7,7 @@ import 'react-native-reanimated';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { AuthProvider, useAuth } from '@/context/auth';
 import { NavDarkTheme, NavLightTheme } from '@/constants/navigation-theme';
+import { ProfileProvider } from '@/context/profile';
 
 function AuthGate() {
   const { isReady, isLoggedIn } = useAuth();
@@ -37,10 +38,12 @@ export default function RootLayout() {
 
   return (
     <AuthProvider>
-      <ThemeProvider value={colorScheme === 'dark' ? NavDarkTheme : NavLightTheme}>
-      <Stack screenOptions={{ headerShown: false }} />
-      <StatusBar style="auto" />
-    </ThemeProvider>
+      <ProfileProvider>
+        <ThemeProvider value={colorScheme === 'dark' ? NavDarkTheme : NavLightTheme}>
+          <Stack screenOptions={{ headerShown: false }} />
+          <StatusBar style="auto" />
+        </ThemeProvider>
+      </ProfileProvider>
     </AuthProvider>
   );
 }

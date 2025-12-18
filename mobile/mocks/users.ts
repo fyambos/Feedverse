@@ -18,5 +18,6 @@ export const MOCK_USERS: AppUser[] = [
   { id: 'u11', username: 'sniper', avatarUrl: 'https://i.pravatar.cc/200?img=7' },
   { id: 'u12', username: 'driver', avatarUrl: 'https://i.pravatar.cc/200?img=8' },
   { id: 'u13', username: 'fixer', avatarUrl: 'https://i.pravatar.cc/200?img=9' },
+  { id: 'u14', username: 'admin', avatarUrl: 'https://i.pravatar.cc/150?img=14' },
 ];
     

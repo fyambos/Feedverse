@@ -1,4 +1,4 @@
-import { Tabs, router } from 'expo-router';
+import { Tabs, router, useLocalSearchParams } from 'expo-router';
 import React from 'react';
 import { Image, Pressable } from 'react-native';
 
@@ -7,7 +7,6 @@ import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { useLocalSearchParams } from 'expo-router';
 export default function TabLayout() {
   const { scenarioId } = useLocalSearchParams<{ scenarioId: string }>();
   const colorScheme = useColorScheme();
@@ -26,10 +25,14 @@ export default function TabLayout() {
           title: 'Home',  
           headerTitle: () => ( 
             <Pressable
-            onPress={() => router.replace('/')}
+            onPress={() => router.push({
+                                          pathname: '/modal/select-profile',
+                                          params: { scenarioId: String(scenarioId) },
+                                        } as any)
+            }
             hitSlop={12}
             accessibilityRole="button"
-            accessibilityLabel="Back to scenarios"
+            accessibilityLabel="Switch Profile"
           >
             <Image
               source={require('@/assets/images/FeedverseIcon.png')}

@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Feedverse",
+    "name": "mobile",
     "slug": "mobile",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -30,7 +30,7 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/FeedverseIcon.png",
+          "image": "./assets/images/splash-icon.png",
           "imageWidth": 200,
           "resizeMode": "contain",
           "backgroundColor": "#ffffff",
