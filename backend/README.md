@@ -1,0 +1,144 @@
+# Feedverse
+
+<div align="center">
+
+[![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=fff)](#)
+[![Node.js](https://img.shields.io/badge/Node.js-6DA55F?logo=node.js&logoColor=white)](#)
+[![Postgres](https://img.shields.io/badge/Postgres-%23316192.svg?logo=postgresql&logoColor=white)](#)
+[![Docker](https://img.shields.io/badge/Docker-2496ED?logo=docker&logoColor=fff)](#)
+
+<h3>App mobile de simulation de réseau social qui permet de co-écriture en collaboration des fictions à travers des scénarios partagés.
+</h3>
+
+Feedverse est une plateforme hybride inspirée de **Status** et **Social Maker**, où les utilisateurs créent et gèrent des profils fictifs pour construire ensemble des histoires sociales immersives. Chaque scénario est un univers partagé où jusqu'à 20 joueurs peuvent interagir via posts, messages et mentions.
+
+[Demo](https://Feedverse.fr) · [Documentation](https://github.com/fyambos/Feedverse/tree/main/documentation) · [Signaler un bug](https://github.com/fyambos/Feedverse/issues) · [Nouvelle fonctionnalité](https://github.com/fyambos/Feedverse/issues)
+
+</div>
+
+
+### Points clés
+
+- **Multijoueur** : Jusqu'à 20 joueurs par scénario
+- **Profils multiples** : Jusqu'à 30 profils par utilisateur dans chaque scénario
+- **Co-écriture** : Permissions partagées pour jouer les profils d'autres joueurs
+- **Simulation complète** : Feed, messages privés, mentions, notifications
+
+## Fonctionnalités MVP
+
+### Authentification
+
+- Création de compte (email/mot de passe, iCloud, Google)
+- Connexion/déconnexion
+- Récupération de mot de passe
+- Gestion de session sécurisée
+
+### Gestion des scénarios
+
+- Créer un scénario
+- Inviter des joueurs (lien ou code)
+- Rejoindre un scénario (limite 20 joueurs)
+- Quitter ou supprimer un scénario
+
+### Gestion des profils
+
+- Créer jusqu'à 30 profils par scénario
+- Photo de profil, bio, date de naissance
+- Activer/désactiver le mode multijoueur
+- Voir les profils et leurs propriétaires
+- Feed et messages privés par profil
+
+### Sélecteur de profil
+
+- Profil actif toujours visible
+- Changement rapide depuis n'importe quel écran
+- Affichage des profils jouables (propriété + permissions)
+
+### Feed & Posts
+
+- Timeline du scénario avec infinite scroll
+- Création de posts avec :
+  - Texte
+  - Photos
+  - Liens avec preview
+  - Posts cités (quote)
+  - Mentions de profils
+- Suppression par l'auteur ou l'owner du scénario
+
+### Messagerie
+
+- Conversations privées entre profils
+- Messages texte, photos, liens, posts cités
+- Changement de profil expéditeur dynamique
+- Statut lu/non lu
+- Group chats
+
+## Architecture des données
+
+### Entités principales
+
+```
+Utilisateur (joueur réel)
+  ↓
+Scénario (univers partagé, max 20 joueurs)
+  ↓
+Profil (personnage fictif, max 30 par utilisateur)
+  ↓
+Posts / Messages / Notifications
+```
+
+### Système de permissions
+
+Chaque profil dispose d'un système de permissions permettant au propriétaire d'autoriser d'autres joueurs à :
+
+- Poster avec ce profil
+- Envoyer des messages
+- Modifier le profil (optionnel)
+
+## Navigation
+
+### Onglets principaux (dans un scénario)
+
+1. **Home** - Feed du scénario
+2. **Search** - Recherche de posts et profils
+3. **Notifications** - Mentions et messages
+4. **Messages** - Conversations privées
+5. **Scénario/Profils** - Gestion et paramètres
+
+## Sécurité
+
+- Permissions strictes côté backend
+- Impossibilité de poster avec un profil non autorisé
+- Isolation des messages et notifications par profil
+- Hashage des mots de passe
+- Validation des autorisations à chaque action
+
+## Planning
+
+- **Deadline MVP** : 14 décembre 2026
+- **Sprints** : Cycles de 2 semaines avec review
+- **Méthodologie** : Agile avec planification itérative
+
+## Fonctionnalités futures
+
+- Notifications push complètes
+- Import/Export de profils
+- Transfert de profils entre scénarios
+- Brouillons de posts
+- Export de timeline (screenshots/PDF)
+- Rôles avancés (admin, modérateur)
+- Dark mode / Light mode
+- Recherche avancée
+
+## Modèle économique
+
+(Pour l'instant)
+
+- Posts sponsorisés dans les feeds
+- Scénarios featured dans l'onglet "Explore"
+- Abonnement premium (sans publicité)
+- Achats in-app (personnalisation d'icônes)
+
+---
+
+**Feedverse** - Où vos histoires prennent vie 🌟
