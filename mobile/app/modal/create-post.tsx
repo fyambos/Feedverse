@@ -217,11 +217,24 @@ export default function CreatePostModal() {
           >
             {/* COMPOSER */}
             <View style={styles.composer}>
-              {profile ? (
-                <Image source={{ uri: profile.avatarUrl }} style={styles.avatar} />
-              ) : (
-                <View style={[styles.avatar, { backgroundColor: colors.border }]} />
-              )}
+              <Pressable
+                onPress={() =>
+                  router.push(
+                    {
+                      pathname: '/modal/select-profile',
+                      params: { scenarioId: sid },
+                    } as any
+                  )
+                }
+                hitSlop={10}
+                style={({ pressed }) => [pressed && { opacity: 0.75 }]}
+              >
+                {profile ? (
+                  <Image source={{ uri: profile.avatarUrl }} style={styles.avatar} />
+                ) : (
+                  <View style={[styles.avatar, { backgroundColor: colors.border }]} />
+                )}
+              </Pressable>
 
               <View style={{ flex: 1 }}>
                 <TextInput
