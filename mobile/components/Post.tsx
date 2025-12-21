@@ -45,6 +45,28 @@ function formatFullDate(iso: string) {
   });
 }
 
+function formatCount(n: number) {
+  if (!Number.isFinite(n)) return '0';
+  const num = Math.max(0, Math.floor(n));
+
+  // Keep full numbers until 100M+ (per your rule)
+  if (num >= 100_000_000) return String(num);
+
+  if (num >= 1_000_000) {
+    const v = num / 1_000_000;
+    const s = v < 10 ? v.toFixed(1) : Math.floor(v).toString();
+    return `${s.replace(/\.0$/, '')}M`;
+  }
+
+  if (num >= 1_000) {
+    const v = num / 1_000;
+    const s = v < 10 ? v.toFixed(1) : Math.floor(v).toString();
+    return `${s.replace(/\.0$/, '')}K`;
+  }
+
+  return String(num);
+}
+
 export function Post({
   profile,
   item,
@@ -139,12 +161,12 @@ export function Post({
             <View style={styles.countsRow}>
               {repostCount > 0 && (
                 <ThemedText style={[styles.countItem, { color: colors.text }]}>
-                  <ThemedText type="defaultSemiBold">{repostCount}</ThemedText> Reposts
+                  <ThemedText type="defaultSemiBold">{formatCount(repostCount)}</ThemedText> Reposts
                 </ThemedText>
               )}
               {likeCount > 0 && (
                 <ThemedText style={[styles.countItem, { color: colors.text }]}>
-                  <ThemedText type="defaultSemiBold">{likeCount}</ThemedText> Likes
+                  <ThemedText type="defaultSemiBold">{formatCount(likeCount)}</ThemedText> Likes
                 </ThemedText>
               )}
             </View>
@@ -165,7 +187,7 @@ export function Post({
                       { color: colors.textSecondary, opacity: replyCount > 0 ? 1 : 0 },
                     ]}
                   >
-                    {replyCount > 0 ? String(replyCount) : '0'}
+                    {replyCount > 0 ? formatCount(replyCount) : '0'}
                   </ThemedText>
                 )}
               </View>
@@ -181,7 +203,7 @@ export function Post({
                       { color: colors.textSecondary, opacity: repostCount > 0 ? 1 : 0 },
                     ]}
                   >
-                    {repostCount > 0 ? String(repostCount) : '0'}
+                    {repostCount > 0 ? formatCount(repostCount) : '0'}
                   </ThemedText>
                 )}
               </View>
@@ -197,7 +219,7 @@ export function Post({
                       { color: colors.textSecondary, opacity: likeCount > 0 ? 1 : 0 },
                     ]}
                   >
-                    {likeCount > 0 ? String(likeCount) : '0'}
+                    {likeCount > 0 ? formatCount(likeCount) : '0'}
                   </ThemedText>
                 )}
               </View>
