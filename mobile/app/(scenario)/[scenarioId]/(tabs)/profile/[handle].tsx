@@ -226,17 +226,31 @@ export default function ProfileScreen() {
   const scheme = useColorScheme() ?? 'light';
   const colors = Colors[scheme];
   const { userId } = useAuth();
-  const { getProfileById, getProfileByHandle } = useProfile();
+  const { getProfileById, getProfileByHandle, selectedProfileId } = useProfile();
 
   const sid = decodeURIComponent(String(scenarioId ?? ''));
   const wanted = decodeURIComponent(String(handle ?? ''));
 
-  // ✅ IMPORTANT: use ProfileContext (mocks + persisted edits)
   const profile = useMemo(() => {
     const p = getProfileByHandle?.(sid, wanted);
     return p ?? null;
   }, [sid, wanted, getProfileByHandle]);
+  const currentProfileId = selectedProfileId?.(sid);
+  const isCurrentSelected = !!profile && String(currentProfileId) === String(profile.id);
 
+  // editable if owned OR public
+  const canEditProfile =
+    !!profile && (profile.ownerUserId === userId || !!(profile as any).isPublic);
+
+  // only when editable BUT not currently selected: enable the Follow<->Edit toggle
+  const showToggleEdit = canEditProfile && !isCurrentSelected;
+
+  const [showEditInstead, setShowEditInstead] = useState(false);
+
+  useEffect(() => {
+    // reset when navigating to another profile or when it becomes selected
+    setShowEditInstead(false);
+  }, [sid, handle, isCurrentSelected]);
   const isMe = !!profile && profile.ownerUserId === userId;
 
   const [fakeHeaderVariant, setFakeHeaderVariant] = useState(0);
@@ -407,16 +421,12 @@ export default function ProfileScreen() {
 
                   <View style={{ flex: 1 }} />
 
-                  {isMe ? (
+                  {isMe && isCurrentSelected ? (
                     <Pressable
                       onPress={() => {
                         router.push({
                           pathname: '/modal/create-profile',
-                          params: {
-                            scenarioId: sid,
-                            mode: 'edit',
-                            profileId: profile.id,
-                          },
+                          params: { scenarioId: sid, mode: 'edit', profileId: profile.id },
                         } as any);
                       }}
                       style={({ pressed }) => [
@@ -431,7 +441,50 @@ export default function ProfileScreen() {
                         Edit profile
                       </ThemedText>
                     </Pressable>
+                  ) : showToggleEdit ? (
+                    // Editable but NOT currently selected: default Follow, long-press toggles
+                    showEditInstead ? (
+                      <Pressable
+                        onPress={() => {
+                          router.push({
+                            pathname: '/modal/create-profile',
+                            params: { scenarioId: sid, mode: 'edit', profileId: profile.id },
+                          } as any);
+                        }}
+                        onLongPress={() => setShowEditInstead(false)}
+                        delayLongPress={250}
+                        style={({ pressed }) => [
+                          styles.ghostBtn,
+                          {
+                            borderColor: colors.border,
+                            backgroundColor: pressed ? colors.pressed : colors.background,
+                          },
+                        ]}
+                      >
+                        <ThemedText style={{ fontWeight: '700', color: colors.text }}>
+                          Edit profile
+                        </ThemedText>
+                      </Pressable>
+                    ) : (
+                      <Pressable
+                        onPress={() => Alert.alert('Not yet', 'Follow logic later.')}
+                        onLongPress={() => setShowEditInstead(true)}
+                        delayLongPress={250}
+                        style={({ pressed }) => [
+                          styles.primaryBtn,
+                          {
+                            backgroundColor: colors.text,
+                            opacity: pressed ? 0.85 : 1,
+                          },
+                        ]}
+                      >
+                        <ThemedText style={{ fontWeight: '800', color: colors.background }}>
+                          Follow
+                        </ThemedText>
+                      </Pressable>
+                    )
                   ) : (
+                    // Not editable: normal Follow.
                     <Pressable
                       onPress={() => Alert.alert('Not yet', 'Follow logic later.')}
                       style={({ pressed }) => [
