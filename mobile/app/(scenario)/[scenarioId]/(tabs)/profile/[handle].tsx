@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Image,
   Pressable,
@@ -24,6 +24,8 @@ import Animated, { interpolate, useAnimatedStyle } from 'react-native-reanimated
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
 import type { SwipeableMethods } from 'react-native-gesture-handler/ReanimatedSwipeable';
+
+import { useFocusEffect } from '@react-navigation/native';
 
 
 function formatJoined(iso: string) {
@@ -240,58 +242,62 @@ export default function ProfileScreen() {
   const [fakeHeaderVariant, setFakeHeaderVariant] = useState(0);
   const [persistedPosts, setPersistedPosts] = useState<any[]>([]);
 
-  useEffect(() => {
-    let mounted = true;
+  const loadPersistedPosts = useCallback(async () => {
+    try {
+      const candidates: any[] = [];
 
-    const load = async () => {
-      try {
-        const candidates: any[] = [];
-
-        // 1) Per-scenario key: feedverse.posts.<scenarioId>
-        const rawScenario = await AsyncStorage.getItem(`feedverse.posts.${sid}`);
-        if (rawScenario) {
-          try {
-            const parsed = JSON.parse(rawScenario);
-            if (Array.isArray(parsed)) candidates.push(...parsed);
-          } catch {}
-        }
-
-        // 2) Map key: feedverse.posts.byScenario => { [sid]: Post[] }
-        const rawMap = await AsyncStorage.getItem('feedverse.posts.byScenario');
-        if (rawMap) {
-          try {
-            const parsed = JSON.parse(rawMap);
-            const arr = parsed?.[sid];
-            if (Array.isArray(arr)) candidates.push(...arr);
-          } catch {}
-        }
-
-        // 3) Legacy-ish key: feedverse.feed.postsByScenario => { [sid]: Post[] }
-        const rawLegacy = await AsyncStorage.getItem('feedverse.feed.postsByScenario');
-        if (rawLegacy) {
-          try {
-            const parsed = JSON.parse(rawLegacy);
-            const arr = parsed?.[sid];
-            if (Array.isArray(arr)) candidates.push(...arr);
-          } catch {}
-        }
-
-        const byId = new Map<string, any>();
-        for (const p of candidates) {
-          if (p && p.id) byId.set(String(p.id), p);
-        }
-
-        if (mounted) setPersistedPosts(Array.from(byId.values()));
-      } catch {
-        if (mounted) setPersistedPosts([]);
+      // 1) Per-scenario key: feedverse.posts.<scenarioId>
+      const rawScenario = await AsyncStorage.getItem(`feedverse.posts.${sid}`);
+      if (rawScenario) {
+        try {
+          const parsed = JSON.parse(rawScenario);
+          if (Array.isArray(parsed)) candidates.push(...parsed);
+        } catch {}
       }
-    };
 
-    load();
-    return () => {
-      mounted = false;
-    };
+      // 2) Map key: feedverse.posts.byScenario => { [sid]: Post[] }
+      const rawMap = await AsyncStorage.getItem('feedverse.posts.byScenario');
+      if (rawMap) {
+        try {
+          const parsed = JSON.parse(rawMap);
+          const arr = parsed?.[sid];
+          if (Array.isArray(arr)) candidates.push(...arr);
+        } catch {}
+      }
+
+      // 3) Legacy-ish key: feedverse.feed.postsByScenario => { [sid]: Post[] }
+      const rawLegacy = await AsyncStorage.getItem('feedverse.feed.postsByScenario');
+      if (rawLegacy) {
+        try {
+          const parsed = JSON.parse(rawLegacy);
+          const arr = parsed?.[sid];
+          if (Array.isArray(arr)) candidates.push(...arr);
+        } catch {}
+      }
+
+      const byId = new Map<string, any>();
+      for (const p of candidates) {
+        if (p && p.id) byId.set(String(p.id), p);
+      }
+
+      setPersistedPosts(Array.from(byId.values()));
+    } catch {
+      setPersistedPosts([]);
+    }
   }, [sid]);
+
+  // initial load
+  useEffect(() => {
+    void loadPersistedPosts();
+  }, [loadPersistedPosts]);
+
+  // IMPORTANT: refresh when coming back from edit/create post modal
+  useFocusEffect(
+    useCallback(() => {
+      void loadPersistedPosts();
+      return () => {};
+    }, [loadPersistedPosts])
+  );
 
   const headerUri =
     fakeHeaderVariant % 3 === 0
@@ -342,6 +348,7 @@ export default function ProfileScreen() {
         <View style={{ flex: 1 }}>
           <FlatList
             data={myPosts}
+            extraData={persistedPosts}
             keyExtractor={(p: any) => String(p.id)}
             ItemSeparatorComponent={() => (
               <View
