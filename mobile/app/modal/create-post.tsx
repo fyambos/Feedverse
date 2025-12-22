@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
@@ -20,6 +20,7 @@ import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useProfile } from '@/context/profile';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
+import { MOCK_FEEDS } from '@/mocks/feeds';
 
 function clampInt(n: number, min = 0, max = 99000000) {
   if (Number.isNaN(n)) return min;
@@ -92,6 +93,7 @@ type StoredPost = {
   repostCount?: number;
   likeCount?: number;
   parentPostId?: string;
+  isEdited?: boolean;
 };
 
 function postsKey(scenarioId: string) {
@@ -115,24 +117,74 @@ async function appendPost(scenarioId: string, post: StoredPost) {
   await AsyncStorage.setItem(key, JSON.stringify(next));
 }
 
-function makeId(prefix = 'po') {
-  // simple local id: po_<base36time>_<rand>
-  return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+function makeId(prefix: string) {
+  return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+async function readStoredPosts(scenarioId: string) {
+  const key = postsKey(scenarioId);
+  const raw = await AsyncStorage.getItem(key);
+  if (!raw) return [] as StoredPost[];
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed) ? (parsed as StoredPost[]) : ([] as StoredPost[]);
+  } catch {
+    return [] as StoredPost[];
+  }
+}
+
+async function writeStoredPosts(scenarioId: string, posts: StoredPost[]) {
+  const key = postsKey(scenarioId);
+  await AsyncStorage.setItem(key, JSON.stringify(posts));
+}
+
+async function findPostById(scenarioId: string, postId: string): Promise<StoredPost | null> {
+  // Prefer stored (it may contain edits), then fallback to mocks.
+  const stored = await readStoredPosts(scenarioId);
+  const inStored = stored.find((p) => p.id === postId);
+  if (inStored) return inStored;
+
+  const mock = (MOCK_FEEDS[scenarioId] ?? []).find((p: any) => p.id === postId);
+  if (!mock) return null;
+
+  return {
+    id: mock.id,
+    scenarioId: String(mock.scenarioId ?? scenarioId),
+    authorProfileId: String(mock.authorProfileId),
+    text: String(mock.text ?? ''),
+    createdAt: String(mock.createdAt),
+    imageUrl: mock.imageUrl ?? null,
+    replyCount: mock.replyCount ?? 0,
+    repostCount: mock.repostCount ?? 0,
+    likeCount: mock.likeCount ?? 0,
+    parentPostId: mock.parentPostId ?? undefined,
+  };
+}
+
+async function upsertPost(scenarioId: string, post: StoredPost) {
+  const stored = await readStoredPosts(scenarioId);
+  // remove any existing with same id, then put newest first.
+  const next = [post, ...stored.filter((p) => p.id !== post.id)];
+  await writeStoredPosts(scenarioId, next);
 }
 
 export default function CreatePostModal() {
-  const { scenarioId } = useLocalSearchParams<{ scenarioId: string }>();
+  const { scenarioId, postId } = useLocalSearchParams<{ scenarioId: string; postId?: string }>();
   const scheme = useColorScheme() ?? 'light';
   const colors = Colors[scheme];
 
   const { selectedProfileId, getProfileById } = useProfile();
   const sid = String(scenarioId ?? '');
-  const profileId = selectedProfileId(sid);
+  const editingPostId = postId ? String(postId) : '';
+  const isEdit = !!editingPostId;
+
+  const selectedId = selectedProfileId(sid);
+  const [authorProfileId, setAuthorProfileId] = useState<string | null>(selectedId);
 
   const profile = useMemo(() => {
-    if (!profileId) return null;
-    return getProfileById(sid, profileId);
-  }, [sid, profileId, getProfileById]);
+    if (!authorProfileId) return null;
+    return getProfileById(sid, authorProfileId);
+  }, [sid, authorProfileId, getProfileById]);
 
   const [text, setText] = useState('');
   const [date, setDate] = useState<Date>(new Date());
@@ -142,7 +194,35 @@ export default function CreatePostModal() {
   const [repostCount, setRepostCount] = useState('');
   const [likeCount, setLikeCount] = useState('');
 
-  const canPost = text.trim().length > 0 && !!profileId;
+  const [hydrated, setHydrated] = useState(false);
+
+  useEffect(() => {
+    if (!isEdit) {
+      // create mode: ensure author uses current selection
+      setAuthorProfileId((prev) => prev ?? selectedId ?? null);
+      return;
+    }
+    if (hydrated) return;
+
+    (async () => {
+      const found = await findPostById(sid, editingPostId);
+      if (!found) {
+        // If post can't be found, just close to avoid a broken modal.
+        router.back();
+        return;
+      }
+
+      setAuthorProfileId(found.authorProfileId);
+      setText(found.text ?? '');
+      setDate(new Date(found.createdAt));
+      setReplyCount(String(found.replyCount ?? 0));
+      setRepostCount(String(found.repostCount ?? 0));
+      setLikeCount(String(found.likeCount ?? 0));
+      setHydrated(true);
+    })();
+  }, [isEdit, hydrated, sid, editingPostId, selectedId]);
+
+  const canPost = text.trim().length > 0 && !!authorProfileId;
 
   const counts = useMemo(() => {
     const r1 = clampInt(Number(replyCount || 0), 0, 99000000);
@@ -153,24 +233,30 @@ export default function CreatePostModal() {
 
   const onPost = async () => {
     if (!canPost) return;
-    if (!profileId) {
+    if (!authorProfileId) {
       router.back();
       return;
     }
 
-    const post: StoredPost = {
-      id: makeId('po'),
+    const base: StoredPost = {
+      id: isEdit ? editingPostId : makeId('po'),
       scenarioId: sid,
-      authorProfileId: profileId,
+      authorProfileId,
       text: text.trim(),
       createdAt: date.toISOString(),
       imageUrl: null,
       replyCount: counts.reply,
       repostCount: counts.repost,
       likeCount: counts.like,
+      isEdited: isEdit ? true : undefined,
     };
 
-    await appendPost(sid, post);
+    if (isEdit) {
+      await upsertPost(sid, base);
+    } else {
+      await appendPost(sid, base);
+    }
+
     router.back();
   };
 
@@ -204,7 +290,9 @@ export default function CreatePostModal() {
                 },
               ]}
             >
-              <ThemedText style={{ color: '#fff', fontWeight: '800', fontSize: 15 }}>Post</ThemedText>
+              <ThemedText style={{ color: '#fff', fontWeight: '800', fontSize: 15 }}>
+                {isEdit ? 'Save' : 'Post'}
+              </ThemedText>
             </Pressable>
           </View>
 
@@ -217,16 +305,17 @@ export default function CreatePostModal() {
             {/* COMPOSER */}
             <View style={styles.composer}>
               <Pressable
-                onPress={() =>
+                onPress={() => {
+                  if (isEdit) return;
                   router.push(
                     {
                       pathname: '/modal/select-profile',
                       params: { scenarioId: sid },
                     } as any
-                  )
-                }
+                  );
+                }}
                 hitSlop={10}
-                style={({ pressed }) => [pressed && { opacity: 0.75 }]}
+                style={({ pressed }) => [pressed && { opacity: isEdit ? 1 : 0.75 }]}
               >
                 {profile ? (
                   <Image source={{ uri: profile.avatarUrl }} style={styles.avatar} />

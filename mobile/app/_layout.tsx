@@ -1,8 +1,9 @@
 import React, { useEffect } from 'react';
-import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
+import { ThemeProvider } from '@react-navigation/native';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { AuthProvider, useAuth } from '@/context/auth';
@@ -30,20 +31,22 @@ function AuthGate() {
     }
   }, [isReady, isLoggedIn, segments, router]);
 
-return <Stack screenOptions={{ headerShown: false }} />;
+  return <Stack screenOptions={{ headerShown: false }} />;
 }
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
 
   return (
-    <AuthProvider>
-      <ProfileProvider>
-        <ThemeProvider value={colorScheme === 'dark' ? NavDarkTheme : NavLightTheme}>
-          <Stack screenOptions={{ headerShown: false }} />
-          <StatusBar style="auto" />
-        </ThemeProvider>
-      </ProfileProvider>
-    </AuthProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <AuthProvider>
+        <ProfileProvider>
+          <ThemeProvider value={colorScheme === 'dark' ? NavDarkTheme : NavLightTheme}>
+            <AuthGate />
+            <StatusBar style="auto" />
+          </ThemeProvider>
+        </ProfileProvider>
+      </AuthProvider>
+    </GestureHandlerRootView>
   );
 }
