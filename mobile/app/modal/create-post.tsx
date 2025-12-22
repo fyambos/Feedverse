@@ -19,7 +19,6 @@ import { ThemedView } from '@/components/themed-view';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useProfile } from '@/context/profile';
-import { MOCK_PROFILES } from '@/mocks/profiles';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 
 function clampInt(n: number, min = 0, max = 99000000) {
@@ -126,14 +125,14 @@ export default function CreatePostModal() {
   const scheme = useColorScheme() ?? 'light';
   const colors = Colors[scheme];
 
-  const { selectedProfileId } = useProfile();
+  const { selectedProfileId, getProfileById } = useProfile();
   const sid = String(scenarioId ?? '');
   const profileId = selectedProfileId(sid);
 
   const profile = useMemo(() => {
     if (!profileId) return null;
-    return MOCK_PROFILES.find((p) => p.id === profileId) ?? null;
-  }, [profileId]);
+    return getProfileById(sid, profileId);
+  }, [sid, profileId, getProfileById]);
 
   const [text, setText] = useState('');
   const [date, setDate] = useState<Date>(new Date());
