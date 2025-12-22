@@ -1,5 +1,6 @@
 import React from 'react';
-import { Image, StyleSheet, View } from 'react-native';
+import { Image, StyleSheet, View, Pressable } from 'react-native';
+import { router, useLocalSearchParams } from 'expo-router';
 import { ThemedText } from '@/components/themed-text';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -23,6 +24,8 @@ type PostItem = {
   likeCount?: number;
   parentPostId?: string;
 };
+
+
 
 function formatRelativeTime(iso: string) {
   const diff = Date.now() - new Date(iso).getTime();
@@ -49,7 +52,6 @@ function formatCount(n: number) {
   if (!Number.isFinite(n)) return '0';
   const num = Math.max(0, Math.floor(n));
 
-  // Keep full numbers until 100M+ (per your rule)
   if (num >= 100_000_000) return String(num);
 
   if (num >= 1_000_000) {
@@ -68,12 +70,14 @@ function formatCount(n: number) {
 }
 
 export function Post({
+  scenarioId,
   profile,
   item,
   variant = 'feed',
   replyingTo,
   showActions = true,
 }: {
+  scenarioId?: string;
   profile: PostProfile;
   item: PostItem;
   variant?: 'feed' | 'detail' | 'reply';
@@ -84,8 +88,21 @@ export function Post({
   const colors = Colors[scheme];
   const isDetail = variant === 'detail';
   const isReply = variant === 'reply';
+  const { scenarioId: scenarioIdParam } = useLocalSearchParams<{ scenarioId: string }>();
+  const sid = String(scenarioId ?? scenarioIdParam ?? '');
+  const handleSlug = profile.handle;
 
-  const replyingToHandle = replyingTo ? replyingTo.replace('@', '') : '';
+  const openProfile = () => {
+ 
+    const path = `/(scenario)/${encodeURIComponent(sid)}/(tabs)/profile/${encodeURIComponent(
+      handleSlug
+    )}`;
+
+
+    router.push(path as any);
+  };
+
+  const replyingToHandle = replyingTo ? replyingTo : '';
 
   const replyCount = item.replyCount ?? 0;
   const repostCount = item.repostCount ?? 0;
@@ -97,36 +114,42 @@ export function Post({
   return (
     <View style={styles.wrap}>
       <View style={styles.headerRow}>
-        <Image
-          source={{ uri: profile.avatarUrl }}
-          style={[styles.avatar, isDetail && styles.avatarDetail]}
-        />
+        <Pressable onPress={openProfile} hitSlop={8}>
+          <Image
+            source={{ uri: profile.avatarUrl }}
+            style={[styles.avatar, isDetail && styles.avatarDetail]}
+          />
+        </Pressable>
 
         {isDetail ? (
-          <View style={styles.headerStack}>
-            <ThemedText type="defaultSemiBold" style={[styles.name, styles.nameDetail]}>
-              {profile.displayName}
-            </ThemedText>
-            <ThemedText style={[styles.handle, { color: colors.textSecondary }]}>
-              {profile.handle}
-            </ThemedText>
-          </View>
+          <Pressable onPress={openProfile} hitSlop={6}>
+            <View style={styles.headerStack}>
+              <ThemedText type="defaultSemiBold" style={[styles.name, styles.nameDetail]}>
+                {profile.displayName}
+              </ThemedText>
+              <ThemedText style={[styles.handle, { color: colors.textSecondary }]}>
+                {profile.handle}
+              </ThemedText>
+            </View>
+          </Pressable>
         ) : (
-          <View style={styles.headerInline}>
-            <ThemedText type="defaultSemiBold" style={styles.name} numberOfLines={1}>
-              {profile.displayName}
-            </ThemedText>
-            <ThemedText style={[styles.handleInline, { color: colors.textSecondary }]} numberOfLines={1}>
-              {profile.handle} · {formatRelativeTime(item.createdAt)}
-            </ThemedText>
-          </View>
+          <Pressable onPress={openProfile} hitSlop={6}>
+            <View style={styles.headerInline}>
+              <ThemedText type="defaultSemiBold" style={styles.name} numberOfLines={1}>
+                {profile.displayName}
+              </ThemedText>
+              <ThemedText style={[styles.handleInline, { color: colors.textSecondary }]} numberOfLines={1}>
+                {profile.handle} · {formatRelativeTime(item.createdAt)}
+              </ThemedText>
+            </View>
+          </Pressable>
         )}
       </View>
 
       {isReply && !!replyingToHandle && (
         <View style={styles.replyingRow}>
           <ThemedText style={[styles.replyingText, { color: colors.textSecondary }]}>
-            replying to <ThemedText type="link">@{replyingToHandle}</ThemedText>
+            replying to <ThemedText type="link">{replyingToHandle}</ThemedText>
           </ThemedText>
         </View>
       )}

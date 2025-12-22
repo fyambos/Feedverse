@@ -71,7 +71,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="post/[postId]"
         options={{
-          href: null,
+          href: null, // don't show as a tab item
           title: '',
           headerShown: true,
           headerLeft: () => (
@@ -83,6 +83,13 @@ export default function TabLayout() {
               />
             </Pressable>
           ),
+        }}
+      />
+      <Tabs.Screen
+        name="profile/[handle]"
+        options={{
+          href: null,          
+          headerShown: false, // hide the top bar
         }}
       />
     </Tabs>
