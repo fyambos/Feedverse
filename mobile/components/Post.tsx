@@ -164,7 +164,7 @@ export function Post({
 
             <Pressable onPress={openProfile} hitSlop={0} style={styles.inlinePress}>
               <ThemedText style={[styles.handle, { color: colors.textSecondary }]}>
-                {profile.handle}
+                @{profile.handle}
               </ThemedText>
             </Pressable>
           </View>
@@ -181,7 +181,7 @@ export function Post({
                 style={[styles.handleInline, { color: colors.textSecondary }]}
                 numberOfLines={1}
               >
-                {profile.handle} · {formatRelativeTime(item.createdAt)}
+                @{profile.handle} · {formatRelativeTime(item.createdAt)}
               </ThemedText>
             </Pressable>
           </View>
@@ -191,7 +191,7 @@ export function Post({
       {isReply && !!replyingToHandle && (
         <View style={styles.replyingRow}>
           <ThemedText style={[styles.replyingText, { color: colors.textSecondary }]}>
-            replying to <ThemedText type="link">{replyingToHandle}</ThemedText>
+            replying to <ThemedText type="link">@{replyingToHandle}</ThemedText>
           </ThemedText>
         </View>
       )}

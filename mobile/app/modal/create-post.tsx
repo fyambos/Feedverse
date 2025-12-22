@@ -180,6 +180,7 @@ export default function CreatePostModal() {
 
   const selectedId = selectedProfileId(sid);
   const [authorProfileId, setAuthorProfileId] = useState<string | null>(selectedId);
+  const [pickAuthorArmed, setPickAuthorArmed] = useState(false);
 
   const profile = useMemo(() => {
     if (!authorProfileId) return null;
@@ -221,6 +222,14 @@ export default function CreatePostModal() {
       setHydrated(true);
     })();
   }, [isEdit, hydrated, sid, editingPostId, selectedId]);
+
+  useEffect(() => {
+    if (!pickAuthorArmed) return;
+    if (!selectedId) return;
+
+    setAuthorProfileId(selectedId);
+    setPickAuthorArmed(false);
+  }, [pickAuthorArmed, selectedId]);
 
   const canPost = text.trim().length > 0 && !!authorProfileId;
 
@@ -306,7 +315,7 @@ export default function CreatePostModal() {
             <View style={styles.composer}>
               <Pressable
                 onPress={() => {
-                  if (isEdit) return;
+                  setPickAuthorArmed(true);
                   router.push(
                     {
                       pathname: '/modal/select-profile',
@@ -315,7 +324,7 @@ export default function CreatePostModal() {
                   );
                 }}
                 hitSlop={10}
-                style={({ pressed }) => [pressed && { opacity: isEdit ? 1 : 0.75 }]}
+                style={({ pressed }) => [pressed && { opacity: 0.75 }]}
               >
                 {profile ? (
                   <Image source={{ uri: profile.avatarUrl }} style={styles.avatar} />

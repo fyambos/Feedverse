@@ -141,18 +141,25 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
     return list.find((p) => normHandle(p.handle) === needle) ?? null;
   };
 
+  // Profiles the user can *select to play as* in a scenario:
+  // - any profile owned by the logged-in user
+  // - OR any profile marked public (even if owned by someone else)
   const getUserProfilesForScenario = (scenarioId: string) => {
-    if (!userId) return [];
-    return getAllProfilesForScenario(scenarioId).filter((p) => p.ownerUserId === userId);
+    const all = getAllProfilesForScenario(scenarioId);
+
+    // If not logged in yet, still allow browsing/selecting public profiles.
+    if (!userId) return all.filter((p) => !!p.isPublic);
+
+    return all.filter((p) => p.ownerUserId === userId || !!p.isPublic);
   };
 
   const selectedProfileId = (scenarioId: string) => {
     const list = getUserProfilesForScenario(scenarioId);
     if (list.length === 0) return null;
 
-    // last selected if valid, else first profile
+    // last selected if valid, else first selectable profile
     const saved = map[scenarioId];
-    const exists = saved && list.some((p: any) => p.id === saved);
+    const exists = saved && list.some((p: any) => String(p.id) === String(saved));
     return exists ? saved : list[0].id;
   };
 

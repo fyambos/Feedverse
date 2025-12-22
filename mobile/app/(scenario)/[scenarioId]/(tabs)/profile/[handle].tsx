@@ -261,7 +261,7 @@ export default function ProfileScreen() {
                   {profile.displayName}
                 </ThemedText>
                 <ThemedText style={[styles.handle, { color: colors.textSecondary }]}>
-                  {profile.handle}
+                  @{profile.handle}
                 </ThemedText>
 
                 {!!profile.bio && (
