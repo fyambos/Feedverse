@@ -9,8 +9,8 @@ import { ThemedText } from '@/components/themed-text';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { MOCK_FEEDS } from '@/mocks/feeds';
-import { MOCK_PROFILES } from '@/mocks/profiles';
 import { Post } from '@/components/Post';
+import { useProfile } from '@/context/profile';
 
 export default function PostScreen() {
   const { scenarioId, postId } = useLocalSearchParams<{ scenarioId: string; postId: string }>();
@@ -90,11 +90,6 @@ export default function PostScreen() {
     return result;
   }
 
-  const profileById = useMemo(() => {
-    const list = MOCK_PROFILES.filter((p) => p.scenarioId === sid);
-    return new Map(list.map((p) => [p.id, p]));
-  }, [sid]);
-
   if (!postsReady) {
     return (
       <ThemedView style={[styles.container, { backgroundColor: colors.background, padding: 16 }]}>
@@ -120,6 +115,8 @@ export default function PostScreen() {
 
   const data = [root, ...replies];
 
+  const { getProfileById } = useProfile();
+
   return (
     <ThemedView style={[styles.container, { backgroundColor: colors.background }]}>
       <FlatList
@@ -127,18 +124,20 @@ export default function PostScreen() {
         keyExtractor={(i: any) => String(i.id)}
         ItemSeparatorComponent={() => <View style={[styles.sep, { backgroundColor: colors.border }]} />}
         renderItem={({ item }) => {
-          const profile = profileById.get(item.authorProfileId);
+          const authorProfileId = item?.authorProfileId ? String(item.authorProfileId) : '';
+          const profile = authorProfileId ? getProfileById(sid, authorProfileId) : null;
           if (!profile) return null;
 
           const parent = item.parentPostId
             ? all.find((p) => String(p.id) === String(item.parentPostId))
             : null;
 
-          const parentProfile =
-            parent ? profileById.get(parent.authorProfileId) : null;
+          const parentAuthorProfileId = parent?.authorProfileId ? String(parent.authorProfileId) : '';
+          const parentProfile = parentAuthorProfileId ? getProfileById(sid, parentAuthorProfileId) : null;
 
           return (
             <Post
+              scenarioId={sid}
               profile={profile}
               item={item}
               variant={String(item.id) === String(root.id) ? 'detail' : 'reply'}

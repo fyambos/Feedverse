@@ -146,6 +146,7 @@ export function Post({
   return (
     <View style={styles.wrap}>
       <View style={styles.headerRow}>
+        {/* Precise target: ONLY the avatar */}
         <Pressable onPress={openProfile} hitSlop={0} style={styles.avatarPress}>
           <Image
             source={{ uri: profile.avatarUrl }}

@@ -17,11 +17,10 @@ import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { MOCK_PROFILES } from '@/mocks/profiles';
 import { MOCK_FEEDS } from '@/mocks/feeds';
 import { Post } from '@/components/Post';
 import { useAuth } from '@/context/auth';
-
+import { useProfile } from '@/context/profile';
 
 function formatJoined(iso: string) {
   const d = new Date(iso);
@@ -36,21 +35,20 @@ export default function ProfileScreen() {
   const scheme = useColorScheme() ?? 'light';
   const colors = Colors[scheme];
   const { userId } = useAuth();
+  const { getProfileById, getProfileByHandle } = useProfile();
 
   const sid = decodeURIComponent(String(scenarioId ?? ''));
   const wanted = decodeURIComponent(String(handle ?? ''));
+
+  // ✅ IMPORTANT: use ProfileContext (mocks + persisted edits)
   const profile = useMemo(() => {
-    return (
-      MOCK_PROFILES.find(
-        (p: any) => p.scenarioId === sid && String(p.handle) === String(wanted)
-      ) ?? null
-    );
-  }, [sid, wanted]);
+    const p = getProfileByHandle?.(sid, wanted);
+    return p ?? null;
+  }, [sid, wanted, getProfileByHandle]);
 
   const isMe = !!profile && profile.ownerUserId === userId;
 
   const [fakeHeaderVariant, setFakeHeaderVariant] = useState(0);
-
   const [persistedPosts, setPersistedPosts] = useState<any[]>([]);
 
   useEffect(() => {
@@ -58,8 +56,6 @@ export default function ProfileScreen() {
 
     const load = async () => {
       try {
-        // We try a couple of common shapes/keys so this screen keeps working
-        // even if the feed persistence key changes later.
         const candidates: any[] = [];
 
         // 1) Per-scenario key: feedverse.posts.<scenarioId>
@@ -91,7 +87,6 @@ export default function ProfileScreen() {
           } catch {}
         }
 
-        // de-dupe by id
         const byId = new Map<string, any>();
         for (const p of candidates) {
           if (p && p.id) byId.set(String(p.id), p);
@@ -133,24 +128,18 @@ export default function ProfileScreen() {
   const myPosts = useMemo(() => {
     if (!profile) return [];
     return all
-      .filter((p: any) => p.authorProfileId === profile.id)
+      .filter((p: any) => String(p.authorProfileId) === String(profile.id))
       .filter((p: any) => !p.parentPostId)
       .sort((a: any, b: any) => b.createdAt.localeCompare(a.createdAt));
   }, [all, profile]);
 
-  const profileById = useMemo(() => {
-    const list = MOCK_PROFILES.filter((p: any) => p.scenarioId === sid);
-    return new Map(list.map((p: any) => [p.id, p]));
-  }, [sid]);
-
   if (!profile) {
-    const wantedAt = `@${wanted}`;
     return (
       <ThemedView style={[styles.screen, { backgroundColor: colors.background }]}>
         <SafeAreaView edges={['top']} style={{ flex: 1 }}>
           <View style={{ padding: 16 }}>
             <ThemedText style={{ color: colors.textSecondary }}>
-              Profile not found for {wantedAt} in scenario {sid}.
+              Profile not found for {wanted} in scenario {sid}.
             </ThemedText>
           </View>
         </SafeAreaView>
@@ -163,7 +152,7 @@ export default function ProfileScreen() {
       <SafeAreaView edges={['top']} style={{ flex: 1 }}>
         <FlatList
           data={myPosts}
-          keyExtractor={(p: any) => p.id}
+          keyExtractor={(p: any) => String(p.id)}
           ItemSeparatorComponent={() => (
             <View
               style={{
@@ -177,9 +166,7 @@ export default function ProfileScreen() {
             <View>
               <View style={styles.headerMediaWrap}>
                 <Pressable
-                  onPress={() => {
-                    setFakeHeaderVariant((v) => v + 1);
-                  }}
+                  onPress={() => setFakeHeaderVariant((v) => v + 1)}
                   style={StyleSheet.absoluteFill}
                 >
                   <Image source={{ uri: headerUri }} style={styles.headerMedia} />
@@ -196,14 +183,12 @@ export default function ProfileScreen() {
                     },
                   ]}
                 >
-                <MaterialIcons name="keyboard-arrow-left" size={24} color="#fff" />
+                  <MaterialIcons name="keyboard-arrow-left" size={24} color="#fff" />
                 </Pressable>
               </View>
 
               <View style={styles.avatarRow}>
-                <View
-                  style={[styles.avatarOuter, { backgroundColor: colors.background }]}
-                >
+                <View style={[styles.avatarOuter, { backgroundColor: colors.background }]}>
                   <Pressable
                     onPress={() => {
                       Alert.alert('Not yet', 'Avatar picker will be implemented later.');
@@ -228,7 +213,16 @@ export default function ProfileScreen() {
 
                 {isMe ? (
                   <Pressable
-                    onPress={() => Alert.alert('Not yet', 'Edit profile modal later.')}
+                    onPress={() => {
+                      router.push({
+                        pathname: '/modal/create-profile',
+                        params: {
+                          scenarioId: sid,
+                          mode: 'edit',
+                          profileId: profile.id,
+                        },
+                      } as any);
+                    }}
                     style={({ pressed }) => [
                       styles.ghostBtn,
                       {
@@ -271,21 +265,15 @@ export default function ProfileScreen() {
                 </ThemedText>
 
                 {!!profile.bio && (
-                  <ThemedText style={[styles.bio, { color: colors.text }]}> 
+                  <ThemedText style={[styles.bio, { color: colors.text }]}>
                     {profile.bio}
                   </ThemedText>
                 )}
 
                 <View style={styles.metaRow}>
                   <View style={styles.metaItem}>
-                    <Ionicons
-                      name="location-outline"
-                      size={14}
-                      color={colors.textSecondary}
-                    />
-                    <ThemedText
-                      style={[styles.metaText, { color: colors.textSecondary }]}
-                    >
+                    <Ionicons name="location-outline" size={14} color={colors.textSecondary} />
+                    <ThemedText style={[styles.metaText, { color: colors.textSecondary }]}>
                       {sid === 'demo-royalty'
                         ? 'Canadia'
                         : sid === 'demo-mafia'
@@ -295,27 +283,17 @@ export default function ProfileScreen() {
                   </View>
 
                   <View style={styles.metaItem}>
-                    <Ionicons
-                      name="link-outline"
-                      size={14}
-                      color={colors.textSecondary}
-                    />
+                    <Ionicons name="link-outline" size={14} color={colors.textSecondary} />
                     <ThemedText style={[styles.metaText, { color: colors.tint }]}>
-                      {profile.handle.replace('@', '')}.feedverse
+                      {profile.handle}.feedverse
                     </ThemedText>
                   </View>
                 </View>
 
                 <View style={styles.metaRow}>
                   <View style={styles.metaItem}>
-                    <Ionicons
-                      name="calendar-outline"
-                      size={14}
-                      color={colors.textSecondary}
-                    />
-                    <ThemedText
-                      style={[styles.metaText, { color: colors.textSecondary }]}
-                    >
+                    <Ionicons name="calendar-outline" size={14} color={colors.textSecondary} />
+                    <ThemedText style={[styles.metaText, { color: colors.textSecondary }]}>
                       {formatJoined(profile.id)}
                     </ThemedText>
                   </View>
@@ -324,68 +302,50 @@ export default function ProfileScreen() {
                 <View style={styles.followsRow}>
                   <ThemedText style={{ color: colors.text }}>
                     <ThemedText type="defaultSemiBold">128</ThemedText>{' '}
-                    <ThemedText style={{ color: colors.textSecondary }}>
-                      Following
-                    </ThemedText>
+                    <ThemedText style={{ color: colors.textSecondary }}>Following</ThemedText>
                   </ThemedText>
 
                   <ThemedText style={{ color: colors.text }}>
                     <ThemedText type="defaultSemiBold">4,203</ThemedText>{' '}
-                    <ThemedText style={{ color: colors.textSecondary }}>
-                      Followers
-                    </ThemedText>
+                    <ThemedText style={{ color: colors.textSecondary }}>Followers</ThemedText>
                   </ThemedText>
                 </View>
               </View>
 
               <View style={[styles.tabsBar, { borderBottomColor: colors.border }]}>
-                <Pressable
-                  style={({ pressed }) => [styles.tab, pressed && { opacity: 0.7 }]}
-                >
+                <Pressable style={({ pressed }) => [styles.tab, pressed && { opacity: 0.7 }]}>
                   <ThemedText type="defaultSemiBold" style={{ color: colors.text }}>
                     Posts
                   </ThemedText>
-                  <View
-                    style={[styles.tabUnderline, { backgroundColor: colors.tint }]}
-                  />
+                  <View style={[styles.tabUnderline, { backgroundColor: colors.tint }]} />
                 </Pressable>
 
-                <Pressable
-                  style={({ pressed }) => [styles.tab, pressed && { opacity: 0.7 }]}
-                >
-                  <ThemedText style={{ color: colors.textSecondary }}>
-                    Replies
-                  </ThemedText>
+                <Pressable style={({ pressed }) => [styles.tab, pressed && { opacity: 0.7 }]}>
+                  <ThemedText style={{ color: colors.textSecondary }}>Replies</ThemedText>
                 </Pressable>
 
-                <Pressable
-                  style={({ pressed }) => [styles.tab, pressed && { opacity: 0.7 }]}
-                >
+                <Pressable style={({ pressed }) => [styles.tab, pressed && { opacity: 0.7 }]}>
                   <ThemedText style={{ color: colors.textSecondary }}>Media</ThemedText>
                 </Pressable>
 
-                <Pressable
-                  style={({ pressed }) => [styles.tab, pressed && { opacity: 0.7 }]}
-                >
+                <Pressable style={({ pressed }) => [styles.tab, pressed && { opacity: 0.7 }]}>
                   <ThemedText style={{ color: colors.textSecondary }}>Likes</ThemedText>
                 </Pressable>
               </View>
             </View>
           )}
           renderItem={({ item }: any) => {
-            const author = profileById.get(item.authorProfileId);
+            const author = getProfileById?.(sid, String(item.authorProfileId));
             if (!author) return null;
 
             return (
               <Pressable
-                onPress={() =>
-                  router.push(`/(scenario)/${sid}/(tabs)/post/${item.id}` as any)
-                }
+                onPress={() => router.push(`/(scenario)/${sid}/(tabs)/post/${item.id}` as any)}
                 style={({ pressed }) => [
                   { backgroundColor: pressed ? colors.pressed : colors.background },
                 ]}
               >
-                <Post profile={author} item={item} variant="feed" showActions />
+                <Post scenarioId={sid} profile={author} item={item} variant="feed" showActions />
               </Pressable>
             );
           }}
@@ -403,7 +363,6 @@ export default function ProfileScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1 },
-
 
   headerMediaWrap: {
     height: 140,
@@ -433,17 +392,6 @@ const styles = StyleSheet.create({
   headerMedia: {
     width: '100%',
     height: '100%',
-  },
-  headerOverlay: {
-    position: 'absolute',
-    left: 12,
-    right: 12,
-    bottom: 10,
-  },
-  headerOverlayText: {
-    fontSize: 12,
-    fontWeight: '700',
-    opacity: 0.85,
   },
 
   avatarRow: {

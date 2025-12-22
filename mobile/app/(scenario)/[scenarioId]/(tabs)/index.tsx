@@ -5,8 +5,8 @@ import { ThemedView } from '@/components/themed-view';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { MOCK_FEEDS } from '@/mocks/feeds';
-import { MOCK_PROFILES } from '@/mocks/profiles';
 import { Post } from '@/components/Post';
+import { useProfile } from '@/context/profile';
 import { Ionicons } from '@expo/vector-icons';
 import { Animated } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -21,6 +21,7 @@ export default function HomeScreen() {
   const [postsReady, setPostsReady] = useState(false);
 
   const sid = String(scenarioId ?? '');
+  const { getProfileById } = useProfile();
   const STORAGE_KEY = `feedverse.posts.${sid}`;
 
   const loadStoredPosts = useCallback(async () => {
@@ -62,10 +63,6 @@ export default function HomeScreen() {
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }, [sid, storedPosts]);
 
-  const profileById = useMemo(() => {
-    const list = MOCK_PROFILES.filter((p) => p.scenarioId === sid);
-    return new Map(list.map((p) => [p.id, p]));
-  }, [sid]);
   const scale = React.useRef(new Animated.Value(1)).current;
   const navLock = React.useRef(false);
 
@@ -111,7 +108,7 @@ export default function HomeScreen() {
           <View style={[styles.separator, { backgroundColor: colors.border }]} />
         )}
         renderItem={({ item }) => {
-          const profile = profileById.get(item.authorProfileId);
+          const profile = getProfileById(sid, item.authorProfileId);
           if (!profile) return null;
 
           return (
@@ -121,6 +118,7 @@ export default function HomeScreen() {
               }
             >
               <Post
+                scenarioId={sid}
                 profile={profile}
                 item={item as any}
                 variant="feed"

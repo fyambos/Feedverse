@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
@@ -15,13 +15,15 @@ import { ThemedText } from '@/components/themed-text';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { useProfile } from '@/context/profile';
+import { useAuth } from '@/context/auth';
 
 export default function CreateProfileModal() {
-  const { scenarioId } = useLocalSearchParams<{ scenarioId: string }>();
+  const { scenarioId, profileId } = useLocalSearchParams<{ scenarioId: string; profileId?: string }>();
   const scheme = useColorScheme() ?? 'light';
   const colors = Colors[scheme];
 
-  const { createProfile } = useProfile();
+  const { createProfile, updateProfile, getUserProfilesForScenario } = useProfile();
+  const { userId } = useAuth();
 
   const DEFAULT_AVATAR = 'https://i.pravatar.cc/150?img=14';
   const [avatarUrl, setAvatarUrl] = useState(DEFAULT_AVATAR);
@@ -30,21 +32,48 @@ export default function CreateProfileModal() {
   const [handle, setHandle] = useState('');
   const [bio, setBio] = useState('');
 
-  const canSubmit = name.trim() && handle.trim();
+  const sid = String(scenarioId ?? '');
+  const isEdit = !!profileId;
+
+  useEffect(() => {
+    if (!isEdit) return;
+    const list = getUserProfilesForScenario(sid);
+    const existing = list.find((p: any) => p.id === profileId);
+    if (!existing) return;
+
+    setAvatarUrl(existing.avatarUrl || DEFAULT_AVATAR);
+    setName(existing.displayName || '');
+    setHandle(existing.handle || '');
+    setBio(existing.bio || '');
+  }, [isEdit, profileId, sid, getUserProfilesForScenario]);
+
+  const canSubmit = name.trim().length > 0 && handle.trim().length > 0;
 
   const pickTempAvatar = () => {
     const rand = Math.floor(Math.random() * 70) + 1;
     setAvatarUrl(`https://i.pravatar.cc/150?img=${rand}`);
   };
 
-  const onCreate = async () => {
-    await createProfile({
-      scenarioId: String(scenarioId),
+  const onSave = async () => {
+    const payload = {
+      id: isEdit && profileId ? String(profileId) : undefined,
+      scenarioId: sid,
+      ownerUserId: String(userId ?? 'u14'),
       displayName: name.trim(),
       handle: handle.trim(),
       avatarUrl,
       bio: bio.trim() || undefined,
-    });
+    };
+
+    if (isEdit) {
+      if (!payload.id) return;
+      await updateProfile(payload as any);
+    } else {
+      const { id, ...createPayload } = payload;
+      await createProfile(createPayload as any);
+    }
+
+    console.log('[CreateProfileModal] saved', { isEdit, payload });
     router.back();
   };
 
@@ -56,7 +85,7 @@ export default function CreateProfileModal() {
       >
         <View style={[styles.header, { borderBottomColor: colors.border }]}>
           <ThemedText type="defaultSemiBold" style={{ fontSize: 18 }}>
-            Create profile
+            {isEdit ? 'Edit profile' : 'Create profile'}
           </ThemedText>
 
           <Pressable onPress={() => router.back()} hitSlop={12}>
@@ -97,11 +126,10 @@ export default function CreateProfileModal() {
           />
 
           <Input
-            label="Username"
+            label="Handle"
             value={handle}
             onChangeText={setHandle}
             colors={colors}
-            prefix="@"
           />
 
           <Input
@@ -114,7 +142,7 @@ export default function CreateProfileModal() {
 
           <Pressable
             disabled={!canSubmit}
-            onPress={onCreate}
+            onPress={onSave}
             style={({ pressed }) => [
               styles.primaryBtn,
               {
@@ -124,7 +152,7 @@ export default function CreateProfileModal() {
             ]}
           >
             <ThemedText style={{ color: colors.background, fontWeight: '700' }}>
-              Create
+              {isEdit ? 'Save' : 'Create'}
             </ThemedText>
           </Pressable>
         </View>
@@ -139,7 +167,6 @@ function Input({
   onChangeText,
   colors,
   multiline,
-  prefix,
 }: any) {
   return (
     <View style={[styles.inputWrap, { borderColor: colors.border }]}>
@@ -147,9 +174,6 @@ function Input({
         {label}
       </ThemedText>
       <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-        {prefix && (
-          <ThemedText style={{ color: colors.textSecondary }}>{prefix}</ThemedText>
-        )}
         <TextInput
           value={value}
           onChangeText={onChangeText}
