@@ -12,10 +12,65 @@ export type Profile = {
   avatarUrl: string;
   bio?: string;
   isPublic?: boolean;
+  joinedDate?: string; // ISO string
+  location?: string;
+  link?: string;
+  followersCount?: number;
+  // alias used by some screens/modals
+  followerCount?: number;
+  followingCount?: number;
+  headerUrl?: string;
 };
 
 function normHandle(h: string) {
   return String(h ?? '').trim().toLowerCase();
+}
+
+function normalizeCounts(p: any): { followersCount: number; followingCount: number } {
+  const followersRaw =
+    typeof p?.followersCount === 'number'
+      ? p.followersCount
+      : typeof p?.followerCount === 'number'
+        ? p.followerCount
+        : 0;
+
+  const followingRaw = typeof p?.followingCount === 'number' ? p.followingCount : 0;
+
+  const clamp = (n: number) => {
+    if (!Number.isFinite(n)) return 0;
+    const x = Math.max(0, Math.floor(n));
+    // cap at 99 billions
+    return Math.min(x, 99_000_000_000);
+  };
+
+  return {
+    followersCount: clamp(followersRaw),
+    followingCount: clamp(followingRaw),
+  };
+}
+
+function normalizeProfile(p: any): Profile {
+  const counts = normalizeCounts(p);
+  const joined = typeof p?.joinedDate === 'string' && p.joinedDate ? p.joinedDate : undefined;
+  return {
+    ...p,
+    id: String(p?.id ?? ''),
+    scenarioId: String(p?.scenarioId ?? ''),
+    ownerUserId: String(p?.ownerUserId ?? ''),
+    displayName: String(p?.displayName ?? ''),
+    handle: String(p?.handle ?? ''),
+    avatarUrl: String(p?.avatarUrl ?? ''),
+    bio: typeof p?.bio === 'string' ? p.bio : undefined,
+    isPublic: !!p?.isPublic,
+    joinedDate: joined,
+    location: typeof p?.location === 'string' ? p.location : undefined,
+    link: typeof p?.link === 'string' ? p.link : undefined,
+    headerUrl: typeof p?.headerUrl === 'string' ? p.headerUrl : undefined,
+    followersCount: counts.followersCount,
+    followingCount: counts.followingCount,
+    // keep alias in sync for any older screens
+    followerCount: counts.followersCount,
+  };
 }
 
 type ProfileSelectionMap = Record<string, string>; 
@@ -32,6 +87,13 @@ type ProfileContextState = {
     avatarUrl?: string;
     bio?: string;
     isPublic?: boolean;
+    joinedDate?: string;
+    location?: string;
+    link?: string;
+    followersCount?: number;
+    followerCount?: number;
+    followingCount?: number;
+    headerUrl?: string;
   }) => Promise<void>;
   setSelectedProfileId: (scenarioId: string, profileId: string) => Promise<void>;
   getUserProfilesForScenario: (scenarioId: string) => any[];
@@ -42,6 +104,13 @@ type ProfileContextState = {
     avatarUrl?: string;
     bio?: string;
     isPublic?: boolean;
+    joinedDate?: string;
+    location?: string;
+    link?: string;
+    followersCount?: number;
+    followerCount?: number;
+    followingCount?: number;
+    headerUrl?: string;
   }) => Promise<void>;
   getProfileById: (scenarioId: string, profileId: string) => Profile | null;
   getProfileByHandle: (scenarioId: string, handle: string) => Profile | null;
@@ -95,10 +164,10 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
   };
 
   const getAllProfilesForScenario = (scenarioId: string) => {
-    const mock = MOCK_PROFILES.filter((p) => p.scenarioId === scenarioId) as Profile[];
+    const mock = MOCK_PROFILES.filter((p) => p.scenarioId === scenarioId).map(normalizeProfile) as Profile[];
 
     // Local overrides/creates are stored in `created`. They may include edits for mock profiles.
-    const local = created.filter((p) => p.scenarioId === scenarioId) as Profile[];
+    const local = created.filter((p) => p.scenarioId === scenarioId).map(normalizeProfile) as Profile[];
 
     // De-dupe by id, preferring local overrides over mock entries.
     const byId = new Map<string, Profile>();
@@ -175,6 +244,13 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
     avatarUrl?: string;
     bio?: string;
     isPublic?: boolean;
+    joinedDate?: string;
+    location?: string;
+    link?: string;
+    followersCount?: number;
+    followerCount?: number;
+    followingCount?: number;
+    headerUrl?: string;
   }) => {
     if (!userId) return;
 
@@ -203,6 +279,26 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
         `https://i.pravatar.cc/150?u=${Date.now()}`,
       bio: data.bio ?? (existing as any)?.bio,
       isPublic: data.isPublic ?? (existing as any)?.isPublic ?? false,
+
+      joinedDate: data.joinedDate ?? (existing as any)?.joinedDate,
+      location: data.location ?? (existing as any)?.location,
+      link: data.link ?? (existing as any)?.link,
+      ...(data.followersCount == null && (data as any).followerCount == null && data.followingCount == null
+        ? normalizeCounts(existing)
+        : normalizeCounts({
+            followersCount: data.followersCount,
+            followerCount: (data as any).followerCount,
+            followingCount: data.followingCount,
+          })),
+      followerCount:
+        (data.followersCount == null && (data as any).followerCount == null && data.followingCount == null
+          ? normalizeCounts(existing).followersCount
+          : normalizeCounts({
+              followersCount: data.followersCount,
+              followerCount: (data as any).followerCount,
+              followingCount: data.followingCount,
+            }).followersCount),
+      headerUrl: data.headerUrl ?? (existing as any)?.headerUrl,
     };
 
     // Upsert into local created storage.
@@ -230,6 +326,13 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
     avatarUrl,
     bio,
     isPublic,
+    joinedDate,
+    location,
+    link,
+    followersCount,
+    followerCount,
+    followingCount,
+    headerUrl,
   }: {
     scenarioId: string;
     displayName: string;
@@ -237,6 +340,13 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
     avatarUrl?: string;
     bio?: string;
     isPublic?: boolean;
+    joinedDate?: string;
+    location?: string;
+    link?: string;
+    followersCount?: number;
+    followerCount?: number;
+    followingCount?: number;
+    headerUrl?: string;
   }) => {
   if (!userId) return;
 
@@ -249,6 +359,13 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
     avatarUrl: avatarUrl ?? `https://i.pravatar.cc/150?u=${Date.now()}`,
     bio,
     isPublic: isPublic ?? false,
+
+    joinedDate: joinedDate ?? new Date().toISOString(),
+    location,
+    link,
+    ...normalizeCounts({ followersCount, followerCount, followingCount }),
+    followerCount: normalizeCounts({ followersCount, followerCount, followingCount }).followersCount,
+    headerUrl,
   };
 
   const next = [profile, ...created];

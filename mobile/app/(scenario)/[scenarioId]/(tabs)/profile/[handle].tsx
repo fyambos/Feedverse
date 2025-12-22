@@ -25,6 +25,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
 import type { SwipeableMethods } from 'react-native-gesture-handler/ReanimatedSwipeable';
 
+
 function formatJoined(iso: string) {
   const d = new Date(iso);
   if (isNaN(d.getTime())) return 'Joined';
@@ -33,21 +34,66 @@ function formatJoined(iso: string) {
   return `Joined ${month} ${year}`;
 }
 
+function formatCount(n: number) {
+  const v = Math.max(0, Math.floor((n as any) || 0));
+
+  // cap display only above 99B
+  if (v > 99_000_000_000) return '99B+';
+
+  if (v < 1000) return String(v);
+
+  // thousands
+  if (v < 100_000) {
+    // 1K .. 99.9K
+    const k = v / 1000;
+    const str = k.toFixed(1).replace(/\.0$/, '');
+    return `${str}K`;
+  }
+
+  if (v < 1_000_000) {
+    // 100K .. 999K
+    return `${Math.floor(v / 1000)}K`;
+  }
+
+  // millions
+  if (v < 10_000_000) {
+    // 1M .. 9.9M
+    const m = v / 1_000_000;
+    const str = m.toFixed(1).replace(/\.0$/, '');
+    return `${str}M`;
+  }
+
+  if (v < 1_000_000_000) {
+    // 10M .. 999M
+    return `${Math.floor(v / 1_000_000)}M`;
+  }
+
+  // billions
+  if (v < 10_000_000_000) {
+    // 1B .. 9.9B
+    const b = v / 1_000_000_000;
+    const str = b.toFixed(1).replace(/\.0$/, '');
+    return `${str}B`;
+  }
+
+  // 10B .. 99B
+  return `${Math.floor(v / 1_000_000_000)}B`;
+}
+
 function SwipeActions({
   dragX,
   colors,
   onEdit,
   onDelete,
 }: {
-  dragX: any; // SharedValue<number>
+  dragX: any;
   colors: any;
   onEdit: () => void;
   onDelete: () => void;
 }) {
-  const ACTIONS_WIDTH = 120; // enough for 2 circular buttons + gap + padding
+  const ACTIONS_WIDTH = 120; 
 
   const animStyle = useAnimatedStyle(() => {
-    // dragX is negative when swiping left
     const tx = interpolate(dragX.value, [-ACTIONS_WIDTH, 0], [0, ACTIONS_WIDTH]);
     return { transform: [{ translateX: tx }] };
   });
@@ -417,18 +463,22 @@ export default function ProfileScreen() {
                     <View style={styles.metaItem}>
                       <Ionicons name="location-outline" size={14} color={colors.textSecondary} />
                       <ThemedText style={[styles.metaText, { color: colors.textSecondary }]}>
-                        {sid === 'demo-royalty'
-                          ? 'Canadia'
-                          : sid === 'demo-mafia'
-                          ? 'somewhere dangerous'
-                          : 'campus'}
+                        {profile.location ?? ''}
                       </ThemedText>
                     </View>
 
                     <View style={styles.metaItem}>
                       <Ionicons name="link-outline" size={14} color={colors.textSecondary} />
                       <ThemedText style={[styles.metaText, { color: colors.tint }]}>
-                        {profile.handle}.feedverse
+                        {profile.link ? (
+                          <ThemedText style={[styles.metaText, { color: colors.tint }]}>
+                            {profile.link.replace(/^https?:\/\//, '')}
+                          </ThemedText>
+                        ) : (
+                          <ThemedText style={[styles.metaText, { color: colors.textSecondary }]}>
+                            —
+                          </ThemedText>
+                        )}
                       </ThemedText>
                     </View>
                   </View>
@@ -437,19 +487,23 @@ export default function ProfileScreen() {
                     <View style={styles.metaItem}>
                       <Ionicons name="calendar-outline" size={14} color={colors.textSecondary} />
                       <ThemedText style={[styles.metaText, { color: colors.textSecondary }]}>
-                        {formatJoined(profile.id)}
+                        {profile.joinedDate ? formatJoined(profile.joinedDate) : 'Joined'}
                       </ThemedText>
                     </View>
                   </View>
 
                   <View style={styles.followsRow}>
                     <ThemedText style={{ color: colors.text }}>
-                      <ThemedText type="defaultSemiBold">128</ThemedText>{' '}
+                      <ThemedText type="defaultSemiBold">
+                        {formatCount(profile.followingCount ?? 0)}
+                      </ThemedText>{' '}
                       <ThemedText style={{ color: colors.textSecondary }}>Following</ThemedText>
                     </ThemedText>
 
                     <ThemedText style={{ color: colors.text }}>
-                      <ThemedText type="defaultSemiBold">4,203</ThemedText>{' '}
+                      <ThemedText type="defaultSemiBold">
+                        {formatCount(profile.followersCount ?? 0)}
+                      </ThemedText>{' '}
                       <ThemedText style={{ color: colors.textSecondary }}>Followers</ThemedText>
                     </ThemedText>
                   </View>
