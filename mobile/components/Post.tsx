@@ -1,12 +1,13 @@
 import React from 'react';
-import { Image, StyleSheet, View, Pressable } from 'react-native';
+import { Image, Pressable, StyleSheet, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import SimpleLineIcons from '@expo/vector-icons/SimpleLineIcons';
+
 import { ThemedText } from '@/components/themed-text';
+import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Ionicons } from '@expo/vector-icons';
-import { IconSymbol } from '@/components/ui/icon-symbol';
-import SimpleLineIcons from '@expo/vector-icons/SimpleLineIcons';
 
 type PostProfile = {
   displayName: string;
@@ -25,17 +26,46 @@ type PostItem = {
   parentPostId?: string;
 };
 
-
-
 function formatRelativeTime(iso: string) {
-  const diff = Date.now() - new Date(iso).getTime();
+  const d = new Date(iso);
+  const diff = Date.now() - d.getTime();
+
+  // Future / invalid dates: fall back to absolute.
+  if (!Number.isFinite(diff) || diff < 0) {
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mm = String(d.getMinutes()).padStart(2, '0');
+    const abs = d.toLocaleDateString(undefined, {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
+    return `${abs} · ${hh}:${mm}`;
+  }
+
   const s = Math.floor(diff / 1000);
   if (s < 60) return `${s}s`;
+
   const m = Math.floor(s / 60);
   if (m < 60) return `${m}m`;
+
   const h = Math.floor(m / 60);
   if (h < 24) return `${h}h`;
-  return `${Math.floor(h / 24)}d`;
+
+  const days = Math.floor(h / 24);
+
+  if (days <= 7) return `${days}d`;
+
+  const now = new Date();
+  const sameYear = now.getFullYear() === d.getFullYear();
+  const datePart = d.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    ...(sameYear ? {} : { year: 'numeric' }),
+  });
+
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  return `${datePart} · ${hh}:${mm}`;
 }
 
 function formatFullDate(iso: string) {
@@ -88,16 +118,17 @@ export function Post({
   const colors = Colors[scheme];
   const isDetail = variant === 'detail';
   const isReply = variant === 'reply';
+
   const { scenarioId: scenarioIdParam } = useLocalSearchParams<{ scenarioId: string }>();
   const sid = String(scenarioId ?? scenarioIdParam ?? '');
   const handleSlug = profile.handle;
 
   const openProfile = () => {
- 
+    if (!sid || !handleSlug) return;
+
     const path = `/(scenario)/${encodeURIComponent(sid)}/(tabs)/profile/${encodeURIComponent(
       handleSlug
     )}`;
-
 
     router.push(path as any);
   };
@@ -109,12 +140,13 @@ export function Post({
   const likeCount = item.likeCount ?? 0;
   const hasDetailCounts = isDetail && (repostCount > 0 || likeCount > 0);
 
-  const showActionCounts = !isDetail; // show counts in feed/reply, hide in detail
+  // show counts in feed/reply, hide in detail
+  const showActionCounts = !isDetail;
 
   return (
     <View style={styles.wrap}>
       <View style={styles.headerRow}>
-        <Pressable onPress={openProfile} hitSlop={8}>
+        <Pressable onPress={openProfile} hitSlop={0} style={styles.avatarPress}>
           <Image
             source={{ uri: profile.avatarUrl }}
             style={[styles.avatar, isDetail && styles.avatarDetail]}
@@ -122,27 +154,36 @@ export function Post({
         </Pressable>
 
         {isDetail ? (
-          <Pressable onPress={openProfile} hitSlop={6}>
-            <View style={styles.headerStack}>
+          <View style={styles.headerStack}>
+            <Pressable onPress={openProfile} hitSlop={0} style={styles.inlinePress}>
               <ThemedText type="defaultSemiBold" style={[styles.name, styles.nameDetail]}>
                 {profile.displayName}
               </ThemedText>
+            </Pressable>
+
+            <Pressable onPress={openProfile} hitSlop={0} style={styles.inlinePress}>
               <ThemedText style={[styles.handle, { color: colors.textSecondary }]}>
                 {profile.handle}
               </ThemedText>
-            </View>
-          </Pressable>
+            </Pressable>
+          </View>
         ) : (
-          <Pressable onPress={openProfile} hitSlop={6}>
-            <View style={styles.headerInline}>
+          <View style={styles.headerInline}>
+            <Pressable onPress={openProfile} hitSlop={0} style={styles.inlinePress}>
               <ThemedText type="defaultSemiBold" style={styles.name} numberOfLines={1}>
                 {profile.displayName}
               </ThemedText>
-              <ThemedText style={[styles.handleInline, { color: colors.textSecondary }]} numberOfLines={1}>
+            </Pressable>
+
+            <Pressable onPress={openProfile} hitSlop={0} style={styles.inlinePress}>
+              <ThemedText
+                style={[styles.handleInline, { color: colors.textSecondary }]}
+                numberOfLines={1}
+              >
                 {profile.handle} · {formatRelativeTime(item.createdAt)}
               </ThemedText>
-            </View>
-          </Pressable>
+            </Pressable>
+          </View>
         )}
       </View>
 
@@ -155,9 +196,7 @@ export function Post({
       )}
 
       <View style={isDetail ? styles.fullWidth : styles.indented}>
-        <ThemedText style={[styles.text, isDetail && styles.textDetail]}>
-          {item.text}
-        </ThemedText>
+        <ThemedText style={[styles.text, isDetail && styles.textDetail]}>{item.text}</ThemedText>
 
         {!!item.imageUrl && (
           <Image
@@ -279,6 +318,10 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 
+  avatarPress: {
+    alignSelf: 'flex-start',
+  },
+
   avatar: {
     width: 44,
     height: 44,
@@ -314,6 +357,10 @@ const styles = StyleSheet.create({
     fontSize: 15,
     opacity: 0.9,
     flexShrink: 1,
+  },
+
+  inlinePress: {
+    alignSelf: 'flex-start',
   },
 
   replyingRow: {
