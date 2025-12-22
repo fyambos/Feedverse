@@ -7,6 +7,11 @@ export type Profile = {
   avatarUrl: string;
   bio?: string;
   isPublic?: boolean;
+  joinedDate?: string;
+  location?: string;
+  link?: string;
+  followingCount?: number;
+  followerCount?: number;
 };
 
 export const MOCK_PROFILES: Profile[] = [
@@ -107,13 +112,34 @@ export const MOCK_PROFILES: Profile[] = [
   },
   {
   id: 'pr_kpop_winter',
-  scenarioId: 'demo-kpop', 
+  scenarioId: 'demo-kpop',
   ownerUserId: 'u14',
   displayName: 'winter',
   handle: 'bbunnll',
   avatarUrl: 'https://i.pravatar.cc/150?img=15',
-    isPublic: false,
-},
+  bio: 'probably overthinking',
+  isPublic: false,
+  joinedDate: '2022-09-14',
+  location: 'Campus',
+  link: 'https://bbunnll.dev',
+  followingCount: 182,
+  followerCount: 4301,
+  },
+  {
+  id: 'pr_kpop_solar',
+  scenarioId: 'demo-kpop',
+  ownerUserId: 'u14',
+  displayName: 'solar',
+  handle: 'solar',
+  avatarUrl: 'https://i.pravatar.cc/150?img=20',
+  bio: 'probably overthinking',
+  isPublic: false,
+  joinedDate: '2022-09-14',
+  location: 'Campus',
+  link: 'https://bbunnll.dev',
+  followingCount: 182,
+  followerCount: 4301,
+  },
   {
   id: 'pr_kpop_admin',
   scenarioId: 'demo-kpop', 
