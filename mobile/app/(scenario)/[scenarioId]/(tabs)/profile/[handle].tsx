@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Image,
   Pressable,
@@ -8,7 +8,9 @@ import {
   Alert,
   Platform,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router, useLocalSearchParams } from 'expo-router';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 
 import { ThemedView } from '@/components/themed-view';
@@ -23,7 +25,7 @@ import { useAuth } from '@/context/auth';
 
 function formatJoined(iso: string) {
   const d = new Date(iso);
-  if (isNaN(d.getTime())) return 'Joined March 2023';
+  if (isNaN(d.getTime())) return 'Joined';
   const month = d.toLocaleString(undefined, { month: 'long' });
   const year = d.getFullYear();
   return `Joined ${month} ${year}`;
@@ -49,6 +51,64 @@ export default function ProfileScreen() {
 
   const [fakeHeaderVariant, setFakeHeaderVariant] = useState(0);
 
+  const [persistedPosts, setPersistedPosts] = useState<any[]>([]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const load = async () => {
+      try {
+        // We try a couple of common shapes/keys so this screen keeps working
+        // even if the feed persistence key changes later.
+        const candidates: any[] = [];
+
+        // 1) Per-scenario key: feedverse.posts.<scenarioId>
+        const rawScenario = await AsyncStorage.getItem(`feedverse.posts.${sid}`);
+        if (rawScenario) {
+          try {
+            const parsed = JSON.parse(rawScenario);
+            if (Array.isArray(parsed)) candidates.push(...parsed);
+          } catch {}
+        }
+
+        // 2) Map key: feedverse.posts.byScenario => { [sid]: Post[] }
+        const rawMap = await AsyncStorage.getItem('feedverse.posts.byScenario');
+        if (rawMap) {
+          try {
+            const parsed = JSON.parse(rawMap);
+            const arr = parsed?.[sid];
+            if (Array.isArray(arr)) candidates.push(...arr);
+          } catch {}
+        }
+
+        // 3) Legacy-ish key: feedverse.feed.postsByScenario => { [sid]: Post[] }
+        const rawLegacy = await AsyncStorage.getItem('feedverse.feed.postsByScenario');
+        if (rawLegacy) {
+          try {
+            const parsed = JSON.parse(rawLegacy);
+            const arr = parsed?.[sid];
+            if (Array.isArray(arr)) candidates.push(...arr);
+          } catch {}
+        }
+
+        // de-dupe by id
+        const byId = new Map<string, any>();
+        for (const p of candidates) {
+          if (p && p.id) byId.set(String(p.id), p);
+        }
+
+        if (mounted) setPersistedPosts(Array.from(byId.values()));
+      } catch {
+        if (mounted) setPersistedPosts([]);
+      }
+    };
+
+    load();
+    return () => {
+      mounted = false;
+    };
+  }, [sid]);
+
   const headerUri =
     fakeHeaderVariant % 3 === 0
       ? 'https://images.unsplash.com/photo-1444703686981-a3abbc4d4fe3?auto=format&fit=crop&w=1200&q=60'
@@ -56,7 +116,20 @@ export default function ProfileScreen() {
       ? 'https://images.unsplash.com/photo-1520975958225-5f5b3cb3b44b?auto=format&fit=crop&w=1200&q=60'
       : 'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1200&q=60';
 
-  const all = MOCK_FEEDS[sid] ?? [];
+  const all = useMemo(() => {
+    const mock = MOCK_FEEDS[sid] ?? [];
+    const combined = [...mock, ...persistedPosts];
+
+    // de-dupe by id (persisted should win if same id)
+    const byId = new Map<string, any>();
+    for (const p of combined) {
+      if (!p || !p.id) continue;
+      byId.set(String(p.id), p);
+    }
+
+    return Array.from(byId.values());
+  }, [sid, persistedPosts]);
+
   const myPosts = useMemo(() => {
     if (!profile) return [];
     return all
@@ -74,17 +147,20 @@ export default function ProfileScreen() {
     const wantedAt = `@${wanted}`;
     return (
       <ThemedView style={[styles.screen, { backgroundColor: colors.background }]}>
-        <View style={{ flex: 1, padding: 16, paddingTop: 18 }}>
-          <ThemedText style={{ color: colors.textSecondary }}>
-            Profile not found for {wantedAt} in scenario {sid}.
-          </ThemedText>
-        </View>
+        <SafeAreaView edges={['top']} style={{ flex: 1 }}>
+          <View style={{ padding: 16 }}>
+            <ThemedText style={{ color: colors.textSecondary }}>
+              Profile not found for {wantedAt} in scenario {sid}.
+            </ThemedText>
+          </View>
+        </SafeAreaView>
       </ThemedView>
     );
   }
 
   return (
     <ThemedView style={[styles.screen, { backgroundColor: colors.background }]}>
+      <SafeAreaView edges={['top']} style={{ flex: 1 }}>
         <FlatList
           data={myPosts}
           keyExtractor={(p: any) => p.id}
@@ -115,7 +191,8 @@ export default function ProfileScreen() {
                   style={({ pressed }) => [
                     styles.backBtn,
                     {
-                      opacity: pressed ? 0.55 : 0.75,
+                      borderColor: '#fff',
+                      opacity: pressed ? 0.5 : 0.6,
                     },
                   ]}
                 >
@@ -319,6 +396,7 @@ export default function ProfileScreen() {
           )}
           contentContainerStyle={{ paddingBottom: Platform.OS === 'ios' ? 24 : 16 }}
         />
+      </SafeAreaView>
     </ThemedView>
   );
 }
