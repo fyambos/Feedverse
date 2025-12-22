@@ -169,7 +169,12 @@ async function upsertPost(scenarioId: string, post: StoredPost) {
 }
 
 export default function CreatePostModal() {
-  const { scenarioId, postId } = useLocalSearchParams<{ scenarioId: string; postId?: string }>();
+  const { scenarioId, postId, parentPostId, replyingTo } = useLocalSearchParams<{
+    scenarioId: string;
+    postId?: string;
+    parentPostId?: string;
+    replyingTo?: string;
+  }>();
   const scheme = useColorScheme() ?? 'light';
   const colors = Colors[scheme];
 
@@ -201,6 +206,8 @@ export default function CreatePostModal() {
     if (!isEdit) {
       // create mode: ensure author uses current selection
       setAuthorProfileId((prev) => prev ?? selectedId ?? null);
+      setParentId(replyParentId);
+      setAuthorProfileId((prev) => prev ?? selectedId ?? null);
       return;
     }
     if (hydrated) return;
@@ -212,7 +219,10 @@ export default function CreatePostModal() {
         router.back();
         return;
       }
+      const replyParentId = parentPostId ? String(parentPostId) : undefined;
+      const replyingToHandle = replyingTo ? String(replyingTo) : undefined;
 
+      const [parentId, setParentId] = useState<string | undefined>(replyParentId);
       setAuthorProfileId(found.authorProfileId);
       setText(found.text ?? '');
       setDate(new Date(found.createdAt));
@@ -220,8 +230,9 @@ export default function CreatePostModal() {
       setRepostCount(String(found.repostCount ?? 0));
       setLikeCount(String(found.likeCount ?? 0));
       setHydrated(true);
+      setParentId(found.parentPostId ? String(found.parentPostId) : replyParentId);
     })();
-  }, [isEdit, hydrated, sid, editingPostId, selectedId]);
+  }, [isEdit, hydrated, sid, editingPostId, selectedId, replyParentId]);
 
   useEffect(() => {
     if (!pickAuthorArmed) return;
@@ -258,6 +269,7 @@ export default function CreatePostModal() {
       repostCount: counts.repost,
       likeCount: counts.like,
       isEdited: isEdit ? true : undefined,
+      parentPostId: parentId,
     };
 
     if (isEdit) {
@@ -310,7 +322,9 @@ export default function CreatePostModal() {
             contentContainerStyle={{ paddingBottom: 24 }}
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+            
           >
+            
             {/* COMPOSER */}
             <View style={styles.composer}>
               <Pressable

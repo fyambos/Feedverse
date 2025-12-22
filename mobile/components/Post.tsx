@@ -143,10 +143,22 @@ export function Post({
   // show counts in feed/reply, hide in detail
   const showActionCounts = !isDetail;
 
+  const onReply = () => {
+    if (!sid) return;
+    router.push(
+      {
+        pathname: '/modal/create-post',
+        params: {
+          scenarioId: sid,
+          parentPostId: String(item.id),
+        },
+      } as any
+    );
+  };
+
   return (
     <View style={styles.wrap}>
       <View style={styles.headerRow}>
-        {/* Precise target: ONLY the avatar */}
         <Pressable onPress={openProfile} hitSlop={0} style={styles.avatarPress}>
           <Image
             source={{ uri: profile.avatarUrl }}
@@ -241,7 +253,14 @@ export function Post({
         {showActions && (
           <View style={styles.actions}>
             <View style={styles.actionSlot}>
-              <View style={styles.action}>
+              <Pressable
+                onPress={onReply}
+                hitSlop={10}
+                style={({ pressed }) => [
+                  styles.action,
+                  pressed && { backgroundColor: colors.pressed },
+                ]}
+              >
                 <SimpleLineIcons name="bubble" size={20} color={colors.icon} />
                 {showActionCounts && (
                   <ThemedText
@@ -253,7 +272,7 @@ export function Post({
                     {replyCount > 0 ? formatCount(replyCount) : '0'}
                   </ThemedText>
                 )}
-              </View>
+              </Pressable>
             </View>
 
             <View style={styles.actionSlot}>
