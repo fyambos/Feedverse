@@ -186,6 +186,7 @@ export default function CreatePostModal() {
   const selectedId = selectedProfileId(sid);
   const [authorProfileId, setAuthorProfileId] = useState<string | null>(selectedId);
   const [pickAuthorArmed, setPickAuthorArmed] = useState(false);
+  const [parentId, setParentId] = useState<string | undefined>(undefined);
 
   const profile = useMemo(() => {
     if (!authorProfileId) return null;
@@ -203,6 +204,8 @@ export default function CreatePostModal() {
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
+    const replyParentId = parentPostId ? String(parentPostId) : undefined;
+
     if (!isEdit) {
       // create mode: ensure author uses current selection
       setAuthorProfileId((prev) => prev ?? selectedId ?? null);
@@ -219,10 +222,8 @@ export default function CreatePostModal() {
         router.back();
         return;
       }
-      const replyParentId = parentPostId ? String(parentPostId) : undefined;
       const replyingToHandle = replyingTo ? String(replyingTo) : undefined;
 
-      const [parentId, setParentId] = useState<string | undefined>(replyParentId);
       setAuthorProfileId(found.authorProfileId);
       setText(found.text ?? '');
       setDate(new Date(found.createdAt));
@@ -232,7 +233,7 @@ export default function CreatePostModal() {
       setHydrated(true);
       setParentId(found.parentPostId ? String(found.parentPostId) : replyParentId);
     })();
-  }, [isEdit, hydrated, sid, editingPostId, selectedId, replyParentId]);
+  }, [isEdit, hydrated, sid, editingPostId, selectedId, parentPostId]);
 
   useEffect(() => {
     if (!pickAuthorArmed) return;
