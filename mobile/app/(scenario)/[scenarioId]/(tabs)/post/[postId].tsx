@@ -16,6 +16,7 @@ export default function PostScreen() {
   const { scenarioId, postId } = useLocalSearchParams<{ scenarioId: string; postId: string }>();
   const scheme = useColorScheme() ?? 'light';
   const colors = Colors[scheme];
+  const { getProfileById } = useProfile();
 
   const sid = String(scenarioId ?? '');
   const pid = String(postId ?? '');
@@ -115,7 +116,6 @@ export default function PostScreen() {
 
   const data = [root, ...replies];
 
-  const { getProfileById } = useProfile();
 
   return (
     <ThemedView style={[styles.container, { backgroundColor: colors.background }]}>

@@ -11,6 +11,7 @@ export type Profile = {
   handle: string;
   avatarUrl: string;
   bio?: string;
+  isPublic?: boolean;
 };
 
 function normHandle(h: string) {
@@ -30,6 +31,7 @@ type ProfileContextState = {
     handle: string;
     avatarUrl?: string;
     bio?: string;
+    isPublic?: boolean;
   }) => Promise<void>;
   setSelectedProfileId: (scenarioId: string, profileId: string) => Promise<void>;
   getUserProfilesForScenario: (scenarioId: string) => any[];
@@ -39,6 +41,7 @@ type ProfileContextState = {
     handle: string;
     avatarUrl?: string;
     bio?: string;
+    isPublic?: boolean;
   }) => Promise<void>;
   getProfileById: (scenarioId: string, profileId: string) => Profile | null;
   getProfileByHandle: (scenarioId: string, handle: string) => Profile | null;
@@ -164,6 +167,7 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
     handle: string;
     avatarUrl?: string;
     bio?: string;
+    isPublic?: boolean;
   }) => {
     if (!userId) return;
 
@@ -179,10 +183,11 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
       created.find((p: any) => p.id === id) ??
       MOCK_PROFILES.find((p: any) => p.id === id);
 
-    const nextProfile = {
-      id,
+    const nextProfile: Profile = {
+      id: String(id),
       scenarioId,
-      ownerUserId: userId,
+      // Keep original owner if this is an override of a mock/existing profile
+      ownerUserId: String((existing as any)?.ownerUserId ?? userId),
       displayName: data.displayName,
       handle: data.handle,
       avatarUrl:
@@ -190,6 +195,7 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
         (existing as any)?.avatarUrl ??
         `https://i.pravatar.cc/150?u=${Date.now()}`,
       bio: data.bio ?? (existing as any)?.bio,
+      isPublic: data.isPublic ?? (existing as any)?.isPublic ?? false,
     };
 
     // Upsert into local created storage.
@@ -216,16 +222,18 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
     handle,
     avatarUrl,
     bio,
+    isPublic,
   }: {
     scenarioId: string;
     displayName: string;
     handle: string;
     avatarUrl?: string;
     bio?: string;
+    isPublic?: boolean;
   }) => {
   if (!userId) return;
 
-  const profile = {
+  const profile: Profile = {
     id: `pr_${scenarioId}_${Date.now()}`,
     scenarioId,
     ownerUserId: userId,
@@ -233,6 +241,7 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
     handle,
     avatarUrl: avatarUrl ?? `https://i.pravatar.cc/150?u=${Date.now()}`,
     bio,
+    isPublic: isPublic ?? false,
   };
 
   const next = [profile, ...created];
