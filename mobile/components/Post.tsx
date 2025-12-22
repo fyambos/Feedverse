@@ -403,6 +403,10 @@ const styles = StyleSheet.create({
     marginTop: 0,
   },
 
+  replyingText: {
+    fontSize: 14,
+  },
+
   indented: {
     marginLeft: 56,
   },
