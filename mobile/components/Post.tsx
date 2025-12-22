@@ -179,34 +179,44 @@ export function Post({
                 @{profile.handle}
               </ThemedText>
             </Pressable>
+
+            {isReply && !!replyingToHandle && (
+              <View style={styles.replyingInline}>
+                <ThemedText style={[styles.replyingText, { color: colors.textSecondary }]}>
+                  replying to <ThemedText type="link">@{replyingToHandle}</ThemedText>
+                </ThemedText>
+              </View>
+            )}
           </View>
         ) : (
           <View style={styles.headerInline}>
-            <Pressable onPress={openProfile} hitSlop={0} style={styles.inlinePress}>
-              <ThemedText type="defaultSemiBold" style={styles.name} numberOfLines={1}>
-                {profile.displayName}
-              </ThemedText>
-            </Pressable>
+            <View style={styles.headerTopRow}>
+              <Pressable onPress={openProfile} hitSlop={0} style={styles.inlinePress}>
+                <ThemedText type="defaultSemiBold" style={styles.name} numberOfLines={1}>
+                  {profile.displayName}
+                </ThemedText>
+              </Pressable>
 
-            <Pressable onPress={openProfile} hitSlop={0} style={styles.inlinePress}>
-              <ThemedText
-                style={[styles.handleInline, { color: colors.textSecondary }]}
-                numberOfLines={1}
-              >
-                @{profile.handle} · {formatRelativeTime(item.createdAt)}
-              </ThemedText>
-            </Pressable>
+              <Pressable onPress={openProfile} hitSlop={0} style={styles.inlinePress}>
+                <ThemedText
+                  style={[styles.handleInline, { color: colors.textSecondary }]}
+                  numberOfLines={1}
+                >
+                  @{profile.handle} · {formatRelativeTime(item.createdAt)}
+                </ThemedText>
+              </Pressable>
+            </View>
+
+            {isReply && !!replyingToHandle && (
+              <View style={styles.replyingInline}>
+                <ThemedText style={[styles.replyingText, { color: colors.textSecondary }]}>
+                  replying to <ThemedText type="link">@{replyingToHandle}</ThemedText>
+                </ThemedText>
+              </View>
+            )}
           </View>
         )}
       </View>
-
-      {isReply && !!replyingToHandle && (
-        <View style={styles.replyingRow}>
-          <ThemedText style={[styles.replyingText, { color: colors.textSecondary }]}>
-            replying to <ThemedText type="link">@{replyingToHandle}</ThemedText>
-          </ThemedText>
-        </View>
-      )}
 
       <View style={isDetail ? styles.fullWidth : styles.indented}>
         <ThemedText style={[styles.text, isDetail && styles.textDetail]}>{item.text}</ThemedText>
@@ -366,11 +376,17 @@ const styles = StyleSheet.create({
   },
 
   headerInline: {
+    flex: 1,
+    flexDirection: 'column',
+    justifyContent: 'center',
+    gap: 2,
+  },
+
+  headerTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
     flexWrap: 'nowrap',
-    flex: 1,
   },
 
   handleInline: {
@@ -383,14 +399,8 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
   },
 
-  replyingRow: {
-    marginLeft: 56,
+  replyingInline: {
     marginTop: 0,
-  },
-
-  replyingText: {
-    fontSize: 13,
-    opacity: 0.9,
   },
 
   indented: {
