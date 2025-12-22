@@ -1,4 +1,4 @@
-import React, { use } from 'react';
+import React from 'react';
 import { FlatList, Image, Pressable, StyleSheet, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 
@@ -58,7 +58,12 @@ export default function SelectProfileModal() {
 
                     <View style={{ flex: 1 }}>
                     <ThemedText type="defaultSemiBold">{item.displayName}</ThemedText>
-                    <ThemedText style={{ color: colors.textSecondary }}>@{item.handle}</ThemedText>
+                    <View style={styles.handleRow}>
+                      <ThemedText style={{ color: colors.textSecondary }}>@{item.handle}</ThemedText>
+                      {item.isPublic ? (
+                        <ThemedText style={[styles.publicBadge, { color: colors.textSecondary }]}> • Public</ThemedText>
+                      ) : null}
+                    </View>
                     </View>
 
                     {active ? (
@@ -136,4 +141,13 @@ const styles = StyleSheet.create({
   alignItems: 'center',
   justifyContent: 'center',
 },
+  handleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+  },
+  publicBadge: {
+    fontSize: 13,
+    opacity: 0.9,
+  },
 });
