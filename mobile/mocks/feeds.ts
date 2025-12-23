@@ -4,7 +4,7 @@ export type FeedPost = {
   authorProfileId: string;
   createdAt: string;
   text: string;
-  imageUrl?: string;
+  imageUrls?: string[];
   replyCount?: number;
   repostCount?: number;
   likeCount?: number;
@@ -30,8 +30,9 @@ export const MOCK_FEEDS: Record<string, FeedPost[]> = {
       authorProfileId: 'pr_kpop_jinnie',
       createdAt: '2025-11-27T14:06:00.000Z',
       text: "i forgot to do groceries so we made buldak ramyun instead… but it’s so good!!",
-      imageUrl:
+      imageUrls: [
         'https://images.unsplash.com/photo-1491961865842-98f7befd1a60?auto=format&fit=crop&w=1200&q=80',
+      ],
       replyCount: 2,
       repostCount: 0,
       likeCount: 0,
@@ -42,8 +43,9 @@ export const MOCK_FEEDS: Record<string, FeedPost[]> = {
       authorProfileId: 'pr_kpop_jisung',
       createdAt: '2025-11-27T10:10:00.000Z',
       text: "that was the quickest setup",
-      imageUrl:
+      imageUrls: [
         'https://plus.unsplash.com/premium_photo-1673580742890-4af144293960?auto=format&fit=crop&w=1200&q=80',
+      ],
       replyCount: 1,
       repostCount: 0,
       likeCount: 0,

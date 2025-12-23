@@ -9,9 +9,13 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  Alert,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
+
+import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system/legacy';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -31,33 +35,23 @@ function clampInt(n: number, min = 0, max = 99000000) {
 function formatCount(n: number) {
   const v = Math.max(0, Math.floor(n || 0));
 
-  // cap display only above 99M
   if (v > 99000000) return '99M+';
-
   if (v < 1000) return String(v);
 
-  // thousands
   if (v < 100000) {
-    // 1K .. 99.9K
     const k = v / 1000;
     const str = k.toFixed(1).replace(/\.0$/, '');
     return `${str}K`;
   }
 
-  if (v < 1000000) {
-    // 100K .. 999K
-    return `${Math.floor(v / 1000)}K`;
-  }
+  if (v < 1000000) return `${Math.floor(v / 1000)}K`;
 
-  // millions
   if (v < 10000000) {
-    // 1M .. 9.9M
     const m = v / 1000000;
     const str = m.toFixed(1).replace(/\.0$/, '');
     return `${str}M`;
   }
 
-  // 10M .. 99M
   return `${Math.floor(v / 1000000)}M`;
 }
 
@@ -89,12 +83,15 @@ type StoredPost = {
   authorProfileId: string;
   text: string;
   createdAt: string;
-  imageUrl?: string | null;
+
+  // ✅ multi images
+  imageUrls?: string[];
+
   replyCount?: number;
   repostCount?: number;
   likeCount?: number;
-  parentPostId?: string; // reply
-  quotedPostId?: string; // quote
+  parentPostId?: string;
+  quotedPostId?: string;
   isEdited?: boolean;
 };
 
@@ -102,10 +99,7 @@ function makeId(prefix: string) {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
-async function findPostById(
-  scenarioId: string,
-  postId: string
-): Promise<StoredPost | null> {
+async function findPostById(scenarioId: string, postId: string): Promise<StoredPost | null> {
   const stored = await storageFetchPostById(scenarioId, postId);
   if (stored) return stored as unknown as StoredPost;
 
@@ -118,7 +112,14 @@ async function findPostById(
     authorProfileId: String(mock.authorProfileId),
     text: String(mock.text ?? ''),
     createdAt: String(mock.createdAt),
-    imageUrl: mock.imageUrl ?? null,
+
+    // ✅ backward compatible: accept imageUrls or old imageUrl
+    imageUrls: Array.isArray((mock as any).imageUrls)
+      ? (mock as any).imageUrls.filter((u: any) => typeof u === 'string')
+      : (mock as any).imageUrl
+      ? [String((mock as any).imageUrl)]
+      : [],
+
     replyCount: mock.replyCount ?? 0,
     repostCount: mock.repostCount ?? 0,
     likeCount: mock.likeCount ?? 0,
@@ -127,7 +128,6 @@ async function findPostById(
   };
 
   await storageUpsertPost(scenarioId, hydrated as any);
-
   return hydrated;
 }
 
@@ -162,6 +162,10 @@ export default function CreatePostModal() {
   }, [sid, authorProfileId, getProfileById]);
 
   const [text, setText] = useState('');
+
+  // ✅ images (max 4)
+  const [imageUrls, setImageUrls] = useState<string[]>([]);
+
   const [date, setDate] = useState<Date>(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [pickerMode, setPickerMode] = useState<'date' | 'time'>('date');
@@ -200,6 +204,13 @@ export default function CreatePostModal() {
       setRepostCount(String(found.repostCount ?? 0));
       setLikeCount(String(found.likeCount ?? 0));
 
+      const urls = Array.isArray((found as any).imageUrls)
+        ? (found as any).imageUrls.filter((u: any) => typeof u === 'string')
+        : (found as any).imageUrl
+        ? [String((found as any).imageUrl)]
+        : [];
+      setImageUrls(urls.slice(0, 4));
+
       setParentId(found.parentPostId ? String(found.parentPostId) : replyParent);
       setQuoteId(found.quotedPostId ? String(found.quotedPostId) : q);
 
@@ -235,6 +246,75 @@ export default function CreatePostModal() {
     };
   }, [sid, quoteId]);
 
+  // ✅ persist picked images to app storage so they survive
+  const ensureMediaDir = async () => {
+    const dir = `${FileSystem.documentDirectory}feedverse-media/`;
+    try {
+      const info = await FileSystem.getInfoAsync(dir);
+      if (!info.exists) {
+        await FileSystem.makeDirectoryAsync(dir, { intermediates: true });
+      }
+    } catch {
+      // ignore
+    }
+    return dir;
+  };
+
+  const persistToAppStorage = async (uri: string) => {
+    const dir = await ensureMediaDir();
+    const ext = uri.split('?')[0].split('.').pop();
+    const safeExt = ext && ext.length <= 6 ? ext : 'jpg';
+    const filename = `img_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${safeExt}`;
+    const dest = `${dir}${filename}`;
+
+    try {
+      await FileSystem.copyAsync({ from: uri, to: dest });
+      return dest;
+    } catch {
+      return uri;
+    }
+  };
+
+  const pickImages = async () => {
+    const remaining = Math.max(0, 4 - imageUrls.length);
+    if (remaining <= 0) {
+      Alert.alert('Limit reached', 'You can add up to 4 images.');
+      return;
+    }
+
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) {
+      Alert.alert('Permission needed', 'Please allow photo library access to add images.');
+      return;
+    }
+
+    const res = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.9,
+      allowsMultipleSelection: true,
+      selectionLimit: remaining,
+    });
+
+    if (res.canceled) return;
+
+    const picked = (res.assets ?? [])
+      .map((a) => a?.uri)
+      .filter((u): u is string => typeof u === 'string' && u.length > 0);
+
+    if (!picked.length) return;
+
+    const persisted: string[] = [];
+    for (const uri of picked) {
+      persisted.push(await persistToAppStorage(uri));
+    }
+
+    setImageUrls((prev) => [...prev, ...persisted].slice(0, 4));
+  };
+
+  const removeImageAt = (idx: number) => {
+    setImageUrls((prev) => prev.filter((_, i) => i !== idx));
+  };
+
   const canPost = text.trim().length > 0 && !!authorProfileId;
 
   const counts = useMemo(() => {
@@ -257,7 +337,10 @@ export default function CreatePostModal() {
       authorProfileId,
       text: text.trim(),
       createdAt: date.toISOString(),
-      imageUrl: null,
+
+      // ✅ save up to 4
+      imageUrls: imageUrls.slice(0, 4),
+
       replyCount: counts.reply,
       repostCount: counts.repost,
       likeCount: counts.like,
@@ -360,6 +443,37 @@ export default function CreatePostModal() {
                   textAlignVertical="top"
                 />
 
+                {/* ✅ image preview grid + remove (twitter-like) */}
+                {imageUrls.length > 0 ? (
+                  <View style={styles.mediaGrid}>
+                    {imageUrls.map((uri, idx) => (
+                      <View
+                        key={`${uri}_${idx}`}
+                        style={[
+                          styles.mediaThumbWrap,
+                          imageUrls.length === 1 && styles.mediaThumbWrapSingle,
+                        ]}
+                      >
+                        <Image source={{ uri }} style={styles.mediaThumb} />
+                        <Pressable
+                          onPress={() => removeImageAt(idx)}
+                          hitSlop={10}
+                          style={({ pressed }) => [
+                            styles.mediaRemove,
+                            {
+                              opacity: pressed ? 0.85 : 1,
+                              backgroundColor: colors.background,
+                              borderColor: colors.border,
+                            },
+                          ]}
+                        >
+                          <Ionicons name="close" size={16} color={colors.text} />
+                        </Pressable>
+                      </View>
+                    ))}
+                  </View>
+                ) : null}
+
                 {quotedPost ? (
                   <Pressable
                     onPress={() => {
@@ -436,7 +550,11 @@ export default function CreatePostModal() {
                 <Ionicons name="camera-outline" size={22} color={colors.tint} />
               </Pressable>
 
-              <Pressable hitSlop={10} style={({ pressed }) => [styles.toolBtn, pressed && { opacity: 0.7 }]}>
+              <Pressable
+                onPress={pickImages}
+                hitSlop={10}
+                style={({ pressed }) => [styles.toolBtn, pressed && { opacity: 0.7 }]}
+              >
                 <Ionicons name="image-outline" size={22} color={colors.tint} />
               </Pressable>
 
@@ -600,6 +718,39 @@ const styles = StyleSheet.create({
     paddingBottom: 6,
     minHeight: 0,
     maxHeight: 260,
+  },
+
+  // ✅ images preview
+  mediaGrid: {
+    marginTop: 10,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  mediaThumbWrap: {
+    width: '48%',
+    aspectRatio: 1,
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  mediaThumbWrapSingle: {
+    width: '100%',
+    aspectRatio: 16 / 9,
+  },
+  mediaThumb: {
+    width: '100%',
+    height: '100%',
+  },
+  mediaRemove: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 26,
+    height: 26,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: StyleSheet.hairlineWidth,
   },
 
   quoteCard: {

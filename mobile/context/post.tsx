@@ -8,7 +8,7 @@ export type StoredPost = {
   authorProfileId: string;
   text: string;
   createdAt: string;
-  imageUrl?: string | null;
+  imageUrls?: string[] | null;
   replyCount?: number;
   repostCount?: number;
   likeCount?: number;
@@ -49,7 +49,7 @@ function coerceStoredPostFromMock(scenarioId: string, mock: any): StoredPost {
     authorProfileId: String(mock.authorProfileId),
     text: String(mock.text ?? ''),
     createdAt: String(mock.createdAt),
-    imageUrl: mock.imageUrl ?? null,
+    imageUrls: mock.imageUrls ?? null,
     replyCount: mock.replyCount ?? 0,
     repostCount: mock.repostCount ?? 0,
     likeCount: mock.likeCount ?? 0,
