@@ -1,10 +1,21 @@
 # Feedverse
 
-App mobile de simulation de réseau social qui permet de co-écriture en collaboration des fictions à travers des scénarios partagés.
+<div align="center">
 
-## Concept
+[![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=fff)](#)
+[![Node.js](https://img.shields.io/badge/Node.js-6DA55F?logo=node.js&logoColor=white)](#)
+[![Postgres](https://img.shields.io/badge/Postgres-%23316192.svg?logo=postgresql&logoColor=white)](#)
+[![Docker](https://img.shields.io/badge/Docker-2496ED?logo=docker&logoColor=fff)](#)
+
+<h3>App mobile de simulation de réseau social qui permet de co-écriture en collaboration des fictions à travers des scénarios partagés.
+</h3>
 
 Feedverse est une plateforme hybride inspirée de **Status** et **Social Maker**, où les utilisateurs créent et gèrent des profils fictifs pour construire ensemble des histoires sociales immersives. Chaque scénario est un univers partagé où jusqu'à 20 joueurs peuvent interagir via posts, messages et mentions.
+
+[Demo](https://Feedverse.fr) · [Documentation](https://github.com/fyambos/Feedverse/tree/main/documentation) · [Signaler un bug](https://github.com/fyambos/Feedverse/issues) · [Nouvelle fonctionnalité](https://github.com/fyambos/Feedverse/issues)
+
+</div>
+
 
 ### Points clés
 
@@ -12,32 +23,6 @@ Feedverse est une plateforme hybride inspirée de **Status** et **Social Maker**
 - **Profils multiples** : Jusqu'à 30 profils par utilisateur dans chaque scénario
 - **Co-écriture** : Permissions partagées pour jouer les profils d'autres joueurs
 - **Simulation complète** : Feed, messages privés, mentions, notifications
-
-## Stack Technique
-
-### Frontend
-
-![React Native](https://img.shields.io/badge/React_Native-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)
-![Expo](https://img.shields.io/badge/Expo-000020?style=for-the-badge&logo=expo&logoColor=white)
-
-### Backend
-
-![Node.js](https://img.shields.io/badge/Node.js-43853D?style=for-the-badge&logo=node.js&logoColor=white)
-![Express.js](https://img.shields.io/badge/Express.js-404D59?style=for-the-badge&logo=express&logoColor=white)
-
-### Base de données
-
-![PostgreSQL](https://img.shields.io/badge/PostgreSQL-316192?style=for-the-badge&logo=postgresql&logoColor=white)
-
-### Autres
-
-![WebSocket](https://img.shields.io/badge/WebSocket-010101?style=for-the-badge&logo=socketdotio&logoColor=white)
-![Firebase](https://img.shields.io/badge/Firebase-FFCA28?style=for-the-badge&logo=firebase&logoColor=black)
-
-### Plateformes
-
-![iOS](https://img.shields.io/badge/iOS-000000?style=for-the-badge&logo=ios&logoColor=white)
-![Android](https://img.shields.io/badge/Android-3DDC84?style=for-the-badge&logo=android&logoColor=white)
 
 ## Fonctionnalités MVP
 
