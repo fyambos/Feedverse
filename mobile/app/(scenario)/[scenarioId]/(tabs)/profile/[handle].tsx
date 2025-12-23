@@ -7,6 +7,8 @@ import {
   FlatList,
   Alert,
   Platform,
+  Modal,
+  ActivityIndicator,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -26,7 +28,9 @@ import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeabl
 import type { SwipeableMethods } from 'react-native-gesture-handler/ReanimatedSwipeable';
 
 import { useFocusEffect } from '@react-navigation/native';
-
+import * as ImagePicker from 'expo-image-picker';
+import * as MediaLibrary from 'expo-media-library';
+import * as FileSystem from 'expo-file-system/legacy';
 
 function formatJoined(iso: string) {
   const d = new Date(iso);
@@ -149,14 +153,22 @@ function SwipeablePostRow({
   colors,
   userId,
   getProfileById,
+  avatarOverrides,
 }: {
   sid: string;
   item: any;
   colors: any;
   userId: string | null;
   getProfileById?: (scenarioId: string, id: string) => any;
+  avatarOverrides?: Record<string, string>;
 }) {
-  const authorProfile = getProfileById?.(sid, String(item.authorProfileId));
+  const authorProfileRaw = getProfileById?.(sid, String(item.authorProfileId));
+  if (!authorProfileRaw) return null;
+
+  const override = avatarOverrides?.[String(item.authorProfileId)];
+  const authorProfile = override
+    ? { ...(authorProfileRaw as any), avatarUrl: override }
+    : authorProfileRaw;
   if (!authorProfile) return null;
 
   const isOwner = authorProfile.ownerUserId === userId;
@@ -177,6 +189,7 @@ function SwipeablePostRow({
       <Post scenarioId={sid} profile={authorProfile} item={item} variant="feed" showActions />
     </Pressable>
   );
+  
 
   if (!canEdit) return Row;
 
@@ -231,6 +244,43 @@ export default function ProfileScreen() {
   const sid = decodeURIComponent(String(scenarioId ?? ''));
   const wanted = decodeURIComponent(String(handle ?? ''));
 
+  const AVATAR_KEY = `feedverse.profile.avatar.${sid}.${wanted}`;
+  const HEADER_KEY = `feedverse.profile.header.${sid}.${wanted}`;
+
+  const [avatarUri, setAvatarUri] = useState<string | null>(null);
+  const [headerUri, setHeaderUri] = useState<string | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      const [a, h] = await Promise.all([
+        AsyncStorage.getItem(AVATAR_KEY),
+        AsyncStorage.getItem(HEADER_KEY),
+      ]);
+      setAvatarUri(a);
+      setHeaderUri(h);
+    })();
+  }, [AVATAR_KEY, HEADER_KEY]);
+
+  const pickImage = useCallback(async () => {
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) {
+      Alert.alert('Permission needed', 'Enable photo access to pick images.');
+      return null;
+    }
+
+    const res = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      quality: 0.9,
+    });
+
+    if (res.canceled) return null;
+    return res.assets?.[0]?.uri ?? null;
+  }, []);
+
+
+
+
   const profile = useMemo(() => {
     const p = getProfileByHandle?.(sid, wanted);
     return p ?? null;
@@ -246,16 +296,92 @@ export default function ProfileScreen() {
   const showToggleEdit = canEditProfile && !isCurrentSelected;
 
   const [showEditInstead, setShowEditInstead] = useState(false);
+  const [avatarOverrides, setAvatarOverrides] = useState<Record<string, string>>({});
 
-  useEffect(() => {
-    // reset when navigating to another profile or when it becomes selected
-    setShowEditInstead(false);
-  }, [sid, handle, isCurrentSelected]);
+  const loadAvatarOverrides = useCallback(async () => {
+    if (!profile) return;
+    try {
+      const key = `feedverse.profile.avatar.${sid}.${profile.handle}`;
+      const uri = await AsyncStorage.getItem(key);
+
+      // map by authorProfileId (because posts use authorProfileId)
+      setAvatarOverrides(uri ? { [String(profile.id)]: uri } : {});
+    } catch {
+      setAvatarOverrides({});
+    }
+  }, [sid, profile]);
+
+
   const isMe = !!profile && profile.ownerUserId === userId;
 
-  const [fakeHeaderVariant, setFakeHeaderVariant] = useState(0);
-  const [persistedPosts, setPersistedPosts] = useState<any[]>([]);
+  // derived URIs: prefer persisted local picks, fall back to profile-provided URIs (if any)
+  const avatarToShow = avatarUri ?? (profile as any)?.avatarUrl ?? undefined;
+  const headerToShow = headerUri ?? (profile as any)?.headerUrl ?? undefined;
 
+  const [persistedPosts, setPersistedPosts] = useState<any[]>([]);
+  const [viewerOpen, setViewerOpen] = useState(false);
+  const [viewerUri, setViewerUri] = useState<string | null>(null);
+  const [picking, setPicking] = useState(false);
+
+  const withPickerLock = useCallback(async <T,>(fn: () => Promise<T>) => {
+    if (picking) return null as any;
+    setPicking(true);
+    try {
+      return await fn();
+    } finally {
+      setPicking(false);
+    }
+  }, [picking]);
+    const onChangeAvatar = useCallback(async () => {
+    const uri = await withPickerLock(() => pickImage());
+    if (!uri) return;
+
+    setAvatarUri(uri);
+    await AsyncStorage.setItem(AVATAR_KEY, uri);
+    setAvatarOverrides({ [String(profile?.id)]: uri });
+  }, [withPickerLock, pickImage, AVATAR_KEY, profile]);
+
+  const onChangeHeader = useCallback(async () => {
+    const uri = await withPickerLock(() => pickImage());
+    if (!uri) return;
+
+    setHeaderUri(uri);
+    await AsyncStorage.setItem(HEADER_KEY, uri);
+  }, [withPickerLock, pickImage, HEADER_KEY]);
+  const openViewer = useCallback((uri?: string) => {
+    if (!uri) return;
+    setViewerUri(uri);
+    setViewerOpen(true);
+  }, []);
+
+  const closeViewer = useCallback(() => {
+    setViewerOpen(false);
+    setViewerUri(null);
+  }, []);
+
+  const saveToDevice = useCallback(async (uri: string) => {
+    try {
+      const perm = await MediaLibrary.requestPermissionsAsync();
+      if (!perm.granted) {
+        Alert.alert('Permission needed', 'Allow Photos permission to save images.');
+        return;
+      }
+
+      // If it's a remote URL, download first
+      let localUri = uri;
+      if (/^https?:\/\//i.test(uri)) {
+        const filename = `feedverse_${Date.now()}.jpg`;
+        const dest = `${FileSystem.cacheDirectory}${filename}`;
+        const dl = await FileSystem.downloadAsync(uri, dest);
+        localUri = dl.uri;
+      }
+
+      await MediaLibrary.saveToLibraryAsync(localUri);
+      Alert.alert('Saved', 'Image saved to your Photos.');
+    } catch (e) {
+      Alert.alert('Could not save', 'Something went wrong while saving this image.');
+    }
+  }, []);
   const loadPersistedPosts = useCallback(async () => {
     try {
       const candidates: any[] = [];
@@ -309,16 +435,10 @@ export default function ProfileScreen() {
   useFocusEffect(
     useCallback(() => {
       void loadPersistedPosts();
+      void loadAvatarOverrides(); 
       return () => {};
-    }, [loadPersistedPosts])
+    }, [loadPersistedPosts, loadAvatarOverrides])
   );
-
-  const headerUri =
-    fakeHeaderVariant % 3 === 0
-      ? 'https://images.unsplash.com/photo-1444703686981-a3abbc4d4fe3?auto=format&fit=crop&w=1200&q=60'
-      : fakeHeaderVariant % 3 === 1
-      ? 'https://images.unsplash.com/photo-1520975958225-5f5b3cb3b44b?auto=format&fit=crop&w=1200&q=60'
-      : 'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1200&q=60';
 
   const all = useMemo(() => {
     const mock = MOCK_FEEDS[sid] ?? [];
@@ -377,10 +497,35 @@ export default function ProfileScreen() {
               <View>
                 <View style={styles.headerMediaWrap}>
                   <Pressable
-                    onPress={() => setFakeHeaderVariant((v) => v + 1)}
+                    onPress={() => openViewer(headerToShow)}
+                    onLongPress={() => {
+                      if (isMe) onChangeHeader();
+                    }}
+                    delayLongPress={250}
                     style={StyleSheet.absoluteFill}
                   >
-                    <Image source={{ uri: headerUri }} style={styles.headerMedia} />
+                    <Pressable
+                      onPress={onChangeHeader}
+                      hitSlop={12}
+                      style={[styles.headerEditBadge, { backgroundColor: 'rgba(0,0,0,0.55)' }]}
+                    >
+                      <Ionicons name="camera" size={16} color="#fff" />
+                    </Pressable>
+                    {isMe ? (
+                      <Pressable
+                        onPress={onChangeHeader}
+                        disabled={picking}
+                        hitSlop={12}
+                        style={({ pressed }) => [
+                          styles.headerEditBadge,
+                          { backgroundColor: 'rgba(0,0,0,0.55)' },
+                          pressed && styles.pressedPop,
+                          picking && { opacity: 0.6 },
+                        ]}
+                      >
+                        <Ionicons name="camera" size={16} color="#fff" />
+                      </Pressable>
+                    ) : null}
                   </Pressable>
 
                   <Pressable
@@ -400,21 +545,27 @@ export default function ProfileScreen() {
                 <View style={styles.avatarRow}>
                   <View style={[styles.avatarOuter, { backgroundColor: colors.background }]}>
                     <Pressable
-                      onPress={() => {
-                        Alert.alert('Not yet', 'Avatar picker will be implemented later.');
+                      onPress={() => openViewer(avatarToShow)}
+                      onLongPress={() => {
+                        if (isMe) onChangeAvatar();
                       }}
-                      disabled={!isMe}
+                      delayLongPress={250}
                     >
-                      <Image source={{ uri: profile.avatarUrl }} style={styles.avatar} />
+                      <Image source={{ uri: avatarToShow }} style={styles.avatar} />
                       {isMe ? (
-                        <View
-                          style={[
+                        <Pressable
+                          onPress={onChangeAvatar}
+                          disabled={picking}
+                          hitSlop={12}
+                          style={({ pressed }) => [
                             styles.avatarEditBadge,
                             { backgroundColor: colors.card, borderColor: colors.border },
+                            pressed && styles.pressedPop,
+                            picking && { opacity: 0.6 },
                           ]}
                         >
                           <Ionicons name="camera" size={16} color={colors.text} />
-                        </View>
+                        </Pressable>
                       ) : null}
                     </Pressable>
                   </View>
@@ -592,13 +743,14 @@ export default function ProfileScreen() {
               </View>
             )}
             renderItem={({ item }: any) => (
-              <SwipeablePostRow
-                sid={sid}
-                item={item}
-                colors={colors}
-                userId={userId}
-                getProfileById={getProfileById}
-              />
+            <SwipeablePostRow
+              sid={sid}
+              item={item}
+              colors={colors}
+              userId={userId}
+              getProfileById={getProfileById}
+              avatarOverrides={avatarOverrides}
+            />
             )}
             ListEmptyComponent={() => (
               <View style={{ padding: 18 }}>
@@ -607,6 +759,67 @@ export default function ProfileScreen() {
             )}
             contentContainerStyle={{ paddingBottom: Platform.OS === 'ios' ? 24 : 16 }}
           />
+          {picking && (
+            <View style={styles.pickerOverlay} pointerEvents="auto">
+              <ActivityIndicator size="large" color="#fff" />
+            </View>
+          )}
+          {viewerOpen && (
+            <Modal visible transparent animationType="fade" onRequestClose={closeViewer}>
+              <Pressable
+                style={{
+                  flex: 1,
+                  backgroundColor: 'rgba(0,0,0,0.92)',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  padding: 16,
+                }}
+                onPress={closeViewer}
+              >
+                <Pressable onPress={() => {}} style={{ width: '100%', maxWidth: 520 }}>
+                  {viewerUri ? (
+                    <Pressable
+                      onLongPress={() => saveToDevice(viewerUri)}
+                      delayLongPress={250}
+                      style={{ width: '100%' }}
+                    >
+                      <Image
+                        source={{ uri: viewerUri }}
+                        style={{
+                          width: '100%',
+                          height: 420,
+                          borderRadius: 14,
+                          resizeMode: 'contain',
+                        }}
+                      />
+                    </Pressable>
+                  ) : null}
+
+                  <View
+                    style={{
+                      marginTop: 14,
+                      flexDirection: 'row',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                    }}
+                  >
+                    <Pressable onPress={closeViewer} hitSlop={10} style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}>
+                      <ThemedText style={{ color: '#fff', fontWeight: '700' }}>Close</ThemedText>
+                    </Pressable>
+
+                    <Pressable
+                      onPress={() => viewerUri && saveToDevice(viewerUri)}
+                      hitSlop={10}
+                      style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}
+                    >
+                      <ThemedText style={{ color: '#fff', fontWeight: '900' }}>Save</ThemedText>
+                    </Pressable>
+                  </View>
+
+                </Pressable>
+              </Pressable>
+            </Modal>
+          )}
         </View>
       </ThemedView>
     </GestureHandlerRootView>
@@ -633,7 +846,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: StyleSheet.hairlineWidth,
-    backgroundColor: 'rgba(0,0,0,0.62)',
+    backgroundColor: 'rgba(0,0,0,0.55)',
     transform: [{ translateY: -17 }],
     shadowColor: '#000',
     shadowOpacity: 0.18,
@@ -674,6 +887,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
+    zIndex: 20,
+    elevation: 20,
   },
 
   ghostBtn: {
@@ -768,4 +983,32 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 2,
   },
+
+
+  headerEditBadge: {
+    position: 'absolute',
+    right: 10,
+    bottom: 10,
+    width: 34,
+    height: 34,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 20,
+    elevation: 20,
+  },
+    pickerOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 999,
+    elevation: 999,
+  },
+
+  pressedPop: {
+    transform: [{ scale: 0.92 }],
+  },
+
+  
 });

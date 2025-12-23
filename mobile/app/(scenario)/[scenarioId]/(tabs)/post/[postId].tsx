@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FlatList, Pressable, StyleSheet, View } from 'react-native';
 import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
 import { Ionicons } from '@expo/vector-icons';
@@ -58,13 +58,7 @@ export default function PostScreen() {
     }
   }, [DELETED_KEY]);
 
-  useFocusEffect(
-    useCallback(() => {
-      void loadStoredPosts();
-      void loadDeletedIds();
-      return () => {};
-    }, [loadStoredPosts, loadDeletedIds])
-  );
+
 
   const all = useMemo(() => {
     const mock = MOCK_FEEDS[sid] ?? [];
@@ -82,7 +76,55 @@ export default function PostScreen() {
       .filter((p) => String(p.scenarioId) === sid)
       .filter((p) => !deletedIds.includes(String(p.id)));
   }, [sid, storedPosts, deletedIds]);
-  
+
+     const [avatarOverrides, setAvatarOverrides] = useState<Record<string, string>>({});
+    const avatarKeyForProfile = useCallback(
+      (profileHandle: string) => `feedverse.profile.avatar.${sid}.${profileHandle}`,
+      [sid]
+    );
+
+    const loadAvatarOverrides = useCallback(async () => {
+      try {
+        // collect all profileIds we will display in this thread
+        const ids = new Set<string>();
+        for (const p of all) {
+          if (p?.authorProfileId) ids.add(String(p.authorProfileId));
+        }
+
+        const next: Record<string, string> = {};
+
+        // resolve handle for each profileId, then load its stored avatar key
+        await Promise.all(
+          Array.from(ids).map(async (profileId) => {
+            const prof = getProfileById(sid, profileId);
+            if (!prof?.handle) return;
+
+            const uri = await AsyncStorage.getItem(avatarKeyForProfile(String(prof.handle)));
+            if (uri) next[profileId] = uri;
+          })
+        );
+
+        setAvatarOverrides(next);
+      } catch {
+        setAvatarOverrides({});
+      }
+    }, [all, sid, getProfileById, avatarKeyForProfile]);
+
+  useFocusEffect(
+    useCallback(() => {
+      (async () => {
+        await loadStoredPosts();
+        await loadDeletedIds();
+      })();
+      return () => {};
+    }, [loadStoredPosts, loadDeletedIds])
+  );
+
+  // whenever the thread content changes, refresh overrides
+  useEffect(() => {
+    void loadAvatarOverrides();
+  }, [loadAvatarOverrides]);
+
   function buildThread(posts: any[], rootId: string) {
     const byParent = new Map<string, any[]>();
 
@@ -177,7 +219,7 @@ export default function PostScreen() {
     });
 
     const pressedBg = colors.pressed;
-
+ 
     return (
       <Animated.View
         style={[
@@ -232,14 +274,6 @@ export default function PostScreen() {
     [colors.pressed, colors.tint, closeSwipe, deletePost, openEditPost]
   );
 
-  if (!postsReady) {
-    return (
-      <ThemedView style={[styles.container, { backgroundColor: colors.background, padding: 16 }]}>
-        <ThemedText style={{ color: colors.textSecondary }}>Loading…</ThemedText>
-      </ThemedView>
-    );
-  }
-
   const root = all.find((p) => String(p.id) === pid);
   if (!root) {
     return (
@@ -267,16 +301,25 @@ export default function PostScreen() {
         renderItem={({ item }) => {
           const itemId = String(item.id);
           const authorProfileId = item?.authorProfileId ? String(item.authorProfileId) : '';
-          const profile = authorProfileId ? getProfileById(sid, authorProfileId) : null;
-          if (!profile) return null;
+          const rawProfile = authorProfileId ? getProfileById(sid, authorProfileId) : null;
+          if (!rawProfile) return null;
+
+          const override = avatarOverrides[authorProfileId];
+          const profile = override ? { ...(rawProfile as any), avatarUrl: override } : rawProfile;          if (!profile) return null;
 
           const parent = item.parentPostId
             ? all.find((p) => String(p.id) === String(item.parentPostId))
             : null;
 
           const parentAuthorProfileId = parent?.authorProfileId ? String(parent.authorProfileId) : '';
-          const parentProfile = parentAuthorProfileId ? getProfileById(sid, parentAuthorProfileId) : null;
+          const rawParentProfile =
+            parentAuthorProfileId ? getProfileById(sid, parentAuthorProfileId) : null;
 
+          const parentOverride = parentAuthorProfileId ? avatarOverrides[parentAuthorProfileId] : undefined;
+          const parentProfile =
+            rawParentProfile && parentOverride
+              ? { ...(rawParentProfile as any), avatarUrl: parentOverride }
+              : rawParentProfile;
           const isRoot = String(item.id) === String(root.id);
           const variant = isRoot ? 'detail' : 'reply';
 

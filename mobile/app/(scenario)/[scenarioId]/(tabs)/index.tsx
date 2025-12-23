@@ -23,6 +23,7 @@ export default function HomeScreen() {
   const [storedPosts, setStoredPosts] = useState<any[]>([]);
   const [deletedIds, setDeletedIds] = useState<string[]>([]);
   const [postsReady, setPostsReady] = useState(false);
+  const [avatarOverrides, setAvatarOverrides] = useState<Record<string, string>>({});
 
   const sid = String(scenarioId ?? '');
   const { getProfileById } = useProfile();
@@ -54,20 +55,12 @@ export default function HomeScreen() {
     }
   }, [DELETED_KEY]);
 
-  useFocusEffect(
-    useCallback(() => {
-      // refresh when returning from modals (e.g., create-post)
-      void loadStoredPosts();
-      void loadDeletedIds();
-      return () => {};
-    }, [loadStoredPosts, loadDeletedIds])
-  );
 
-  const posts = useMemo(() => {
+
+    const posts = useMemo(() => {
     const mock = MOCK_FEEDS[sid] ?? [];
     const combined = [...storedPosts, ...mock];
 
-    // de-dupe by id (prefer stored version if same id)
     const byId = new Map<string, any>();
     for (const p of combined) {
       if (!p?.id) continue;
@@ -84,6 +77,37 @@ export default function HomeScreen() {
   const scale = React.useRef(new RNAnimated.Value(1)).current;
   const navLock = React.useRef(false);
 
+  const loadAvatarOverrides = useCallback(async () => {
+    try {
+      const authorIds = Array.from(new Set(posts.map((p) => String(p.authorProfileId))));
+      const pairs = await Promise.all(
+        authorIds.map(async (pid) => {
+          const prof = getProfileById(sid, pid);
+          if (!prof) return null;
+
+          const key = `feedverse.profile.avatar.${sid}.${prof.handle}`;
+          const uri = await AsyncStorage.getItem(key);
+          return uri ? [pid, uri] as const : null;
+        })
+      );
+
+      const next: Record<string, string> = {};
+      for (const p of pairs) {
+        if (p) next[p[0]] = p[1];
+      }
+      setAvatarOverrides(next);
+    } catch {
+      setAvatarOverrides({});
+    }
+  }, [posts, sid, getProfileById]);
+  useFocusEffect(
+    useCallback(() => {
+      void loadStoredPosts();
+      void loadDeletedIds();
+      void loadAvatarOverrides(); 
+      return () => {};
+    }, [loadStoredPosts, loadDeletedIds, loadAvatarOverrides])
+  );
 type SwipeRef = { current: typeof ReanimatedSwipeable | null };
 const swipeRefs = useRef(new Map<string, SwipeRef>()).current;
 
@@ -159,7 +183,7 @@ const swipeRefs = useRef(new Map<string, SwipeRef>()).current;
     [scenarioId]
   );
 
-  const ACTIONS_WIDTH = 120; // enough for 2 circular buttons + gap + padding
+  const ACTIONS_WIDTH = 120; 
 
   const RightActions = ({
     postId,
@@ -244,11 +268,16 @@ const swipeRefs = useRef(new Map<string, SwipeRef>()).current;
         )}
         renderItem={({ item }) => {
           const profile = getProfileById(sid, item.authorProfileId);
+          const overrideAvatar = avatarOverrides[String(item.authorProfileId)];
+
+          
           if (!profile) return null;
 
           const canEdit =
             (profile as any).ownerUserId === userId || !!(profile as any).isPublic;
-
+          const profileForPost = overrideAvatar
+            ? { ...(profile as any), avatarUrl: overrideAvatar }
+            : profile;
           const content = (
             <Pressable
               onPress={() => {
@@ -256,13 +285,13 @@ const swipeRefs = useRef(new Map<string, SwipeRef>()).current;
                 openPostDetail(item.id);
               }}
             >
-              <Post
-                scenarioId={sid}
-                profile={profile as any}
-                item={item as any}
-                variant="feed"
-                showActions={true}
-              />
+            <Post
+              scenarioId={sid}
+              profile={profileForPost as any}
+              item={item as any}
+              variant="feed"
+              showActions
+            />
             </Pressable>
           );
 
