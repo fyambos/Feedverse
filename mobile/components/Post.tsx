@@ -22,7 +22,7 @@ type PostItem = {
   authorProfileId: string;
   text: string;
   createdAt: string;
-  imageUrl?: string | null;
+  imageUrls?: string[] | null;
   replyCount?: number;
   repostCount?: number;
   likeCount?: number;
@@ -34,6 +34,115 @@ type QuotePayload = {
   profile: PostProfile;
   item: PostItem;
 };
+
+function MediaGrid({
+  imageUrls,
+  variant,
+  scheme,
+}: {
+  imageUrls: string[];
+  variant: 'feed' | 'detail' | 'reply';
+  scheme: 'light' | 'dark';
+}) {
+  const urls = (imageUrls ?? []).filter(Boolean).slice(0, 4);
+  if (urls.length === 0) return null;
+
+  const bg = scheme === 'dark' ? '#111' : '#eaeaea';
+  const isDetail = variant === 'detail';
+  const h = isDetail ? 260 : 220;
+  const gap = 2;
+
+  // 1 image
+  if (urls.length === 1) {
+    return (
+      <Image
+        source={{ uri: urls[0] }}
+        style={[styles.mediaSingle, { height: h, backgroundColor: bg }]}
+        resizeMode="cover"
+      />
+    );
+  }
+
+  // 2 images (side-by-side)
+  if (urls.length === 2) {
+    return (
+      <View style={[styles.mediaGrid, { height: h }]}>
+        <View style={[styles.mediaRow, { gap }]}>
+          <Image
+            source={{ uri: urls[0] }}
+            style={[styles.mediaCell, { flex: 1, backgroundColor: bg }]}
+            resizeMode="cover"
+          />
+          <Image
+            source={{ uri: urls[1] }}
+            style={[styles.mediaCell, { flex: 1, backgroundColor: bg }]}
+            resizeMode="cover"
+          />
+        </View>
+      </View>
+    );
+  }
+
+  // 3 images (1 large left, 2 stacked right)
+  if (urls.length === 3) {
+    return (
+      <View style={[styles.mediaGrid, { height: h }]}>
+        <View style={[styles.mediaRow, { gap }]}>
+          <Image
+            source={{ uri: urls[0] }}
+            style={[styles.mediaCell, { flex: 1, backgroundColor: bg }]}
+            resizeMode="cover"
+          />
+
+          <View style={[styles.mediaCol, { flex: 1, gap }]}>
+            <Image
+              source={{ uri: urls[1] }}
+              style={[styles.mediaCell, { flex: 1, backgroundColor: bg }]}
+              resizeMode="cover"
+            />
+            <Image
+              source={{ uri: urls[2] }}
+              style={[styles.mediaCell, { flex: 1, backgroundColor: bg }]}
+              resizeMode="cover"
+            />
+          </View>
+        </View>
+      </View>
+    );
+  }
+
+  // 4 images (2x2 grid)
+  return (
+    <View style={[styles.mediaGrid, { height: h }]}>
+      <View style={[styles.mediaCol, { gap }]}>
+        <View style={[styles.mediaRow, { flex: 1, gap }]}>
+          <Image
+            source={{ uri: urls[0] }}
+            style={[styles.mediaCell, { flex: 1, backgroundColor: bg }]}
+            resizeMode="cover"
+          />
+          <Image
+            source={{ uri: urls[1] }}
+            style={[styles.mediaCell, { flex: 1, backgroundColor: bg }]}
+            resizeMode="cover"
+          />
+        </View>
+        <View style={[styles.mediaRow, { flex: 1, gap }]}>
+          <Image
+            source={{ uri: urls[2] }}
+            style={[styles.mediaCell, { flex: 1, backgroundColor: bg }]}
+            resizeMode="cover"
+          />
+          <Image
+            source={{ uri: urls[3] }}
+            style={[styles.mediaCell, { flex: 1, backgroundColor: bg }]}
+            resizeMode="cover"
+          />
+        </View>
+      </View>
+    </View>
+  );
+}
 
 function formatRelativeTime(iso: string) {
   const d = new Date(iso);
@@ -426,17 +535,9 @@ export function Post({
         {/* QRT (indented allowed) */}
         {renderQuoted()}
 
-        {/* Media (indented allowed) */}
-        {!!item.imageUrl && (
-          <Image
-            source={{ uri: item.imageUrl }}
-            style={[
-              styles.media,
-              styles.mediaDetail,
-              { backgroundColor: scheme === 'dark' ? '#111' : '#eaeaea' },
-            ]}
-            resizeMode="cover"
-          />
+        {/* Media */}
+        {!!item.imageUrls && item.imageUrls.length > 0 && (
+          <MediaGrid imageUrls={item.imageUrls} variant="detail" scheme={scheme} />
         )}
 
         {/* Timestamp (FULL LEFT) */}
@@ -544,19 +645,29 @@ export function Post({
         <View style={rightColStyle}>
           {/* HEADER */}
           <View style={styles.headerInline}>
-            <View style={styles.headerTopRow}>
-              <View style={styles.headerLeft}>
-                <Pressable onPress={openProfile} hitSlop={0} style={styles.inlinePress}>
-                  <ThemedText type="defaultSemiBold" style={styles.name} numberOfLines={1}>
-                    {profile.displayName}
-                  </ThemedText>
-                </Pressable>
+            <View style={styles.headerRow}>
+              <View style={styles.headerBlockLeft}>
+                <View style={styles.headerNameRow}>
+                  <Pressable onPress={openProfile} hitSlop={0} style={styles.inlinePress}>
+                    <ThemedText type="defaultSemiBold" style={styles.name} numberOfLines={1}>
+                      {profile.displayName}
+                    </ThemedText>
+                  </Pressable>
 
-                <Pressable onPress={openProfile} hitSlop={0} style={styles.inlinePress}>
-                  <ThemedText style={[styles.handleInline, { color: colors.textSecondary }]} numberOfLines={1}>
-                    @{profile.handle} · {formatRelativeTime(item.createdAt)}
-                  </ThemedText>
-                </Pressable>
+                  <Pressable onPress={openProfile} hitSlop={0} style={styles.inlinePress}>
+                    <ThemedText style={[styles.handleInline, { color: colors.textSecondary }]} numberOfLines={1}>
+                      @{profile.handle} · {formatRelativeTime(item.createdAt)}
+                    </ThemedText>
+                  </Pressable>
+                </View>
+
+                {isReply && !!replyingToHandle && (
+                  <View style={styles.replyingInline}>
+                    <ThemedText style={[styles.replyingText, { color: colors.textSecondary }]}>
+                      replying to <ThemedText type="link">@{replyingToHandle}</ThemedText>
+                    </ThemedText>
+                  </View>
+                )}
               </View>
 
               <Pressable onPress={openMenu} hitSlop={10} style={styles.menuBtn}>
@@ -565,14 +676,6 @@ export function Post({
             </View>
 
             <MenuModal />
-
-            {isReply && !!replyingToHandle && (
-              <View style={styles.replyingInline}>
-                <ThemedText style={[styles.replyingText, { color: colors.textSecondary }]}>
-                  replying to <ThemedText type="link">@{replyingToHandle}</ThemedText>
-                </ThemedText>
-              </View>
-            )}
           </View>
 
           {/* CONTENT */}
@@ -580,12 +683,8 @@ export function Post({
 
           {renderQuoted()}
 
-          {!!item.imageUrl && (
-            <Image
-              source={{ uri: item.imageUrl }}
-              style={[styles.media, { backgroundColor: scheme === 'dark' ? '#111' : '#eaeaea' }]}
-              resizeMode="cover"
-            />
+          {!!item.imageUrls && item.imageUrls.length > 0 && (
+            <MediaGrid imageUrls={item.imageUrls} variant={isDetail ? 'detail' : isReply ? 'reply' : 'feed'} scheme={scheme} />
           )}
 
           {/* ACTIONS */}
@@ -743,13 +842,6 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
 
-  headerInline: {
-    flexDirection: 'column',
-    justifyContent: 'flex-start',
-    alignItems: 'flex-start',
-    gap: 0,
-  },
-
   headerTopRow: {
     flexDirection: 'row',
     alignItems: 'baseline',
@@ -768,6 +860,32 @@ const styles = StyleSheet.create({
     paddingRight: 8,
   },
 
+  headerInline: {
+    flexDirection: 'column',
+    alignItems: 'stretch',
+    gap: 0,
+  },
+
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center', 
+    justifyContent: 'space-between',
+    width: '100%',
+  },
+
+  headerBlockLeft: {
+    flex: 1,
+    flexDirection: 'column',
+    paddingRight: 8,
+  },
+
+  headerNameRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 6,
+    flexWrap: 'nowrap',
+  },
+  
   menuBtn: {
     padding: 6,
     borderRadius: 999,
@@ -839,6 +957,34 @@ const styles = StyleSheet.create({
 
   mediaDetail: {
     height: 260,
+  },
+
+  mediaSingle: {
+    marginTop: 10,
+    width: '100%',
+    borderRadius: 16,
+  },
+
+  mediaGrid: {
+    marginTop: 10,
+    width: '100%',
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+
+  mediaRow: {
+    flexDirection: 'row',
+    flex: 1,
+  },
+
+  mediaCol: {
+    flexDirection: 'column',
+    flex: 1,
+  },
+
+  mediaCell: {
+    width: '100%',
+    height: '100%',
   },
 
   dateLine: {
