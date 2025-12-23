@@ -12,6 +12,7 @@
   "author": "Les YAMBOS",
   "license": "ISC",
   "dependencies": {
+    "@neondatabase/serverless": "^1.0.2",
     "@types/express": "^5.0.3",
     "bcryptjs": "^3.0.2",
     "body-parser": "^2.2.1",

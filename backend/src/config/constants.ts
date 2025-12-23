@@ -5,11 +5,14 @@ dotenv.config();
 // BASE DE DONNÉES
 // ============================================================================
 
+export const DATABASE_URL = process.env.DATABASE_URL;
 export const DATABASE_HOST = process.env.DB_HOST;
 export const DATABASE_USER = process.env.DB_USER;
-export const DATABASE_PORT: number = 5433;
+export const DATABASE_PORT: number =
+  parseInt(<string>process.env.DB_PORT, 10) || 5432;
 export const DATABASE_PASSWORD = process.env.DB_PASSWORD;
 export const DATABASE_NAME = process.env.DB_NAME;
+export const DATABASE_SSL_MODE = Boolean(process.env.DB_SSLMODE);
 
 // ============================================================================
 // JWT

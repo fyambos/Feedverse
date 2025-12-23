@@ -1,6 +1,7 @@
 import { JwtPayload } from "jsonwebtoken";
 
 export interface RegisterRequest {
+  username: string;
   email: string;
   password: string;
   profilePicture?: string;

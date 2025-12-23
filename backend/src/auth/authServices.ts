@@ -16,7 +16,7 @@ const userRepository = new UserRepository();
 export const RegisterUserService = async (
   input: RegisterRequest,
 ): Promise<{ user?: RegisterResponse; errors?: ValidationError[] }> => {
-  const { email, password } = input;
+  const { username, email, password } = input;
 
   const errors: ValidationError[] = [];
 
@@ -49,6 +49,7 @@ export const RegisterUserService = async (
 
   const userCreated = await userRepository.create({
     id: uuid,
+    username: username,
     email: email,
     password: hashedPassword,
     created_at: date,

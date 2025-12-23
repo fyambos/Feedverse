@@ -17,12 +17,13 @@ export class UserRepository {
 
   async create(userData: CreateUserData): Promise<User> {
     const query = `
-      INSERT INTO users (id, email, password, created_at, updated_at)
-      VALUES ($1, $2, $3, $4, $5)
+      INSERT INTO users (id, username, email, password, created_at, updated_at)
+      VALUES ($1, $2, $3, $4, $5, $6)
       RETURNING *
     `;
     const result = await pool.query(query, [
       userData.id,
+      userData.username,
       userData.email,
       userData.password,
       userData.created_at,

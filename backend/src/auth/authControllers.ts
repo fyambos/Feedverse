@@ -18,9 +18,10 @@ export const RegisterController = async (req: Request, res: Response) => {
   }
 
   try {
-    const { email, password } = req.body;
+    const { username, email, password } = req.body;
 
     const result = await RegisterUserService({
+      username,
       email,
       password,
     });
