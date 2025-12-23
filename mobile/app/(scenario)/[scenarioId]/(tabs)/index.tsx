@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
-import { FlatList, StyleSheet, View, Pressable } from 'react-native';
+import { FlatList, StyleSheet, View, Pressable, Animated as RNAnimated } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { ThemedView } from '@/components/themed-view';
 import { Colors } from '@/constants/theme';
@@ -9,10 +9,10 @@ import { Post } from '@/components/Post';
 import { useProfile } from '@/context/profile';
 import { useAuth } from '@/context/auth';
 import { Ionicons } from '@expo/vector-icons';
-import { Animated } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
-import Swipeable from 'react-native-gesture-handler/Swipeable';
+import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
+import Animated, { interpolate, useAnimatedStyle } from 'react-native-reanimated';
 
 export default function HomeScreen() {
   const { scenarioId } = useLocalSearchParams<{ scenarioId: string }>();
@@ -81,28 +81,33 @@ export default function HomeScreen() {
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }, [sid, storedPosts, deletedIds]);
 
-  const scale = React.useRef(new Animated.Value(1)).current;
+  const scale = React.useRef(new RNAnimated.Value(1)).current;
   const navLock = React.useRef(false);
 
-  const swipeRefs = useRef(new Map<string, any>()).current;
+type SwipeRef = { current: typeof ReanimatedSwipeable | null };
+const swipeRefs = useRef(new Map<string, SwipeRef>()).current;
 
-  const closeSwipe = useCallback((postId: string) => {
-    const ref = swipeRefs.get(postId);
-    if (ref && typeof (ref as any).close === 'function') {
-      (ref as any).close();
-    }
-  }, [swipeRefs]);
+  const closeSwipe = useCallback(
+    (postId: string) => {
+      const refObj = swipeRefs.get(postId);
+      const swipe = refObj?.current as any;
+      if (swipe && typeof swipe.close === 'function') {
+        swipe.close();
+      }
+    },
+    [swipeRefs]
+  );
 
   const pressIn = () => {
     if (navLock.current) return;
-    Animated.spring(scale, {
+    RNAnimated.spring(scale, {
       toValue: 0.9,
       useNativeDriver: true,
     }).start();
   };
 
   const pressOut = () => {
-    Animated.spring(scale, {
+    RNAnimated.spring(scale, {
       toValue: 1,
       friction: 4,
       useNativeDriver: true,
@@ -154,69 +159,71 @@ export default function HomeScreen() {
     [scenarioId]
   );
 
-  const renderRightActions = useCallback(
-    (postId: string, _progress: Animated.AnimatedInterpolation<number>, dragX: Animated.AnimatedInterpolation<number>) => {
-      const ACTIONS_WIDTH = 120; // enough for 2 circular buttons + gap + padding
+  const ACTIONS_WIDTH = 120; // enough for 2 circular buttons + gap + padding
 
-      // dragX: 0 -> negative as you swipe left
-      // keep the actions view off-screen until you drag
-      const translateX = dragX.interpolate({
-        inputRange: [-ACTIONS_WIDTH, 0],
-        outputRange: [0, ACTIONS_WIDTH],
-        extrapolate: 'clamp',
-      });
+  const RightActions = ({
+    postId,
+    dragX,
+  }: {
+    postId: string;
+    dragX: { value: number };
+  }) => {
+    // dragX.value: 0 -> negative as you swipe left
+    const rStyle = useAnimatedStyle(() => {
+      const translateX = interpolate(dragX.value, [-ACTIONS_WIDTH, 0], [0, ACTIONS_WIDTH], 'clamp');
+      return {
+        transform: [{ translateX }],
+      };
+    }, [dragX]);
 
-      const pressedBg = colors.pressed;
+    const pressedBg = colors.pressed;
 
-      return (
-        <Animated.View
-          style={[
-            styles.swipeActions,
+    return (
+      <Animated.View
+        style={[
+          styles.swipeActions,
+          {
+            width: ACTIONS_WIDTH,
+          },
+          rStyle,
+        ]}
+      >
+        <Pressable
+          onPress={() => {
+            closeSwipe(postId);
+            requestAnimationFrame(() => openEditPost(postId));
+          }}
+          style={({ pressed }) => [
+            styles.swipeBtn,
             {
-              width: ACTIONS_WIDTH,
-              transform: [{ translateX }],
+              backgroundColor: pressed ? pressedBg : 'transparent',
+              borderColor: colors.tint,
             },
           ]}
+          hitSlop={10}
         >
-          <Pressable
-            onPress={() => {
-              closeSwipe(postId);
-              // let the row settle back before navigation
-              requestAnimationFrame(() => openEditPost(postId));
-            }}
-            style={({ pressed }) => [
-              styles.swipeBtn,
-              {
-                backgroundColor: pressed ? pressedBg : 'transparent',
-                borderColor: colors.tint,
-              },
-            ]}
-            hitSlop={10}
-          >
-            <Ionicons name="pencil" size={22} color={colors.tint} />
-          </Pressable>
+          <Ionicons name="pencil" size={22} color={colors.tint} />
+        </Pressable>
 
-          <Pressable
-            onPress={() => {
-              closeSwipe(postId);
-              void deletePost(postId);
-            }}
-            style={({ pressed }) => [
-              styles.swipeBtn,
-              {
-                backgroundColor: pressed ? pressedBg : 'transparent',
-                borderColor: '#F04438',
-              },
-            ]}
-            hitSlop={10}
-          >
-            <Ionicons name="trash-outline" size={22} color="#F04438" />
-          </Pressable>
-        </Animated.View>
-      );
-    },
-    [colors.pressed, colors.tint, deletePost, openEditPost, closeSwipe]
-  );
+        <Pressable
+          onPress={() => {
+            closeSwipe(postId);
+            void deletePost(postId);
+          }}
+          style={({ pressed }) => [
+            styles.swipeBtn,
+            {
+              backgroundColor: pressed ? pressedBg : 'transparent',
+              borderColor: '#F04438',
+            },
+          ]}
+          hitSlop={10}
+        >
+          <Ionicons name="trash-outline" size={22} color="#F04438" />
+        </Pressable>
+      </Animated.View>
+    );
+  };
 
   const openPostDetail = useCallback(
     (postId: string) => {
@@ -261,24 +268,28 @@ export default function HomeScreen() {
 
           if (!canEdit) return content;
 
+          let swipeRef = swipeRefs.get(item.id);
+          if (!swipeRef) {
+            swipeRef = { current: null };
+            swipeRefs.set(item.id, swipeRef);
+          }
+
           return (
-            <Swipeable
-              ref={(ref) => {
-                swipeRefs.set(item.id, ref);
-              }}
+            <ReanimatedSwipeable
+              ref={swipeRef as any}
               overshootRight={false}
               friction={2}
               rightThreshold={24}
-              renderRightActions={(progress, dragX) =>
-                renderRightActions(item.id, progress, dragX)
-              }
+              renderRightActions={(progress, dragX) => (
+                <RightActions postId={item.id} dragX={dragX as any} />
+              )}
             >
               {content}
-            </Swipeable>
+            </ReanimatedSwipeable>
           );
         }}
       />
-      <Animated.View
+      <RNAnimated.View
         style={[
           styles.fab,
           {
@@ -297,7 +308,7 @@ export default function HomeScreen() {
         >
           <Ionicons name="add" size={32} color="#fff" />
         </Pressable>
-      </Animated.View>
+      </RNAnimated.View>
     </ThemedView>
   );
 }

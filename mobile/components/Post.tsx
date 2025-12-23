@@ -1,5 +1,5 @@
 import React from 'react';
-import { Animated, Image, Pressable, StyleSheet, View } from 'react-native';
+import { Alert, Animated, Image, Modal, Pressable, StyleSheet, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import SimpleLineIcons from '@expo/vector-icons/SimpleLineIcons';
@@ -143,7 +143,56 @@ export function Post({
   const colors = Colors[scheme];
 
   const isDetail = variant === 'detail';
-  const isReply = variant === 'reply';
+  const isReply = variant === 'reply' || (!!item.parentPostId && variant !== 'detail');
+
+  const [menuOpen, setMenuOpen] = React.useState(false);
+
+  const MENU_OPTIONS = React.useMemo(
+    () => [
+      'Block account',
+      'Report post',
+      'Mute account',
+      'Get Blocked',
+      'Suspend account',
+      'Deactivate account',
+      'Reactivate account',
+    ],
+    []
+  );
+
+  const openMenu = () => setMenuOpen(true);
+  const closeMenu = () => setMenuOpen(false);
+
+  const onMenuOption = (label: string) => {
+    closeMenu();
+    Alert.alert('Coming soon', label);
+  };
+
+  const MenuModal = () => (
+    <Modal
+      transparent
+      visible={menuOpen}
+      animationType="fade"
+      onRequestClose={closeMenu}
+    >
+      <Pressable style={styles.menuBackdrop} onPress={closeMenu}>
+        <Pressable style={[styles.menuSheet, { backgroundColor: colors.background, borderColor: colors.border }]}>
+          {MENU_OPTIONS.map((label) => (
+            <Pressable
+              key={label}
+              onPress={() => onMenuOption(label)}
+              style={({ pressed }) => [
+                styles.menuItem,
+                { backgroundColor: pressed ? colors.pressed : 'transparent' },
+              ]}
+            >
+              <ThemedText style={{ color: colors.text, fontSize: 15 }}>{label}</ThemedText>
+            </Pressable>
+          ))}
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
 
   const { scenarioId: scenarioIdParam } = useLocalSearchParams<{ scenarioId: string }>();
   const sid = String(scenarioId ?? item.scenarioId ?? scenarioIdParam ?? '');
@@ -342,26 +391,34 @@ export function Post({
       <View style={styles.wrap}>
         {/* Header row (avatar + name/handle) */}
         <View style={styles.detailHeaderRow}>
-          <Pressable onPress={openProfile} hitSlop={0} style={styles.avatarPress}>
-            <Image source={{ uri: profile.avatarUrl }} style={[styles.avatar, styles.avatarDetail]} />
-          </Pressable>
+          <View style={styles.detailHeaderLeft}>
+            <Pressable onPress={openProfile} hitSlop={0} style={styles.avatarPress}>
+              <Image source={{ uri: profile.avatarUrl }} style={[styles.avatar, styles.avatarDetail]} />
+            </Pressable>
 
-          <View style={styles.detailHeaderText}>
-            <View style={styles.detailNameRow}>
-              <Pressable onPress={openProfile} hitSlop={0} style={styles.inlinePress}>
-                <ThemedText type="defaultSemiBold" style={[styles.name, styles.nameDetail]} numberOfLines={1}>
-                  {profile.displayName}
-                </ThemedText>
-              </Pressable>
+            <View style={styles.detailHeaderText}>
+              <View style={styles.detailNameRow}>
+                <Pressable onPress={openProfile} hitSlop={0} style={styles.inlinePress}>
+                  <ThemedText type="defaultSemiBold" style={[styles.name, styles.nameDetail]} numberOfLines={1}>
+                    {profile.displayName}
+                  </ThemedText>
+                </Pressable>
 
-              <Pressable onPress={openProfile} hitSlop={0} style={styles.inlinePress}>
-                <ThemedText style={[styles.handleInline, { color: colors.textSecondary }]} numberOfLines={1}>
-                  @{profile.handle}
-                </ThemedText>
-              </Pressable>
+                <Pressable onPress={openProfile} hitSlop={0} style={styles.inlinePress}>
+                  <ThemedText style={[styles.handleInline, { color: colors.textSecondary }]} numberOfLines={1}>
+                    @{profile.handle}
+                  </ThemedText>
+                </Pressable>
+              </View>
             </View>
           </View>
+
+          <Pressable onPress={openMenu} hitSlop={10} style={styles.menuBtn}>
+            <Ionicons name="chevron-down" size={18} color={colors.icon} />
+          </Pressable>
         </View>
+
+        <MenuModal />
 
         {/* Text (FULL LEFT) */}
         <ThemedText style={[styles.text, styles.textDetail]}>{item.text}</ThemedText>
@@ -473,14 +530,14 @@ export function Post({
     );
   }
 
-  const rightColStyle = [styles.rightCol, isReply && styles.rightColReply];
+  const rightColStyle = styles.rightCol;
 
   return (
-    <View style={styles.wrap}>
+    <View style={styles.wrapReply}>
       <View style={styles.row}>
         {/* LEFT: avatar */}
         <Pressable onPress={openProfile} hitSlop={0} style={styles.avatarPress}>
-          <Image source={{ uri: profile.avatarUrl }} style={styles.avatar} />
+          <Image source={{ uri: profile.avatarUrl }} style={styles.avatarReply} />
         </Pressable>
 
         {/* RIGHT */}
@@ -488,18 +545,26 @@ export function Post({
           {/* HEADER */}
           <View style={styles.headerInline}>
             <View style={styles.headerTopRow}>
-              <Pressable onPress={openProfile} hitSlop={0} style={styles.inlinePress}>
-                <ThemedText type="defaultSemiBold" style={styles.name} numberOfLines={1}>
-                  {profile.displayName}
-                </ThemedText>
-              </Pressable>
+              <View style={styles.headerLeft}>
+                <Pressable onPress={openProfile} hitSlop={0} style={styles.inlinePress}>
+                  <ThemedText type="defaultSemiBold" style={styles.name} numberOfLines={1}>
+                    {profile.displayName}
+                  </ThemedText>
+                </Pressable>
 
-              <Pressable onPress={openProfile} hitSlop={0} style={styles.inlinePress}>
-                <ThemedText style={[styles.handleInline, { color: colors.textSecondary }]} numberOfLines={1}>
-                  @{profile.handle} · {formatRelativeTime(item.createdAt)}
-                </ThemedText>
+                <Pressable onPress={openProfile} hitSlop={0} style={styles.inlinePress}>
+                  <ThemedText style={[styles.handleInline, { color: colors.textSecondary }]} numberOfLines={1}>
+                    @{profile.handle} · {formatRelativeTime(item.createdAt)}
+                  </ThemedText>
+                </Pressable>
+              </View>
+
+              <Pressable onPress={openMenu} hitSlop={10} style={styles.menuBtn}>
+                <Ionicons name="chevron-down" size={18} color={colors.icon} />
               </Pressable>
             </View>
+
+            <MenuModal />
 
             {isReply && !!replyingToHandle && (
               <View style={styles.replyingInline}>
@@ -525,7 +590,7 @@ export function Post({
 
           {/* ACTIONS */}
           {showActions && (
-            <View style={styles.actions}>
+            <View style={styles.actionsReply}>
               <View style={styles.actionSlot}>
                 <View style={styles.action}>
                   <Pressable
@@ -621,6 +686,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
   },
+  
+  wrapReply: {
+    paddingHorizontal: 16,
+    paddingVertical: 4,
+  },
 
   row: {
     flexDirection: 'row',
@@ -630,10 +700,6 @@ const styles = StyleSheet.create({
 
   rightCol: {
     flex: 1,
-    paddingTop: 2,
-  },
-
-  rightColReply: {
     paddingTop: 0,
   },
 
@@ -647,6 +713,13 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
 
+  avatarReply: {
+    width: 44,
+    height: 44,
+    borderRadius: 999,
+    marginTop: 6,
+  },
+
   avatarDetail: {
     width: 48,
     height: 48,
@@ -656,6 +729,7 @@ const styles = StyleSheet.create({
   name: {
     fontSize: 16,
     maxWidth: 160,
+    lineHeight: 20,
   },
 
   nameDetail: {
@@ -666,19 +740,65 @@ const styles = StyleSheet.create({
     fontSize: 15,
     opacity: 0.9,
     flexShrink: 1,
+    lineHeight: 20,
   },
 
   headerInline: {
     flexDirection: 'column',
     justifyContent: 'flex-start',
-    gap: 2,
+    alignItems: 'flex-start',
+    gap: 0,
   },
 
   headerTopRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
     flexWrap: 'nowrap',
+    width: '100%',
+    marginBottom: 0,
+  },
+
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 6,
+    flexShrink: 1,
+    flexGrow: 1,
+    paddingRight: 8,
+  },
+
+  menuBtn: {
+    padding: 6,
+    borderRadius: 999,
+    alignSelf: 'flex-start',
+  },
+
+  menuBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    justifyContent: 'flex-end',
+  },
+
+  menuSheet: {
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingVertical: 8,
+    paddingHorizontal: 8,
+  },
+
+  menuItem: {
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+  },
+
+  detailHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
   },
 
   inlinePress: {
@@ -690,7 +810,8 @@ const styles = StyleSheet.create({
   },
 
   replyingText: {
-    fontSize: 14,
+    fontSize: 13,
+    lineHeight: 17,
   },
 
   text: {
@@ -705,7 +826,7 @@ const styles = StyleSheet.create({
 
   textDetail: {
     fontSize: 18,
-    lineHeight: 24,
+    lineHeight: 20,
     marginTop: 10,
   },
 
@@ -743,6 +864,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     paddingVertical: 8,
+  },
+
+  actionsReply: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 2,
   },
 
   actionsDetail: {
@@ -803,7 +930,7 @@ const styles = StyleSheet.create({
   detailHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    justifyContent: 'space-between',
   },
 
   detailHeaderText: {

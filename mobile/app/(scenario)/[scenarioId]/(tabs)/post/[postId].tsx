@@ -1,6 +1,9 @@
-import React, { useCallback, useMemo, useState } from 'react';
-import { FlatList, StyleSheet, View } from 'react-native';
-import { useLocalSearchParams } from 'expo-router';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
+import { FlatList, Pressable, StyleSheet, View } from 'react-native';
+import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
+import { Ionicons } from '@expo/vector-icons';
+import Animated, { Extrapolation, interpolate, useAnimatedStyle } from 'react-native-reanimated';
+import { useLocalSearchParams, router } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
 
@@ -11,20 +14,25 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { MOCK_FEEDS } from '@/mocks/feeds';
 import { Post } from '@/components/Post';
 import { useProfile } from '@/context/profile';
+import { useAuth } from '@/context/auth';
 
 export default function PostScreen() {
   const { scenarioId, postId } = useLocalSearchParams<{ scenarioId: string; postId: string }>();
   const scheme = useColorScheme() ?? 'light';
   const colors = Colors[scheme];
   const { getProfileById } = useProfile();
+  const { userId } = useAuth();
+  const swipeRefs = useRef(new Map<string, any>()).current;
 
   const sid = String(scenarioId ?? '');
   const pid = String(postId ?? '');
 
   const STORAGE_KEY = `feedverse.posts.${sid}`;
+  const DELETED_KEY = `feedverse.posts.deleted.${sid}`;
 
   const [storedPosts, setStoredPosts] = useState<any[]>([]);
   const [postsReady, setPostsReady] = useState(false);
+  const [deletedIds, setDeletedIds] = useState<string[]>([]);
 
   const loadStoredPosts = useCallback(async () => {
     try {
@@ -39,11 +47,23 @@ export default function PostScreen() {
     }
   }, [STORAGE_KEY]);
 
+  const loadDeletedIds = useCallback(async () => {
+    try {
+      const raw = await AsyncStorage.getItem(DELETED_KEY);
+      const parsed = raw ? JSON.parse(raw) : [];
+      const list = Array.isArray(parsed) ? parsed.filter((x) => typeof x === 'string') : [];
+      setDeletedIds(list);
+    } catch {
+      setDeletedIds([]);
+    }
+  }, [DELETED_KEY]);
+
   useFocusEffect(
     useCallback(() => {
       void loadStoredPosts();
+      void loadDeletedIds();
       return () => {};
-    }, [loadStoredPosts])
+    }, [loadStoredPosts, loadDeletedIds])
   );
 
   const all = useMemo(() => {
@@ -58,8 +78,10 @@ export default function PostScreen() {
       if (!byId.has(id)) byId.set(id, p);
     }
 
-    return Array.from(byId.values()).filter((p) => String(p.scenarioId) === sid);
-  }, [sid, storedPosts]);
+    return Array.from(byId.values())
+      .filter((p) => String(p.scenarioId) === sid)
+      .filter((p) => !deletedIds.includes(String(p.id)));
+  }, [sid, storedPosts, deletedIds]);
   
   function buildThread(posts: any[], rootId: string) {
     const byParent = new Map<string, any[]>();
@@ -90,6 +112,125 @@ export default function PostScreen() {
     walk(rootId);
     return result;
   }
+
+  const closeSwipe = useCallback(
+    (postId: string) => {
+      const ref = swipeRefs.get(postId);
+      if (ref && typeof (ref as any).close === 'function') {
+        (ref as any).close();
+      }
+    },
+    [swipeRefs]
+  );
+
+  const deletePost = useCallback(
+    async (postId: string) => {
+      // 1) remove from stored posts if present
+      const nextStored = storedPosts.filter((p) => String(p?.id) !== String(postId));
+      if (nextStored.length !== storedPosts.length) {
+        setStoredPosts(nextStored);
+        await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(nextStored));
+        return;
+      }
+
+      // 2) otherwise, hide mock posts via a deleted-ids list
+      if (!deletedIds.includes(String(postId))) {
+        const nextDeleted = [String(postId), ...deletedIds];
+        setDeletedIds(nextDeleted);
+        await AsyncStorage.setItem(DELETED_KEY, JSON.stringify(nextDeleted));
+      }
+    },
+    [storedPosts, deletedIds, STORAGE_KEY, DELETED_KEY]
+  );
+
+  const openEditPost = useCallback(
+    (postId: string) => {
+      router.push({
+        pathname: '/modal/create-post',
+        params: { scenarioId: sid, postId: String(postId) },
+      } as any);
+    },
+    [sid]
+  );
+
+  const RightActions = ({
+    postId,
+    dragX,
+  }: {
+    postId: string;
+    dragX: any;
+  }) => {
+    const ACTIONS_WIDTH = 120;
+
+    const animatedStyle = useAnimatedStyle(() => {
+      // dragX.value: 0 -> negative as you swipe left
+      const translateX = interpolate(
+        dragX.value,
+        [-ACTIONS_WIDTH, 0],
+        [0, ACTIONS_WIDTH],
+        Extrapolation.CLAMP
+      );
+
+      return {
+        transform: [{ translateX }],
+      };
+    });
+
+    const pressedBg = colors.pressed;
+
+    return (
+      <Animated.View
+        style={[
+          styles.swipeActions,
+          {
+            width: ACTIONS_WIDTH,
+          },
+          animatedStyle,
+        ]}
+      >
+        <Pressable
+          onPress={() => {
+            closeSwipe(String(postId));
+            requestAnimationFrame(() => openEditPost(String(postId)));
+          }}
+          style={({ pressed }) => [
+            styles.swipeBtn,
+            {
+              backgroundColor: pressed ? pressedBg : 'transparent',
+              borderColor: colors.tint,
+            },
+          ]}
+          hitSlop={10}
+        >
+          <Ionicons name="pencil" size={22} color={colors.tint} />
+        </Pressable>
+
+        <Pressable
+          onPress={() => {
+            closeSwipe(String(postId));
+            void deletePost(String(postId));
+          }}
+          style={({ pressed }) => [
+            styles.swipeBtn,
+            {
+              backgroundColor: pressed ? pressedBg : 'transparent',
+              borderColor: '#F04438',
+            },
+          ]}
+          hitSlop={10}
+        >
+          <Ionicons name="trash-outline" size={22} color="#F04438" />
+        </Pressable>
+      </Animated.View>
+    );
+  };
+
+  const renderRightActions = useCallback(
+    (postId: string, _progress: any, dragX: any) => {
+      return <RightActions postId={String(postId)} dragX={dragX} />;
+    },
+    [colors.pressed, colors.tint, closeSwipe, deletePost, openEditPost]
+  );
 
   if (!postsReady) {
     return (
@@ -124,6 +265,7 @@ export default function PostScreen() {
         keyExtractor={(i: any) => String(i.id)}
         ItemSeparatorComponent={() => <View style={[styles.sep, { backgroundColor: colors.border }]} />}
         renderItem={({ item }) => {
+          const itemId = String(item.id);
           const authorProfileId = item?.authorProfileId ? String(item.authorProfileId) : '';
           const profile = authorProfileId ? getProfileById(sid, authorProfileId) : null;
           if (!profile) return null;
@@ -135,15 +277,43 @@ export default function PostScreen() {
           const parentAuthorProfileId = parent?.authorProfileId ? String(parent.authorProfileId) : '';
           const parentProfile = parentAuthorProfileId ? getProfileById(sid, parentAuthorProfileId) : null;
 
-          return (
+          const isRoot = String(item.id) === String(root.id);
+          const variant = isRoot ? 'detail' : 'reply';
+
+          const canEdit =
+            (profile as any).ownerUserId === userId || !!(profile as any).isPublic;
+
+          const content = (
             <Post
               scenarioId={sid}
               profile={profile}
               item={item}
-              variant={String(item.id) === String(root.id) ? 'detail' : 'reply'}
+              variant={variant}
               replyingTo={parentProfile?.handle}
               showActions
             />
+          );
+
+          if (!canEdit) return content;
+
+          let swipeRef = swipeRefs.get(itemId);
+          if (!swipeRef) {
+            swipeRef = { current: null };
+            swipeRefs.set(itemId, swipeRef);
+          }
+
+          return (
+            <ReanimatedSwipeable
+              ref={swipeRef as any}
+              overshootRight={false}
+              friction={2}
+              rightThreshold={24}
+              renderRightActions={(progress, dragX) =>
+                renderRightActions(itemId, progress, dragX)
+              }
+            >
+              {content}
+            </ReanimatedSwipeable>
           );
         }}
 
@@ -155,4 +325,20 @@ export default function PostScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   sep: { height: StyleSheet.hairlineWidth, opacity: 0.8 },
+  swipeActions: {
+    flexDirection: 'row',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    paddingRight: 12,
+    gap: 10,
+  },
+  swipeBtn: {
+    width: 46,
+    height: 46,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+  },
 });
