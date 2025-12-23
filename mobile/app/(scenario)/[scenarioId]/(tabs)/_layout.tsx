@@ -72,7 +72,7 @@ export default function TabLayout() {
         name="post/[postId]"
         options={{
           href: null, // don't show as a tab item
-          title: '',
+          title: 'Post',
           headerShown: true,
           headerLeft: () => (
             <Pressable onPress={() => router.back()} hitSlop={12}>

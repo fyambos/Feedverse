@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   View,
   StyleSheet,
@@ -21,6 +20,8 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useProfile } from '@/context/profile';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { MOCK_FEEDS } from '@/mocks/feeds';
+
+import { storageFetchPostById, storageUpsertPost, storageUpsertProfile } from '@/context/post';
 
 function clampInt(n: number, min = 0, max = 99000000) {
   if (Number.isNaN(n)) return min;
@@ -92,63 +93,27 @@ type StoredPost = {
   replyCount?: number;
   repostCount?: number;
   likeCount?: number;
-  parentPostId?: string;
+  parentPostId?: string; // reply
+  quotedPostId?: string; // quote
   isEdited?: boolean;
 };
-
-function postsKey(scenarioId: string) {
-  return `feedverse.posts.${scenarioId}`;
-}
-
-async function appendPost(scenarioId: string, post: StoredPost) {
-  const key = postsKey(scenarioId);
-  const raw = await AsyncStorage.getItem(key);
-  let list: StoredPost[] = [];
-  if (raw) {
-    try {
-      list = JSON.parse(raw) as StoredPost[];
-      if (!Array.isArray(list)) list = [];
-    } catch {
-      list = [];
-    }
-  }
-  // newest first
-  const next = [post, ...list];
-  await AsyncStorage.setItem(key, JSON.stringify(next));
-}
 
 function makeId(prefix: string) {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
-async function readStoredPosts(scenarioId: string) {
-  const key = postsKey(scenarioId);
-  const raw = await AsyncStorage.getItem(key);
-  if (!raw) return [] as StoredPost[];
-  try {
-    const parsed = JSON.parse(raw) as unknown;
-    return Array.isArray(parsed) ? (parsed as StoredPost[]) : ([] as StoredPost[]);
-  } catch {
-    return [] as StoredPost[];
-  }
-}
+async function findPostById(
+  scenarioId: string,
+  postId: string
+): Promise<StoredPost | null> {
+  const stored = await storageFetchPostById(scenarioId, postId);
+  if (stored) return stored as unknown as StoredPost;
 
-async function writeStoredPosts(scenarioId: string, posts: StoredPost[]) {
-  const key = postsKey(scenarioId);
-  await AsyncStorage.setItem(key, JSON.stringify(posts));
-}
-
-async function findPostById(scenarioId: string, postId: string): Promise<StoredPost | null> {
-  // Prefer stored (it may contain edits), then fallback to mocks.
-  const stored = await readStoredPosts(scenarioId);
-  const inStored = stored.find((p) => p.id === postId);
-  if (inStored) return inStored;
-
-  const mock = (MOCK_FEEDS[scenarioId] ?? []).find((p: any) => p.id === postId);
+  const mock = (MOCK_FEEDS[scenarioId] ?? []).find((p: any) => String(p.id) === String(postId));
   if (!mock) return null;
 
-  return {
-    id: mock.id,
+  const hydrated: StoredPost = {
+    id: String(mock.id),
     scenarioId: String(mock.scenarioId ?? scenarioId),
     authorProfileId: String(mock.authorProfileId),
     text: String(mock.text ?? ''),
@@ -158,35 +123,38 @@ async function findPostById(scenarioId: string, postId: string): Promise<StoredP
     repostCount: mock.repostCount ?? 0,
     likeCount: mock.likeCount ?? 0,
     parentPostId: mock.parentPostId ?? undefined,
+    quotedPostId: mock.quotedPostId ?? undefined,
   };
-}
 
-async function upsertPost(scenarioId: string, post: StoredPost) {
-  const stored = await readStoredPosts(scenarioId);
-  // remove any existing with same id, then put newest first.
-  const next = [post, ...stored.filter((p) => p.id !== post.id)];
-  await writeStoredPosts(scenarioId, next);
+  await storageUpsertPost(scenarioId, hydrated as any);
+
+  return hydrated;
 }
 
 export default function CreatePostModal() {
-  const { scenarioId, postId, parentPostId, replyingTo } = useLocalSearchParams<{
+  const { scenarioId, postId, parentPostId, quotedPostId } = useLocalSearchParams<{
     scenarioId: string;
     postId?: string;
     parentPostId?: string;
-    replyingTo?: string;
+    quotedPostId?: string;
   }>();
+
   const scheme = useColorScheme() ?? 'light';
   const colors = Colors[scheme];
 
   const { selectedProfileId, getProfileById } = useProfile();
   const sid = String(scenarioId ?? '');
+
   const editingPostId = postId ? String(postId) : '';
   const isEdit = !!editingPostId;
 
   const selectedId = selectedProfileId(sid);
   const [authorProfileId, setAuthorProfileId] = useState<string | null>(selectedId);
   const [pickAuthorArmed, setPickAuthorArmed] = useState(false);
+
   const [parentId, setParentId] = useState<string | undefined>(undefined);
+  const [quoteId, setQuoteId] = useState<string | undefined>(undefined);
+  const [quotedPost, setQuotedPost] = useState<StoredPost | null>(null);
 
   const profile = useMemo(() => {
     if (!authorProfileId) return null;
@@ -203,26 +171,27 @@ export default function CreatePostModal() {
 
   const [hydrated, setHydrated] = useState(false);
 
+  // hydrate (edit mode) OR wire reply/quote (create mode)
   useEffect(() => {
-    const replyParentId = parentPostId ? String(parentPostId) : undefined;
+    const replyParent = parentPostId ? String(parentPostId) : undefined;
+    const q = quotedPostId ? String(quotedPostId) : undefined;
 
     if (!isEdit) {
-      // create mode: ensure author uses current selection
       setAuthorProfileId((prev) => prev ?? selectedId ?? null);
-      setParentId(replyParentId);
-      setAuthorProfileId((prev) => prev ?? selectedId ?? null);
+      setParentId(replyParent);
+      setQuoteId(q);
+      setHydrated(true);
       return;
     }
+
     if (hydrated) return;
 
     (async () => {
       const found = await findPostById(sid, editingPostId);
       if (!found) {
-        // If post can't be found, just close to avoid a broken modal.
         router.back();
         return;
       }
-      const replyingToHandle = replyingTo ? String(replyingTo) : undefined;
 
       setAuthorProfileId(found.authorProfileId);
       setText(found.text ?? '');
@@ -230,11 +199,15 @@ export default function CreatePostModal() {
       setReplyCount(String(found.replyCount ?? 0));
       setRepostCount(String(found.repostCount ?? 0));
       setLikeCount(String(found.likeCount ?? 0));
-      setHydrated(true);
-      setParentId(found.parentPostId ? String(found.parentPostId) : replyParentId);
-    })();
-  }, [isEdit, hydrated, sid, editingPostId, selectedId, parentPostId]);
 
+      setParentId(found.parentPostId ? String(found.parentPostId) : replyParent);
+      setQuoteId(found.quotedPostId ? String(found.quotedPostId) : q);
+
+      setHydrated(true);
+    })();
+  }, [isEdit, hydrated, sid, editingPostId, selectedId, parentPostId, quotedPostId]);
+
+  // after selecting a profile in the select-profile modal
   useEffect(() => {
     if (!pickAuthorArmed) return;
     if (!selectedId) return;
@@ -242,6 +215,25 @@ export default function CreatePostModal() {
     setAuthorProfileId(selectedId);
     setPickAuthorArmed(false);
   }, [pickAuthorArmed, selectedId]);
+
+  // load quoted post preview (+ seed into storage)
+  useEffect(() => {
+    let mounted = true;
+
+    (async () => {
+      if (!quoteId) {
+        setQuotedPost(null);
+        return;
+      }
+      const p = await findPostById(sid, quoteId);
+      if (!mounted) return;
+      setQuotedPost(p);
+    })();
+
+    return () => {
+      mounted = false;
+    };
+  }, [sid, quoteId]);
 
   const canPost = text.trim().length > 0 && !!authorProfileId;
 
@@ -271,12 +263,20 @@ export default function CreatePostModal() {
       likeCount: counts.like,
       isEdited: isEdit ? true : undefined,
       parentPostId: parentId,
+      quotedPostId: quoteId,
     };
 
-    if (isEdit) {
-      await upsertPost(sid, base);
-    } else {
-      await appendPost(sid, base);
+    await storageUpsertPost(sid, base as any);
+
+    const prof = getProfileById(sid, authorProfileId);
+    if (prof) {
+      await storageUpsertProfile(sid, {
+        id: String((prof as any).id ?? authorProfileId),
+        scenarioId: sid,
+        displayName: String((prof as any).displayName ?? ''),
+        handle: String((prof as any).handle ?? ''),
+        avatarUrl: String((prof as any).avatarUrl ?? ''),
+      } as any);
     }
 
     router.back();
@@ -323,9 +323,7 @@ export default function CreatePostModal() {
             contentContainerStyle={{ paddingBottom: 24 }}
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
-            
           >
-            
             {/* COMPOSER */}
             <View style={styles.composer}>
               <Pressable
@@ -361,6 +359,66 @@ export default function CreatePostModal() {
                   scrollEnabled
                   textAlignVertical="top"
                 />
+
+                {quotedPost ? (
+                  <Pressable
+                    onPress={() => {
+                      router.push(`/(scenario)/${sid}/(tabs)/post/${String(quotedPost.id)}` as any);
+                    }}
+                    style={({ pressed }) => [
+                      styles.quoteCard,
+                      {
+                        borderColor: colors.border,
+                        backgroundColor: pressed ? colors.pressed : colors.background,
+                      },
+                    ]}
+                  >
+                    {(() => {
+                      const qpAuthor = getProfileById(sid, String(quotedPost.authorProfileId));
+                      return (
+                        <View style={styles.quoteInner}>
+                          {qpAuthor?.avatarUrl ? (
+                            <Image source={{ uri: qpAuthor.avatarUrl }} style={styles.quoteAvatar} />
+                          ) : (
+                            <View style={[styles.quoteAvatar, { backgroundColor: colors.border }]} />
+                          )}
+
+                          <View style={{ flex: 1 }}>
+                            <View style={styles.quoteTopRow}>
+                              <ThemedText
+                                numberOfLines={1}
+                                style={{ fontWeight: '800', color: colors.text, maxWidth: '70%' }}
+                              >
+                                {qpAuthor?.displayName ?? 'Unknown'}
+                              </ThemedText>
+                              <ThemedText
+                                numberOfLines={1}
+                                style={{ color: colors.textSecondary, marginLeft: 8, flexShrink: 1 }}
+                              >
+                                @{qpAuthor?.handle ?? 'unknown'}
+                              </ThemedText>
+                              <ThemedText style={{ color: colors.textSecondary }}> · </ThemedText>
+                              <ThemedText style={{ color: colors.textSecondary }}>
+                                {new Date(quotedPost.createdAt).toLocaleDateString(undefined, {
+                                  day: '2-digit',
+                                  month: '2-digit',
+                                  year: 'numeric',
+                                })}
+                              </ThemedText>
+                            </View>
+
+                            <ThemedText
+                              numberOfLines={3}
+                              style={{ color: colors.text, marginTop: 6, lineHeight: 18 }}
+                            >
+                              {quotedPost.text}
+                            </ThemedText>
+                          </View>
+                        </View>
+                      );
+                    })()}
+                  </Pressable>
+                ) : null}
               </View>
             </View>
 
@@ -389,7 +447,9 @@ export default function CreatePostModal() {
 
             {/* META CONTROLS */}
             <View style={styles.section}>
-              <ThemedText style={[styles.sectionTitle, { color: colors.textSecondary }]}>Post settings</ThemedText>
+              <ThemedText style={[styles.sectionTitle, { color: colors.textSecondary }]}>
+                Post settings
+              </ThemedText>
 
               <RowCard label="Date" colors={colors}>
                 <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -538,8 +598,31 @@ const styles = StyleSheet.create({
     lineHeight: 24,
     paddingTop: 2,
     paddingBottom: 6,
-    minHeight: 120,
+    minHeight: 0,
     maxHeight: 260,
+  },
+
+  quoteCard: {
+    marginTop: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 16,
+    padding: 12,
+  },
+  quoteInner: {
+    flexDirection: 'row',
+    gap: 10,
+    alignItems: 'flex-start',
+  },
+  quoteAvatar: {
+    width: 22,
+    height: 22,
+    borderRadius: 999,
+    marginTop: 2,
+  },
+  quoteTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'nowrap',
   },
 
   softDivider: {

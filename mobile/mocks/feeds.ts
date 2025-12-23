@@ -9,6 +9,7 @@ export type FeedPost = {
   repostCount?: number;
   likeCount?: number;
   parentPostId?: string | null;
+  quotedPostId?: string | null;
 };
 
 export const MOCK_FEEDS: Record<string, FeedPost[]> = {
