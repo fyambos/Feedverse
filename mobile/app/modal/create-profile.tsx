@@ -10,6 +10,7 @@ import {
   Image,
   Modal,
   ScrollView,
+  Alert
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -20,6 +21,8 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { useProfile } from '@/context/profile';
 import { useAuth } from '@/context/auth';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as ImagePicker from 'expo-image-picker';
 
 export default function CreateProfileModal() {
   const { scenarioId, profileId } = useLocalSearchParams<{ scenarioId: string; profileId?: string }>();
@@ -58,26 +61,42 @@ export default function CreateProfileModal() {
 
   const sid = String(scenarioId ?? '');
   const isEdit = !!profileId;
+  const AVATAR_KEY = `feedverse.profile.avatar.${sid}.${handle}`;
 
-  useEffect(() => {
-    if (!isEdit) return;
+  const pickImage = async () => {
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) {
+      Alert.alert('Permission needed', 'Enable photo access to pick images.');
+      return null;
+    }
 
-    const pid = String(profileId ?? '');
-    if (!pid) return;
+    const res = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      quality: 0.9,
+    });
 
-    // Prefer a direct lookup (merged: AsyncStorage + mocks) if available.
-    // Fallback to the list in case getProfileById isn't wired for some reason.
-    const direct = typeof getProfileById === 'function' ? getProfileById(sid, pid) : null;
-    const fallbackList = getUserProfilesForScenario(sid);
-    const existing = (direct ?? fallbackList.find((p: any) => p.id === pid)) as any;
+    if (res.canceled) return null;
+    return res.assets?.[0]?.uri ?? null;
+  };
 
-    if (!existing) return;
+useEffect(() => {
+  if (!isEdit) return;
 
-    setAvatarUrl(existing.avatarUrl || DEFAULT_AVATAR);
+  const pid = String(profileId ?? '');
+  if (!pid) return;
+
+  const direct = typeof getProfileById === 'function' ? getProfileById(sid, pid) : null;
+  const fallbackList = getUserProfilesForScenario(sid);
+  const existing = (direct ?? fallbackList.find((p: any) => p.id === pid)) as any;
+
+  if (!existing) return;
+
+  (async () => {
+    // set base fields first
     setName(existing.displayName || '');
     setHandle(existing.handle || '');
     setBio(existing.bio || '');
-
     setLocation(existing.location || '');
     setLink(existing.link || '');
 
@@ -93,23 +112,36 @@ export default function CreateProfileModal() {
       typeof existing.followingCount === 'number'
         ? String(existing.followingCount)
         : existing.followingCount
-          ? String(existing.followingCount)
-          : ''
+        ? String(existing.followingCount)
+        : ''
     );
     setFollowers(
       typeof existing.followerCount === 'number'
         ? String(existing.followerCount)
         : existing.followerCount
-          ? String(existing.followerCount)
-          : ''
+        ? String(existing.followerCount)
+        : ''
     );
-  }, [isEdit, profileId, sid, getUserProfilesForScenario, getProfileById]);
 
+    const key = `feedverse.profile.avatar.${sid}.${String(existing.handle)}`;
+    const override = await AsyncStorage.getItem(key);
+
+    setAvatarUrl(override || existing.avatarUrl || DEFAULT_AVATAR);
+  })();
+}, [isEdit, profileId, sid, getUserProfilesForScenario, getProfileById]);
   const canSubmit = name.trim().length > 0 && handle.trim().length > 0;
 
-  const pickTempAvatar = () => {
-    const rand = Math.floor(Math.random() * 70) + 1;
-    setAvatarUrl(`https://i.pravatar.cc/150?img=${rand}`);
+  const onPickAvatar = async () => {
+    const uri = await pickImage();
+    if (!uri) return;
+
+    setAvatarUrl(uri);
+
+    // IMPORTANT: persist using handle (same as ProfileScreen)
+    const key = `feedverse.profile.avatar.${sid}.${handle.trim()}`;
+    if (handle.trim()) {
+      await AsyncStorage.setItem(key, uri);
+    }
   };
 
   const onSave = async () => {
@@ -186,7 +218,7 @@ export default function CreateProfileModal() {
 
           <View style={styles.avatarWrap}>
             <Pressable
-              onPress={pickTempAvatar}
+              onPress={onPickAvatar}
               hitSlop={12}
               style={({ pressed }) => [styles.avatarBtn, pressed && { opacity: 0.85 }]}
             >

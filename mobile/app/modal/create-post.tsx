@@ -26,6 +26,7 @@ import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { MOCK_FEEDS } from '@/mocks/feeds';
 
 import { storageFetchPostById, storageUpsertPost, storageUpsertProfile } from '@/context/post';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 function clampInt(n: number, min = 0, max = 99000000) {
   if (Number.isNaN(n)) return min;
@@ -160,10 +161,27 @@ export default function CreatePostModal() {
     if (!authorProfileId) return null;
     return getProfileById(sid, authorProfileId);
   }, [sid, authorProfileId, getProfileById]);
+const [authorAvatarOverride, setAuthorAvatarOverride] = useState<string | null>(null);
 
+  useEffect(() => {
+    let mounted = true;
+
+    (async () => {
+      if (!profile?.handle) {
+        if (mounted) setAuthorAvatarOverride(null);
+        return;
+      }
+      const key = `feedverse.profile.avatar.${sid}.${String(profile.handle)}`;
+      const uri = await AsyncStorage.getItem(key);
+      if (mounted) setAuthorAvatarOverride(uri);
+    })();
+
+    return () => {
+      mounted = false;
+    };
+  }, [sid, profile?.handle]);
   const [text, setText] = useState('');
 
-  // ✅ images (max 4)
   const [imageUrls, setImageUrls] = useState<string[]>([]);
 
   const [date, setDate] = useState<Date>(new Date());
@@ -423,7 +441,7 @@ export default function CreatePostModal() {
                 style={({ pressed }) => [pressed && { opacity: 0.75 }]}
               >
                 {profile ? (
-                  <Image source={{ uri: profile.avatarUrl }} style={styles.avatar} />
+                  <Image source={{ uri: authorAvatarOverride ?? profile.avatarUrl }} style={styles.avatar} />
                 ) : (
                   <View style={[styles.avatar, { backgroundColor: colors.border }]} />
                 )}
@@ -489,10 +507,29 @@ export default function CreatePostModal() {
                   >
                     {(() => {
                       const qpAuthor = getProfileById(sid, String(quotedPost.authorProfileId));
+                      const [qpAvatarOverride, setQpAvatarOverride] = useState<string | null>(null);
+
+                      useEffect(() => {
+                        let mounted = true;
+
+                        (async () => {
+                          if (!qpAuthor?.handle) {
+                            if (mounted) setQpAvatarOverride(null);
+                            return;
+                          }
+                          const key = `feedverse.profile.avatar.${sid}.${String(qpAuthor.handle)}`;
+                          const uri = await AsyncStorage.getItem(key);
+                          if (mounted) setQpAvatarOverride(uri);
+                        })();
+
+                        return () => {
+                          mounted = false;
+                        };
+                      }, [sid, qpAuthor?.handle]);
                       return (
                         <View style={styles.quoteInner}>
                           {qpAuthor?.avatarUrl ? (
-                            <Image source={{ uri: qpAuthor.avatarUrl }} style={styles.quoteAvatar} />
+                            <Image source={{ uri: qpAvatarOverride ?? qpAuthor.avatarUrl }} style={styles.quoteAvatar} />
                           ) : (
                             <View style={[styles.quoteAvatar, { backgroundColor: colors.border }]} />
                           )}
