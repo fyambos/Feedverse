@@ -29,7 +29,7 @@ import { Avatar } from "@/components/ui/Avatar";
 import { pickAndPersistOneImage } from "@/components/ui/AvatarPicker";
 import { formatCount, formatJoined, normalizeHandle } from "@/lib/format";
 
-import { Lightbox } from "@/components/media/lightBox";
+import { Lightbox } from "@/components/media/LightBox";
 import { SwipeableRow } from "@/components/ui/SwipeableRow";
 
 /* -------------------------------------------------------------------------- */
