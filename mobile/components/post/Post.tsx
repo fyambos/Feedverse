@@ -26,6 +26,7 @@ import { formatCount, formatRelativeTime, formatDetailTimestamp } from "@/lib/fo
 import { MediaGrid } from "@/components/media/MediaGrid";
 import { Lightbox } from "@/components/media/lightBox";
 import type { StyleProp, ViewStyle } from "react-native";
+import { PostActions } from "@/components/post/PostActions";
 /* -------------------------------------------------------------------------- */
 /* Types                                                                      */
 /* -------------------------------------------------------------------------- */
@@ -364,61 +365,15 @@ export function Post({
 
         {/* Actions */}
         {showActions && (
-          <View style={[styles.actions, styles.actionsDetail]}>
-            <View style={styles.actionSlot}>
-              <View style={styles.action}>
-                <Pressable
-                  onPress={() => {
-                    pop(replyScale);
-                    onReply();
-                  }}
-                  hitSlop={6}
-                  pressRetentionOffset={6}
-                  style={styles.iconPressable}
-                >
-                  <Animated.View style={{ transform: [{ scale: replyScale }] }}>
-                    <SimpleLineIcons name="bubble" size={20} color={colors.icon} />
-                  </Animated.View>
-                </Pressable>
-                <ThemedText style={[styles.actionCount, { opacity: 0 }]}>0</ThemedText>
-              </View>
-            </View>
-
-            <View style={styles.actionSlot}>
-              <View style={styles.action}>
-                <Pressable
-                  onPress={() => pop(repostScale)}
-                  onLongPress={() => {
-                    pop(repostScale);
-                    onQuote();
-                  }}
-                  delayLongPress={250}
-                  hitSlop={6}
-                  pressRetentionOffset={6}
-                  style={styles.iconPressable}
-                >
-                  <Animated.View style={{ transform: [{ scale: repostScale }] }}>
-                    <IconSymbol name="arrow.2.squarepath" size={23} color={colors.icon} />
-                  </Animated.View>
-                </Pressable>
-                <ThemedText style={[styles.actionCount, { opacity: 0 }]}>0</ThemedText>
-              </View>
-            </View>
-
-            <View style={styles.actionSlot}>
-              <View style={styles.action}>
-                <Ionicons name="heart-outline" size={22} color={colors.icon} />
-                <ThemedText style={[styles.actionCount, { opacity: 0 }]}>0</ThemedText>
-              </View>
-            </View>
-
-            <View style={styles.actionSlot}>
-              <View style={styles.action}>
-                <Ionicons name="share-outline" size={22} color={colors.icon} />
-                <ThemedText style={[styles.actionCount, { opacity: 0 }]}>0</ThemedText>
-              </View>
-            </View>
-          </View>
+          <PostActions
+            variant="detail"
+            colors={colors}
+            replyCount={replyCount}
+            repostCount={repostCount}
+            likeCount={likeCount}
+            onReply={onReply}
+            onQuote={onQuote}
+          />
         )}
       </View>
     );
@@ -495,90 +450,15 @@ export function Post({
 
           {/* ACTIONS */}
           {showActions && (
-            <View style={styles.actionsReply}>
-              <View style={styles.actionSlot}>
-                <View style={styles.action}>
-                  <Pressable
-                    onPress={() => {
-                      pop(replyScale);
-                      onReply();
-                    }}
-                    hitSlop={6}
-                    pressRetentionOffset={6}
-                    style={styles.iconPressable}
-                  >
-                    <Animated.View style={{ transform: [{ scale: replyScale }] }}>
-                      <SimpleLineIcons name="bubble" size={20} color={colors.icon} />
-                    </Animated.View>
-                  </Pressable>
-
-                  {showActionCounts && (
-                    <ThemedText
-                      style={[
-                        styles.actionCount,
-                        { color: colors.textSecondary, opacity: replyCount > 0 ? 1 : 0 },
-                      ]}
-                    >
-                      {replyCount > 0 ? formatCount(replyCount) : "0"}
-                    </ThemedText>
-                  )}
-                </View>
-              </View>
-
-              <View style={styles.actionSlot}>
-                <View style={styles.action}>
-                  <Pressable
-                    onPress={() => pop(repostScale)}
-                    onLongPress={() => {
-                      pop(repostScale);
-                      onQuote();
-                    }}
-                    delayLongPress={250}
-                    hitSlop={6}
-                    pressRetentionOffset={6}
-                    style={styles.iconPressable}
-                  >
-                    <Animated.View style={{ transform: [{ scale: repostScale }] }}>
-                      <IconSymbol name="arrow.2.squarepath" size={23} color={colors.icon} />
-                    </Animated.View>
-                  </Pressable>
-
-                  {showActionCounts && (
-                    <ThemedText
-                      style={[
-                        styles.actionCount,
-                        { color: colors.textSecondary, opacity: repostCount > 0 ? 1 : 0 },
-                      ]}
-                    >
-                      {repostCount > 0 ? formatCount(repostCount) : "0"}
-                    </ThemedText>
-                  )}
-                </View>
-              </View>
-
-              <View style={styles.actionSlot}>
-                <View style={styles.action}>
-                  <Ionicons name="heart-outline" size={22} color={colors.icon} />
-                  {showActionCounts && (
-                    <ThemedText
-                      style={[
-                        styles.actionCount,
-                        { color: colors.textSecondary, opacity: likeCount > 0 ? 1 : 0 },
-                      ]}
-                    >
-                      {likeCount > 0 ? formatCount(likeCount) : "0"}
-                    </ThemedText>
-                  )}
-                </View>
-              </View>
-
-              <View style={styles.actionSlot}>
-                <View style={styles.action}>
-                  <Ionicons name="share-outline" size={22} color={colors.icon} />
-                  {showActionCounts && <ThemedText style={[styles.actionCount, { opacity: 0 }]}>0</ThemedText>}
-                </View>
-              </View>
-            </View>
+            <PostActions
+              variant={isReply ? "reply" : "feed"}
+              colors={colors}
+              replyCount={replyCount}
+              repostCount={repostCount}
+              likeCount={likeCount}
+              onReply={onReply}
+              onQuote={onQuote}
+            />
           )}
         </View>
       </View>
@@ -684,39 +564,6 @@ const styles = StyleSheet.create({
 
   countsRow: { flexDirection: "row", gap: 16 },
   countItem: { fontSize: 14 },
-
-  actions: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    paddingVertical: 8,
-  },
-
-  actionsReply: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    paddingVertical: 2,
-  },
-
-  actionsDetail: { paddingTop: 4 },
-
-  actionSlot: { flex: 1, alignItems: "center" },
-
-  action: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 999,
-  },
-
-  actionCount: { fontSize: 14, minWidth: 18 },
-
-  iconPressable: {
-    paddingVertical: 2,
-    paddingHorizontal: 2,
-    borderRadius: 999,
-  },
 
   quoteCard: {
     marginTop: 12,
