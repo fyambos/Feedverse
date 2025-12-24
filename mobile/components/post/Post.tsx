@@ -3,7 +3,6 @@ import React from "react";
 import {
   Alert,
   Animated,
-  Image,
   Modal,
   Pressable,
   StyleSheet,
@@ -12,7 +11,8 @@ import {
 import { router, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import SimpleLineIcons from "@expo/vector-icons/SimpleLineIcons";
-import { IconSymbol } from '@/components/ui/icon-symbol';
+
+import { IconSymbol } from "@/components/ui/icon-symbol";
 import { ThemedText } from "@/components/themed-text";
 import { Colors } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
@@ -23,6 +23,9 @@ import { useAppData } from "@/context/appData";
 import { Avatar } from "@/components/ui/Avatar";
 import { formatCount, formatRelativeTime, formatDetailTimestamp } from "@/lib/format";
 
+import { MediaGrid } from "@/components/media/MediaGrid";
+import { Lightbox } from "@/components/media/lightBox";
+import type { StyleProp, ViewStyle } from "react-native";
 /* -------------------------------------------------------------------------- */
 /* Types                                                                      */
 /* -------------------------------------------------------------------------- */
@@ -47,74 +50,6 @@ function pluralize(n: number, singular: string, plural?: string) {
   return n === 1 ? singular : p;
 }
 
-function MediaGrid({
-  imageUrls,
-  variant,
-  scheme,
-}: {
-  imageUrls: string[];
-  variant: PostVariant;
-  scheme: "light" | "dark";
-}) {
-  const urls = (imageUrls ?? []).filter(Boolean).slice(0, 4);
-  if (urls.length === 0) return null;
-
-  const bg = scheme === "dark" ? "#111" : "#eaeaea";
-  const isDetail = variant === "detail";
-  const h = isDetail ? 260 : 220;
-  const gap = 2;
-
-  if (urls.length === 1) {
-    return (
-      <Image
-        source={{ uri: urls[0] }}
-        style={[styles.mediaSingle, { height: h, backgroundColor: bg }]}
-        resizeMode="cover"
-      />
-    );
-  }
-
-  if (urls.length === 2) {
-    return (
-      <View style={[styles.mediaGrid, { height: h }]}>
-        <View style={[styles.mediaRow, { gap }]}>
-          <Image source={{ uri: urls[0] }} style={[styles.mediaCell, { flex: 1, backgroundColor: bg }]} resizeMode="cover" />
-          <Image source={{ uri: urls[1] }} style={[styles.mediaCell, { flex: 1, backgroundColor: bg }]} resizeMode="cover" />
-        </View>
-      </View>
-    );
-  }
-
-  if (urls.length === 3) {
-    return (
-      <View style={[styles.mediaGrid, { height: h }]}>
-        <View style={[styles.mediaRow, { gap }]}>
-          <Image source={{ uri: urls[0] }} style={[styles.mediaCell, { flex: 1, backgroundColor: bg }]} resizeMode="cover" />
-          <View style={[styles.mediaCol, { flex: 1, gap }]}>
-            <Image source={{ uri: urls[1] }} style={[styles.mediaCell, { flex: 1, backgroundColor: bg }]} resizeMode="cover" />
-            <Image source={{ uri: urls[2] }} style={[styles.mediaCell, { flex: 1, backgroundColor: bg }]} resizeMode="cover" />
-          </View>
-        </View>
-      </View>
-    );
-  }
-
-  return (
-    <View style={[styles.mediaGrid, { height: h }]}>
-      <View style={[styles.mediaCol, { gap }]}>
-        <View style={[styles.mediaRow, { flex: 1, gap }]}>
-          <Image source={{ uri: urls[0] }} style={[styles.mediaCell, { flex: 1, backgroundColor: bg }]} resizeMode="cover" />
-          <Image source={{ uri: urls[1] }} style={[styles.mediaCell, { flex: 1, backgroundColor: bg }]} resizeMode="cover" />
-        </View>
-        <View style={[styles.mediaRow, { flex: 1, gap }]}>
-          <Image source={{ uri: urls[2] }} style={[styles.mediaCell, { flex: 1, backgroundColor: bg }]} resizeMode="cover" />
-          <Image source={{ uri: urls[3] }} style={[styles.mediaCell, { flex: 1, backgroundColor: bg }]} resizeMode="cover" />
-        </View>
-      </View>
-    </View>
-  );
-}
-
 /* -------------------------------------------------------------------------- */
 /* Component                                                                  */
 /* -------------------------------------------------------------------------- */
@@ -136,7 +71,7 @@ export function Post({
 
   const { getPostById, getProfileById } = useAppData();
 
-  // for openProfile routing (optional but keeps your old behavior)
+  // keep old behavior where openProfile uses route param if needed
   const { scenarioId: scenarioIdParam } = useLocalSearchParams<{ scenarioId: string }>();
   const sid = String(scenarioId ?? item.scenarioId ?? scenarioIdParam ?? "");
   const handleSlug = profile.handle; // stored WITHOUT @
@@ -171,7 +106,7 @@ export function Post({
     } as any);
   };
 
-  // small press animations (same feel as old file)
+  // small press animations
   const replyScale = React.useRef(new Animated.Value(1)).current;
   const repostScale = React.useRef(new Animated.Value(1)).current;
 
@@ -183,11 +118,19 @@ export function Post({
     ]).start();
   };
 
-  // ----- menu (placeholder)
+  // ----- menu
   const [menuOpen, setMenuOpen] = React.useState(false);
 
   const MENU_OPTIONS = React.useMemo(
-    () => ["Block account", "Report post", "Mute account"],
+    () => [
+      "Block account",
+      "Report post",
+      "Mute account",
+      "Get Blocked",
+      "Suspend account",
+      "Deactivate account",
+      "Reactivate account",
+    ],
     []
   );
 
@@ -196,9 +139,40 @@ export function Post({
     Alert.alert("Coming soon", label);
   };
 
+  const MenuModal = () => (
+    <Modal
+      transparent
+      visible={menuOpen}
+      animationType="fade"
+      onRequestClose={() => setMenuOpen(false)}
+    >
+      <Pressable style={styles.menuBackdrop} onPress={() => setMenuOpen(false)}>
+        <Pressable
+          style={[
+            styles.menuSheet,
+            { backgroundColor: colors.background, borderColor: colors.border },
+          ]}
+        >
+          {MENU_OPTIONS.map((label) => (
+            <Pressable
+              key={label}
+              onPress={() => onMenuOption(label)}
+              style={({ pressed }) => [
+                styles.menuItem,
+                { backgroundColor: pressed ? colors.pressed : "transparent" },
+              ]}
+            >
+              <ThemedText style={{ color: colors.text, fontSize: 15 }}>{label}</ThemedText>
+            </Pressable>
+          ))}
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+
   // ----- quoted post resolution (DB only)
   const quoted = React.useMemo(() => {
-    if (!item.quotedPostId) return { missing: false, payload: null };
+    if (!item.quotedPostId) return { missing: false, payload: null as null | { post: DbPost; profile: Profile } };
 
     const qPost = getPostById(String(item.quotedPostId));
     if (!qPost) return { missing: true, payload: null };
@@ -212,10 +186,13 @@ export function Post({
   const renderQuoted = () => {
     if (!item.quotedPostId) return null;
 
-    const containerStyle = [
+
+    // ...
+    const containerStyle: StyleProp<ViewStyle> = [
       styles.quoteCard,
       { borderColor: colors.border, backgroundColor: colors.background },
     ];
+
 
     if (quoted.missing) {
       return (
@@ -223,9 +200,7 @@ export function Post({
           <View style={styles.quoteInner}>
             <View style={[styles.quoteAvatarFallback, { backgroundColor: colors.border }]} />
             <View style={{ flex: 1 }}>
-              <ThemedText style={{ fontWeight: "800", color: colors.text }}>
-                Post unavailable
-              </ThemedText>
+              <ThemedText style={{ fontWeight: "800", color: colors.text }}>Post unavailable</ThemedText>
               <ThemedText style={{ color: colors.textSecondary, marginTop: 6, lineHeight: 18 }}>
                 This post has been deleted.
               </ThemedText>
@@ -243,12 +218,9 @@ export function Post({
       <Pressable
         onPress={() => {
           if (!sid) return;
-          router.push(`/(scenario)/${sid}/(tabs)/post/${String(post.id)}` as any);
+          router.push(`/(scenario)/${encodeURIComponent(sid)}/(tabs)/post/${String(post.id)}` as any);
         }}
-        style={({ pressed }) => [
-          containerStyle,
-          pressed && { backgroundColor: colors.pressed },
-        ]}
+        style={({ pressed }) => [containerStyle, pressed && { backgroundColor: colors.pressed }]}
       >
         <View style={styles.quoteInner}>
           <Avatar uri={qProfile.avatarUrl} size={22} fallbackColor={colors.border} />
@@ -279,7 +251,10 @@ export function Post({
               )}
             </View>
 
-            <ThemedText numberOfLines={3} style={{ color: colors.text, marginTop: 6, lineHeight: 18 }}>
+            <ThemedText
+              numberOfLines={3}
+              style={{ color: colors.text, marginTop: 6, lineHeight: 18 }}
+            >
               {post.text}
             </ThemedText>
           </View>
@@ -288,28 +263,17 @@ export function Post({
     );
   };
 
-  const MenuModal = () => (
-    <Modal transparent visible={menuOpen} animationType="fade" onRequestClose={() => setMenuOpen(false)}>
-      <Pressable style={styles.menuBackdrop} onPress={() => setMenuOpen(false)}>
-        <Pressable style={[styles.menuSheet, { backgroundColor: colors.background, borderColor: colors.border }]}>
-          {MENU_OPTIONS.map((label) => (
-            <Pressable
-              key={label}
-              onPress={() => onMenuOption(label)}
-              style={({ pressed }) => [
-                styles.menuItem,
-                { backgroundColor: pressed ? colors.pressed : "transparent" },
-              ]}
-            >
-              <ThemedText style={{ color: colors.text, fontSize: 15 }}>{label}</ThemedText>
-            </Pressable>
-          ))}
-        </Pressable>
-      </Pressable>
-    </Modal>
-  );
+  // ----- media lightbox state
+  const mediaUrls = (item.imageUrls ?? []).filter((u): u is string => typeof u === "string" && u.trim().length > 0);
+  const [lightboxOpen, setLightboxOpen] = React.useState(false);
+  const [lightboxIndex, setLightboxIndex] = React.useState(0);
 
-  // ===== DETAIL VIEW LAYOUT =====
+  const openLightbox = (idx: number) => {
+    setLightboxIndex(Math.max(0, Math.min(idx, Math.max(0, mediaUrls.length - 1))));
+    setLightboxOpen(true);
+  };
+
+  // ===== DETAIL VIEW =====
   if (isDetail) {
     return (
       <View style={styles.wrap}>
@@ -348,9 +312,23 @@ export function Post({
         <ThemedText style={[styles.text, styles.textDetail]}>{item.text}</ThemedText>
 
         {/* Media */}
-        {!!item.imageUrls && item.imageUrls.length > 0 && (
-          <MediaGrid imageUrls={item.imageUrls} variant="detail" scheme={scheme} />
-        )}
+        {mediaUrls.length > 0 ? (
+          <>
+            <MediaGrid
+              urls={mediaUrls}
+              variant="detail"
+              onOpen={openLightbox}
+              backgroundColor={colors.border}
+            />
+            <Lightbox
+              urls={mediaUrls}
+              initialIndex={lightboxIndex}
+              visible={lightboxOpen}
+              onClose={() => setLightboxOpen(false)}
+              allowSave
+            />
+          </>
+        ) : null}
 
         {/* Quote */}
         {renderQuoted()}
@@ -446,7 +424,7 @@ export function Post({
     );
   }
 
-  // ===== FEED/REPLY VIEW LAYOUT =====
+  // ===== FEED / REPLY VIEW =====
   const replyingToHandle = replyingTo ? replyingTo : "";
 
   return (
@@ -495,9 +473,23 @@ export function Post({
           {/* CONTENT */}
           <ThemedText style={[styles.text, isReply && styles.textReply]}>{item.text}</ThemedText>
 
-          {!!item.imageUrls && item.imageUrls.length > 0 && (
-            <MediaGrid imageUrls={item.imageUrls} variant={isReply ? "reply" : "feed"} scheme={scheme} />
-          )}
+          {mediaUrls.length > 0 ? (
+            <>
+              <MediaGrid
+                urls={mediaUrls}
+                variant={isReply ? "reply" : "feed"}
+                onOpen={openLightbox}
+                backgroundColor={colors.border}
+              />
+              <Lightbox
+                urls={mediaUrls}
+                initialIndex={lightboxIndex}
+                visible={lightboxOpen}
+                onClose={() => setLightboxOpen(false)}
+                allowSave
+              />
+            </>
+          ) : null}
 
           {renderQuoted()}
 
@@ -599,15 +591,8 @@ export function Post({
 /* -------------------------------------------------------------------------- */
 
 const styles = StyleSheet.create({
-  wrap: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-  },
-
-  wrapReply: {
-    paddingHorizontal: 16,
-    paddingVertical: 4,
-  },
+  wrap: { paddingHorizontal: 16, paddingVertical: 12 },
+  wrapReply: { paddingHorizontal: 16, paddingVertical: 4 },
 
   row: {
     flexDirection: "row",
@@ -615,24 +600,11 @@ const styles = StyleSheet.create({
     gap: 12,
   },
 
-  rightCol: {
-    flex: 1,
-    paddingTop: 0,
-  },
+  rightCol: { flex: 1, paddingTop: 0 },
+  avatarPress: { alignSelf: "flex-start" },
 
-  avatarPress: {
-    alignSelf: "flex-start",
-  },
-
-  name: {
-    fontSize: 16,
-    maxWidth: 160,
-    lineHeight: 20,
-  },
-
-  nameDetail: {
-    fontSize: 18,
-  },
+  name: { fontSize: 16, maxWidth: 160, lineHeight: 20 },
+  nameDetail: { fontSize: 18 },
 
   handleInline: {
     fontSize: 15,
@@ -648,11 +620,7 @@ const styles = StyleSheet.create({
     width: "100%",
   },
 
-  headerBlockLeft: {
-    flex: 1,
-    flexDirection: "column",
-    paddingRight: 8,
-  },
+  headerBlockLeft: { flex: 1, flexDirection: "column", paddingRight: 8 },
 
   headerNameRow: {
     flexDirection: "row",
@@ -661,11 +629,7 @@ const styles = StyleSheet.create({
     flexWrap: "nowrap",
   },
 
-  menuBtn: {
-    padding: 6,
-    borderRadius: 999,
-    alignSelf: "flex-start",
-  },
+  menuBtn: { padding: 6, borderRadius: 999, alignSelf: "flex-start" },
 
   menuBackdrop: {
     flex: 1,
@@ -681,11 +645,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
   },
 
-  menuItem: {
-    paddingVertical: 12,
-    paddingHorizontal: 12,
-    borderRadius: 12,
-  },
+  menuItem: { paddingVertical: 12, paddingHorizontal: 12, borderRadius: 12 },
 
   detailHeaderRow: {
     flexDirection: "row",
@@ -700,10 +660,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 
-  detailHeaderText: {
-    flex: 1,
-    justifyContent: "center",
-  },
+  detailHeaderText: { flex: 1, justifyContent: "center" },
 
   detailNameRow: {
     flexDirection: "row",
@@ -712,53 +669,21 @@ const styles = StyleSheet.create({
     flexWrap: "nowrap",
   },
 
-  inlinePress: {
-    alignSelf: "flex-start",
-  },
+  inlinePress: { alignSelf: "flex-start" },
 
-  replyingInline: {
-    marginTop: 0,
-  },
+  replyingInline: { marginTop: 0 },
+  replyingText: { fontSize: 13, lineHeight: 17 },
 
-  replyingText: {
-    fontSize: 13,
-    lineHeight: 17,
-  },
+  text: { fontSize: 15, lineHeight: 20, marginTop: 2 },
+  textReply: { marginTop: 0 },
+  textDetail: { fontSize: 18, lineHeight: 20, marginTop: 10 },
 
-  text: {
-    fontSize: 15,
-    lineHeight: 20,
-    marginTop: 2,
-  },
+  dateLine: { marginTop: 12, fontSize: 13 },
 
-  textReply: {
-    marginTop: 0,
-  },
+  divider: { height: StyleSheet.hairlineWidth, marginVertical: 12 },
 
-  textDetail: {
-    fontSize: 18,
-    lineHeight: 20,
-    marginTop: 10,
-  },
-
-  dateLine: {
-    marginTop: 12,
-    fontSize: 13,
-  },
-
-  divider: {
-    height: StyleSheet.hairlineWidth,
-    marginVertical: 12,
-  },
-
-  countsRow: {
-    flexDirection: "row",
-    gap: 16,
-  },
-
-  countItem: {
-    fontSize: 14,
-  },
+  countsRow: { flexDirection: "row", gap: 16 },
+  countItem: { fontSize: 14 },
 
   actions: {
     flexDirection: "row",
@@ -772,14 +697,9 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
   },
 
-  actionsDetail: {
-    paddingTop: 4,
-  },
+  actionsDetail: { paddingTop: 4 },
 
-  actionSlot: {
-    flex: 1,
-    alignItems: "center",
-  },
+  actionSlot: { flex: 1, alignItems: "center" },
 
   action: {
     flexDirection: "row",
@@ -790,10 +710,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
 
-  actionCount: {
-    fontSize: 14,
-    minWidth: 18,
-  },
+  actionCount: { fontSize: 14, minWidth: 18 },
 
   iconPressable: {
     paddingVertical: 2,
@@ -825,33 +742,5 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     flexWrap: "nowrap",
-  },
-
-  mediaSingle: {
-    marginTop: 10,
-    width: "100%",
-    borderRadius: 16,
-  },
-
-  mediaGrid: {
-    marginTop: 10,
-    width: "100%",
-    borderRadius: 16,
-    overflow: "hidden",
-  },
-
-  mediaRow: {
-    flexDirection: "row",
-    flex: 1,
-  },
-
-  mediaCol: {
-    flexDirection: "column",
-    flex: 1,
-  },
-
-  mediaCell: {
-    width: "100%",
-    height: "100%",
   },
 });

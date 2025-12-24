@@ -1,14 +1,14 @@
-import React, { useCallback, useMemo, useState } from "react";
+// mobile/app/(scenario)/[scenarioId]/(tabs)/profile/[handle].tsx
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  ActivityIndicator,
+  Alert,
+  FlatList,
   Image,
+  Platform,
   Pressable,
   StyleSheet,
   View,
-  FlatList,
-  Alert,
-  Platform,
-  Modal,
-  ActivityIndicator,
 } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
@@ -18,27 +18,25 @@ import { ThemedText } from "@/components/themed-text";
 import { Colors } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { Post as PostCard } from "@/components/post/Post";
+
 import { useAuth } from "@/context/auth";
+import { useAppData } from "@/context/appData";
+import type { Profile, Post } from "@/data/db/schema";
 
 import Animated, { interpolate, useAnimatedStyle } from "react-native-reanimated";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import ReanimatedSwipeable from "react-native-gesture-handler/ReanimatedSwipeable";
 import type { SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
 
-import * as MediaLibrary from "expo-media-library";
-import * as FileSystem from "expo-file-system/legacy";
-
-import { useAppData } from "@/context/appData";
-import type { Profile, Post } from "@/data/db/schema";
-
 import { Avatar } from "@/components/ui/Avatar";
 import { pickAndPersistOneImage } from "@/components/ui/AvatarPicker";
 import { formatCount, formatJoined, normalizeHandle } from "@/lib/format";
 
-/* -------------------------------------------------------------------------- */
-/* Helpers                                                                    */
-/* -------------------------------------------------------------------------- */
+import { Lightbox } from "@/components/media/lightBox";
 
+/* -------------------------------------------------------------------------- */
+/* Swipe helpers                                                              */
+/* -------------------------------------------------------------------------- */
 
 function SwipeActions({
   dragX,
@@ -161,7 +159,7 @@ function SwipeablePostRow({
 }
 
 /* -------------------------------------------------------------------------- */
-/* Screen                                                                      */
+/* Screen                                                                     */
 /* -------------------------------------------------------------------------- */
 
 export default function ProfileScreen() {
@@ -185,25 +183,35 @@ export default function ProfileScreen() {
 
   const profile = useMemo(() => getProfileByHandle(sid, wanted), [sid, wanted, getProfileByHandle]);
 
-  const isMe = !!profile && profile.ownerUserId === userId;
-
-  const canEditProfile = !!profile && (profile.ownerUserId === userId || !!profile.isPublic);
-
   const selectedId = getSelectedProfileId(sid);
+
+  const isOwner = !!profile && profile.ownerUserId === userId;
+  const isPublic = !!profile && !!profile.isPublic;
   const isCurrentSelected = !!profile && !!selectedId && String(selectedId) === String(profile.id);
-  const showToggleEdit = canEditProfile && !isCurrentSelected;
 
-  const [showEditInstead, setShowEditInstead] = useState(false);
+  // "can modify" means: owned OR public OR currently selected (per your rules)
+  const canModifyProfile = isOwner || isPublic || isCurrentSelected;
 
-  // viewer
-  const [viewerOpen, setViewerOpen] = useState(false);
-  const [viewerUri, setViewerUri] = useState<string | null>(null);
+  // editMode toggles what you SEE:
+  // - selected profile starts in editMode (edit btn + cameras)
+  // - otherwise starts in followMode (follow btn, no cameras)
+  const [editMode, setEditMode] = useState<boolean>(false);
 
-  // picker lock
+  useEffect(() => {
+    // keep it consistent if you navigate between profiles / switch selection
+    setEditMode(!!isCurrentSelected);
+  }, [isCurrentSelected, sid, wanted]);
+
+  // picker lock overlay
   const [picking, setPicking] = useState(false);
 
-  const avatarToShow = profile?.avatarUrl ?? null;
-  const headerToShow = profile?.headerUrl ?? null;
+  // ✅ unified lightbox state
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [lightboxUrls, setLightboxUrls] = useState<string[]>([]);
+  const [lightboxIndex, setLightboxIndex] = useState(0);
+
+  const avatarUri = profile?.avatarUrl ?? null;
+  const headerUri = profile?.headerUrl ?? null;
 
   const withPickerLock = useCallback(
     async <T,>(fn: () => Promise<T>) => {
@@ -218,9 +226,27 @@ export default function ProfileScreen() {
     [picking]
   );
 
-  // ✅ avatar/header update (persisted) via UI helper
+  const openLightbox = useCallback((urls: Array<string | null | undefined>, initialIndex = 0) => {
+    const clean = urls.filter((u): u is string => typeof u === "string" && u.length > 0);
+    if (clean.length === 0) return;
+    setLightboxUrls(clean);
+    setLightboxIndex(Math.max(0, Math.min(initialIndex, clean.length - 1)));
+    setLightboxOpen(true);
+  }, []);
+
+  const closeLightbox = useCallback(() => {
+    setLightboxOpen(false);
+    setLightboxUrls([]);
+    setLightboxIndex(0);
+  }, []);
+
+  const denyModify = useCallback(() => {
+    Alert.alert("Not allowed", "You can't modify this profile.");
+  }, []);
+
   const onChangeAvatar = useCallback(async () => {
     if (!profile) return;
+    if (!canModifyProfile) return denyModify();
 
     const uri = await withPickerLock(() =>
       pickAndPersistOneImage({ persistAs: "avatar", allowsEditing: true, quality: 0.9 })
@@ -228,10 +254,11 @@ export default function ProfileScreen() {
     if (!uri) return;
 
     await upsertProfile({ ...profile, avatarUrl: uri });
-  }, [profile, upsertProfile, withPickerLock]);
+  }, [profile, canModifyProfile, denyModify, upsertProfile, withPickerLock]);
 
   const onChangeHeader = useCallback(async () => {
     if (!profile) return;
+    if (!canModifyProfile) return denyModify();
 
     const uri = await withPickerLock(() =>
       pickAndPersistOneImage({ persistAs: "header", allowsEditing: true, quality: 0.9 })
@@ -239,42 +266,7 @@ export default function ProfileScreen() {
     if (!uri) return;
 
     await upsertProfile({ ...profile, headerUrl: uri });
-  }, [profile, upsertProfile, withPickerLock]);
-
-  const openViewer = useCallback((uri?: string | null) => {
-    if (!uri) return;
-    setViewerUri(uri);
-    setViewerOpen(true);
-  }, []);
-
-  const closeViewer = useCallback(() => {
-    setViewerOpen(false);
-    setViewerUri(null);
-  }, []);
-
-  // viewer save-to-device stays (not avatar logic)
-  const saveToDevice = useCallback(async (uri: string) => {
-    try {
-      const perm = await MediaLibrary.requestPermissionsAsync();
-      if (!perm.granted) {
-        Alert.alert("Permission needed", "Allow Photos permission to save images.");
-        return;
-      }
-
-      let localUri = uri;
-      if (/^https?:\/\//i.test(uri)) {
-        const filename = `feedverse_${Date.now()}.jpg`;
-        const dest = `${FileSystem.cacheDirectory}${filename}`;
-        const dl = await FileSystem.downloadAsync(uri, dest);
-        localUri = dl.uri;
-      }
-
-      await MediaLibrary.saveToLibraryAsync(localUri);
-      Alert.alert("Saved", "Image saved to your Photos.");
-    } catch {
-      Alert.alert("Could not save", "Something went wrong while saving this image.");
-    }
-  }, []);
+  }, [profile, canModifyProfile, denyModify, upsertProfile, withPickerLock]);
 
   const myPosts = useMemo(() => {
     if (!profile) return [];
@@ -284,9 +276,37 @@ export default function ProfileScreen() {
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }, [sid, profile, listPostsForScenario]);
 
-  const onDeletePost = useCallback(async (postId: string) => {
-    await deletePost(postId);
-  }, [deletePost]);
+  const onDeletePost = useCallback(
+    async (postId: string) => {
+      await deletePost(postId);
+    },
+    [deletePost]
+  );
+
+  const onPressPrimary = useCallback(() => {
+    if (!profile) return;
+
+    if (editMode) {
+      // Edit profile
+      if (!canModifyProfile) return denyModify();
+
+      router.push({
+        pathname: "/modal/create-profile",
+        params: { scenarioId: sid, mode: "edit", profileId: profile.id },
+      } as any);
+      return;
+    }
+
+    // Follow
+    Alert.alert("Not yet", "Follow logic later.");
+  }, [profile, editMode, canModifyProfile, denyModify, sid]);
+
+  const onLongPressPrimary = useCallback(() => {
+    // Toggle mode
+    setEditMode((v) => !v);
+  }, []);
+
+  const showCameras = editMode; // per your rules, editMode controls camera visibility
 
   if (!isReady) {
     return (
@@ -304,12 +324,10 @@ export default function ProfileScreen() {
   if (!profile) {
     return (
       <ThemedView style={[styles.screen, { backgroundColor: colors.background }]}>
-        <View style={{ flex: 1 }}>
-          <View style={{ padding: 16 }}>
-            <ThemedText style={{ color: colors.textSecondary }}>
-              Profile not found for {wanted} in scenario {sid}.
-            </ThemedText>
-          </View>
+        <View style={{ padding: 16 }}>
+          <ThemedText style={{ color: colors.textSecondary }}>
+            Profile not found for {wanted} in scenario {sid}.
+          </ThemedText>
         </View>
       </ThemedView>
     );
@@ -318,303 +336,229 @@ export default function ProfileScreen() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <ThemedView style={[styles.screen, { backgroundColor: colors.background }]}>
-        <View style={{ flex: 1 }}>
-          <FlatList
-            data={myPosts}
-            keyExtractor={(p) => String(p.id)}
-            ItemSeparatorComponent={() => (
-              <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: colors.border, opacity: 0.9 }} />
-            )}
-            ListHeaderComponent={() => (
-              <View>
-                <View style={styles.headerMediaWrap}>
-                  <Pressable
-                    onPress={() => openViewer(headerToShow)}
-                    onLongPress={() => {
-                      if (isMe) onChangeHeader();
-                    }}
-                    delayLongPress={250}
-                    style={StyleSheet.absoluteFill}
-                  >
-                    {isMe ? (
-                      <Pressable
-                        onPress={onChangeHeader}
-                        disabled={picking}
-                        hitSlop={12}
-                        style={({ pressed }) => [
-                          styles.headerEditBadge,
-                          { backgroundColor: "rgba(0,0,0,0.55)" },
-                          pressed && styles.pressedPop,
-                          picking && { opacity: 0.6 },
-                        ]}
-                      >
-                        <Ionicons name="camera" size={16} color="#fff" />
-                      </Pressable>
-                    ) : null}
-                  </Pressable>
-
-                  <Pressable
-                    onPress={() => router.back()}
-                    hitSlop={12}
-                    style={({ pressed }) => [styles.backBtn, { opacity: pressed ? 0.5 : 0.6 }]}
-                  >
-                    <MaterialIcons name="keyboard-arrow-left" size={24} color="#fff" />
-                  </Pressable>
-
-                  {headerToShow ? <Image source={{ uri: headerToShow }} style={styles.headerMedia} /> : null}
-                </View>
-
-                <View style={styles.avatarRow}>
-                  <View style={[styles.avatarOuter, { backgroundColor: colors.background }]}>
-                    <Pressable
-                      onPress={() => openViewer(avatarToShow)}
-                      onLongPress={() => {
-                        if (isMe) onChangeAvatar();
-                      }}
-                      delayLongPress={250}
-                    >
-                      <Avatar uri={avatarToShow} size={80} fallbackColor={colors.border} style={styles.avatar} />
-
-                      {isMe ? (
-                        <Pressable
-                          onPress={onChangeAvatar}
-                          disabled={picking}
-                          hitSlop={12}
-                          style={({ pressed }) => [
-                            styles.avatarEditBadge,
-                            { backgroundColor: colors.card, borderColor: colors.border },
-                            pressed && styles.pressedPop,
-                            picking && { opacity: 0.6 },
-                          ]}
-                        >
-                          <Ionicons name="camera" size={16} color={colors.text} />
-                        </Pressable>
-                      ) : null}
-                    </Pressable>
-                  </View>
-
-                  <View style={{ flex: 1 }} />
-
-                  {isMe ? (
-                    <Pressable
-                      onPress={() => {
-                        router.push({
-                          pathname: "/modal/create-profile",
-                          params: { scenarioId: sid, mode: "edit", profileId: profile.id },
-                        } as any);
-                      }}
-                      style={({ pressed }) => [
-                        styles.ghostBtn,
-                        {
-                          borderColor: colors.border,
-                          backgroundColor: pressed ? colors.pressed : colors.background,
-                        },
-                      ]}
-                    >
-                      <ThemedText style={{ fontWeight: "700", color: colors.text }}>Edit profile</ThemedText>
-                    </Pressable>
-                  ) : showToggleEdit ? (
-                    showEditInstead ? (
-                      <Pressable
-                        onPress={() => {
-                          router.push({
-                            pathname: "/modal/create-profile",
-                            params: { scenarioId: sid, mode: "edit", profileId: profile.id },
-                          } as any);
-                        }}
-                        onLongPress={() => setShowEditInstead(false)}
-                        delayLongPress={250}
-                        style={({ pressed }) => [
-                          styles.ghostBtn,
-                          {
-                            borderColor: colors.border,
-                            backgroundColor: pressed ? colors.pressed : colors.background,
-                          },
-                        ]}
-                      >
-                        <ThemedText style={{ fontWeight: "700", color: colors.text }}>Edit profile</ThemedText>
-                      </Pressable>
-                    ) : (
-                      <Pressable
-                        onPress={() => Alert.alert("Not yet", "Follow logic later.")}
-                        onLongPress={() => setShowEditInstead(true)}
-                        delayLongPress={250}
-                        style={({ pressed }) => [
-                          styles.primaryBtn,
-                          { backgroundColor: colors.text, opacity: pressed ? 0.85 : 1 },
-                        ]}
-                      >
-                        <ThemedText style={{ fontWeight: "800", color: colors.background }}>Follow</ThemedText>
-                      </Pressable>
-                    )
-                  ) : (
-                    <Pressable
-                      onPress={() => Alert.alert("Not yet", "Follow logic later.")}
-                      style={({ pressed }) => [
-                        styles.primaryBtn,
-                        { backgroundColor: colors.text, opacity: pressed ? 0.85 : 1 },
-                      ]}
-                    >
-                      <ThemedText style={{ fontWeight: "800", color: colors.background }}>Follow</ThemedText>
-                    </Pressable>
-                  )}
-                </View>
-
-                <View style={styles.bioBlock}>
-                  <ThemedText type="defaultSemiBold" style={[styles.displayName, { color: colors.text }]}>
-                    {profile.displayName}
-                  </ThemedText>
-
-                  <ThemedText style={[styles.handle, { color: colors.textSecondary }]}>@{profile.handle}</ThemedText>
-
-                  {!!profile.bio && <ThemedText style={[styles.bio, { color: colors.text }]}>{profile.bio}</ThemedText>}
-
-                  <View style={styles.metaRow}>
-                    <View style={styles.metaItem}>
-                      <Ionicons name="location-outline" size={14} color={colors.textSecondary} />
-                      <ThemedText style={[styles.metaText, { color: colors.textSecondary }]}>{profile.location ?? ""}</ThemedText>
-                    </View>
-
-                    <View style={styles.metaItem}>
-                      <Ionicons name="link-outline" size={14} color={colors.textSecondary} />
-                      {profile.link ? (
-                        <ThemedText style={[styles.metaText, { color: colors.tint }]}>
-                          {profile.link.replace(/^https?:\/\//, "")}
-                        </ThemedText>
-                      ) : (
-                        <ThemedText style={[styles.metaText, { color: colors.textSecondary }]}>—</ThemedText>
-                      )}
-                    </View>
-                  </View>
-
-                  <View style={styles.metaRow}>
-                    <View style={styles.metaItem}>
-                      <Ionicons name="calendar-outline" size={14} color={colors.textSecondary} />
-                      <ThemedText style={[styles.metaText, { color: colors.textSecondary }]}>
-                        {profile.joinedDate ? formatJoined(profile.joinedDate) : "Joined"}
-                      </ThemedText>
-                    </View>
-                  </View>
-
-                  <View style={styles.followsRow}>
-                    <ThemedText style={{ color: colors.text }}>
-                      <ThemedText type="defaultSemiBold">{formatCount(profile.followingCount ?? 0)}</ThemedText>{" "}
-                      <ThemedText style={{ color: colors.textSecondary }}>Following</ThemedText>
-                    </ThemedText>
-
-                    <ThemedText style={{ color: colors.text }}>
-                      <ThemedText type="defaultSemiBold">{formatCount(profile.followerCount ?? 0)}</ThemedText>{" "}
-                      <ThemedText style={{ color: colors.textSecondary }}>Followers</ThemedText>
-                    </ThemedText>
-                  </View>
-                </View>
-
-                <View style={[styles.tabsBar, { borderBottomColor: colors.border }]}>
-                  <Pressable style={({ pressed }) => [styles.tab, pressed && { opacity: 0.7 }]}>
-                    <ThemedText type="defaultSemiBold" style={{ color: colors.text }}>
-                      Posts
-                    </ThemedText>
-                    <View style={[styles.tabUnderline, { backgroundColor: colors.tint }]} />
-                  </Pressable>
-
-                  <Pressable style={({ pressed }) => [styles.tab, pressed && { opacity: 0.7 }]}>
-                    <ThemedText style={{ color: colors.textSecondary }}>Replies</ThemedText>
-                  </Pressable>
-
-                  <Pressable style={({ pressed }) => [styles.tab, pressed && { opacity: 0.7 }]}>
-                    <ThemedText style={{ color: colors.textSecondary }}>Media</ThemedText>
-                  </Pressable>
-
-                  <Pressable style={({ pressed }) => [styles.tab, pressed && { opacity: 0.7 }]}>
-                    <ThemedText style={{ color: colors.textSecondary }}>Likes</ThemedText>
-                  </Pressable>
-                </View>
-              </View>
-            )}
-            renderItem={({ item }) => (
-              <SwipeablePostRow
-                sid={sid}
-                item={item}
-                colors={colors}
-                userId={userId}
-                getProfileById={getProfileById}
-                onDeletePost={onDeletePost}
-              />
-            )}
-            ListEmptyComponent={() => (
-              <View style={{ padding: 18 }}>
-                <ThemedText style={{ color: colors.textSecondary }}>No posts yet.</ThemedText>
-              </View>
-            )}
-            contentContainerStyle={{ paddingBottom: Platform.OS === "ios" ? 24 : 16 }}
-          />
-
-          {picking && (
-            <View style={styles.pickerOverlay} pointerEvents="auto">
-              <ActivityIndicator size="large" color="#fff" />
-            </View>
+        <FlatList
+          data={myPosts}
+          keyExtractor={(p) => String(p.id)}
+          ItemSeparatorComponent={() => (
+            <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: colors.border, opacity: 0.9 }} />
           )}
+          contentContainerStyle={{ paddingBottom: Platform.OS === "ios" ? 24 : 16 }}
+          ListHeaderComponent={() => (
+            <View>
+              {/* HEADER IMAGE */}
+              <View style={[styles.headerMediaWrap, { backgroundColor: colors.border }]}>
+                {headerUri ? <Image source={{ uri: headerUri }} style={styles.headerMedia} /> : null}
 
-          {viewerOpen && (
-            <Modal visible transparent animationType="fade" onRequestClose={closeViewer}>
-              <Pressable
-                style={{
-                  flex: 1,
-                  backgroundColor: "rgba(0,0,0,0.92)",
-                  justifyContent: "center",
-                  alignItems: "center",
-                  padding: 16,
-                }}
-                onPress={closeViewer}
-              >
-                <Pressable onPress={() => {}} style={{ width: "100%", maxWidth: 520 }}>
-                  {viewerUri ? (
+                {/* Tap anywhere to view (if exists) */}
+                <Pressable
+                  onPress={() => openLightbox([headerUri], 0)}
+                  style={StyleSheet.absoluteFill}
+                  accessibilityRole="button"
+                  accessibilityLabel="View header"
+                />
+
+                {/* Back */}
+                <Pressable
+                  onPress={() => router.back()}
+                  hitSlop={12}
+                  style={({ pressed }) => [
+                    styles.backBtn,
+                    { backgroundColor: "rgba(0,0,0,0.55)", opacity: pressed ? 0.75 : 1 },
+                  ]}
+                >
+                  <MaterialIcons name="keyboard-arrow-left" size={24} color="#fff" />
+                </Pressable>
+
+                {/* Header controls: only visible in editMode */}
+                {showCameras ? (
+                  <View style={styles.headerControls}>
                     <Pressable
-                      onLongPress={() => saveToDevice(viewerUri)}
-                      delayLongPress={250}
-                      style={{ width: "100%" }}
+                      onPress={onChangeHeader}
+                      disabled={picking}
+                      hitSlop={12}
+                      style={({ pressed }) => [
+                        styles.headerIconBtn,
+                        pressed && { opacity: 0.75 },
+                        picking && { opacity: 0.5 },
+                      ]}
+                      accessibilityRole="button"
+                      accessibilityLabel="Change header"
                     >
-                      <Image
-                        source={{ uri: viewerUri }}
-                        style={{
-                          width: "100%",
-                          height: 420,
-                          borderRadius: 14,
-                          resizeMode: "contain",
-                        }}
-                      />
+                      <Ionicons name="camera" size={16} color="#fff" />
+                    </Pressable>
+                  </View>
+                ) : null}
+              </View>
+
+              {/* AVATAR ROW */}
+              <View style={styles.avatarRow}>
+                <View style={[styles.avatarOuter, { backgroundColor: colors.background }]}>
+                  <Pressable
+                    onPress={() => openLightbox([avatarUri], 0)}
+                    onLongPress={showCameras ? onChangeAvatar : undefined}
+                    delayLongPress={250}
+                  >
+                    <Avatar uri={avatarUri} size={80} fallbackColor={colors.border} />
+                  </Pressable>
+
+                  {/* Avatar camera: only visible in editMode */}
+                  {showCameras ? (
+                    <Pressable
+                      onPress={onChangeAvatar}
+                      disabled={picking}
+                      hitSlop={12}
+                      style={({ pressed }) => [
+                        styles.avatarEditBadge,
+                        { backgroundColor: colors.card, borderColor: colors.border },
+                        pressed && styles.pressedPop,
+                        picking && { opacity: 0.6 },
+                      ]}
+                      accessibilityRole="button"
+                      accessibilityLabel="Change avatar"
+                    >
+                      <Ionicons name="camera" size={16} color={colors.text} />
                     </Pressable>
                   ) : null}
+                </View>
 
-                  <View
-                    style={{
-                      marginTop: 14,
-                      flexDirection: "row",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                    }}
+                <View style={{ flex: 1 }} />
+
+                {/* Primary button (Follow/Edit) */}
+                {editMode ? (
+                  <Pressable
+                    onPress={onPressPrimary}
+                    onLongPress={onLongPressPrimary}
+                    delayLongPress={250}
+                    style={({ pressed }) => [
+                      styles.ghostBtn,
+                      { borderColor: colors.border, backgroundColor: pressed ? colors.pressed : colors.background },
+                    ]}
                   >
-                    <Pressable
-                      onPress={closeViewer}
-                      hitSlop={10}
-                      style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}
-                    >
-                      <ThemedText style={{ color: "#fff", fontWeight: "700" }}>Close</ThemedText>
-                    </Pressable>
+                    <ThemedText style={{ fontWeight: "700", color: colors.text }}>Edit profile</ThemedText>
+                  </Pressable>
+                ) : (
+                  <Pressable
+                    onPress={onPressPrimary}
+                    onLongPress={onLongPressPrimary}
+                    delayLongPress={250}
+                    style={({ pressed }) => [
+                      styles.primaryBtn,
+                      { backgroundColor: colors.text, opacity: pressed ? 0.85 : 1 },
+                    ]}
+                  >
+                    <ThemedText style={{ fontWeight: "800", color: colors.background }}>Follow</ThemedText>
+                  </Pressable>
+                )}
+              </View>
 
-                    <Pressable
-                      onPress={() => viewerUri && saveToDevice(viewerUri)}
-                      hitSlop={10}
-                      style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}
-                    >
-                      <ThemedText style={{ color: "#fff", fontWeight: "900" }}>Save</ThemedText>
-                    </Pressable>
+              {/* BIO */}
+              <View style={styles.bioBlock}>
+                <ThemedText type="defaultSemiBold" style={[styles.displayName, { color: colors.text }]}>
+                  {profile.displayName}
+                </ThemedText>
+
+                <ThemedText style={[styles.handle, { color: colors.textSecondary }]}>@{profile.handle}</ThemedText>
+
+                {!!profile.bio && <ThemedText style={[styles.bio, { color: colors.text }]}>{profile.bio}</ThemedText>}
+
+                <View style={styles.metaRow}>
+                  <View style={styles.metaItem}>
+                    <Ionicons name="location-outline" size={14} color={colors.textSecondary} />
+                    <ThemedText style={[styles.metaText, { color: colors.textSecondary }]}>
+                      {profile.location ?? "—"}
+                    </ThemedText>
                   </View>
+
+                  <View style={styles.metaItem}>
+                    <Ionicons name="link-outline" size={14} color={colors.textSecondary} />
+                    {profile.link ? (
+                      <ThemedText style={[styles.metaText, { color: colors.tint }]}>
+                        {profile.link.replace(/^https?:\/\//, "")}
+                      </ThemedText>
+                    ) : (
+                      <ThemedText style={[styles.metaText, { color: colors.textSecondary }]}>—</ThemedText>
+                    )}
+                  </View>
+                </View>
+
+                <View style={styles.metaRow}>
+                  <View style={styles.metaItem}>
+                    <Ionicons name="calendar-outline" size={14} color={colors.textSecondary} />
+                    <ThemedText style={[styles.metaText, { color: colors.textSecondary }]}>
+                      {profile.joinedDate ? formatJoined(profile.joinedDate) : "Joined"}
+                    </ThemedText>
+                  </View>
+                </View>
+
+                <View style={styles.followsRow}>
+                  <ThemedText style={{ color: colors.text }}>
+                    <ThemedText type="defaultSemiBold">{formatCount(profile.followingCount ?? 0)}</ThemedText>{" "}
+                    <ThemedText style={{ color: colors.textSecondary }}>Following</ThemedText>
+                  </ThemedText>
+
+                  <ThemedText style={{ color: colors.text }}>
+                    <ThemedText type="defaultSemiBold">{formatCount(profile.followerCount ?? 0)}</ThemedText>{" "}
+                    <ThemedText style={{ color: colors.textSecondary }}>Followers</ThemedText>
+                  </ThemedText>
+                </View>
+              </View>
+
+              {/* Tabs (static for now) */}
+              <View style={[styles.tabsBar, { borderBottomColor: colors.border }]}>
+                <Pressable style={({ pressed }) => [styles.tab, pressed && { opacity: 0.7 }]}>
+                  <ThemedText type="defaultSemiBold" style={{ color: colors.text }}>
+                    Posts
+                  </ThemedText>
+                  <View style={[styles.tabUnderline, { backgroundColor: colors.tint }]} />
                 </Pressable>
-              </Pressable>
-            </Modal>
+
+                <Pressable style={({ pressed }) => [styles.tab, pressed && { opacity: 0.7 }]}>
+                  <ThemedText style={{ color: colors.textSecondary }}>Replies</ThemedText>
+                </Pressable>
+
+                <Pressable style={({ pressed }) => [styles.tab, pressed && { opacity: 0.7 }]}>
+                  <ThemedText style={{ color: colors.textSecondary }}>Media</ThemedText>
+                </Pressable>
+
+                <Pressable style={({ pressed }) => [styles.tab, pressed && { opacity: 0.7 }]}>
+                  <ThemedText style={{ color: colors.textSecondary }}>Likes</ThemedText>
+                </Pressable>
+              </View>
+            </View>
           )}
-        </View>
+          renderItem={({ item }) => (
+            <SwipeablePostRow
+              sid={sid}
+              item={item}
+              colors={colors}
+              userId={userId}
+              getProfileById={getProfileById}
+              onDeletePost={onDeletePost}
+            />
+          )}
+          ListEmptyComponent={() => (
+            <View style={{ padding: 18 }}>
+              <ThemedText style={{ color: colors.textSecondary }}>No posts yet.</ThemedText>
+            </View>
+          )}
+        />
+
+        {/* Picker overlay */}
+        {picking && (
+          <View style={styles.pickerOverlay} pointerEvents="auto">
+            <ActivityIndicator size="large" color="#fff" />
+          </View>
+        )}
+
+        {/* ✅ Unified viewer */}
+        <Lightbox
+          urls={lightboxUrls}
+          initialIndex={lightboxIndex}
+          visible={lightboxOpen}
+          onClose={closeLightbox}
+          title={profile.displayName}
+          allowSave
+        />
       </ThemedView>
     </GestureHandlerRootView>
   );
@@ -631,31 +575,45 @@ const styles = StyleSheet.create({
     height: 140,
     width: "100%",
     overflow: "hidden",
-    backgroundColor: "#111",
     position: "relative",
   },
+  headerMedia: {
+    width: "100%",
+    height: "100%",
+  },
+
   backBtn: {
     position: "absolute",
+    left: 10,
     top: "50%",
-    left: 6,
+    transform: [{ translateY: -17 }],
     width: 34,
     height: 34,
     borderRadius: 999,
     alignItems: "center",
     justifyContent: "center",
     borderWidth: StyleSheet.hairlineWidth,
-    backgroundColor: "rgba(0,0,0,0.55)",
-    transform: [{ translateY: -17 }],
-    shadowColor: "#000",
-    shadowOpacity: 0.18,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 3,
+    borderColor: "rgba(255,255,255,0.18)",
     zIndex: 10,
   },
-  headerMedia: {
-    width: "100%",
-    height: "100%",
+
+  headerControls: {
+    position: "absolute",
+    right: 10,
+    bottom: 10,
+    flexDirection: "row",
+    gap: 10,
+    zIndex: 10,
+  },
+  headerIconBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 999,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(0,0,0,0.55)",
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(255,255,255,0.18)",
   },
 
   avatarRow: {
@@ -670,10 +628,6 @@ const styles = StyleSheet.create({
     height: 88,
     borderRadius: 999,
     padding: 4,
-  },
-  avatar: {
-    // kept so you preserve any extra styling/background
-    backgroundColor: "#222",
   },
   avatarEditBadge: {
     position: "absolute",
@@ -781,19 +735,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 2,
-  },
-
-  headerEditBadge: {
-    position: "absolute",
-    right: 10,
-    bottom: 10,
-    width: 34,
-    height: 34,
-    borderRadius: 999,
-    alignItems: "center",
-    justifyContent: "center",
-    zIndex: 20,
-    elevation: 20,
   },
 
   pickerOverlay: {
