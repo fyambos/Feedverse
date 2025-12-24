@@ -23,140 +23,14 @@ import { useAuth } from "@/context/auth";
 import { useAppData } from "@/context/appData";
 import type { Profile, Post } from "@/data/db/schema";
 
-import Animated, { interpolate, useAnimatedStyle } from "react-native-reanimated";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
-import ReanimatedSwipeable from "react-native-gesture-handler/ReanimatedSwipeable";
-import type { SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
 
 import { Avatar } from "@/components/ui/Avatar";
 import { pickAndPersistOneImage } from "@/components/ui/AvatarPicker";
 import { formatCount, formatJoined, normalizeHandle } from "@/lib/format";
 
 import { Lightbox } from "@/components/media/lightBox";
-
-/* -------------------------------------------------------------------------- */
-/* Swipe helpers                                                              */
-/* -------------------------------------------------------------------------- */
-
-function SwipeActions({
-  dragX,
-  colors,
-  onEdit,
-  onDelete,
-}: {
-  dragX: any;
-  colors: any;
-  onEdit: () => void;
-  onDelete: () => void;
-}) {
-  const ACTIONS_WIDTH = 120;
-
-  const animStyle = useAnimatedStyle(() => {
-    const tx = interpolate(dragX.value, [-ACTIONS_WIDTH, 0], [0, ACTIONS_WIDTH]);
-    return { transform: [{ translateX: tx }] };
-  });
-
-  const pressedBg = colors.pressed;
-
-  return (
-    <Animated.View style={[styles.swipeActions, { width: ACTIONS_WIDTH }, animStyle]}>
-      <Pressable
-        onPress={onEdit}
-        style={({ pressed }) => [
-          styles.swipeBtn,
-          { backgroundColor: pressed ? pressedBg : "transparent", borderColor: colors.tint },
-        ]}
-        hitSlop={10}
-      >
-        <Ionicons name="pencil" size={22} color={colors.tint} />
-      </Pressable>
-
-      <Pressable
-        onPress={onDelete}
-        style={({ pressed }) => [
-          styles.swipeBtn,
-          { backgroundColor: pressed ? pressedBg : "transparent", borderColor: "#F04438" },
-        ]}
-        hitSlop={10}
-      >
-        <Ionicons name="trash-outline" size={22} color="#F04438" />
-      </Pressable>
-    </Animated.View>
-  );
-}
-
-function SwipeablePostRow({
-  sid,
-  item,
-  colors,
-  userId,
-  getProfileById,
-  onDeletePost,
-}: {
-  sid: string;
-  item: Post;
-  colors: any;
-  userId: string | null;
-  getProfileById: (id: string) => Profile | null;
-  onDeletePost: (postId: string) => Promise<void>;
-}) {
-  const authorProfile = getProfileById(String(item.authorProfileId));
-  if (!authorProfile) return null;
-
-  const isOwner = authorProfile.ownerUserId === userId;
-  const isPublic = !!authorProfile.isPublic;
-  const canEdit = isOwner || isPublic;
-
-  const swipeRef = React.useRef<SwipeableMethods | null>(null);
-
-  const Row = (
-    <Pressable
-      onPress={() => router.push(`/(scenario)/${sid}/(tabs)/post/${String(item.id)}` as any)}
-      style={({ pressed }) => [{ backgroundColor: pressed ? colors.pressed : colors.background }]}
-    >
-      <PostCard scenarioId={sid} profile={authorProfile} item={item} variant="feed" showActions />
-    </Pressable>
-  );
-
-  if (!canEdit) return Row;
-
-  return (
-    <ReanimatedSwipeable
-      ref={swipeRef}
-      friction={2}
-      rightThreshold={40}
-      overshootRight={false}
-      renderRightActions={(_progress, dragX) => (
-        <SwipeActions
-          dragX={dragX}
-          colors={colors}
-          onEdit={() => {
-            swipeRef.current?.close();
-            router.push({
-              pathname: "/modal/create-post",
-              params: { scenarioId: sid, mode: "edit", postId: String(item.id) },
-            } as any);
-          }}
-          onDelete={() => {
-            swipeRef.current?.close();
-            Alert.alert("Delete post?", "This will remove the post.", [
-              { text: "Cancel", style: "cancel" },
-              {
-                text: "Delete",
-                style: "destructive",
-                onPress: async () => {
-                  await onDeletePost(String(item.id));
-                },
-              },
-            ]);
-          }}
-        />
-      )}
-    >
-      {Row}
-    </ReanimatedSwipeable>
-  );
-}
+import { SwipeableRow } from "@/components/ui/SwipeableRow";
 
 /* -------------------------------------------------------------------------- */
 /* Screen                                                                     */
@@ -189,7 +63,7 @@ export default function ProfileScreen() {
   const isPublic = !!profile && !!profile.isPublic;
   const isCurrentSelected = !!profile && !!selectedId && String(selectedId) === String(profile.id);
 
-  // "can modify" means: owned OR public OR currently selected (per your rules)
+  // "can modify" means: owned OR public OR currently selected
   const canModifyProfile = isOwner || isPublic || isCurrentSelected;
 
   // editMode toggles what you SEE:
@@ -198,14 +72,13 @@ export default function ProfileScreen() {
   const [editMode, setEditMode] = useState<boolean>(false);
 
   useEffect(() => {
-    // keep it consistent if you navigate between profiles / switch selection
     setEditMode(!!isCurrentSelected);
   }, [isCurrentSelected, sid, wanted]);
 
   // picker lock overlay
   const [picking, setPicking] = useState(false);
 
-  // ✅ unified lightbox state
+  // unified lightbox state
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxUrls, setLightboxUrls] = useState<string[]>([]);
   const [lightboxIndex, setLightboxIndex] = useState(0);
@@ -287,7 +160,6 @@ export default function ProfileScreen() {
     if (!profile) return;
 
     if (editMode) {
-      // Edit profile
       if (!canModifyProfile) return denyModify();
 
       router.push({
@@ -297,16 +169,14 @@ export default function ProfileScreen() {
       return;
     }
 
-    // Follow
     Alert.alert("Not yet", "Follow logic later.");
   }, [profile, editMode, canModifyProfile, denyModify, sid]);
 
   const onLongPressPrimary = useCallback(() => {
-    // Toggle mode
     setEditMode((v) => !v);
   }, []);
 
-  const showCameras = editMode; // per your rules, editMode controls camera visibility
+  const showCameras = editMode;
 
   if (!isReady) {
     return (
@@ -340,7 +210,13 @@ export default function ProfileScreen() {
           data={myPosts}
           keyExtractor={(p) => String(p.id)}
           ItemSeparatorComponent={() => (
-            <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: colors.border, opacity: 0.9 }} />
+            <View
+              style={{
+                height: StyleSheet.hairlineWidth,
+                backgroundColor: colors.border,
+                opacity: 0.9,
+              }}
+            />
           )}
           contentContainerStyle={{ paddingBottom: Platform.OS === "ios" ? 24 : 16 }}
           ListHeaderComponent={() => (
@@ -431,10 +307,15 @@ export default function ProfileScreen() {
                     delayLongPress={250}
                     style={({ pressed }) => [
                       styles.ghostBtn,
-                      { borderColor: colors.border, backgroundColor: pressed ? colors.pressed : colors.background },
+                      {
+                        borderColor: colors.border,
+                        backgroundColor: pressed ? colors.pressed : colors.background,
+                      },
                     ]}
                   >
-                    <ThemedText style={{ fontWeight: "700", color: colors.text }}>Edit profile</ThemedText>
+                    <ThemedText style={{ fontWeight: "700", color: colors.text }}>
+                      Edit profile
+                    </ThemedText>
                   </Pressable>
                 ) : (
                   <Pressable
@@ -446,20 +327,29 @@ export default function ProfileScreen() {
                       { backgroundColor: colors.text, opacity: pressed ? 0.85 : 1 },
                     ]}
                   >
-                    <ThemedText style={{ fontWeight: "800", color: colors.background }}>Follow</ThemedText>
+                    <ThemedText style={{ fontWeight: "800", color: colors.background }}>
+                      Follow
+                    </ThemedText>
                   </Pressable>
                 )}
               </View>
 
               {/* BIO */}
               <View style={styles.bioBlock}>
-                <ThemedText type="defaultSemiBold" style={[styles.displayName, { color: colors.text }]}>
+                <ThemedText
+                  type="defaultSemiBold"
+                  style={[styles.displayName, { color: colors.text }]}
+                >
                   {profile.displayName}
                 </ThemedText>
 
-                <ThemedText style={[styles.handle, { color: colors.textSecondary }]}>@{profile.handle}</ThemedText>
+                <ThemedText style={[styles.handle, { color: colors.textSecondary }]}>
+                  @{profile.handle}
+                </ThemedText>
 
-                {!!profile.bio && <ThemedText style={[styles.bio, { color: colors.text }]}>{profile.bio}</ThemedText>}
+                {!!profile.bio && (
+                  <ThemedText style={[styles.bio, { color: colors.text }]}>{profile.bio}</ThemedText>
+                )}
 
                 <View style={styles.metaRow}>
                   <View style={styles.metaItem}>
@@ -476,7 +366,9 @@ export default function ProfileScreen() {
                         {profile.link.replace(/^https?:\/\//, "")}
                       </ThemedText>
                     ) : (
-                      <ThemedText style={[styles.metaText, { color: colors.textSecondary }]}>—</ThemedText>
+                      <ThemedText style={[styles.metaText, { color: colors.textSecondary }]}>
+                        —
+                      </ThemedText>
                     )}
                   </View>
                 </View>
@@ -492,12 +384,16 @@ export default function ProfileScreen() {
 
                 <View style={styles.followsRow}>
                   <ThemedText style={{ color: colors.text }}>
-                    <ThemedText type="defaultSemiBold">{formatCount(profile.followingCount ?? 0)}</ThemedText>{" "}
+                    <ThemedText type="defaultSemiBold">
+                      {formatCount(profile.followingCount ?? 0)}
+                    </ThemedText>{" "}
                     <ThemedText style={{ color: colors.textSecondary }}>Following</ThemedText>
                   </ThemedText>
 
                   <ThemedText style={{ color: colors.text }}>
-                    <ThemedText type="defaultSemiBold">{formatCount(profile.followerCount ?? 0)}</ThemedText>{" "}
+                    <ThemedText type="defaultSemiBold">
+                      {formatCount(profile.followerCount ?? 0)}
+                    </ThemedText>{" "}
                     <ThemedText style={{ color: colors.textSecondary }}>Followers</ThemedText>
                   </ThemedText>
                 </View>
@@ -526,16 +422,53 @@ export default function ProfileScreen() {
               </View>
             </View>
           )}
-          renderItem={({ item }) => (
-            <SwipeablePostRow
-              sid={sid}
-              item={item}
-              colors={colors}
-              userId={userId}
-              getProfileById={getProfileById}
-              onDeletePost={onDeletePost}
-            />
-          )}
+          renderItem={({ item }) => {
+            const authorProfile = getProfileById(String(item.authorProfileId));
+            if (!authorProfile) return null;
+
+            const canEditPost = authorProfile.ownerUserId === userId || !!authorProfile.isPublic;
+
+            const row = (
+              <Pressable
+                onPress={() =>
+                  router.push(`/(scenario)/${sid}/(tabs)/post/${String(item.id)}` as any)
+                }
+                style={({ pressed }) => [
+                  { backgroundColor: pressed ? colors.pressed : colors.background },
+                ]}
+              >
+                <PostCard scenarioId={sid} profile={authorProfile} item={item} variant="feed" showActions />
+              </Pressable>
+            );
+
+            return (
+              <SwipeableRow
+                enabled={canEditPost}
+                colors={colors}
+                rightThreshold={40}
+                onEdit={() => {
+                  router.push({
+                    pathname: "/modal/create-post",
+                    params: { scenarioId: sid, mode: "edit", postId: String(item.id) },
+                  } as any);
+                }}
+                onDelete={() => {
+                  Alert.alert("Delete post?", "This will remove the post.", [
+                    { text: "Cancel", style: "cancel" },
+                    {
+                      text: "Delete",
+                      style: "destructive",
+                      onPress: async () => {
+                        await onDeletePost(String(item.id));
+                      },
+                    },
+                  ]);
+                }}
+              >
+                {row}
+              </SwipeableRow>
+            );
+          }}
           ListEmptyComponent={() => (
             <View style={{ padding: 18 }}>
               <ThemedText style={{ color: colors.textSecondary }}>No posts yet.</ThemedText>
@@ -550,7 +483,7 @@ export default function ProfileScreen() {
           </View>
         )}
 
-        {/* ✅ Unified viewer */}
+        {/* Unified viewer */}
         <Lightbox
           urls={lightboxUrls}
           initialIndex={lightboxIndex}
@@ -718,23 +651,6 @@ const styles = StyleSheet.create({
     width: 48,
     borderRadius: 999,
     marginTop: 6,
-  },
-
-  swipeActions: {
-    flexDirection: "row",
-    height: "100%",
-    alignItems: "center",
-    justifyContent: "flex-end",
-    paddingRight: 12,
-    gap: 10,
-  },
-  swipeBtn: {
-    width: 46,
-    height: 46,
-    borderRadius: 999,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 2,
   },
 
   pickerOverlay: {
