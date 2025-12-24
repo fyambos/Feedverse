@@ -15,11 +15,10 @@ import { useAuth } from "@/context/auth";
 import { useAppData } from "@/context/appData";
 import type { Post } from "@/data/db/schema";
 
+import { canEditPost } from "@/lib/permission";
+
 export default function PostScreen() {
-  const { scenarioId, postId } = useLocalSearchParams<{
-    scenarioId: string;
-    postId: string;
-  }>();
+  const { scenarioId, postId } = useLocalSearchParams<{ scenarioId: string; postId: string }>();
 
   const scheme = useColorScheme() ?? "light";
   const colors = Colors[scheme];
@@ -47,17 +46,15 @@ export default function PostScreen() {
     [deletePost]
   );
 
-  // --- DB reads
   const root = isReady ? getPostById(pid) : null;
 
-  // build nested thread: root -> replies -> replies-to-replies ...
   const thread = useMemo(() => {
     if (!root) return null;
 
     const result: Post[] = [root];
 
     const walk = (parentId: string) => {
-      const children = listRepliesForPost(parentId); // sorted oldest -> newest
+      const children = listRepliesForPost(parentId);
       for (const child of children) {
         result.push(child);
         walk(String(child.id));
@@ -89,9 +86,7 @@ export default function PostScreen() {
       <FlatList
         data={thread}
         keyExtractor={(i) => String(i.id)}
-        ItemSeparatorComponent={() => (
-          <View style={[styles.sep, { backgroundColor: colors.border }]} />
-        )}
+        ItemSeparatorComponent={() => <View style={[styles.sep, { backgroundColor: colors.border }]} />}
         renderItem={({ item }) => {
           const itemId = String(item.id);
 
@@ -107,7 +102,7 @@ export default function PostScreen() {
           const isRoot = itemId === String(root.id);
           const variant = isRoot ? "detail" : "reply";
 
-          const canEdit = profile.ownerUserId === userId || !!profile.isPublic;
+          const canEdit = canEditPost({ authorProfile: profile, userId });
 
           const content = (
             <PostCard
