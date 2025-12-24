@@ -1,4 +1,5 @@
-import React, { useCallback, useMemo, useRef } from "react";
+// mobile/app/(scenario)/[scenarioId]/(tabs)/index.tsx
+import React, { useCallback, useMemo } from "react";
 import { FlatList, StyleSheet, View, Pressable, Animated as RNAnimated } from "react-native";
 import { useLocalSearchParams, router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -11,10 +12,7 @@ import { Post as PostCard } from "@/components/post/Post";
 import { useAuth } from "@/context/auth";
 import { useAppData } from "@/context/appData";
 
-import ReanimatedSwipeable from "react-native-gesture-handler/ReanimatedSwipeable";
-import Animated, { interpolate, useAnimatedStyle } from "react-native-reanimated";
-
-type SwipeRef = { current: any | null };
+import { SwipeableRow } from "@/components/ui/SwipeableRow";
 
 export default function HomeScreen() {
   const { scenarioId } = useLocalSearchParams<{ scenarioId: string }>();
@@ -24,12 +22,7 @@ export default function HomeScreen() {
 
   const sid = String(scenarioId ?? "");
 
-  const {
-    isReady,
-    listPostsForScenario,
-    getProfileById,
-    deletePost,
-  } = useAppData();
+  const { isReady, listPostsForScenario, getProfileById, deletePost } = useAppData();
 
   // --- posts from DB (top-level already)
   const posts = useMemo(() => {
@@ -38,17 +31,6 @@ export default function HomeScreen() {
 
   const scale = React.useRef(new RNAnimated.Value(1)).current;
   const navLock = React.useRef(false);
-
-  const swipeRefs = useRef(new Map<string, SwipeRef>()).current;
-
-  const closeSwipe = useCallback(
-    (postId: string) => {
-      const refObj = swipeRefs.get(postId);
-      const swipe = refObj?.current;
-      if (swipe && typeof swipe.close === "function") swipe.close();
-    },
-    [swipeRefs]
-  );
 
   const pressIn = () => {
     if (navLock.current) return;
@@ -90,55 +72,6 @@ export default function HomeScreen() {
     [deletePost]
   );
 
-  const ACTIONS_WIDTH = 120;
-
-  const RightActions = ({
-    postId,
-    dragX,
-  }: {
-    postId: string;
-    dragX: { value: number };
-  }) => {
-    const rStyle = useAnimatedStyle(() => {
-      const translateX = interpolate(dragX.value, [-ACTIONS_WIDTH, 0], [0, ACTIONS_WIDTH], "clamp");
-      return { transform: [{ translateX }] };
-    }, [dragX]);
-
-    const pressedBg = colors.pressed;
-
-    return (
-      <Animated.View style={[styles.swipeActions, { width: ACTIONS_WIDTH }, rStyle]}>
-        <Pressable
-          onPress={() => {
-            closeSwipe(postId);
-            requestAnimationFrame(() => openEditPost(postId));
-          }}
-          style={({ pressed }) => [
-            styles.swipeBtn,
-            { backgroundColor: pressed ? pressedBg : "transparent", borderColor: colors.tint },
-          ]}
-          hitSlop={10}
-        >
-          <Ionicons name="pencil" size={22} color={colors.tint} />
-        </Pressable>
-
-        <Pressable
-          onPress={() => {
-            closeSwipe(postId);
-            void onDeletePost(postId);
-          }}
-          style={({ pressed }) => [
-            styles.swipeBtn,
-            { backgroundColor: pressed ? pressedBg : "transparent", borderColor: "#F04438" },
-          ]}
-          hitSlop={10}
-        >
-          <Ionicons name="trash-outline" size={22} color="#F04438" />
-        </Pressable>
-      </Animated.View>
-    );
-  };
-
   const openPostDetail = useCallback(
     (postId: string) => {
       router.push(`/(scenario)/${sid}/(tabs)/post/${String(postId)}` as any);
@@ -152,7 +85,9 @@ export default function HomeScreen() {
         data={posts}
         keyExtractor={(item) => String(item.id)}
         contentContainerStyle={styles.list}
-        ItemSeparatorComponent={() => <View style={[styles.separator, { backgroundColor: colors.border }]} />}
+        ItemSeparatorComponent={() => (
+          <View style={[styles.separator, { backgroundColor: colors.border }]} />
+        )}
         renderItem={({ item }) => {
           const profile = getProfileById(String(item.authorProfileId));
           if (!profile) return null;
@@ -162,34 +97,29 @@ export default function HomeScreen() {
           const content = (
             <Pressable
               onPress={() => {
-                closeSwipe(String(item.id));
                 openPostDetail(String(item.id));
               }}
             >
-              <PostCard scenarioId={sid} profile={profile as any} item={item as any} variant="feed" showActions />
+              <PostCard
+                scenarioId={sid}
+                profile={profile as any}
+                item={item as any}
+                variant="feed"
+                showActions
+              />
             </Pressable>
           );
 
-          if (!canEdit) return content;
-
-          let swipeRef = swipeRefs.get(String(item.id));
-          if (!swipeRef) {
-            swipeRef = { current: null };
-            swipeRefs.set(String(item.id), swipeRef);
-          }
-
           return (
-            <ReanimatedSwipeable
-              ref={swipeRef as any}
-              overshootRight={false}
-              friction={2}
+            <SwipeableRow
+              enabled={canEdit}
+              colors={colors}
               rightThreshold={24}
-              renderRightActions={(_progress, dragX) => (
-                <RightActions postId={String(item.id)} dragX={dragX as any} />
-              )}
+              onEdit={() => openEditPost(String(item.id))}
+              onDelete={() => onDeletePost(String(item.id))}
             >
               {content}
-            </ReanimatedSwipeable>
+            </SwipeableRow>
           );
         }}
         ListEmptyComponent={() => (
@@ -221,12 +151,7 @@ export default function HomeScreen() {
         )}
       />
 
-      <RNAnimated.View
-        style={[
-          styles.fab,
-          { backgroundColor: colors.tint, transform: [{ scale }] },
-        ]}
-      >
+      <RNAnimated.View style={[styles.fab, { backgroundColor: colors.tint, transform: [{ scale }] }]}>
         <Pressable
           onPress={openCreatePost}
           onPressIn={pressIn}
@@ -246,22 +171,6 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   list: { paddingVertical: 8 },
   separator: { height: StyleSheet.hairlineWidth, opacity: 0.8 },
-  swipeActions: {
-    flexDirection: "row",
-    height: "100%",
-    alignItems: "center",
-    justifyContent: "flex-end",
-    paddingRight: 12,
-    gap: 10,
-  },
-  swipeBtn: {
-    width: 46,
-    height: 46,
-    borderRadius: 999,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 2,
-  },
   fab: {
     position: "absolute",
     right: 20,
