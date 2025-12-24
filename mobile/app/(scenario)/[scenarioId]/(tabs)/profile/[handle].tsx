@@ -33,53 +33,12 @@ import type { Profile, Post } from "@/data/db/schema";
 
 import { Avatar } from "@/components/ui/Avatar";
 import { pickAndPersistOneImage } from "@/components/ui/AvatarPicker";
+import { formatCount, formatJoined, normalizeHandle } from "@/lib/format";
 
 /* -------------------------------------------------------------------------- */
 /* Helpers                                                                    */
 /* -------------------------------------------------------------------------- */
 
-function formatJoined(iso: string) {
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return "Joined";
-  const month = d.toLocaleString(undefined, { month: "long" });
-  const year = d.getFullYear();
-  return `Joined ${month} ${year}`;
-}
-
-function formatCount(n: number) {
-  const v = Math.max(0, Math.floor((n as any) || 0));
-
-  if (v > 99_000_000_000) return "99B+";
-  if (v < 1000) return String(v);
-
-  if (v < 100_000) {
-    const k = v / 1000;
-    const str = k.toFixed(1).replace(/\.0$/, "");
-    return `${str}K`;
-  }
-
-  if (v < 1_000_000) return `${Math.floor(v / 1000)}K`;
-
-  if (v < 10_000_000) {
-    const m = v / 1_000_000;
-    const str = m.toFixed(1).replace(/\.0$/, "");
-    return `${str}M`;
-  }
-
-  if (v < 1_000_000_000) return `${Math.floor(v / 1_000_000)}M`;
-
-  if (v < 10_000_000_000) {
-    const b = v / 1_000_000_000;
-    const str = b.toFixed(1).replace(/\.0$/, "");
-    return `${str}B`;
-  }
-
-  return `${Math.floor(v / 1_000_000_000)}B`;
-}
-
-function normalizeHandle(input: string) {
-  return String(input).trim().replace(/^@+/, "").toLowerCase();
-}
 
 function SwipeActions({
   dragX,

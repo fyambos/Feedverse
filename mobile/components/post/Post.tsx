@@ -21,6 +21,7 @@ import type { Post as DbPost, Profile } from "@/data/db/schema";
 import { useAppData } from "@/context/appData";
 
 import { Avatar } from "@/components/ui/Avatar";
+import { formatCount, formatRelativeTime, formatDetailTimestamp } from "@/lib/format";
 
 /* -------------------------------------------------------------------------- */
 /* Types                                                                      */
@@ -40,73 +41,6 @@ type Props = {
 /* -------------------------------------------------------------------------- */
 /* Helpers                                                                    */
 /* -------------------------------------------------------------------------- */
-
-function formatRelativeTime(iso: string) {
-  const d = new Date(iso);
-  const diff = Date.now() - d.getTime();
-
-  if (!Number.isFinite(diff) || diff < 0) {
-    const hh = String(d.getHours()).padStart(2, "0");
-    const mm = String(d.getMinutes()).padStart(2, "0");
-    const abs = d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
-    return `${abs} · ${hh}:${mm}`;
-  }
-
-  const s = Math.floor(diff / 1000);
-  if (s < 60) return `${s}s`;
-
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m`;
-
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h`;
-
-  const days = Math.floor(h / 24);
-  if (days <= 7) return `${days}d`;
-
-  const now = new Date();
-  const sameYear = now.getFullYear() === d.getFullYear();
-  const datePart = d.toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-    ...(sameYear ? {} : { year: "numeric" }),
-  });
-
-  const hh = String(d.getHours()).padStart(2, "0");
-  const mm = String(d.getMinutes()).padStart(2, "0");
-  return `${datePart} · ${hh}:${mm}`;
-}
-
-function formatDetailTimestamp(iso: string) {
-  const d = new Date(iso);
-  const hh = String(d.getHours()).padStart(2, "0");
-  const mm = String(d.getMinutes()).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  const mo = String(d.getMonth() + 1).padStart(2, "0");
-  const yy = String(d.getFullYear());
-  return `${hh}:${mm} ${dd}/${mo}/${yy}`;
-}
-
-function formatCount(n: number) {
-  if (!Number.isFinite(n)) return "0";
-  const num = Math.max(0, Math.floor(n));
-
-  if (num >= 100_000_000) return String(num);
-
-  if (num >= 1_000_000) {
-    const v = num / 1_000_000;
-    const s = v < 10 ? v.toFixed(1) : Math.floor(v).toString();
-    return `${s.replace(/\.0$/, "")}M`;
-  }
-
-  if (num >= 1_000) {
-    const v = num / 1_000;
-    const s = v < 10 ? v.toFixed(1) : Math.floor(v).toString();
-    return `${s.replace(/\.0$/, "")}K`;
-  }
-
-  return String(num);
-}
 
 function pluralize(n: number, singular: string, plural?: string) {
   const p = plural ?? `${singular}s`;
