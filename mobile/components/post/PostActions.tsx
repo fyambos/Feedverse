@@ -1,6 +1,6 @@
 // mobile/components/post/PostActions.tsx
 import React from "react";
-import { Animated, Pressable, StyleSheet, View } from "react-native";
+import { Alert, Animated, Pressable, StyleSheet, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import SimpleLineIcons from "@expo/vector-icons/SimpleLineIcons";
 
@@ -59,6 +59,10 @@ export function PostActions({
     ]).start();
   };
 
+  const comingSoon = (feature: string) => {
+    Alert.alert("Coming soon", `${feature} is not available yet.`);
+  };
+
   return (
     <View style={[styles.actions, isDetail ? styles.actionsDetail : styles.actionsReply]}>
       {/* Reply */}
@@ -99,7 +103,10 @@ export function PostActions({
       <View style={styles.actionSlot}>
         <View style={styles.action}>
           <Pressable
-            onPress={() => pop(repostScale)}
+            onPress={() => {
+              pop(repostScale);
+              comingSoon("Reposting");
+            }}
             onLongPress={() => {
               pop(repostScale);
               onQuote();
@@ -137,7 +144,8 @@ export function PostActions({
           <Pressable
             onPress={() => {
               pop(likeScale);
-              onLike?.();
+              if (onLike) onLike();
+              else comingSoon("Liking");
             }}
             hitSlop={6}
             pressRetentionOffset={6}
@@ -171,7 +179,8 @@ export function PostActions({
           <Pressable
             onPress={() => {
               pop(shareScale);
-              onShare?.();
+              if (onShare) onShare();
+              else comingSoon("Sharing");
             }}
             hitSlop={6}
             pressRetentionOffset={6}
