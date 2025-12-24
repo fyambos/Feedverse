@@ -27,33 +27,11 @@ import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import type { Post } from "@/data/db/schema";
 import { useAppData } from "@/context/appData";
 import { useAuth } from "@/context/auth";
+import { formatCount, makeId } from "@/lib/format";
 
 function clampInt(n: number, min = 0, max = 99_000_000) {
   if (Number.isNaN(n)) return min;
   return Math.max(min, Math.min(max, n));
-}
-
-function formatCount(n: number) {
-  const v = Math.max(0, Math.floor(n || 0));
-
-  if (v > 99_000_000) return "99M+";
-  if (v < 1000) return String(v);
-
-  if (v < 100_000) {
-    const k = v / 1000;
-    const str = k.toFixed(1).replace(/\.0$/, "");
-    return `${str}K`;
-  }
-
-  if (v < 1_000_000) return `${Math.floor(v / 1000)}K`;
-
-  if (v < 10_000_000) {
-    const m = v / 1_000_000;
-    const str = m.toFixed(1).replace(/\.0$/, "");
-    return `${str}M`;
-  }
-
-  return `${Math.floor(v / 1_000_000)}M`;
 }
 
 function RowCard({
@@ -76,10 +54,6 @@ function RowCard({
       {right ? <View style={{ marginLeft: 12 }}>{right}</View> : null}
     </View>
   );
-}
-
-function makeId(prefix: string) {
-  return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
 function QuotedPostCard({
