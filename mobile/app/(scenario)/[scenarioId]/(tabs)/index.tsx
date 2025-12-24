@@ -13,6 +13,7 @@ import { useAuth } from "@/context/auth";
 import { useAppData } from "@/context/appData";
 
 import { SwipeableRow } from "@/components/ui/SwipeableRow";
+import { canEditPost } from "@/lib/permission";
 
 export default function HomeScreen() {
   const { scenarioId } = useLocalSearchParams<{ scenarioId: string }>();
@@ -24,7 +25,6 @@ export default function HomeScreen() {
 
   const { isReady, listPostsForScenario, getProfileById, deletePost } = useAppData();
 
-  // --- posts from DB (top-level already)
   const posts = useMemo(() => {
     return isReady ? listPostsForScenario(sid) : [];
   }, [isReady, listPostsForScenario, sid]);
@@ -92,7 +92,7 @@ export default function HomeScreen() {
           const profile = getProfileById(String(item.authorProfileId));
           if (!profile) return null;
 
-          const canEdit = profile.ownerUserId === userId || !!profile.isPublic;
+          const canEdit = canEditPost({ authorProfile: profile, userId });
 
           const content = (
             <Pressable
@@ -125,7 +125,10 @@ export default function HomeScreen() {
         ListEmptyComponent={() => (
           <View style={{ padding: 16 }}>
             <View style={{ gap: 6 }}>
-              <Pressable onPress={openCreatePost} style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}>
+              <Pressable
+                onPress={openCreatePost}
+                style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}
+              >
                 <View
                   style={{
                     borderWidth: StyleSheet.hairlineWidth,

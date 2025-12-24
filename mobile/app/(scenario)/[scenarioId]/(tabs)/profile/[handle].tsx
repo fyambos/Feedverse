@@ -21,7 +21,6 @@ import { Post as PostCard } from "@/components/post/Post";
 
 import { useAuth } from "@/context/auth";
 import { useAppData } from "@/context/appData";
-import type { Profile, Post } from "@/data/db/schema";
 
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 
@@ -32,9 +31,7 @@ import { formatCount, formatJoined, normalizeHandle } from "@/lib/format";
 import { Lightbox } from "@/components/media/LightBox";
 import { SwipeableRow } from "@/components/ui/SwipeableRow";
 
-/* -------------------------------------------------------------------------- */
-/* Screen                                                                     */
-/* -------------------------------------------------------------------------- */
+import { canEditPost, canEditProfile } from "@/lib/permission";
 
 export default function ProfileScreen() {
   const { scenarioId, handle } = useLocalSearchParams<{ scenarioId: string; handle: string }>();
@@ -63,22 +60,20 @@ export default function ProfileScreen() {
   const isPublic = !!profile && !!profile.isPublic;
   const isCurrentSelected = !!profile && !!selectedId && String(selectedId) === String(profile.id);
 
-  // "can modify" means: owned OR public OR currently selected
-  const canModifyProfile = isOwner || isPublic || isCurrentSelected;
+  const canModifyProfile = canEditProfile({
+    profile,
+    userId,
+    selectedProfileId: selectedId ? String(selectedId) : null,
+  });
 
-  // editMode toggles what you SEE:
-  // - selected profile starts in editMode (edit btn + cameras)
-  // - otherwise starts in followMode (follow btn, no cameras)
   const [editMode, setEditMode] = useState<boolean>(false);
 
   useEffect(() => {
     setEditMode(!!isCurrentSelected);
   }, [isCurrentSelected, sid, wanted]);
 
-  // picker lock overlay
   const [picking, setPicking] = useState(false);
 
-  // unified lightbox state
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxUrls, setLightboxUrls] = useState<string[]>([]);
   const [lightboxIndex, setLightboxIndex] = useState(0);
@@ -225,7 +220,6 @@ export default function ProfileScreen() {
               <View style={[styles.headerMediaWrap, { backgroundColor: colors.border }]}>
                 {headerUri ? <Image source={{ uri: headerUri }} style={styles.headerMedia} /> : null}
 
-                {/* Tap anywhere to view (if exists) */}
                 <Pressable
                   onPress={() => openLightbox([headerUri], 0)}
                   style={StyleSheet.absoluteFill}
@@ -233,7 +227,6 @@ export default function ProfileScreen() {
                   accessibilityLabel="View header"
                 />
 
-                {/* Back */}
                 <Pressable
                   onPress={() => router.back()}
                   hitSlop={12}
@@ -245,7 +238,6 @@ export default function ProfileScreen() {
                   <MaterialIcons name="keyboard-arrow-left" size={24} color="#fff" />
                 </Pressable>
 
-                {/* Header controls: only visible in editMode */}
                 {showCameras ? (
                   <View style={styles.headerControls}>
                     <Pressable
@@ -277,7 +269,6 @@ export default function ProfileScreen() {
                     <Avatar uri={avatarUri} size={80} fallbackColor={colors.border} />
                   </Pressable>
 
-                  {/* Avatar camera: only visible in editMode */}
                   {showCameras ? (
                     <Pressable
                       onPress={onChangeAvatar}
@@ -336,10 +327,7 @@ export default function ProfileScreen() {
 
               {/* BIO */}
               <View style={styles.bioBlock}>
-                <ThemedText
-                  type="defaultSemiBold"
-                  style={[styles.displayName, { color: colors.text }]}
-                >
+                <ThemedText type="defaultSemiBold" style={[styles.displayName, { color: colors.text }]}>
                   {profile.displayName}
                 </ThemedText>
 
@@ -366,9 +354,7 @@ export default function ProfileScreen() {
                         {profile.link.replace(/^https?:\/\//, "")}
                       </ThemedText>
                     ) : (
-                      <ThemedText style={[styles.metaText, { color: colors.textSecondary }]}>
-                        —
-                      </ThemedText>
+                      <ThemedText style={[styles.metaText, { color: colors.textSecondary }]}>—</ThemedText>
                     )}
                   </View>
                 </View>
@@ -384,22 +370,18 @@ export default function ProfileScreen() {
 
                 <View style={styles.followsRow}>
                   <ThemedText style={{ color: colors.text }}>
-                    <ThemedText type="defaultSemiBold">
-                      {formatCount(profile.followingCount ?? 0)}
-                    </ThemedText>{" "}
+                    <ThemedText type="defaultSemiBold">{formatCount(profile.followingCount ?? 0)}</ThemedText>{" "}
                     <ThemedText style={{ color: colors.textSecondary }}>Following</ThemedText>
                   </ThemedText>
 
                   <ThemedText style={{ color: colors.text }}>
-                    <ThemedText type="defaultSemiBold">
-                      {formatCount(profile.followerCount ?? 0)}
-                    </ThemedText>{" "}
+                    <ThemedText type="defaultSemiBold">{formatCount(profile.followerCount ?? 0)}</ThemedText>{" "}
                     <ThemedText style={{ color: colors.textSecondary }}>Followers</ThemedText>
                   </ThemedText>
                 </View>
               </View>
 
-              {/* Tabs (static for now) */}
+              {/* Tabs */}
               <View style={[styles.tabsBar, { borderBottomColor: colors.border }]}>
                 <Pressable style={({ pressed }) => [styles.tab, pressed && { opacity: 0.7 }]}>
                   <ThemedText type="defaultSemiBold" style={{ color: colors.text }}>
@@ -426,16 +408,12 @@ export default function ProfileScreen() {
             const authorProfile = getProfileById(String(item.authorProfileId));
             if (!authorProfile) return null;
 
-            const canEditPost = authorProfile.ownerUserId === userId || !!authorProfile.isPublic;
+            const canEditThisPost = canEditPost({ authorProfile, userId });
 
             const row = (
               <Pressable
-                onPress={() =>
-                  router.push(`/(scenario)/${sid}/(tabs)/post/${String(item.id)}` as any)
-                }
-                style={({ pressed }) => [
-                  { backgroundColor: pressed ? colors.pressed : colors.background },
-                ]}
+                onPress={() => router.push(`/(scenario)/${sid}/(tabs)/post/${String(item.id)}` as any)}
+                style={({ pressed }) => [{ backgroundColor: pressed ? colors.pressed : colors.background }]}
               >
                 <PostCard scenarioId={sid} profile={authorProfile} item={item} variant="feed" showActions />
               </Pressable>
@@ -443,7 +421,7 @@ export default function ProfileScreen() {
 
             return (
               <SwipeableRow
-                enabled={canEditPost}
+                enabled={canEditThisPost}
                 colors={colors}
                 rightThreshold={40}
                 onEdit={() => {
@@ -476,14 +454,12 @@ export default function ProfileScreen() {
           )}
         />
 
-        {/* Picker overlay */}
         {picking && (
           <View style={styles.pickerOverlay} pointerEvents="auto">
             <ActivityIndicator size="large" color="#fff" />
           </View>
         )}
 
-        {/* Unified viewer */}
         <Lightbox
           urls={lightboxUrls}
           initialIndex={lightboxIndex}
@@ -497,23 +473,11 @@ export default function ProfileScreen() {
   );
 }
 
-/* -------------------------------------------------------------------------- */
-/* Styles                                                                     */
-/* -------------------------------------------------------------------------- */
-
 const styles = StyleSheet.create({
   screen: { flex: 1 },
 
-  headerMediaWrap: {
-    height: 140,
-    width: "100%",
-    overflow: "hidden",
-    position: "relative",
-  },
-  headerMedia: {
-    width: "100%",
-    height: "100%",
-  },
+  headerMediaWrap: { height: 140, width: "100%", overflow: "hidden", position: "relative" },
+  headerMedia: { width: "100%", height: "100%" },
 
   backBtn: {
     position: "absolute",
@@ -530,14 +494,7 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
 
-  headerControls: {
-    position: "absolute",
-    right: 10,
-    bottom: 10,
-    flexDirection: "row",
-    gap: 10,
-    zIndex: 10,
-  },
+  headerControls: { position: "absolute", right: 10, bottom: 10, flexDirection: "row", gap: 10, zIndex: 10 },
   headerIconBtn: {
     width: 34,
     height: 34,
@@ -549,19 +506,8 @@ const styles = StyleSheet.create({
     borderColor: "rgba(255,255,255,0.18)",
   },
 
-  avatarRow: {
-    marginTop: -26,
-    paddingHorizontal: 16,
-    flexDirection: "row",
-    alignItems: "flex-end",
-    gap: 12,
-  },
-  avatarOuter: {
-    width: 88,
-    height: 88,
-    borderRadius: 999,
-    padding: 4,
-  },
+  avatarRow: { marginTop: -26, paddingHorizontal: 16, flexDirection: "row", alignItems: "flex-end", gap: 12 },
+  avatarOuter: { width: 88, height: 88, borderRadius: 999, padding: 4 },
   avatarEditBadge: {
     position: "absolute",
     right: 2,
@@ -584,74 +530,22 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  primaryBtn: {
-    height: 34,
-    paddingHorizontal: 18,
-    borderRadius: 999,
-    alignItems: "center",
-    justifyContent: "center",
-  },
+  primaryBtn: { height: 34, paddingHorizontal: 18, borderRadius: 999, alignItems: "center", justifyContent: "center" },
 
-  bioBlock: {
-    paddingHorizontal: 16,
-    paddingTop: 10,
-    paddingBottom: 12,
-    gap: 6,
-  },
-  displayName: {
-    fontSize: 20,
-    fontWeight: "900",
-    lineHeight: 24,
-  },
-  handle: {
-    fontSize: 14,
-    marginTop: -2,
-  },
-  bio: {
-    fontSize: 15,
-    lineHeight: 20,
-    marginTop: 6,
-  },
+  bioBlock: { paddingHorizontal: 16, paddingTop: 10, paddingBottom: 12, gap: 6 },
+  displayName: { fontSize: 20, fontWeight: "900", lineHeight: 24 },
+  handle: { fontSize: 14, marginTop: -2 },
+  bio: { fontSize: 15, lineHeight: 20, marginTop: 6 },
 
-  metaRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 14,
-    marginTop: 6,
-    alignItems: "center",
-  },
-  metaItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-  metaText: {
-    fontSize: 13,
-  },
+  metaRow: { flexDirection: "row", flexWrap: "wrap", gap: 14, marginTop: 6, alignItems: "center" },
+  metaItem: { flexDirection: "row", alignItems: "center", gap: 6 },
+  metaText: { fontSize: 13 },
 
-  followsRow: {
-    flexDirection: "row",
-    gap: 16,
-    marginTop: 8,
-  },
+  followsRow: { flexDirection: "row", gap: 16, marginTop: 8 },
 
-  tabsBar: {
-    flexDirection: "row",
-    justifyContent: "space-around",
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  tab: {
-    paddingVertical: 12,
-    paddingHorizontal: 10,
-    alignItems: "center",
-    gap: 8,
-  },
-  tabUnderline: {
-    height: 4,
-    width: 48,
-    borderRadius: 999,
-    marginTop: 6,
-  },
+  tabsBar: { flexDirection: "row", justifyContent: "space-around", borderBottomWidth: StyleSheet.hairlineWidth },
+  tab: { paddingVertical: 12, paddingHorizontal: 10, alignItems: "center", gap: 8 },
+  tabUnderline: { height: 4, width: 48, borderRadius: 999, marginTop: 6 },
 
   pickerOverlay: {
     ...StyleSheet.absoluteFillObject,
@@ -662,7 +556,5 @@ const styles = StyleSheet.create({
     elevation: 999,
   },
 
-  pressedPop: {
-    transform: [{ scale: 0.92 }],
-  },
+  pressedPop: { transform: [{ scale: 0.92 }] },
 });
