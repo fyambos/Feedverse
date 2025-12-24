@@ -1,7 +1,7 @@
 // mobile/components/ui/AvatarPicker.tsx
 import { Alert } from "react-native";
 import * as ImagePicker from "expo-image-picker";
-import { persistImageToAppStorage } from "@/components/ui/AvatarSaver";
+import { persistToAppStorage } from "@/lib/media/imagePersist";
 
 type PickOneOpts = {
   allowsEditing?: boolean;
@@ -29,7 +29,7 @@ export async function pickAndPersistOneImage(opts: PickOneOpts = {}): Promise<st
   const uri = res.assets?.[0]?.uri;
   if (!uri) return null;
 
-  return await persistImageToAppStorage(uri, opts.persistAs ?? "img");
+  return await persistToAppStorage(uri, opts.persistAs ?? "img");
 }
 
 type PickManyOpts = {
@@ -63,7 +63,7 @@ export async function pickAndPersistManyImages(opts: PickManyOpts): Promise<stri
 
   const out: string[] = [];
   for (const uri of uris) {
-    out.push(await persistImageToAppStorage(uri, opts.persistAs ?? "img"));
+    out.push(await persistToAppStorage(uri, opts.persistAs ?? "img"));
   }
   return out;
 }
