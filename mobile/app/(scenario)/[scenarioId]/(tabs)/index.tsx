@@ -1,141 +1,62 @@
-import React, { useCallback, useMemo, useRef, useState } from 'react';
-import { FlatList, StyleSheet, View, Pressable, Animated as RNAnimated } from 'react-native';
-import { useLocalSearchParams, router } from 'expo-router';
-import { ThemedView } from '@/components/themed-view';
-import { Colors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { MOCK_FEEDS } from '@/mocks/feeds';
-import { Post } from '@/components/Post';
-import { useProfile } from '@/context/profile';
-import { useAuth } from '@/context/auth';
-import { Ionicons } from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useFocusEffect } from '@react-navigation/native';
-import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
-import Animated, { interpolate, useAnimatedStyle } from 'react-native-reanimated';
+import React, { useCallback, useMemo, useRef } from "react";
+import { FlatList, StyleSheet, View, Pressable, Animated as RNAnimated } from "react-native";
+import { useLocalSearchParams, router } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
+
+import { ThemedView } from "@/components/themed-view";
+import { ThemedText } from "@/components/themed-text";
+import { Colors } from "@/constants/theme";
+import { useColorScheme } from "@/hooks/use-color-scheme";
+import { Post as PostCard } from "@/components/post/Post";
+import { useAuth } from "@/context/auth";
+import { useAppData } from "@/context/appData";
+
+import ReanimatedSwipeable from "react-native-gesture-handler/ReanimatedSwipeable";
+import Animated, { interpolate, useAnimatedStyle } from "react-native-reanimated";
+
+type SwipeRef = { current: any | null };
 
 export default function HomeScreen() {
   const { scenarioId } = useLocalSearchParams<{ scenarioId: string }>();
-  const scheme = useColorScheme() ?? 'light';
+  const scheme = useColorScheme() ?? "light";
   const colors = Colors[scheme];
   const { userId } = useAuth();
 
-  const [storedPosts, setStoredPosts] = useState<any[]>([]);
-  const [deletedIds, setDeletedIds] = useState<string[]>([]);
-  const [postsReady, setPostsReady] = useState(false);
-  const [avatarOverrides, setAvatarOverrides] = useState<Record<string, string>>({});
+  const sid = String(scenarioId ?? "");
 
-  const sid = String(scenarioId ?? '');
-  const { getProfileById } = useProfile();
-  const STORAGE_KEY = `feedverse.posts.${sid}`;
-  const DELETED_KEY = `feedverse.posts.deleted.${sid}`;
+  const {
+    isReady,
+    listPostsForScenario,
+    getProfileById,
+    deletePost,
+  } = useAppData();
 
-  const loadStoredPosts = useCallback(async () => {
-    try {
-      setPostsReady(false);
-      const raw = await AsyncStorage.getItem(STORAGE_KEY);
-      const parsed = raw ? JSON.parse(raw) : [];
-      const list = Array.isArray(parsed) ? parsed : [];
-      setStoredPosts(list);
-    } catch {
-      setStoredPosts([]);
-    } finally {
-      setPostsReady(true);
-    }
-  }, [STORAGE_KEY]);
-
-  const loadDeletedIds = useCallback(async () => {
-    try {
-      const raw = await AsyncStorage.getItem(DELETED_KEY);
-      const parsed = raw ? JSON.parse(raw) : [];
-      const list = Array.isArray(parsed) ? parsed.filter((x) => typeof x === 'string') : [];
-      setDeletedIds(list);
-    } catch {
-      setDeletedIds([]);
-    }
-  }, [DELETED_KEY]);
-
-
-
-    const posts = useMemo(() => {
-    const mock = MOCK_FEEDS[sid] ?? [];
-    const combined = [...storedPosts, ...mock];
-
-    const byId = new Map<string, any>();
-    for (const p of combined) {
-      if (!p?.id) continue;
-      if (!byId.has(p.id)) byId.set(p.id, p);
-    }
-
-    return Array.from(byId.values())
-      .filter((p) => !deletedIds.includes(p.id))
-      .filter((p) => p.scenarioId === sid)
-      .filter((p) => !p.parentPostId)
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  }, [sid, storedPosts, deletedIds]);
+  // --- posts from DB (top-level already)
+  const posts = useMemo(() => {
+    return isReady ? listPostsForScenario(sid) : [];
+  }, [isReady, listPostsForScenario, sid]);
 
   const scale = React.useRef(new RNAnimated.Value(1)).current;
   const navLock = React.useRef(false);
 
-  const loadAvatarOverrides = useCallback(async () => {
-    try {
-      const authorIds = Array.from(new Set(posts.map((p) => String(p.authorProfileId))));
-      const pairs = await Promise.all(
-        authorIds.map(async (pid) => {
-          const prof = getProfileById(sid, pid);
-          if (!prof) return null;
-
-          const key = `feedverse.profile.avatar.${sid}.${prof.handle}`;
-          const uri = await AsyncStorage.getItem(key);
-          return uri ? [pid, uri] as const : null;
-        })
-      );
-
-      const next: Record<string, string> = {};
-      for (const p of pairs) {
-        if (p) next[p[0]] = p[1];
-      }
-      setAvatarOverrides(next);
-    } catch {
-      setAvatarOverrides({});
-    }
-  }, [posts, sid, getProfileById]);
-  useFocusEffect(
-    useCallback(() => {
-      void loadStoredPosts();
-      void loadDeletedIds();
-      void loadAvatarOverrides(); 
-      return () => {};
-    }, [loadStoredPosts, loadDeletedIds, loadAvatarOverrides])
-  );
-type SwipeRef = { current: typeof ReanimatedSwipeable | null };
-const swipeRefs = useRef(new Map<string, SwipeRef>()).current;
+  const swipeRefs = useRef(new Map<string, SwipeRef>()).current;
 
   const closeSwipe = useCallback(
     (postId: string) => {
       const refObj = swipeRefs.get(postId);
-      const swipe = refObj?.current as any;
-      if (swipe && typeof swipe.close === 'function') {
-        swipe.close();
-      }
+      const swipe = refObj?.current;
+      if (swipe && typeof swipe.close === "function") swipe.close();
     },
     [swipeRefs]
   );
 
   const pressIn = () => {
     if (navLock.current) return;
-    RNAnimated.spring(scale, {
-      toValue: 0.9,
-      useNativeDriver: true,
-    }).start();
+    RNAnimated.spring(scale, { toValue: 0.9, useNativeDriver: true }).start();
   };
 
   const pressOut = () => {
-    RNAnimated.spring(scale, {
-      toValue: 1,
-      friction: 4,
-      useNativeDriver: true,
-    }).start();
+    RNAnimated.spring(scale, { toValue: 1, friction: 4, useNativeDriver: true }).start();
   };
 
   const openCreatePost = () => {
@@ -143,47 +64,33 @@ const swipeRefs = useRef(new Map<string, SwipeRef>()).current;
     navLock.current = true;
 
     router.push({
-      pathname: '/modal/create-post',
-      params: { scenarioId: String(scenarioId) },
+      pathname: "/modal/create-post",
+      params: { scenarioId: sid },
     } as any);
 
-    // prevent double-open (fast double tap)
     setTimeout(() => {
       navLock.current = false;
     }, 450);
   };
 
-  const deletePost = useCallback(
-    async (postId: string) => {
-      // 1) remove from stored posts if present
-      const nextStored = storedPosts.filter((p) => p?.id !== postId);
-      if (nextStored.length !== storedPosts.length) {
-        setStoredPosts(nextStored);
-        await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(nextStored));
-        return;
-      }
-
-      // 2) otherwise, hide mock posts via a deleted-ids list
-      if (!deletedIds.includes(postId)) {
-        const nextDeleted = [postId, ...deletedIds];
-        setDeletedIds(nextDeleted);
-        await AsyncStorage.setItem(DELETED_KEY, JSON.stringify(nextDeleted));
-      }
-    },
-    [storedPosts, deletedIds, STORAGE_KEY, DELETED_KEY]
-  );
-
   const openEditPost = useCallback(
     (postId: string) => {
       router.push({
-        pathname: '/modal/create-post',
-        params: { scenarioId: String(scenarioId), postId },
+        pathname: "/modal/create-post",
+        params: { scenarioId: sid, mode: "edit", postId: String(postId) },
       } as any);
     },
-    [scenarioId]
+    [sid]
   );
 
-  const ACTIONS_WIDTH = 120; 
+  const onDeletePost = useCallback(
+    async (postId: string) => {
+      await deletePost(String(postId));
+    },
+    [deletePost]
+  );
+
+  const ACTIONS_WIDTH = 120;
 
   const RightActions = ({
     postId,
@@ -192,26 +99,15 @@ const swipeRefs = useRef(new Map<string, SwipeRef>()).current;
     postId: string;
     dragX: { value: number };
   }) => {
-    // dragX.value: 0 -> negative as you swipe left
     const rStyle = useAnimatedStyle(() => {
-      const translateX = interpolate(dragX.value, [-ACTIONS_WIDTH, 0], [0, ACTIONS_WIDTH], 'clamp');
-      return {
-        transform: [{ translateX }],
-      };
+      const translateX = interpolate(dragX.value, [-ACTIONS_WIDTH, 0], [0, ACTIONS_WIDTH], "clamp");
+      return { transform: [{ translateX }] };
     }, [dragX]);
 
     const pressedBg = colors.pressed;
 
     return (
-      <Animated.View
-        style={[
-          styles.swipeActions,
-          {
-            width: ACTIONS_WIDTH,
-          },
-          rStyle,
-        ]}
-      >
+      <Animated.View style={[styles.swipeActions, { width: ACTIONS_WIDTH }, rStyle]}>
         <Pressable
           onPress={() => {
             closeSwipe(postId);
@@ -219,10 +115,7 @@ const swipeRefs = useRef(new Map<string, SwipeRef>()).current;
           }}
           style={({ pressed }) => [
             styles.swipeBtn,
-            {
-              backgroundColor: pressed ? pressedBg : 'transparent',
-              borderColor: colors.tint,
-            },
+            { backgroundColor: pressed ? pressedBg : "transparent", borderColor: colors.tint },
           ]}
           hitSlop={10}
         >
@@ -232,14 +125,11 @@ const swipeRefs = useRef(new Map<string, SwipeRef>()).current;
         <Pressable
           onPress={() => {
             closeSwipe(postId);
-            void deletePost(postId);
+            void onDeletePost(postId);
           }}
           style={({ pressed }) => [
             styles.swipeBtn,
-            {
-              backgroundColor: pressed ? pressedBg : 'transparent',
-              borderColor: '#F04438',
-            },
+            { backgroundColor: pressed ? pressedBg : "transparent", borderColor: "#F04438" },
           ]}
           hitSlop={10}
         >
@@ -251,56 +141,41 @@ const swipeRefs = useRef(new Map<string, SwipeRef>()).current;
 
   const openPostDetail = useCallback(
     (postId: string) => {
-      router.push(`/(scenario)/${scenarioId}/(tabs)/post/${postId}` as any);
+      router.push(`/(scenario)/${sid}/(tabs)/post/${String(postId)}` as any);
     },
-    [scenarioId]
+    [sid]
   );
 
   return (
     <ThemedView style={[styles.container, { backgroundColor: colors.background }]}>
       <FlatList
         data={posts}
-        extraData={postsReady}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item) => String(item.id)}
         contentContainerStyle={styles.list}
-        ItemSeparatorComponent={() => (
-          <View style={[styles.separator, { backgroundColor: colors.border }]} />
-        )}
+        ItemSeparatorComponent={() => <View style={[styles.separator, { backgroundColor: colors.border }]} />}
         renderItem={({ item }) => {
-          const profile = getProfileById(sid, item.authorProfileId);
-          const overrideAvatar = avatarOverrides[String(item.authorProfileId)];
-
-          
+          const profile = getProfileById(String(item.authorProfileId));
           if (!profile) return null;
 
-          const canEdit =
-            (profile as any).ownerUserId === userId || !!(profile as any).isPublic;
-          const profileForPost = overrideAvatar
-            ? { ...(profile as any), avatarUrl: overrideAvatar }
-            : profile;
+          const canEdit = profile.ownerUserId === userId || !!profile.isPublic;
+
           const content = (
             <Pressable
               onPress={() => {
-                closeSwipe(item.id);
-                openPostDetail(item.id);
+                closeSwipe(String(item.id));
+                openPostDetail(String(item.id));
               }}
             >
-            <Post
-              scenarioId={sid}
-              profile={profileForPost as any}
-              item={item as any}
-              variant="feed"
-              showActions
-            />
+              <PostCard scenarioId={sid} profile={profile as any} item={item as any} variant="feed" showActions />
             </Pressable>
           );
 
           if (!canEdit) return content;
 
-          let swipeRef = swipeRefs.get(item.id);
+          let swipeRef = swipeRefs.get(String(item.id));
           if (!swipeRef) {
             swipeRef = { current: null };
-            swipeRefs.set(item.id, swipeRef);
+            swipeRefs.set(String(item.id), swipeRef);
           }
 
           return (
@@ -309,22 +184,47 @@ const swipeRefs = useRef(new Map<string, SwipeRef>()).current;
               overshootRight={false}
               friction={2}
               rightThreshold={24}
-              renderRightActions={(progress, dragX) => (
-                <RightActions postId={item.id} dragX={dragX as any} />
+              renderRightActions={(_progress, dragX) => (
+                <RightActions postId={String(item.id)} dragX={dragX as any} />
               )}
             >
               {content}
             </ReanimatedSwipeable>
           );
         }}
+        ListEmptyComponent={() => (
+          <View style={{ padding: 16 }}>
+            <View style={{ gap: 6 }}>
+              <Pressable onPress={openCreatePost} style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}>
+                <View
+                  style={{
+                    borderWidth: StyleSheet.hairlineWidth,
+                    borderColor: colors.border,
+                    borderRadius: 16,
+                    padding: 14,
+                    backgroundColor: colors.card,
+                  }}
+                >
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                    <Ionicons name="add" size={18} color={colors.tint} />
+                    <ThemedText style={{ color: colors.text, fontWeight: "800" }}>
+                      Create your first post
+                    </ThemedText>
+                  </View>
+                  <ThemedText style={{ color: colors.textSecondary, marginTop: 6 }}>
+                    Nothing here yet — post something to start the feed.
+                  </ThemedText>
+                </View>
+              </Pressable>
+            </View>
+          </View>
+        )}
       />
+
       <RNAnimated.View
         style={[
           styles.fab,
-          {
-            backgroundColor: colors.tint,
-            transform: [{ scale }],
-          },
+          { backgroundColor: colors.tint, transform: [{ scale }] },
         ]}
       >
         <Pressable
@@ -347,10 +247,10 @@ const styles = StyleSheet.create({
   list: { paddingVertical: 8 },
   separator: { height: StyleSheet.hairlineWidth, opacity: 0.8 },
   swipeActions: {
-    flexDirection: 'row',
-    height: '100%',
-    alignItems: 'center',
-    justifyContent: 'flex-end',
+    flexDirection: "row",
+    height: "100%",
+    alignItems: "center",
+    justifyContent: "flex-end",
     paddingRight: 12,
     gap: 10,
   },
@@ -358,32 +258,28 @@ const styles = StyleSheet.create({
     width: 46,
     height: 46,
     borderRadius: 999,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     borderWidth: 2,
   },
   fab: {
-  position: 'absolute',
-  right: 20,
-  bottom: 24,
-  width: 56,
-  height: 56,
-  borderRadius: 28,
-  alignItems: 'center',
-  justifyContent: 'center',
-
-  // iOS shadow
-  shadowColor: '#000',
-  shadowOpacity: 0.25,
-  shadowRadius: 6,
-  shadowOffset: { width: 0, height: 4 },
-
-  // Android
-  elevation: 6,
+    position: "absolute",
+    right: 20,
+    bottom: 24,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 6,
   },
   fabPress: {
     flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
   },
 });

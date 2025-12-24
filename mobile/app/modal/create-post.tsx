@@ -1,5 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import DateTimePicker from '@react-native-community/datetimepicker';
+// mobile/app/modal/create-post.tsx
+import React, { useEffect, useMemo, useState } from "react";
+import DateTimePicker from "@react-native-community/datetimepicker";
 import {
   View,
   StyleSheet,
@@ -10,25 +11,24 @@ import {
   Platform,
   ScrollView,
   Alert,
-} from 'react-native';
-import { router, useLocalSearchParams } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
+} from "react-native";
+import { router, useLocalSearchParams } from "expo-router";
+import { SafeAreaView } from "react-native-safe-area-context";
 
-import * as ImagePicker from 'expo-image-picker';
-import * as FileSystem from 'expo-file-system/legacy';
+import * as ImagePicker from "expo-image-picker";
+import * as FileSystem from "expo-file-system/legacy";
 
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Colors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { useProfile } from '@/context/profile';
-import { Ionicons, MaterialIcons } from '@expo/vector-icons';
-import { MOCK_FEEDS } from '@/mocks/feeds';
+import { ThemedText } from "@/components/themed-text";
+import { ThemedView } from "@/components/themed-view";
+import { Colors } from "@/constants/theme";
+import { useColorScheme } from "@/hooks/use-color-scheme";
+import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 
-import { storageFetchPostById, storageUpsertPost, storageUpsertProfile } from '@/context/post';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import type { Post } from "@/data/db/schema";
+import { useAppData } from "@/context/appData";
+import { useAuth } from "@/context/auth";
 
-function clampInt(n: number, min = 0, max = 99000000) {
+function clampInt(n: number, min = 0, max = 99_000_000) {
   if (Number.isNaN(n)) return min;
   return Math.max(min, Math.min(max, n));
 }
@@ -36,24 +36,24 @@ function clampInt(n: number, min = 0, max = 99000000) {
 function formatCount(n: number) {
   const v = Math.max(0, Math.floor(n || 0));
 
-  if (v > 99000000) return '99M+';
+  if (v > 99_000_000) return "99M+";
   if (v < 1000) return String(v);
 
-  if (v < 100000) {
+  if (v < 100_000) {
     const k = v / 1000;
-    const str = k.toFixed(1).replace(/\.0$/, '');
+    const str = k.toFixed(1).replace(/\.0$/, "");
     return `${str}K`;
   }
 
-  if (v < 1000000) return `${Math.floor(v / 1000)}K`;
+  if (v < 1_000_000) return `${Math.floor(v / 1000)}K`;
 
-  if (v < 10000000) {
-    const m = v / 1000000;
-    const str = m.toFixed(1).replace(/\.0$/, '');
+  if (v < 10_000_000) {
+    const m = v / 1_000_000;
+    const str = m.toFixed(1).replace(/\.0$/, "");
     return `${str}M`;
   }
 
-  return `${Math.floor(v / 1000000)}M`;
+  return `${Math.floor(v / 1_000_000)}M`;
 }
 
 function RowCard({
@@ -78,58 +78,65 @@ function RowCard({
   );
 }
 
-type StoredPost = {
-  id: string;
-  scenarioId: string;
-  authorProfileId: string;
-  text: string;
-  createdAt: string;
-
-  // ✅ multi images
-  imageUrls?: string[];
-
-  replyCount?: number;
-  repostCount?: number;
-  likeCount?: number;
-  parentPostId?: string;
-  quotedPostId?: string;
-  isEdited?: boolean;
-};
-
 function makeId(prefix: string) {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
-async function findPostById(scenarioId: string, postId: string): Promise<StoredPost | null> {
-  const stored = await storageFetchPostById(scenarioId, postId);
-  if (stored) return stored as unknown as StoredPost;
+function QuotedPostCard({
+  quotedPost,
+  colors,
+  getProfileById,
+}: {
+  quotedPost: Post;
+  colors: any;
+  getProfileById: (id: string) => any;
+}) {
+  const qpAuthor = useMemo(
+    () => getProfileById(String(quotedPost.authorProfileId)),
+    [quotedPost.authorProfileId, getProfileById]
+  );
 
-  const mock = (MOCK_FEEDS[scenarioId] ?? []).find((p: any) => String(p.id) === String(postId));
-  if (!mock) return null;
+  return (
+    <View style={styles.quoteInner}>
+      {qpAuthor?.avatarUrl ? (
+        <Image source={{ uri: qpAuthor.avatarUrl }} style={styles.quoteAvatar} />
+      ) : (
+        <View style={[styles.quoteAvatar, { backgroundColor: colors.border }]} />
+      )}
 
-  const hydrated: StoredPost = {
-    id: String(mock.id),
-    scenarioId: String(mock.scenarioId ?? scenarioId),
-    authorProfileId: String(mock.authorProfileId),
-    text: String(mock.text ?? ''),
-    createdAt: String(mock.createdAt),
+      <View style={{ flex: 1 }}>
+        <View style={styles.quoteTopRow}>
+          <ThemedText
+            numberOfLines={1}
+            style={{ fontWeight: "800", color: colors.text, maxWidth: "70%" }}
+          >
+            {qpAuthor?.displayName ?? "Unknown"}
+          </ThemedText>
 
-    // ✅ backward compatible: accept imageUrls or old imageUrl
-    imageUrls: Array.isArray((mock as any).imageUrls)
-      ? (mock as any).imageUrls.filter((u: any) => typeof u === 'string')
-      : (mock as any).imageUrl
-      ? [String((mock as any).imageUrl)]
-      : [],
+          <ThemedText
+            numberOfLines={1}
+            style={{ color: colors.textSecondary, marginLeft: 8, flexShrink: 1 }}
+          >
+            @{qpAuthor?.handle ?? "unknown"}
+          </ThemedText>
 
-    replyCount: mock.replyCount ?? 0,
-    repostCount: mock.repostCount ?? 0,
-    likeCount: mock.likeCount ?? 0,
-    parentPostId: mock.parentPostId ?? undefined,
-    quotedPostId: mock.quotedPostId ?? undefined,
-  };
+          <ThemedText style={{ color: colors.textSecondary }}> · </ThemedText>
 
-  await storageUpsertPost(scenarioId, hydrated as any);
-  return hydrated;
+          <ThemedText style={{ color: colors.textSecondary }}>
+            {new Date(quotedPost.createdAt).toLocaleDateString(undefined, {
+              day: "2-digit",
+              month: "2-digit",
+              year: "numeric",
+            })}
+          </ThemedText>
+        </View>
+
+        <ThemedText numberOfLines={3} style={{ color: colors.text, marginTop: 6, lineHeight: 18 }}>
+          {quotedPost.text}
+        </ThemedText>
+      </View>
+    </View>
+  );
 }
 
 export default function CreatePostModal() {
@@ -140,66 +147,71 @@ export default function CreatePostModal() {
     quotedPostId?: string;
   }>();
 
-  const scheme = useColorScheme() ?? 'light';
+  const scheme = useColorScheme() ?? "light";
   const colors = Colors[scheme];
 
-  const { selectedProfileId, getProfileById } = useProfile();
-  const sid = String(scenarioId ?? '');
-
-  const editingPostId = postId ? String(postId) : '';
+  const sid = String(scenarioId ?? "");
+  const editingPostId = postId ? String(postId) : "";
   const isEdit = !!editingPostId;
 
-  const selectedId = selectedProfileId(sid);
-  const [authorProfileId, setAuthorProfileId] = useState<string | null>(selectedId);
-  const [pickAuthorArmed, setPickAuthorArmed] = useState(false);
+  const { userId } = useAuth();
 
-  const [parentId, setParentId] = useState<string | undefined>(undefined);
-  const [quoteId, setQuoteId] = useState<string | undefined>(undefined);
-  const [quotedPost, setQuotedPost] = useState<StoredPost | null>(null);
+  const {
+    isReady,
+    getPostById,
+    getProfileById,
+    listProfilesForScenario,
+    getSelectedProfileId,
+    setSelectedProfileId,
+    upsertPost,
+  } = useAppData();
+
+  // --- author selection (Profile.id)
+  const selectedId = getSelectedProfileId(sid);
+
+  const fallbackOwnedProfileId = useMemo(() => {
+    const mine = listProfilesForScenario(sid).find((p) => p.ownerUserId === String(userId ?? ""));
+    return mine?.id ?? null;
+  }, [sid, listProfilesForScenario, userId]);
+
+  const initialAuthorId = selectedId ?? fallbackOwnedProfileId;
+
+  const [authorProfileId, setAuthorProfileId] = useState<string | null>(initialAuthorId);
+  const [pickAuthorArmed, setPickAuthorArmed] = useState(false);
 
   const profile = useMemo(() => {
     if (!authorProfileId) return null;
-    return getProfileById(sid, authorProfileId);
-  }, [sid, authorProfileId, getProfileById]);
-const [authorAvatarOverride, setAuthorAvatarOverride] = useState<string | null>(null);
+    return getProfileById(String(authorProfileId));
+  }, [authorProfileId, getProfileById]);
 
-  useEffect(() => {
-    let mounted = true;
-
-    (async () => {
-      if (!profile?.handle) {
-        if (mounted) setAuthorAvatarOverride(null);
-        return;
-      }
-      const key = `feedverse.profile.avatar.${sid}.${String(profile.handle)}`;
-      const uri = await AsyncStorage.getItem(key);
-      if (mounted) setAuthorAvatarOverride(uri);
-    })();
-
-    return () => {
-      mounted = false;
-    };
-  }, [sid, profile?.handle]);
-  const [text, setText] = useState('');
-
+  const [text, setText] = useState("");
   const [imageUrls, setImageUrls] = useState<string[]>([]);
-
   const [date, setDate] = useState<Date>(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
-  const [pickerMode, setPickerMode] = useState<'date' | 'time'>('date');
-  const [replyCount, setReplyCount] = useState('');
-  const [repostCount, setRepostCount] = useState('');
-  const [likeCount, setLikeCount] = useState('');
+  const [pickerMode, setPickerMode] = useState<"date" | "time">("date");
+  const [replyCount, setReplyCount] = useState("");
+  const [repostCount, setRepostCount] = useState("");
+  const [likeCount, setLikeCount] = useState("");
+
+  const [parentId, setParentId] = useState<string | undefined>(undefined);
+  const [quoteId, setQuoteId] = useState<string | undefined>(undefined);
+
+  const quotedPost = useMemo(() => {
+    if (!quoteId) return null;
+    return getPostById(String(quoteId));
+  }, [quoteId, getPostById]);
 
   const [hydrated, setHydrated] = useState(false);
 
   // hydrate (edit mode) OR wire reply/quote (create mode)
   useEffect(() => {
+    if (!isReady) return;
+
     const replyParent = parentPostId ? String(parentPostId) : undefined;
     const q = quotedPostId ? String(quotedPostId) : undefined;
 
     if (!isEdit) {
-      setAuthorProfileId((prev) => prev ?? selectedId ?? null);
+      setAuthorProfileId((prev) => prev ?? initialAuthorId ?? null);
       setParentId(replyParent);
       setQuoteId(q);
       setHydrated(true);
@@ -208,61 +220,41 @@ const [authorAvatarOverride, setAuthorAvatarOverride] = useState<string | null>(
 
     if (hydrated) return;
 
-    (async () => {
-      const found = await findPostById(sid, editingPostId);
-      if (!found) {
-        router.back();
-        return;
-      }
+    const found = getPostById(editingPostId);
+    if (!found) {
+      router.back();
+      return;
+    }
 
-      setAuthorProfileId(found.authorProfileId);
-      setText(found.text ?? '');
-      setDate(new Date(found.createdAt));
-      setReplyCount(String(found.replyCount ?? 0));
-      setRepostCount(String(found.repostCount ?? 0));
-      setLikeCount(String(found.likeCount ?? 0));
+    setAuthorProfileId(String(found.authorProfileId));
+    setText(found.text ?? "");
+    setDate(new Date(found.createdAt));
+    setReplyCount(String(found.replyCount ?? 0));
+    setRepostCount(String(found.repostCount ?? 0));
+    setLikeCount(String(found.likeCount ?? 0));
+    setImageUrls((found.imageUrls ?? []).slice(0, 4));
 
-      const urls = Array.isArray((found as any).imageUrls)
-        ? (found as any).imageUrls.filter((u: any) => typeof u === 'string')
-        : (found as any).imageUrl
-        ? [String((found as any).imageUrl)]
-        : [];
-      setImageUrls(urls.slice(0, 4));
+    setParentId(found.parentPostId ? String(found.parentPostId) : replyParent);
+    setQuoteId(found.quotedPostId ? String(found.quotedPostId) : q);
 
-      setParentId(found.parentPostId ? String(found.parentPostId) : replyParent);
-      setQuoteId(found.quotedPostId ? String(found.quotedPostId) : q);
+    setHydrated(true);
+  }, [isReady, isEdit, hydrated, sid, editingPostId, parentPostId, quotedPostId, getPostById, initialAuthorId]);
 
-      setHydrated(true);
-    })();
-  }, [isEdit, hydrated, sid, editingPostId, selectedId, parentPostId, quotedPostId]);
-
-  // after selecting a profile in the select-profile modal
+  // when returning from select-profile modal: AppData selection changes
   useEffect(() => {
     if (!pickAuthorArmed) return;
     if (!selectedId) return;
 
-    setAuthorProfileId(selectedId);
+    setAuthorProfileId(String(selectedId));
     setPickAuthorArmed(false);
   }, [pickAuthorArmed, selectedId]);
 
-  // load quoted post preview (+ seed into storage)
+  // keep DB selection synced so ProfileScreen knows what "my profile" is
   useEffect(() => {
-    let mounted = true;
-
-    (async () => {
-      if (!quoteId) {
-        setQuotedPost(null);
-        return;
-      }
-      const p = await findPostById(sid, quoteId);
-      if (!mounted) return;
-      setQuotedPost(p);
-    })();
-
-    return () => {
-      mounted = false;
-    };
-  }, [sid, quoteId]);
+    if (!authorProfileId) return;
+    if (selectedId === authorProfileId) return;
+    setSelectedProfileId(sid, String(authorProfileId)).catch(() => {});
+  }, [sid, authorProfileId, selectedId, setSelectedProfileId]);
 
   // ✅ persist picked images to app storage so they survive
   const ensureMediaDir = async () => {
@@ -280,8 +272,8 @@ const [authorAvatarOverride, setAuthorAvatarOverride] = useState<string | null>(
 
   const persistToAppStorage = async (uri: string) => {
     const dir = await ensureMediaDir();
-    const ext = uri.split('?')[0].split('.').pop();
-    const safeExt = ext && ext.length <= 6 ? ext : 'jpg';
+    const ext = uri.split("?")[0].split(".").pop();
+    const safeExt = ext && ext.length <= 6 ? ext : "jpg";
     const filename = `img_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${safeExt}`;
     const dest = `${dir}${filename}`;
 
@@ -296,13 +288,13 @@ const [authorAvatarOverride, setAuthorAvatarOverride] = useState<string | null>(
   const pickImages = async () => {
     const remaining = Math.max(0, 4 - imageUrls.length);
     if (remaining <= 0) {
-      Alert.alert('Limit reached', 'You can add up to 4 images.');
+      Alert.alert("Limit reached", "You can add up to 4 images.");
       return;
     }
 
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
-      Alert.alert('Permission needed', 'Please allow photo library access to add images.');
+      Alert.alert("Permission needed", "Please allow photo library access to add images.");
       return;
     }
 
@@ -317,7 +309,7 @@ const [authorAvatarOverride, setAuthorAvatarOverride] = useState<string | null>(
 
     const picked = (res.assets ?? [])
       .map((a) => a?.uri)
-      .filter((u): u is string => typeof u === 'string' && u.length > 0);
+      .filter((u): u is string => typeof u === "string" && u.length > 0);
 
     if (!picked.length) return;
 
@@ -336,9 +328,9 @@ const [authorAvatarOverride, setAuthorAvatarOverride] = useState<string | null>(
   const canPost = text.trim().length > 0 && !!authorProfileId;
 
   const counts = useMemo(() => {
-    const r1 = clampInt(Number(replyCount || 0), 0, 99000000);
-    const r2 = clampInt(Number(repostCount || 0), 0, 99000000);
-    const r3 = clampInt(Number(likeCount || 0), 0, 99000000);
+    const r1 = clampInt(Number(replyCount || 0), 0, 99_000_000);
+    const r2 = clampInt(Number(repostCount || 0), 0, 99_000_000);
+    const r3 = clampInt(Number(likeCount || 0), 0, 99_000_000);
     return { reply: r1, repost: r2, like: r3 };
   }, [replyCount, repostCount, likeCount]);
 
@@ -349,55 +341,37 @@ const [authorAvatarOverride, setAuthorAvatarOverride] = useState<string | null>(
       return;
     }
 
-    const base: StoredPost = {
-      id: isEdit ? editingPostId : makeId('po'),
+    const base: Post = {
+      id: isEdit ? editingPostId : makeId("po"),
       scenarioId: sid,
-      authorProfileId,
+      authorProfileId: String(authorProfileId),
       text: text.trim(),
       createdAt: date.toISOString(),
-
-      // ✅ save up to 4
       imageUrls: imageUrls.slice(0, 4),
-
       replyCount: counts.reply,
       repostCount: counts.repost,
       likeCount: counts.like,
-      isEdited: isEdit ? true : undefined,
       parentPostId: parentId,
       quotedPostId: quoteId,
     };
 
-    await storageUpsertPost(sid, base as any);
-
-    const prof = getProfileById(sid, authorProfileId);
-    if (prof) {
-      await storageUpsertProfile(sid, {
-        id: String((prof as any).id ?? authorProfileId),
-        scenarioId: sid,
-        displayName: String((prof as any).displayName ?? ''),
-        handle: String((prof as any).handle ?? ''),
-        avatarUrl: String((prof as any).avatarUrl ?? ''),
-      } as any);
-    }
+    await upsertPost(base);
+    await setSelectedProfileId(sid, String(authorProfileId));
 
     router.back();
   };
 
   return (
-    <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: colors.background }}>
+    <SafeAreaView edges={["top"]} style={{ flex: 1, backgroundColor: colors.background }}>
       <ThemedView style={[styles.screen, { backgroundColor: colors.background }]}>
         <KeyboardAvoidingView
           style={{ flex: 1 }}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          keyboardVerticalOffset={Platform.OS === 'ios' ? 6 : 0}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          keyboardVerticalOffset={Platform.OS === "ios" ? 6 : 0}
         >
           {/* HEADER */}
           <View style={[styles.header, { borderBottomColor: colors.border }]}>
-            <Pressable
-              onPress={() => router.back()}
-              hitSlop={12}
-              style={({ pressed }) => [pressed && { opacity: 0.7 }]}
-            >
+            <Pressable onPress={() => router.back()} hitSlop={12} style={({ pressed }) => [pressed && { opacity: 0.7 }]}>
               <ThemedText style={{ color: colors.text, fontSize: 16 }}>Cancel</ThemedText>
             </Pressable>
 
@@ -413,8 +387,8 @@ const [authorAvatarOverride, setAuthorAvatarOverride] = useState<string | null>(
                 },
               ]}
             >
-              <ThemedText style={{ color: '#fff', fontWeight: '800', fontSize: 15 }}>
-                {isEdit ? 'Save' : 'Post'}
+              <ThemedText style={{ color: "#fff", fontWeight: "800", fontSize: 15 }}>
+                {isEdit ? "Save" : "Post"}
               </ThemedText>
             </Pressable>
           </View>
@@ -423,25 +397,20 @@ const [authorAvatarOverride, setAuthorAvatarOverride] = useState<string | null>(
             style={{ flex: 1 }}
             contentContainerStyle={{ paddingBottom: 24 }}
             keyboardShouldPersistTaps="handled"
-            keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+            keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
           >
             {/* COMPOSER */}
             <View style={styles.composer}>
               <Pressable
                 onPress={() => {
                   setPickAuthorArmed(true);
-                  router.push(
-                    {
-                      pathname: '/modal/select-profile',
-                      params: { scenarioId: sid },
-                    } as any
-                  );
+                  router.push({ pathname: "/modal/select-profile", params: { scenarioId: sid } } as any);
                 }}
                 hitSlop={10}
                 style={({ pressed }) => [pressed && { opacity: 0.75 }]}
               >
-                {profile ? (
-                  <Image source={{ uri: authorAvatarOverride ?? profile.avatarUrl }} style={styles.avatar} />
+                {profile?.avatarUrl ? (
+                  <Image source={{ uri: profile.avatarUrl }} style={styles.avatar} />
                 ) : (
                   <View style={[styles.avatar, { backgroundColor: colors.border }]} />
                 )}
@@ -461,7 +430,7 @@ const [authorAvatarOverride, setAuthorAvatarOverride] = useState<string | null>(
                   textAlignVertical="top"
                 />
 
-                {/* ✅ image preview grid + remove (twitter-like) */}
+                {/* ✅ image preview grid + remove */}
                 {imageUrls.length > 0 ? (
                   <View style={styles.mediaGrid}>
                     {imageUrls.map((uri, idx) => (
@@ -505,78 +474,14 @@ const [authorAvatarOverride, setAuthorAvatarOverride] = useState<string | null>(
                       },
                     ]}
                   >
-                    {(() => {
-                      const qpAuthor = getProfileById(sid, String(quotedPost.authorProfileId));
-                      const [qpAvatarOverride, setQpAvatarOverride] = useState<string | null>(null);
-
-                      useEffect(() => {
-                        let mounted = true;
-
-                        (async () => {
-                          if (!qpAuthor?.handle) {
-                            if (mounted) setQpAvatarOverride(null);
-                            return;
-                          }
-                          const key = `feedverse.profile.avatar.${sid}.${String(qpAuthor.handle)}`;
-                          const uri = await AsyncStorage.getItem(key);
-                          if (mounted) setQpAvatarOverride(uri);
-                        })();
-
-                        return () => {
-                          mounted = false;
-                        };
-                      }, [sid, qpAuthor?.handle]);
-                      return (
-                        <View style={styles.quoteInner}>
-                          {qpAuthor?.avatarUrl ? (
-                            <Image source={{ uri: qpAvatarOverride ?? qpAuthor.avatarUrl }} style={styles.quoteAvatar} />
-                          ) : (
-                            <View style={[styles.quoteAvatar, { backgroundColor: colors.border }]} />
-                          )}
-
-                          <View style={{ flex: 1 }}>
-                            <View style={styles.quoteTopRow}>
-                              <ThemedText
-                                numberOfLines={1}
-                                style={{ fontWeight: '800', color: colors.text, maxWidth: '70%' }}
-                              >
-                                {qpAuthor?.displayName ?? 'Unknown'}
-                              </ThemedText>
-                              <ThemedText
-                                numberOfLines={1}
-                                style={{ color: colors.textSecondary, marginLeft: 8, flexShrink: 1 }}
-                              >
-                                @{qpAuthor?.handle ?? 'unknown'}
-                              </ThemedText>
-                              <ThemedText style={{ color: colors.textSecondary }}> · </ThemedText>
-                              <ThemedText style={{ color: colors.textSecondary }}>
-                                {new Date(quotedPost.createdAt).toLocaleDateString(undefined, {
-                                  day: '2-digit',
-                                  month: '2-digit',
-                                  year: 'numeric',
-                                })}
-                              </ThemedText>
-                            </View>
-
-                            <ThemedText
-                              numberOfLines={3}
-                              style={{ color: colors.text, marginTop: 6, lineHeight: 18 }}
-                            >
-                              {quotedPost.text}
-                            </ThemedText>
-                          </View>
-                        </View>
-                      );
-                    })()}
+                    <QuotedPostCard quotedPost={quotedPost} colors={colors} getProfileById={getProfileById} />
                   </Pressable>
                 ) : null}
               </View>
             </View>
 
-            <View style={{ alignItems: 'flex-end', marginTop: 4 }}>
-              <ThemedText style={{ color: colors.textSecondary, fontSize: 12 }}>
-                {text.length}/500
-              </ThemedText>
+            <View style={{ alignItems: "flex-end", marginTop: 4 }}>
+              <ThemedText style={{ color: colors.textSecondary, fontSize: 12 }}>{text.length}/500</ThemedText>
             </View>
 
             <View style={[styles.softDivider, { backgroundColor: colors.border }]} />
@@ -587,11 +492,7 @@ const [authorAvatarOverride, setAuthorAvatarOverride] = useState<string | null>(
                 <Ionicons name="camera-outline" size={22} color={colors.tint} />
               </Pressable>
 
-              <Pressable
-                onPress={pickImages}
-                hitSlop={10}
-                style={({ pressed }) => [styles.toolBtn, pressed && { opacity: 0.7 }]}
-              >
+              <Pressable onPress={pickImages} hitSlop={10} style={({ pressed }) => [styles.toolBtn, pressed && { opacity: 0.7 }]}>
                 <Ionicons name="image-outline" size={22} color={colors.tint} />
               </Pressable>
 
@@ -602,40 +503,31 @@ const [authorAvatarOverride, setAuthorAvatarOverride] = useState<string | null>(
 
             {/* META CONTROLS */}
             <View style={styles.section}>
-              <ThemedText style={[styles.sectionTitle, { color: colors.textSecondary }]}>
-                Post settings
-              </ThemedText>
+              <ThemedText style={[styles.sectionTitle, { color: colors.textSecondary }]}>Post settings</ThemedText>
 
               <RowCard label="Date" colors={colors}>
-                <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+                <View style={{ flexDirection: "row", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
                   <Pressable
                     onPress={() => {
-                      setPickerMode('date');
+                      setPickerMode("date");
                       setShowDatePicker(true);
                     }}
                     style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}
                   >
-                    <ThemedText style={{ color: colors.tint, fontWeight: '700' }}>
-                      {date.toLocaleDateString(undefined, {
-                        day: '2-digit',
-                        month: 'short',
-                        year: 'numeric',
-                      })}
+                    <ThemedText style={{ color: colors.tint, fontWeight: "700" }}>
+                      {date.toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" })}
                     </ThemedText>
                   </Pressable>
 
                   <Pressable
                     onPress={() => {
-                      setPickerMode('time');
+                      setPickerMode("time");
                       setShowDatePicker(true);
                     }}
                     style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}
                   >
-                    <ThemedText style={{ color: colors.tint, fontWeight: '700' }}>
-                      {date.toLocaleTimeString(undefined, {
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })}
+                    <ThemedText style={{ color: colors.tint, fontWeight: "700" }}>
+                      {date.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}
                     </ThemedText>
                   </Pressable>
                 </View>
@@ -700,7 +592,7 @@ const [authorAvatarOverride, setAuthorAvatarOverride] = useState<string | null>(
               <DateTimePicker
                 value={date}
                 mode={pickerMode}
-                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                display={Platform.OS === "ios" ? "spinner" : "default"}
                 onChange={(_: any, selected: Date | undefined) => {
                   setShowDatePicker(false);
                   if (selected) setDate(selected);
@@ -721,9 +613,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
   },
 
   postBtn: {
@@ -731,11 +623,11 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 999,
     minWidth: 72,
-    alignItems: 'center',
+    alignItems: "center",
   },
 
   composer: {
-    flexDirection: 'row',
+    flexDirection: "row",
     paddingHorizontal: 16,
     paddingTop: 14,
     paddingBottom: 10,
@@ -757,36 +649,35 @@ const styles = StyleSheet.create({
     maxHeight: 260,
   },
 
-  // ✅ images preview
   mediaGrid: {
     marginTop: 10,
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+    flexDirection: "row",
+    flexWrap: "wrap",
     gap: 8,
   },
   mediaThumbWrap: {
-    width: '48%',
+    width: "48%",
     aspectRatio: 1,
     borderRadius: 16,
-    overflow: 'hidden',
+    overflow: "hidden",
   },
   mediaThumbWrapSingle: {
-    width: '100%',
+    width: "100%",
     aspectRatio: 16 / 9,
   },
   mediaThumb: {
-    width: '100%',
-    height: '100%',
+    width: "100%",
+    height: "100%",
   },
   mediaRemove: {
-    position: 'absolute',
+    position: "absolute",
     top: 8,
     right: 8,
     width: 26,
     height: 26,
     borderRadius: 999,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     borderWidth: StyleSheet.hairlineWidth,
   },
 
@@ -797,9 +688,9 @@ const styles = StyleSheet.create({
     padding: 12,
   },
   quoteInner: {
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: 10,
-    alignItems: 'flex-start',
+    alignItems: "flex-start",
   },
   quoteAvatar: {
     width: 22,
@@ -808,9 +699,9 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   quoteTopRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flexWrap: 'nowrap',
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "nowrap",
   },
 
   softDivider: {
@@ -827,13 +718,13 @@ const styles = StyleSheet.create({
 
   sectionTitle: {
     fontSize: 12,
-    fontWeight: '700',
-    textTransform: 'uppercase',
+    fontWeight: "700",
+    textTransform: "uppercase",
     letterSpacing: 0.4,
   },
 
   rowGrid: {
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: 10,
   },
 
@@ -842,14 +733,14 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     paddingHorizontal: 14,
     paddingVertical: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
   },
 
   rowLabel: {
     fontSize: 12,
     marginBottom: 6,
-    fontWeight: '700',
+    fontWeight: "700",
   },
 
   rowInput: {
@@ -861,8 +752,8 @@ const styles = StyleSheet.create({
     borderTopWidth: StyleSheet.hairlineWidth,
     paddingHorizontal: 10,
     paddingVertical: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 8,
   },
 

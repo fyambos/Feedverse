@@ -1,11 +1,6 @@
-export type MockScenario = {
-  id: string;
-  name: string;
-  cover: string;
-  playerIds: string[];
-};
+import type { Scenario } from "@/data/db/schema";
 
-export const MOCK_SCENARIOS: MockScenario[] = [
+export const MOCK_SCENARIOS: Scenario[] = [
   {
     id: 'demo-kpop',
     name: 'K-pop College AU',

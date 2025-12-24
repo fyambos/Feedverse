@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+// mobile/app/modal/create-profile.tsx
+import React, { useEffect, useMemo, useState } from "react";
 import {
   KeyboardAvoidingView,
   Keyboard,
@@ -7,50 +8,74 @@ import {
   StyleSheet,
   TextInput,
   View,
-  Image,
   Modal,
   ScrollView,
-  Alert
-} from 'react-native';
-import DateTimePicker from '@react-native-community/datetimepicker';
-import { router, useLocalSearchParams } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
+} from "react-native";
+import DateTimePicker from "@react-native-community/datetimepicker";
+import { router, useLocalSearchParams } from "expo-router";
+import { SafeAreaView } from "react-native-safe-area-context";
 
-import { ThemedText } from '@/components/themed-text';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors } from '@/constants/theme';
-import { useProfile } from '@/context/profile';
-import { useAuth } from '@/context/auth';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as ImagePicker from 'expo-image-picker';
+import { ThemedText } from "@/components/themed-text";
+import { useColorScheme } from "@/hooks/use-color-scheme";
+import { Colors } from "@/constants/theme";
+import { useAuth } from "@/context/auth";
+import { useAppData } from "@/context/appData";
+
+import { Avatar } from "@/components/ui/Avatar";
+import { pickAndPersistOneImage } from "@/components/ui/AvatarPicker";
+
+import type { Profile } from "@/data/db/schema";
+
+/* -------------------------------------------------------------------------- */
+/* Helpers                                                                    */
+/* -------------------------------------------------------------------------- */
+
+function makeId(prefix: string) {
+  return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function normalizeHandle(input: string) {
+  // storage is without "@"
+  return String(input ?? "").trim().replace(/^@+/, "").toLowerCase();
+}
+
+function toOptionalInt(v: string, max = 99_000_000_000) {
+  const digits = String(v ?? "").replace(/[^0-9]/g, "");
+  if (!digits) return undefined;
+  const n = Number(digits);
+  if (!Number.isFinite(n)) return undefined;
+  return Math.min(max, Math.max(0, Math.floor(n)));
+}
+
+function normalizeLink(v: string) {
+  const s = String(v ?? "").trim();
+  if (!s) return undefined;
+  if (/^https?:\/\//i.test(s)) return s;
+  return `https://${s}`;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Component                                                                  */
+/* -------------------------------------------------------------------------- */
 
 export default function CreateProfileModal() {
-  const { scenarioId, profileId } = useLocalSearchParams<{ scenarioId: string; profileId?: string }>();
-  const scheme = useColorScheme() ?? 'light';
+  const { scenarioId, profileId } = useLocalSearchParams<{
+    scenarioId: string;
+    profileId?: string;
+  }>();
+
+  const scheme = useColorScheme() ?? "light";
   const colors = Colors[scheme];
 
-  const { createProfile, updateProfile, getUserProfilesForScenario, getProfileById } = useProfile();
+  const sid = String(scenarioId ?? "");
+  const isEdit = !!profileId;
+  const pid = isEdit ? String(profileId) : "";
+
   const { userId } = useAuth();
+  const { isReady, getProfileById, upsertProfile, setSelectedProfileId } = useAppData();
 
-  const DEFAULT_AVATAR = 'https://i.pravatar.cc/150?img=14';
-  const [avatarUrl, setAvatarUrl] = useState(DEFAULT_AVATAR);
+  const DEFAULT_AVATAR = "https://i.pravatar.cc/150?img=14";
 
-  const [name, setName] = useState('');
-  const [handle, setHandle] = useState('');
-  const [bio, setBio] = useState('');
-
-  const [location, setLocation] = useState('');
-  const [link, setLink] = useState('');
-
-  // store as Date for proper picker UX; persist as ISO date string (YYYY-MM-DD)
-  const [joinedDate, setJoinedDate] = useState<Date | null>(null);
-  const [showJoinedPicker, setShowJoinedPicker] = useState(false);
-
-  // numbers stored as text while typing, clamped on save
-  const [following, setFollowing] = useState('');
-  const [followers, setFollowers] = useState('');
-
-  const MAX_COUNT = 99_000_000_000; // 99 billions
   const LIMITS = {
     displayName: 50,
     handle: 30,
@@ -59,170 +84,115 @@ export default function CreateProfileModal() {
     link: 120,
   } as const;
 
-  const sid = String(scenarioId ?? '');
-  const isEdit = !!profileId;
-  const AVATAR_KEY = `feedverse.profile.avatar.${sid}.${handle}`;
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(DEFAULT_AVATAR);
 
-  const pickImage = async () => {
-    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!perm.granted) {
-      Alert.alert('Permission needed', 'Enable photo access to pick images.');
-      return null;
-    }
+  const [name, setName] = useState("");
+  const [handle, setHandle] = useState("");
+  const [bio, setBio] = useState("");
 
-    const res = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
+  const [location, setLocation] = useState("");
+  const [link, setLink] = useState("");
+
+  const [joinedDate, setJoinedDate] = useState<Date | null>(null);
+  const [showJoinedPicker, setShowJoinedPicker] = useState(false);
+
+  const [following, setFollowing] = useState("");
+  const [followers, setFollowers] = useState("");
+
+  /* ---------------------------------------------------------------------- */
+  /* Hydrate edit mode                                                      */
+  /* ---------------------------------------------------------------------- */
+
+  useEffect(() => {
+    if (!isReady || !isEdit || !pid) return;
+
+    const existing = getProfileById(pid);
+    if (!existing) return;
+
+    setName(existing.displayName || "");
+    setHandle(existing.handle || "");
+    setBio(existing.bio || "");
+    setLocation(existing.location || "");
+    setLink(existing.link || "");
+
+    setJoinedDate(existing.joinedDate ? new Date(existing.joinedDate) : null);
+    setFollowing(existing.followingCount != null ? String(existing.followingCount) : "");
+    setFollowers(existing.followerCount != null ? String(existing.followerCount) : "");
+    setAvatarUrl(existing.avatarUrl || DEFAULT_AVATAR);
+  }, [isReady, isEdit, pid, getProfileById]);
+
+  const canSubmit = useMemo(
+    () => name.trim().length > 0 && normalizeHandle(handle).length > 0,
+    [name, handle]
+  );
+
+  /* ---------------------------------------------------------------------- */
+  /* Avatar                                                                 */
+  /* ---------------------------------------------------------------------- */
+
+  const onPickAvatar = async () => {
+    const uri = await pickAndPersistOneImage({
+      persistAs: "avatar",
       allowsEditing: true,
       quality: 0.9,
     });
-
-    if (res.canceled) return null;
-    return res.assets?.[0]?.uri ?? null;
-  };
-
-useEffect(() => {
-  if (!isEdit) return;
-
-  const pid = String(profileId ?? '');
-  if (!pid) return;
-
-  const direct = typeof getProfileById === 'function' ? getProfileById(sid, pid) : null;
-  const fallbackList = getUserProfilesForScenario(sid);
-  const existing = (direct ?? fallbackList.find((p: any) => p.id === pid)) as any;
-
-  if (!existing) return;
-
-  (async () => {
-    // set base fields first
-    setName(existing.displayName || '');
-    setHandle(existing.handle || '');
-    setBio(existing.bio || '');
-    setLocation(existing.location || '');
-    setLink(existing.link || '');
-
-    const jd = existing.joinedDate;
-    if (jd) {
-      const d = new Date(jd);
-      setJoinedDate(Number.isNaN(d.getTime()) ? null : d);
-    } else {
-      setJoinedDate(null);
-    }
-
-    setFollowing(
-      typeof existing.followingCount === 'number'
-        ? String(existing.followingCount)
-        : existing.followingCount
-        ? String(existing.followingCount)
-        : ''
-    );
-    setFollowers(
-      typeof existing.followerCount === 'number'
-        ? String(existing.followerCount)
-        : existing.followerCount
-        ? String(existing.followerCount)
-        : ''
-    );
-
-    const key = `feedverse.profile.avatar.${sid}.${String(existing.handle)}`;
-    const override = await AsyncStorage.getItem(key);
-
-    setAvatarUrl(override || existing.avatarUrl || DEFAULT_AVATAR);
-  })();
-}, [isEdit, profileId, sid, getUserProfilesForScenario, getProfileById]);
-  const canSubmit = name.trim().length > 0 && handle.trim().length > 0;
-
-  const onPickAvatar = async () => {
-    const uri = await pickImage();
     if (!uri) return;
-
     setAvatarUrl(uri);
-
-    // IMPORTANT: persist using handle (same as ProfileScreen)
-    const key = `feedverse.profile.avatar.${sid}.${handle.trim()}`;
-    if (handle.trim()) {
-      await AsyncStorage.setItem(key, uri);
-    }
   };
+
+  /* ---------------------------------------------------------------------- */
+  /* Save                                                                   */
+  /* ---------------------------------------------------------------------- */
 
   const onSave = async () => {
-    const toOptionalInt = (v: string) => {
-      const digits = String(v ?? '').replace(/[^0-9]/g, '');
-      if (!digits) return undefined;
-      const n = Number(digits);
-      if (!Number.isFinite(n)) return undefined;
-      return Math.min(MAX_COUNT, Math.max(0, Math.floor(n)));
-    };
-
-    const normalizeLink = (v: string) => {
-      const s = v.trim();
-      if (!s) return undefined;
-      // allow raw domain by auto-prefixing https://
-      if (/^https?:\/\//i.test(s)) return s;
-      return `https://${s}`;
-    };
-
-    const payload = {
-      id: isEdit && profileId ? String(profileId) : undefined,
+    const payload: Profile = {
+      id: isEdit && pid ? pid : makeId("pr"),
       scenarioId: sid,
-      ownerUserId: String(userId ?? 'u14'),
+      ownerUserId: String(userId ?? "u14"),
       displayName: name.trim(),
-      handle: handle.trim(),
-      avatarUrl,
+      handle: normalizeHandle(handle),
+      avatarUrl: avatarUrl || DEFAULT_AVATAR,
       bio: bio.trim() || undefined,
       location: location.trim() || undefined,
       link: normalizeLink(link),
-      joinedDate: joinedDate
-        ? joinedDate.toISOString().slice(0, 10) // YYYY-MM-DD
-        : undefined,
+      joinedDate: joinedDate ? joinedDate.toISOString().slice(0, 10) : undefined,
       followingCount: toOptionalInt(following),
       followerCount: toOptionalInt(followers),
     };
 
-    if (isEdit) {
-      if (!payload.id) return;
-      await updateProfile(payload as any);
-    } else {
-      const { id, ...createPayload } = payload;
-      await createProfile(createPayload as any);
-    }
-
-    console.log('[CreateProfileModal] saved', { isEdit, payload });
+    await upsertProfile(payload);
+    await setSelectedProfileId(sid, payload.id);
     router.back();
   };
 
+  /* ---------------------------------------------------------------------- */
+  /* Render                                                                 */
+  /* ---------------------------------------------------------------------- */
+
   return (
-    <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: colors.background }}>
+    <SafeAreaView edges={["top"]} style={{ flex: 1, backgroundColor: colors.background }}>
       <Pressable
-        accessible={false}
         style={{ flex: 1 }}
         onPress={() => {
           Keyboard.dismiss();
           setShowJoinedPicker(false);
         }}
       >
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          style={{ flex: 1 }}
-        >
+        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
           <View style={[styles.header, { borderBottomColor: colors.border }]}>
             <ThemedText type="defaultSemiBold" style={{ fontSize: 18 }}>
-              {isEdit ? 'Edit profile' : 'Create profile'}
+              {isEdit ? "Edit profile" : "Create profile"}
             </ThemedText>
 
             <Pressable onPress={() => router.back()} hitSlop={12}>
-              <ThemedText style={{ color: colors.tint, fontWeight: '700' }}>
-                Cancel
-              </ThemedText>
+              <ThemedText style={{ color: colors.tint, fontWeight: "700" }}>Cancel</ThemedText>
             </Pressable>
           </View>
 
+          {/* Avatar */}
           <View style={styles.avatarWrap}>
-            <Pressable
-              onPress={onPickAvatar}
-              hitSlop={12}
-              style={({ pressed }) => [styles.avatarBtn, pressed && { opacity: 0.85 }]}
-            >
-              <Image source={{ uri: avatarUrl }} style={styles.avatarImage} />
+            <Pressable onPress={onPickAvatar} hitSlop={12} style={styles.avatarBtn}>
+              <Avatar uri={avatarUrl} size={96} fallbackColor={colors.border} />
               <View
                 style={[
                   styles.avatarOverlay,
@@ -240,14 +210,7 @@ useEffect(() => {
 
           <ScrollView keyboardShouldPersistTaps="handled" style={{ flex: 1 }}>
             <View style={styles.form}>
-              <Input
-                label="Display name"
-                value={name}
-                onChangeText={setName}
-                colors={colors}
-                maxLength={LIMITS.displayName}
-              />
-
+              <Input label="Display name" value={name} onChangeText={setName} colors={colors} />
               <Input
                 label="Handle"
                 value={handle}
@@ -255,26 +218,14 @@ useEffect(() => {
                 colors={colors}
                 autoCapitalize="none"
                 autoCorrect={false}
-                maxLength={LIMITS.handle}
               />
-
-              <Input
-                label="Bio (optional)"
-                value={bio}
-                onChangeText={setBio}
-                colors={colors}
-                multiline
-                maxLength={LIMITS.bio}
-              />
-
+              <Input label="Bio (optional)" value={bio} onChangeText={setBio} colors={colors} multiline />
               <Input
                 label="Location (optional)"
                 value={location}
                 onChangeText={setLocation}
                 colors={colors}
-                maxLength={LIMITS.location}
               />
-
               <Input
                 label="Link (optional)"
                 value={link}
@@ -282,7 +233,6 @@ useEffect(() => {
                 colors={colors}
                 autoCapitalize="none"
                 autoCorrect={false}
-                maxLength={LIMITS.link}
               />
 
               <Pressable
@@ -292,48 +242,30 @@ useEffect(() => {
                 }}
                 style={({ pressed }) => [
                   styles.inputWrap,
-                  {
-                    borderColor: colors.border,
-                    backgroundColor: pressed ? colors.pressed : 'transparent',
-                  },
+                  { borderColor: colors.border, backgroundColor: pressed ? colors.pressed : "transparent" },
                 ]}
               >
-                <ThemedText style={{ fontSize: 12, color: colors.textSecondary }}>
-                  Joined date
-                </ThemedText>
-                <ThemedText
-                  style={{
-                    fontSize: 16,
-                    color: joinedDate ? colors.text : colors.textSecondary,
-                    paddingVertical: 2,
-                    opacity: joinedDate ? 1 : 0.85,
-                  }}
-                >
+                <ThemedText style={{ fontSize: 12, color: colors.textSecondary }}>Joined date</ThemedText>
+                <ThemedText style={{ fontSize: 16, color: colors.text }}>
                   {(joinedDate ?? new Date()).toLocaleDateString()}
                 </ThemedText>
               </Pressable>
 
               <View style={styles.row2}>
-                <View style={{ flex: 1 }}>
-                  <Input
-                    label="Following (optional)"
-                    value={following}
-                    onChangeText={setFollowing}
-                    colors={colors}
-                    keyboardType="number-pad"
-                    maxLength={11}
-                  />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Input
-                    label="Followers (optional)"
-                    value={followers}
-                    onChangeText={setFollowers}
-                    colors={colors}
-                    keyboardType="number-pad"
-                    maxLength={11}
-                  />
-                </View>
+                <Input
+                  label="Following (optional)"
+                  value={following}
+                  onChangeText={setFollowing}
+                  colors={colors}
+                  keyboardType="number-pad"
+                />
+                <Input
+                  label="Followers (optional)"
+                  value={followers}
+                  onChangeText={setFollowers}
+                  colors={colors}
+                  keyboardType="number-pad"
+                />
               </View>
 
               <Pressable
@@ -341,67 +273,34 @@ useEffect(() => {
                 onPress={onSave}
                 style={({ pressed }) => [
                   styles.primaryBtn,
-                  {
-                    backgroundColor: colors.text,
-                    opacity: !canSubmit ? 0.4 : pressed ? 0.85 : 1,
-                  },
+                  { backgroundColor: colors.text, opacity: !canSubmit ? 0.4 : pressed ? 0.85 : 1 },
                 ]}
               >
-                <ThemedText style={{ color: colors.background, fontWeight: '700' }}>
-                  {isEdit ? 'Save' : 'Create'}
+                <ThemedText style={{ color: colors.background, fontWeight: "700" }}>
+                  {isEdit ? "Save" : "Create"}
                 </ThemedText>
               </Pressable>
             </View>
           </ScrollView>
 
-          <Modal
-            visible={showJoinedPicker}
-            transparent
-            animationType="fade"
-            onRequestClose={() => setShowJoinedPicker(false)}
-          >
-            <Pressable
-              style={styles.pickerBackdrop}
-              onPress={() => {
-                Keyboard.dismiss();
-                setShowJoinedPicker(false);
-              }}
-            >
+          {/* Joined date picker */}
+          <Modal visible={showJoinedPicker} transparent animationType="fade">
+            <Pressable style={styles.pickerBackdrop} onPress={() => setShowJoinedPicker(false)}>
               <Pressable
-                style={[styles.pickerModalCard, { backgroundColor: colors.card, borderColor: colors.border }]}
-                onPress={() => {}}
+                style={[
+                  styles.pickerModalCard,
+                  { backgroundColor: colors.card, borderColor: colors.border },
+                ]}
               >
-                <ThemedText style={{ fontSize: 12, color: colors.textSecondary, marginBottom: 8 }}>
-                  Joined date
-                </ThemedText>
-
                 <DateTimePicker
                   value={joinedDate ?? new Date()}
                   mode="date"
-                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                  onChange={(event, date) => {
-                    // Android emits a "dismissed" event; don't change state in that case.
-                    if (Platform.OS !== 'ios') {
-                      const type = (event as any)?.type;
-                      if (type === 'dismissed') {
-                        setShowJoinedPicker(false);
-                        return;
-                      }
-                      setShowJoinedPicker(false);
-                    }
+                  display={Platform.OS === "ios" ? "spinner" : "default"}
+                  onChange={(_, date) => {
                     if (date) setJoinedDate(date);
+                    if (Platform.OS !== "ios") setShowJoinedPicker(false);
                   }}
                 />
-
-                {Platform.OS === 'ios' && (
-                  <Pressable
-                    onPress={() => setShowJoinedPicker(false)}
-                    style={({ pressed }) => [styles.pickerDone, { opacity: pressed ? 0.75 : 1 }]}
-                    hitSlop={10}
-                  >
-                    <ThemedText style={{ color: colors.tint, fontWeight: '800' }}>Done</ThemedText>
-                  </Pressable>
-                )}
               </Pressable>
             </Pressable>
           </Modal>
@@ -411,45 +310,31 @@ useEffect(() => {
   );
 }
 
-function Input({
-  label,
-  value,
-  onChangeText,
-  colors,
-  multiline,
-  autoCapitalize,
-  autoCorrect,
-  keyboardType,
-  maxLength,
-}: any) {
+/* -------------------------------------------------------------------------- */
+/* Input                                                                     */
+/* -------------------------------------------------------------------------- */
+
+function Input(props: any) {
+  const { label, colors, ...rest } = props;
   return (
     <View style={[styles.inputWrap, { borderColor: colors.border }]}>
-      <ThemedText style={{ fontSize: 12, color: colors.textSecondary }}>
-        {label}
-      </ThemedText>
-      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-        <TextInput
-          value={value}
-          onChangeText={onChangeText}
-          multiline={multiline}
-          autoCapitalize={autoCapitalize}
-          autoCorrect={autoCorrect}
-          keyboardType={keyboardType}
-          maxLength={maxLength}
-          style={[styles.input, { color: colors.text }]}
-        />
-      </View>
+      <ThemedText style={{ fontSize: 12, color: colors.textSecondary }}>{label}</ThemedText>
+      <TextInput {...rest} style={[styles.input, { color: colors.text }]} />
     </View>
   );
 }
+
+/* -------------------------------------------------------------------------- */
+/* Styles                                                                     */
+/* -------------------------------------------------------------------------- */
 
 const styles = StyleSheet.create({
   header: {
     paddingHorizontal: 16,
     paddingVertical: 14,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    justifyContent: "space-between",
   },
 
   form: {
@@ -458,7 +343,7 @@ const styles = StyleSheet.create({
   },
 
   row2: {
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: 12,
   },
 
@@ -471,87 +356,66 @@ const styles = StyleSheet.create({
 
   input: {
     fontSize: 16,
-    flex: 1,
     paddingVertical: 2,
-  },
-
-  pickerWrap: {
-    borderWidth: 1,
-    borderRadius: 14,
-    overflow: 'hidden',
-  },
-
-  pickerBackdrop: {
-    flex: 1,
-    padding: 16,
-    backgroundColor: 'rgba(0,0,0,0.35)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-
-  pickerModalCard: {
-    width: '100%',
-    maxWidth: 520,
-    borderWidth: 1,
-    borderRadius: 16,
-    padding: 14,
-    overflow: 'hidden',
-  },
-
-  pickerDone: {
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    alignSelf: 'flex-end',
   },
 
   primaryBtn: {
     marginTop: 8,
     height: 48,
     borderRadius: 999,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
   },
 
   avatarWrap: {
     paddingHorizontal: 16,
     paddingTop: 16,
     paddingBottom: 4,
-    alignItems: 'center',
+    alignItems: "center",
   },
 
   avatarBtn: {
-    position: 'relative',
-  },
-
-  avatarImage: {
-    width: 96,
-    height: 96,
-    borderRadius: 999,
+    position: "relative",
   },
 
   avatarOverlay: {
-    position: 'absolute',
+    position: "absolute",
     right: 0,
     bottom: 0,
     width: 32,
     height: 32,
     borderRadius: 999,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     borderWidth: 2,
   },
 
   avatarPlus: {
-    color: '#fff',
+    color: "#fff",
     fontSize: 20,
-    lineHeight: 22,
-    fontWeight: '800',
+    fontWeight: "800",
   },
 
   avatarHint: {
     marginTop: 8,
     fontSize: 13,
-    fontWeight: '600',
+    fontWeight: "600",
     opacity: 0.9,
+  },
+
+  pickerBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.35)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 16,
+  },
+
+  pickerModalCard: {
+    width: "100%",
+    maxWidth: 520,
+    borderWidth: 1,
+    borderRadius: 16,
+    padding: 14,
   },
 });

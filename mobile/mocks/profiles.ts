@@ -1,19 +1,4 @@
-export type Profile = {
-  id: string;
-  scenarioId: string;
-  ownerUserId: string;
-  displayName: string;
-  handle: string;
-  avatarUrl: string;
-  bio?: string;
-  isPublic?: boolean;
-  joinedDate?: string;
-  location?: string;
-  link?: string;
-  followingCount?: number;
-  followerCount?: number;
-};
-
+import type { Profile } from "@/data/db/schema";
 export const MOCK_PROFILES: Profile[] = [
   {
     id: 'pr_kpop_jinnie',

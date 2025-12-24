@@ -1,10 +1,6 @@
-export type AppUser = {
-  id: string;
-  username: string;
-  avatarUrl: string;
-};
+import type { User } from "@/data/db/schema";
 
-export const MOCK_USERS: AppUser[] = [
+export const MOCK_USERS: User[] = [
   { id: 'u1', username: 'winter', avatarUrl: 'https://i.pravatar.cc/200?img=12' },
   { id: 'u2', username: 'alex', avatarUrl: 'https://i.pravatar.cc/200?img=32' },
   { id: 'u3', username: 'mika', avatarUrl: 'https://i.pravatar.cc/200?img=10' },

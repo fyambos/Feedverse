@@ -1,32 +1,32 @@
-import React, { useMemo } from 'react';
-import { StyleSheet, FlatList, Pressable, Image, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { router, Stack } from 'expo-router';
-import { Colors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { MOCK_SCENARIOS } from '@/mocks/scenarios';
-import { MOCK_USERS } from '@/mocks/users';
-import { useAuth } from '@/context/auth';
+// mobile/app/(scenario)/index.tsx  (or wherever your ScenarioListScreen lives)
+import React, { useMemo } from "react";
+import { StyleSheet, FlatList, Pressable, Image, View } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { router, Stack } from "expo-router";
+
+import { ThemedText } from "@/components/themed-text";
+import { ThemedView } from "@/components/themed-view";
+import { Colors } from "@/constants/theme";
+import { useColorScheme } from "@/hooks/use-color-scheme";
+
+import { useAuth } from "@/context/auth";
+import { useAppData } from "@/context/appData";
 
 export default function ScenarioListScreen() {
-  const colorScheme = useColorScheme() ?? 'light';
+  const colorScheme = useColorScheme() ?? "light";
   const colors = Colors[colorScheme];
   const insets = useSafeAreaInsets();
 
   const { signOut } = useAuth();
+  const { isReady, listScenarios, getUserById } = useAppData();
 
   const onLogout = async () => {
     await signOut();
-    router.replace('/(auth)/login');
+    router.replace("/(auth)/login");
   };
 
-  const userById = useMemo(() => {
-    const map = new Map(MOCK_USERS.map((u) => [u.id, u]));
-    return map;
-  }, []);
+  const scenarios = useMemo(() => (isReady ? listScenarios() : []), [isReady, listScenarios]);
 
   const openScenario = (scenarioId: string) => {
     router.push(`/(scenario)/${scenarioId}` as any);
@@ -79,22 +79,20 @@ export default function ScenarioListScreen() {
       </View>
 
       <ThemedView style={[styles.container, { backgroundColor: colors.background }]}>
-        <ThemedText style={styles.subtitle}>
-          Choose a scenario to enter its universe
-        </ThemedText>
+        <ThemedText style={styles.subtitle}>Choose a scenario to enter its universe</ThemedText>
 
         <FlatList
-          data={MOCK_SCENARIOS}
-          keyExtractor={(item) => item.id}
+          data={scenarios}
+          keyExtractor={(item) => String(item.id)}
           contentContainerStyle={styles.list}
           renderItem={({ item }) => {
-            const players = item.playerIds
-              .map((id) => userById.get(id))
+            const players = (item.playerIds ?? [])
+              .map((id) => getUserById(String(id)))
               .filter(Boolean);
 
             return (
               <Pressable
-                onPress={() => openScenario(item.id)}
+                onPress={() => openScenario(String(item.id))}
                 style={({ pressed }) => [
                   styles.card,
                   { backgroundColor: colors.card, borderColor: colors.border },
@@ -110,7 +108,7 @@ export default function ScenarioListScreen() {
                     <View style={styles.avatars}>
                       {players.slice(0, 4).map((player, index) => (
                         <Image
-                          key={player!.id}
+                          key={String(player!.id)}
                           source={{ uri: player!.avatarUrl }}
                           style={[
                             styles.avatar,
@@ -131,6 +129,13 @@ export default function ScenarioListScreen() {
               </Pressable>
             );
           }}
+          ListEmptyComponent={() => (
+            <View style={{ paddingVertical: 24 }}>
+              <ThemedText style={{ color: colors.textSecondary }}>
+                {isReady ? "No scenarios yet." : "Loading…"}
+              </ThemedText>
+            </View>
+          )}
         />
       </ThemedView>
     </>
@@ -142,16 +147,16 @@ const styles = StyleSheet.create({
   subtitle: { marginTop: 4, marginBottom: 16 },
   headerIconBtn: {
     padding: 6,
-    backgroundColor: 'transparent',
+    backgroundColor: "transparent",
   },
   list: { paddingVertical: 8, gap: 12 },
 
-  card: { borderRadius: 14, borderWidth: 1, overflow: 'hidden' },
-  cover: { width: '100%', height: 120 },
+  card: { borderRadius: 14, borderWidth: 1, overflow: "hidden" },
+  cover: { width: "100%", height: 120 },
   cardContent: { padding: 12, gap: 8 },
 
-  playersRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  avatars: { flexDirection: 'row', alignItems: 'center' },
+  playersRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  avatars: { flexDirection: "row", alignItems: "center" },
 
   avatar: {
     width: 28,
@@ -168,15 +173,15 @@ const styles = StyleSheet.create({
   topBarRow: {
     height: 56,
     paddingHorizontal: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
   },
   topBarSide: {
     width: 88,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'flex-end',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "flex-end",
   },
   topBarActions: {
     gap: 14,
