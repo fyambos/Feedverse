@@ -1,12 +1,5 @@
-// mobile/app/(scenario)/[scenarioId]/(tabs)/index.tsx
-import React, { useCallback, useMemo } from "react";
-import {
-  FlatList,
-  StyleSheet,
-  View,
-  Pressable,
-  Animated as RNAnimated,
-} from "react-native";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { FlatList, StyleSheet, View, Pressable, Animated as RNAnimated, ActivityIndicator } from "react-native";
 import { useLocalSearchParams, router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 
@@ -20,6 +13,10 @@ import { useAppData } from "@/context/appData";
 import { SwipeableRow } from "@/components/ui/SwipeableRow";
 import { canEditPost } from "@/lib/permission";
 
+type Cursor = string | null;
+
+const PAGE_SIZE = 12;
+
 export default function HomeScreen() {
   const { scenarioId } = useLocalSearchParams<{ scenarioId: string }>();
   const sid = String(scenarioId ?? "");
@@ -28,21 +25,58 @@ export default function HomeScreen() {
   const colors = Colors[scheme];
 
   const { userId } = useAuth();
-  const {
-    isReady,
-    listPostsForScenario,
-    getProfileById,
-    deletePost,
-  } = useAppData();
+  const { isReady, listPostsPage, getProfileById, deletePost } = useAppData();
 
   /* -------------------------------------------------------------------------- */
-  /* Data                                                                        */
+  /* Paging state                                                               */
   /* -------------------------------------------------------------------------- */
 
-  const posts = useMemo(() => {
-    if (!isReady) return [];
-    return listPostsForScenario(sid);
-  }, [isReady, listPostsForScenario, sid]);
+  const [items, setItems] = useState<any[]>([]);
+  const [cursor, setCursor] = useState<Cursor>(null);
+  const [hasMore, setHasMore] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(true);
+
+  const loadingLock = useRef(false);
+
+  const loadFirstPage = useCallback(() => {
+    if (!isReady) return;
+    const page = listPostsPage({ scenarioId: sid, limit: PAGE_SIZE, cursor: null });
+
+    setItems(page.items);
+    setCursor(page.nextCursor);
+    setHasMore(!!page.nextCursor);
+    setInitialLoading(false);
+  }, [isReady, listPostsPage, sid]);
+
+  const loadMore = useCallback(() => {
+    if (!isReady) return;
+    if (!hasMore) return;
+    if (loadingLock.current) return;
+
+    loadingLock.current = true;
+    setLoadingMore(true);
+
+    try {
+      const page = listPostsPage({ scenarioId: sid, limit: PAGE_SIZE, cursor });
+      setItems((prev) => [...prev, ...page.items]);
+      setCursor(page.nextCursor);
+      setHasMore(!!page.nextCursor);
+    } finally {
+      setLoadingMore(false);
+      loadingLock.current = false;
+    }
+  }, [isReady, hasMore, listPostsPage, sid, cursor]);
+
+  // reset when scenario changes / db becomes ready
+  useEffect(() => {
+    setItems([]);
+    setCursor(null);
+    setHasMore(true);
+    setInitialLoading(true);
+
+    if (isReady) loadFirstPage();
+  }, [sid, isReady, loadFirstPage]);
 
   /* -------------------------------------------------------------------------- */
   /* FAB animation                                                               */
@@ -57,11 +91,7 @@ export default function HomeScreen() {
   };
 
   const pressOut = () => {
-    RNAnimated.spring(scale, {
-      toValue: 1,
-      friction: 4,
-      useNativeDriver: true,
-    }).start();
+    RNAnimated.spring(scale, { toValue: 1, friction: 4, useNativeDriver: true }).start();
   };
 
   /* -------------------------------------------------------------------------- */
@@ -102,45 +132,46 @@ export default function HomeScreen() {
   const onDeletePost = useCallback(
     async (postId: string) => {
       await deletePost(postId);
+      // simple refresh: reload first page so UI stays consistent
+      loadFirstPage();
     },
-    [deletePost]
+    [deletePost, loadFirstPage]
   );
 
   /* -------------------------------------------------------------------------- */
   /* Render                                                                      */
   /* -------------------------------------------------------------------------- */
 
+  const data = useMemo(() => items, [items]);
+
   return (
-    <ThemedView
-      style={[styles.container, { backgroundColor: colors.background }]}
-    >
+    <ThemedView style={[styles.container, { backgroundColor: colors.background }]}>
       <FlatList
-        data={posts}
+        data={data}
         keyExtractor={(item) => String(item.id)}
         contentContainerStyle={styles.list}
-        ItemSeparatorComponent={() => (
-          <View
-            style={[styles.separator, { backgroundColor: colors.border }]}
-          />
-        )}
+        ItemSeparatorComponent={() => <View style={[styles.separator, { backgroundColor: colors.border }]} />}
+        onEndReachedThreshold={0.6}
+        onEndReached={() => {
+          if (!initialLoading) loadMore();
+        }}
+        ListFooterComponent={() => {
+          if (!loadingMore) return <View style={{ height: 24 }} />;
+          return (
+            <View style={{ paddingVertical: 16, alignItems: "center" }}>
+              <ActivityIndicator />
+            </View>
+          );
+        }}
         renderItem={({ item }) => {
           const profile = getProfileById(String(item.authorProfileId));
           if (!profile) return null;
 
-          const canEdit = canEditPost({
-            authorProfile: profile,
-            userId: userId ?? null,
-          });
+          const canEdit = canEditPost({ authorProfile: profile, userId: userId ?? null });
 
           const content = (
             <Pressable onPress={() => openPostDetail(String(item.id))}>
-              <PostCard
-                scenarioId={sid}
-                profile={profile as any}
-                item={item as any}
-                variant="feed"
-                showActions
-              />
+              <PostCard scenarioId={sid} profile={profile as any} item={item as any} variant="feed" showActions />
             </Pressable>
           );
 
@@ -156,50 +187,46 @@ export default function HomeScreen() {
             </SwipeableRow>
           );
         }}
-        ListEmptyComponent={() => (
-          <View style={{ padding: 16 }}>
-            <Pressable
-              onPress={openCreatePost}
-              style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}
-            >
-              <View
-                style={{
-                  borderWidth: StyleSheet.hairlineWidth,
-                  borderColor: colors.border,
-                  borderRadius: 16,
-                  padding: 14,
-                  backgroundColor: colors.card,
-                }}
-              >
+        ListEmptyComponent={() => {
+          if (!isReady || initialLoading) {
+            return (
+              <View style={{ padding: 16 }}>
+                <ActivityIndicator />
+              </View>
+            );
+          }
+
+          return (
+            <View style={{ padding: 16 }}>
+              <Pressable onPress={openCreatePost} style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}>
                 <View
-                  style={{ flexDirection: "row", alignItems: "center", gap: 8 }}
+                  style={{
+                    borderWidth: StyleSheet.hairlineWidth,
+                    borderColor: colors.border,
+                    borderRadius: 16,
+                    padding: 14,
+                    backgroundColor: colors.card,
+                  }}
                 >
-                  <Ionicons name="add" size={18} color={colors.tint} />
-                  <ThemedText
-                    style={{ color: colors.text, fontWeight: "800" }}
-                  >
-                    Create your first post
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                    <Ionicons name="add" size={18} color={colors.tint} />
+                    <ThemedText style={{ color: colors.text, fontWeight: "800" }}>
+                      Create your first post
+                    </ThemedText>
+                  </View>
+
+                  <ThemedText style={{ color: colors.textSecondary, marginTop: 6 }}>
+                    Nothing here yet — post something to start the feed.
                   </ThemedText>
                 </View>
-
-                <ThemedText
-                  style={{ color: colors.textSecondary, marginTop: 6 }}
-                >
-                  Nothing here yet — post something to start the feed.
-                </ThemedText>
-              </View>
-            </Pressable>
-          </View>
-        )}
+              </Pressable>
+            </View>
+          );
+        }}
       />
 
       {/* FAB */}
-      <RNAnimated.View
-        style={[
-          styles.fab,
-          { backgroundColor: colors.tint, transform: [{ scale }] },
-        ]}
-      >
+      <RNAnimated.View style={[styles.fab, { backgroundColor: colors.tint, transform: [{ scale }] }]}>
         <Pressable
           onPress={openCreatePost}
           onPressIn={pressIn}
@@ -214,10 +241,6 @@ export default function HomeScreen() {
     </ThemedView>
   );
 }
-
-/* -------------------------------------------------------------------------- */
-/* Styles                                                                      */
-/* -------------------------------------------------------------------------- */
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
@@ -238,9 +261,5 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     elevation: 6,
   },
-  fabPress: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-  },
+  fabPress: { flex: 1, alignItems: "center", justifyContent: "center" },
 });
