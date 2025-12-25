@@ -1,9 +1,9 @@
 // mobile/components/post/PostActions.tsx
 import React from "react";
-import { Alert, Animated, Pressable, StyleSheet, View } from "react-native";
+import { Alert, Animated, Pressable, StyleSheet, View, Platform } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import SimpleLineIcons from "@expo/vector-icons/SimpleLineIcons";
-
+import AntDesign from "@expo/vector-icons/AntDesign";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { ThemedText } from "@/components/themed-text";
 import { formatCount } from "@/lib/format";
@@ -30,6 +30,17 @@ type Props = {
   onLike?: () => void;
   onShare?: () => void;
 };
+
+function RepostIcon({ color }: { color: string }) {
+  // iOS: keep your perfect SF Symbol via IconSymbol
+  if (Platform.OS === "ios") {
+    return <IconSymbol name="arrow.2.squarepath" size={23} color={color} />;
+  }
+
+  // Android: reliable vector icon
+  // "repeat-outline" exists in Ionicons v7; if you prefer thicker, use "repeat"
+  return <AntDesign name="retweet" size={20} color={color} />;
+}
 
 export function PostActions({
   variant,
@@ -119,7 +130,7 @@ export function PostActions({
             accessibilityLabel="Repost"
           >
             <Animated.View style={{ transform: [{ scale: repostScale }] }}>
-              <IconSymbol name="arrow.2.squarepath" size={23} color={colors.icon} />
+              <RepostIcon color={colors.icon} />
             </Animated.View>
           </Pressable>
 
