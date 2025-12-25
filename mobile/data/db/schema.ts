@@ -31,6 +31,7 @@ export type Profile = {
   followingCount?: number;
   createdAt: string;
   updatedAt?: string;
+  isPrivate?: boolean;
 };
 
 export type Post = {

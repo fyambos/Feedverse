@@ -19,7 +19,6 @@ import type { Post } from "@/data/db/schema";
 import { canEditPost } from "@/lib/permission";
 
 export default function PostScreen() {
-  // ✅ added `from?: string`
   const { scenarioId, postId, from } = useLocalSearchParams<{
     scenarioId: string;
     postId: string;
@@ -32,7 +31,6 @@ export default function PostScreen() {
   const sid = String(scenarioId ?? "");
   const pid = String(postId ?? "");
 
-  // ✅ smart back (doesn't change your thread logic)
   const fromPath = typeof from === "string" && from.length > 0 ? from : null;
 
   const { userId } = useAuth();
@@ -76,7 +74,6 @@ export default function PostScreen() {
 
   return (
     <ThemedView style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* ✅ added header config here so back works reliably */}
       <Stack.Screen
         options={{
           headerShown: true,

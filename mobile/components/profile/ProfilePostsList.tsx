@@ -21,7 +21,6 @@ type Props = {
   colors: ColorsLike;
   sid: string;
 
-  // ✅ the profile page you're browsing (me if it's me, author if it's author)
   viewingProfileId: string;
 
   items: DbPost[];
@@ -37,6 +36,7 @@ type Props = {
 
   ListHeaderComponent: React.ReactElement;
   emptyText?: string;
+  disableEngagement?: boolean;
 };
 
 function findRootPostId(getPostById: (id: string) => DbPost | undefined, start: DbPost): string {
@@ -115,10 +115,8 @@ export function ProfilePostsList({
 
         const isReply = !!item.parentPostId;
 
-        // ✅ "replying to @..."
         const replyingTo = isReply ? getReplyingToHandle(getPostById, getProfileById, item) : "";
 
-        // ✅ open root tweet for replies
         const targetPostId = isReply ? findRootPostId(getPostById, item) : String(item.id);
 
         const canEditThisPost = canEditPost({ authorProfile, userId });

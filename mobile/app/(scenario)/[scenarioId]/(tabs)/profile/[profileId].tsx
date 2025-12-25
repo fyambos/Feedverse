@@ -24,27 +24,45 @@ import { ProfileBioBlock } from "@/components/profile/ProfileBioBlock";
 import { ProfileTabsBar, type ProfileTab } from "@/components/profile/ProfileTabsBar";
 import { ProfilePostsList } from "@/components/profile/ProfilePostsList";
 import { ProfileStatusOverlay } from "@/components/profile/ProfileStatusOverlay";
-import type { ProfileOverlayConfig } from "@/components/profile/profileTypes";
+import type { ProfileOverlayConfig, ProfileViewState } from "@/components/profile/profileTypes";
 
 type Cursor = string | null;
 const PAGE_SIZE = 10;
 
 function hasAnyMedia(p: any) {
-  // supports multiple possible shapes so Media tab “just works”
   const urls = p?.imageUrls;
   if (Array.isArray(urls) && urls.length > 0) return true;
-
   const single = p?.imageUrl;
   if (typeof single === "string" && single.length > 0) return true;
-
   const media = p?.media;
   if (Array.isArray(media) && media.length > 0) return true;
-
   return false;
 }
 
+function BigMessage({
+  colors,
+  title,
+  body,
+}: {
+  colors: { text: string; textSecondary: string };
+  title: string;
+  body: string;
+}) {
+  return (
+    <View style={styles.bigWrap}>
+      <ThemedText style={[styles.bigTitle, { color: colors.text }]}>{title}</ThemedText>
+      <ThemedText style={[styles.bigBody, { color: colors.textSecondary }]}>{body}</ThemedText>
+    </View>
+  );
+}
+
 export default function ProfileScreen() {
-  const { scenarioId, profileId } = useLocalSearchParams<{ scenarioId: string; profileId: string }>();
+  const { scenarioId, profileId, view } = useLocalSearchParams<{
+    scenarioId: string;
+    profileId: string;
+    view?: ProfileViewState;
+  }>();
+
   const scheme = useColorScheme() ?? "light";
   const colors = Colors[scheme];
   const { userId } = useAuth();
@@ -73,7 +91,6 @@ export default function ProfileScreen() {
     selectedProfileId: selectedId ? String(selectedId) : null,
   });
 
-  // ✅ tabs (controlled by page)
   const [activeTab, setActiveTab] = useState<ProfileTab>("posts");
 
   // --- edit mode
@@ -147,7 +164,71 @@ export default function ProfileScreen() {
     await upsertProfile({ ...profile, headerUrl: uri });
   }, [profile, canModifyProfile, denyModify, upsertProfile, withPickerLock]);
 
-  // ✅ tab-aware filter
+  // ✅ view state (NO early returns before all hooks)
+  const viewState: ProfileViewState = (view as ProfileViewState) ?? "normal";
+
+  const isBlockedBy = viewState === "blocked_by";
+  const isBlocked = viewState === "blocked";
+  const isSuspended = viewState === "suspended";
+  const isPrivated = viewState === "privated";
+  const isDeactivated = viewState === "deactivated";
+  const isReactivated = viewState === "reactivated";
+  const isMuted = viewState === "muted";
+
+  // show tabs only for "normal" + muted
+  const showTabs = viewState === "normal" || viewState === "muted";
+
+  // muted modal
+  const [mutedModalOpen, setMutedModalOpen] = useState(false);
+  useEffect(() => {
+    setMutedModalOpen(viewState === "muted");
+  }, [viewState]);
+
+  // overlays (existing)
+  const overlay: ProfileOverlayConfig | null = null;
+  const [overlayOpen, setOverlayOpen] = useState(false);
+  useEffect(() => setOverlayOpen(!!overlay), [overlay]);
+
+  // ✅ compute handle text safely (no hooks after early returns)
+  const at = useMemo(() => {
+    const h = profile?.handle ? String(profile.handle) : "";
+    if (!h) return "@";
+    return h.startsWith("@") ? h : `@${h}`;
+  }, [profile?.handle]);
+
+  const stateMessage = useMemo(() => {
+    if (isBlockedBy) {
+      return {
+        title: `${at} has blocked you`,
+        body:
+          `You can view public posts from ${at}, but you are blocked from engaging with them. ` +
+          `You also cannot follow or message ${at}.`,
+      };
+    }
+    if (isBlocked) {
+      return {
+        title: `You blocked ${at}`,
+        body: `You can’t see posts from ${at} or interact with this account.`,
+      };
+    }
+    if (isSuspended) {
+      return {
+        title: "Account suspended",
+        body: "This account has violated the rules and is currently suspended.",
+      };
+    }
+    if (isPrivated) {
+      return {
+        title: "These posts are protected",
+        body: "Only approved followers can see this account’s posts.",
+      };
+    }
+    return null;
+  }, [isBlockedBy, isBlocked, isSuspended, isPrivated, at]);
+
+  // ----------------------------
+  // Tabs + paging
+  // ----------------------------
   const includeReplies = activeTab === "replies";
 
   const postFilterForTab = useCallback(
@@ -157,8 +238,8 @@ export default function ProfileScreen() {
 
       if (tab === "media") return hasAnyMedia(p);
       if (tab === "replies") return !!p.parentPostId;
-      if (tab === "likes") return false; // later
-      return true; // posts
+      if (tab === "likes") return false;
+      return true;
     },
     [profile]
   );
@@ -172,7 +253,6 @@ export default function ProfileScreen() {
       ? "No likes yet."
       : "No posts yet.";
 
-  // --- infinite scroll paging
   const [items, setItems] = useState<any[]>([]);
   const [cursor, setCursor] = useState<Cursor>(null);
   const [hasMore, setHasMore] = useState(true);
@@ -223,7 +303,6 @@ export default function ProfileScreen() {
     }
   }, [isReady, profile, hasMore, listPostsPage, sid, cursor, activeTab, includeReplies, postFilterForTab]);
 
-  // ✅ IMPORTANT: reset paging + reload whenever tab changes
   useEffect(() => {
     setItems([]);
     setCursor(null);
@@ -271,11 +350,9 @@ export default function ProfileScreen() {
 
   const onLongPressPrimary = useCallback(() => setEditMode((v) => !v), []);
 
-  // moderation/profile states placeholder
-  const overlay: ProfileOverlayConfig | null = null;
-  const [overlayOpen, setOverlayOpen] = useState(false);
-  useEffect(() => setOverlayOpen(!!overlay), [overlay]);
-
+  // ----------------------------
+  // ✅ early returns (safe now)
+  // ----------------------------
   if (!isReady) {
     return (
       <ThemedView
@@ -289,17 +366,45 @@ export default function ProfileScreen() {
     );
   }
 
-  if (!profile) {
+  // ✅ DEACTIVATED: blank header + blank pfp + message, no stats/tabs/posts
+  if (isDeactivated) {
     return (
       <ThemedView style={[styles.screen, { backgroundColor: colors.background }]}>
-        <View style={{ padding: 16 }}>
-          <ThemedText style={{ color: colors.textSecondary }}>
-            Profile not found for id {pid}.
+        {/* empty header */}
+        <View style={[styles.deactivatedHeader, { backgroundColor: colors.border }]} />
+
+        {/* blank pfp (positioned like your avatar row) */}
+        <View style={styles.deactivatedAvatarRow}>
+          <View style={[styles.deactivatedAvatarOuter, { backgroundColor: colors.background }]}>
+            <View style={[styles.deactivatedAvatarInner, { backgroundColor: colors.border }]} />
+          </View>
+        </View>
+
+        {/* big message */}
+        <View style={styles.deactivatedBody}>
+          <ThemedText style={[styles.bigTitle, { color: colors.text }]}>
+            This account doesn’t exist
+          </ThemedText>
+          <ThemedText style={[styles.bigBody, { color: colors.textSecondary }]}>
+            Try searching for another.
           </ThemedText>
         </View>
       </ThemedView>
     );
   }
+
+  if (!profile) {
+    return (
+      <ThemedView style={[styles.screen, { backgroundColor: colors.background }]}>
+        <View style={{ padding: 16 }}>
+          <ThemedText style={{ color: colors.textSecondary }}>Profile not found for id {pid}.</ThemedText>
+        </View>
+      </ThemedView>
+    );
+  }
+
+  // ✅ for reactivated: force 0/0 stats
+  const forcedStats = isReactivated ? { following: 0, followers: 0 } : undefined;
 
   const headerEl = (
     <View style={overlay?.dimUnderlying ? { opacity: 0.45 } : undefined}>
@@ -322,40 +427,89 @@ export default function ProfileScreen() {
         editMode={editMode}
         onPressPrimary={onPressPrimary}
         onLongPressPrimary={onLongPressPrimary}
+        primaryButtonOverride={
+          isBlocked
+            ? {
+                label: "Blocked",
+                variant: "danger",
+              }
+            : undefined
+        }
       />
 
-      <ProfileBioBlock colors={colors as any} profile={profile} />
-
-      <ProfileTabsBar
+      <ProfileBioBlock
         colors={colors as any}
-        activeTab={activeTab}
-        onChangeTab={(t: ProfileTab) => {
-          if (t === activeTab) return;
-          setActiveTab(t);
-        }}
+        profile={profile}
+        viewState={viewState}
+        forceStats={forcedStats}
+        showLockOnName={isPrivated && profile.isPrivate !== true}
+        showStats={viewState === "normal" || viewState === "muted" || viewState === "reactivated"}
       />
 
+      {showTabs ? (
+        <ProfileTabsBar
+          colors={colors as any}
+          activeTab={activeTab}
+          onChangeTab={(t: ProfileTab) => {
+            if (t === activeTab) return;
+            setActiveTab(t);
+          }}
+        />
+      ) : null}
     </View>
   );
+
+  const shouldHidePostsAndShowMessage = isBlockedBy || isBlocked || isSuspended || isPrivated;
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <ThemedView style={[styles.screen, { backgroundColor: colors.background }]}>
-        <ProfilePostsList
-          colors={colors as any}
-          sid={sid}
-          viewingProfileId={pid}
-          items={items}
-          initialLoading={initialLoading}
-          loadingMore={loadingMore}
-          onLoadMore={loadMore}
-          getProfileById={getProfileById as any}
-          getPostById={getPostById as any}
-          userId={userId ?? null}
-          onDeletePost={onDeletePost}
-          ListHeaderComponent={headerEl}
-          emptyText={emptyText}
-        />
+        {shouldHidePostsAndShowMessage ? (
+          <View>
+            {headerEl}
+            <BigMessage
+              colors={{ text: colors.text, textSecondary: colors.textSecondary }}
+              title={stateMessage?.title ?? ""}
+              body={stateMessage?.body ?? ""}
+            />
+          </View>
+        ) : isReactivated ? (
+          <View>
+            {headerEl}
+            <View style={{ paddingVertical: 28, alignItems: "center" }}>
+              <ActivityIndicator />
+            </View>
+          </View>
+        ) : (
+          <ProfilePostsList
+            colors={colors as any}
+            sid={sid}
+            viewingProfileId={pid}
+            items={items}
+            initialLoading={initialLoading}
+            loadingMore={loadingMore}
+            onLoadMore={loadMore}
+            getProfileById={getProfileById as any}
+            getPostById={getPostById as any}
+            userId={userId ?? null}
+            onDeletePost={onDeletePost}
+            ListHeaderComponent={headerEl}
+            emptyText={emptyText}
+          />
+        )}
+
+        {isMuted ? (
+          <ProfileStatusOverlay
+            visible={mutedModalOpen}
+            colors={colors as any}
+            title="Account muted"
+            message={`You’ve muted ${at}.`}
+            onClose={() => {
+              setMutedModalOpen(false);
+              router.setParams({ view: "normal" } as any);
+            }}
+          />
+        ) : null}
 
         {picking && (
           <View style={styles.pickerOverlay} pointerEvents="auto">
@@ -388,6 +542,7 @@ export default function ProfileScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1 },
+
   pickerOverlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: "rgba(0,0,0,0.35)",
@@ -395,5 +550,51 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     zIndex: 999,
     elevation: 999,
+  },
+
+  bigWrap: {
+    paddingTop: 22,
+    paddingHorizontal: 16,
+    paddingBottom: 18,
+  },
+  bigTitle: {
+    fontSize: 34,
+    lineHeight: 40,
+    fontWeight: "800",
+    letterSpacing: -0.4,
+  },
+  bigBody: {
+    marginTop: 12,
+    fontSize: 15,
+    lineHeight: 20,
+    opacity: 0.92,
+  },
+
+  // deactivated UI
+  deactivatedHeader: {
+    height: 140,
+    opacity: 0.15,
+  },
+  deactivatedAvatarRow: {
+    marginTop: -26,
+    paddingHorizontal: 16,
+    flexDirection: "row",
+    alignItems: "flex-end",
+  },
+  deactivatedAvatarOuter: {
+    width: 88,
+    height: 88,
+    borderRadius: 999,
+    padding: 4,
+  },
+  deactivatedAvatarInner: {
+    width: 80,
+    height: 80,
+    borderRadius: 999,
+    opacity: 0.35,
+  },
+  deactivatedBody: {
+    paddingTop: 22,
+    paddingHorizontal: 16,
   },
 });

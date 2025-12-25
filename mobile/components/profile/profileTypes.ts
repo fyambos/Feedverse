@@ -7,7 +7,9 @@ export type ProfileViewState =
   | "suspended"
   | "deactivated"
   | "reactivated"
-  | "reported";
+  | "reported"
+  | "privated";
+  
 
 export type ProfileOverlayConfig = {
   state: Exclude<ProfileViewState, "normal">;
