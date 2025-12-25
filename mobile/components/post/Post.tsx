@@ -61,7 +61,6 @@ export function Post({
   const { scenarioId: scenarioIdParam } = useLocalSearchParams<{ scenarioId: string }>();
   const sid = String(scenarioId ?? item.scenarioId ?? scenarioIdParam ?? "");
 
-  // ✅ switched from handle -> profileId
   const profileIdSlug = profile.id;
 
   const openProfile = () => {
@@ -208,8 +207,6 @@ export function Post({
   }
 
   // ===== FEED / REPLY VIEW =====
-  // this prop name is still "replyingToHandle" in PostHeader.
-  // if you also renamed it there, update this accordingly.
   const replyingToHandle = replyingTo ? replyingTo : "";
 
   return (

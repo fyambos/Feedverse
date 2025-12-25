@@ -344,6 +344,7 @@ export default function ProfileScreen() {
         <ProfilePostsList
           colors={colors as any}
           sid={sid}
+          viewingProfileId={pid}
           items={items}
           initialLoading={initialLoading}
           loadingMore={loadingMore}
