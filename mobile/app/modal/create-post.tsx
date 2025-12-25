@@ -30,6 +30,7 @@ import { useAuth } from "@/context/auth";
 import { formatCount, makeId } from "@/lib/format";
 
 import { pickAndPersistManyImages } from "@/components/ui/ImagePicker";
+import { RowCard } from "@/components/ui/RowCard";
 
 const MAX_IMAGES = 4;
 
@@ -50,32 +51,6 @@ function randInt(min: number, max: number) {
 
 function toCountStringOrEmpty(n: number) {
   return n > 0 ? String(n) : "";
-}
-
-/* -------------------------------------------------------------------------- */
-/* RowCard                                                                     */
-/* -------------------------------------------------------------------------- */
-
-function RowCard({
-  label,
-  children,
-  right,
-  colors,
-}: {
-  label: string;
-  children?: React.ReactNode;
-  right?: React.ReactNode;
-  colors: any;
-}) {
-  return (
-    <View style={[styles.rowCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-      <View style={{ flex: 1 }}>
-        <ThemedText style={[styles.rowLabel, { color: colors.textSecondary }]}>{label}</ThemedText>
-        {children}
-      </View>
-      {right ? <View style={{ marginLeft: 12 }}>{right}</View> : null}
-    </View>
-  );
 }
 
 /* -------------------------------------------------------------------------- */
