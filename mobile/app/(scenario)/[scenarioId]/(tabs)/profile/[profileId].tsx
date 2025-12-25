@@ -1,37 +1,29 @@
 // mobile/app/(scenario)/[scenarioId]/(tabs)/profile/[profileId].tsx
-import React, { useCallback, useEffect, useMemo, useState, useRef } from "react";
-import {
-  ActivityIndicator,
-  Alert,
-  FlatList,
-  Image,
-  Platform,
-  Pressable,
-  StyleSheet,
-  View,
-} from "react-native";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ActivityIndicator, Alert, StyleSheet, View } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
-import { Ionicons, MaterialIcons } from "@expo/vector-icons";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 
 import { ThemedView } from "@/components/themed-view";
 import { ThemedText } from "@/components/themed-text";
 import { Colors } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
-import { Post as PostCard } from "@/components/post/Post";
 
 import { useAuth } from "@/context/auth";
 import { useAppData } from "@/context/appData";
 
-import { GestureHandlerRootView } from "react-native-gesture-handler";
-
-import { Avatar } from "@/components/ui/Avatar";
 import { pickAndPersistOneImage } from "@/components/ui/ImagePicker";
-import { formatCount, formatJoined } from "@/lib/format";
-
 import { Lightbox } from "@/components/media/LightBox";
-import { SwipeableRow } from "@/components/ui/SwipeableRow";
 
-import { canEditPost, canEditProfile } from "@/lib/permission";
+import { canEditProfile } from "@/lib/permission";
+
+import { ProfileHeaderMedia } from "@/components/profile/ProfileHeaderMedia";
+import { ProfileAvatarRow } from "@/components/profile/ProfileAvatarRow";
+import { ProfileBioBlock } from "@/components/profile/ProfileBioBlock";
+import { ProfileTabsBar } from "@/components/profile/ProfileTabsBar";
+import { ProfilePostsList } from "@/components/profile/ProfilePostsList";
+import { ProfileStatusOverlay } from "@/components/profile/ProfileStatusOverlay";
+import type { ProfileOverlayConfig } from "@/components/profile/profileTypes";
 
 type Cursor = string | null;
 const PAGE_SIZE = 10;
@@ -65,20 +57,15 @@ export default function ProfileScreen() {
     selectedProfileId: selectedId ? String(selectedId) : null,
   });
 
-  const [editMode, setEditMode] = useState<boolean>(false);
-
+  const [editMode, setEditMode] = useState(false);
   useEffect(() => {
     setEditMode(!!isCurrentSelected);
   }, [isCurrentSelected]);
 
+  const showCameras = editMode;
+
+  // -------- picker lock
   const [picking, setPicking] = useState(false);
-
-  const [lightboxOpen, setLightboxOpen] = useState(false);
-  const [lightboxUrls, setLightboxUrls] = useState<string[]>([]);
-  const [lightboxIndex, setLightboxIndex] = useState(0);
-
-  const avatarUri = profile?.avatarUrl ?? null;
-  const headerUri = profile?.headerUrl ?? null;
 
   const withPickerLock = useCallback(
     async <T,>(fn: () => Promise<T>) => {
@@ -92,6 +79,15 @@ export default function ProfileScreen() {
     },
     [picking]
   );
+
+  const denyModify = useCallback(() => {
+    Alert.alert("Not allowed", "You can't modify this profile.");
+  }, []);
+
+  // -------- lightbox
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [lightboxUrls, setLightboxUrls] = useState<string[]>([]);
+  const [lightboxIndex, setLightboxIndex] = useState(0);
 
   const openLightbox = useCallback((urls: Array<string | null | undefined>, initialIndex = 0) => {
     const clean = urls.filter((u): u is string => typeof u === "string" && u.length > 0);
@@ -107,9 +103,8 @@ export default function ProfileScreen() {
     setLightboxIndex(0);
   }, []);
 
-  const denyModify = useCallback(() => {
-    Alert.alert("Not allowed", "You can't modify this profile.");
-  }, []);
+  const avatarUri = profile?.avatarUrl ?? null;
+  const headerUri = profile?.headerUrl ?? null;
 
   const onChangeAvatar = useCallback(async () => {
     if (!profile) return;
@@ -135,6 +130,7 @@ export default function ProfileScreen() {
     await upsertProfile({ ...profile, headerUrl: uri });
   }, [profile, canModifyProfile, denyModify, upsertProfile, withPickerLock]);
 
+  // -------- posts paging
   const [items, setItems] = useState<any[]>([]);
   const [cursor, setCursor] = useState<Cursor>(null);
   const [hasMore, setHasMore] = useState(true);
@@ -194,10 +190,23 @@ export default function ProfileScreen() {
     if (isReady && profile) loadFirstPage();
   }, [isReady, profile, sid, loadFirstPage]);
 
+  // keep delete confirm here (so ProfilePostsList stays dumb)
   const onDeletePost = useCallback(
     async (postId: string) => {
-      await deletePost(postId);
-      loadFirstPage();
+      return new Promise<void>((resolve) => {
+        Alert.alert("Delete post?", "This will remove the post.", [
+          { text: "Cancel", style: "cancel", onPress: () => resolve() },
+          {
+            text: "Delete",
+            style: "destructive",
+            onPress: async () => {
+              await deletePost(postId);
+              loadFirstPage();
+              resolve();
+            },
+          },
+        ]);
+      });
     },
     [deletePost, loadFirstPage]
   );
@@ -218,11 +227,16 @@ export default function ProfileScreen() {
     Alert.alert("Not yet", "Follow logic later.");
   }, [profile, editMode, canModifyProfile, denyModify, sid]);
 
-  const onLongPressPrimary = useCallback(() => {
-    setEditMode((v) => !v);
-  }, []);
+  const onLongPressPrimary = useCallback(() => setEditMode((v) => !v), []);
 
-  const showCameras = editMode;
+  // -------- moderation/profile states (placeholder for later)
+  // When you implement: compute this based on viewer/profile relations and show overlay and/or change empty state.
+  const overlay: ProfileOverlayConfig | null = null;
+  const [overlayOpen, setOverlayOpen] = useState(false);
+
+  useEffect(() => {
+    setOverlayOpen(!!overlay);
+  }, [overlay]);
 
   if (!isReady) {
     return (
@@ -249,273 +263,48 @@ export default function ProfileScreen() {
     );
   }
 
+  const headerEl = (
+    <View style={overlay?.dimUnderlying ? { opacity: 0.45 } : undefined}>
+      <ProfileHeaderMedia
+        colors={colors as any}
+        headerUri={headerUri}
+        showCameras={showCameras}
+        picking={picking}
+        onOpenLightbox={() => openLightbox([headerUri], 0)}
+        onChangeHeader={onChangeHeader}
+      />
+
+      <ProfileAvatarRow
+        colors={colors as any}
+        avatarUri={avatarUri}
+        showCameras={showCameras}
+        picking={picking}
+        onOpenAvatarLightbox={() => openLightbox([avatarUri], 0)}
+        onChangeAvatar={onChangeAvatar}
+        editMode={editMode}
+        onPressPrimary={onPressPrimary}
+        onLongPressPrimary={onLongPressPrimary}
+      />
+
+      <ProfileBioBlock colors={colors as any} profile={profile} />
+      <ProfileTabsBar colors={colors as any} />
+    </View>
+  );
+
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <ThemedView style={[styles.screen, { backgroundColor: colors.background }]}>
-        <FlatList
-          data={items}
-          keyExtractor={(p) => String(p.id)}
-          onEndReachedThreshold={0.6}
-          onEndReached={() => {
-            if (!initialLoading) loadMore();
-          }}
-          ListFooterComponent={() => {
-            if (!loadingMore) return <View style={{ height: 24 }} />;
-            return (
-              <View style={{ paddingVertical: 16, alignItems: "center" }}>
-                <ActivityIndicator />
-              </View>
-            );
-          }}
-          ItemSeparatorComponent={() => (
-            <View
-              style={{
-                height: StyleSheet.hairlineWidth,
-                backgroundColor: colors.border,
-                opacity: 0.9,
-              }}
-            />
-          )}
-          contentContainerStyle={{ paddingBottom: Platform.OS === "ios" ? 24 : 16 }}
-          ListHeaderComponent={() => (
-            <View>
-              {/* HEADER IMAGE */}
-              <View style={[styles.headerMediaWrap, { backgroundColor: colors.border }]}>
-                {headerUri ? <Image source={{ uri: headerUri }} style={styles.headerMedia} /> : null}
-
-                <Pressable
-                  onPress={() => openLightbox([headerUri], 0)}
-                  style={StyleSheet.absoluteFill}
-                  accessibilityRole="button"
-                  accessibilityLabel="View header"
-                />
-
-                <Pressable
-                  onPress={() => router.back()}
-                  hitSlop={12}
-                  style={({ pressed }) => [
-                    styles.backBtn,
-                    { backgroundColor: "rgba(0,0,0,0.55)", opacity: pressed ? 0.75 : 1 },
-                  ]}
-                >
-                  <MaterialIcons name="keyboard-arrow-left" size={24} color="#fff" />
-                </Pressable>
-
-                {showCameras ? (
-                  <View style={styles.headerControls}>
-                    <Pressable
-                      onPress={onChangeHeader}
-                      disabled={picking}
-                      hitSlop={12}
-                      style={({ pressed }) => [
-                        styles.headerIconBtn,
-                        pressed && { opacity: 0.75 },
-                        picking && { opacity: 0.5 },
-                      ]}
-                      accessibilityRole="button"
-                      accessibilityLabel="Change header"
-                    >
-                      <Ionicons name="camera" size={16} color="#fff" />
-                    </Pressable>
-                  </View>
-                ) : null}
-              </View>
-
-              {/* AVATAR ROW */}
-              <View style={styles.avatarRow}>
-                <View style={[styles.avatarOuter, { backgroundColor: colors.background }]}>
-                  <Pressable
-                    onPress={() => openLightbox([avatarUri], 0)}
-                    onLongPress={showCameras ? onChangeAvatar : undefined}
-                    delayLongPress={250}
-                  >
-                    <Avatar uri={avatarUri} size={80} fallbackColor={colors.border} />
-                  </Pressable>
-
-                  {showCameras ? (
-                    <Pressable
-                      onPress={onChangeAvatar}
-                      disabled={picking}
-                      hitSlop={12}
-                      style={({ pressed }) => [
-                        styles.avatarEditBadge,
-                        { backgroundColor: colors.card, borderColor: colors.border },
-                        pressed && styles.pressedPop,
-                        picking && { opacity: 0.6 },
-                      ]}
-                      accessibilityRole="button"
-                      accessibilityLabel="Change avatar"
-                    >
-                      <Ionicons name="camera" size={16} color={colors.text} />
-                    </Pressable>
-                  ) : null}
-                </View>
-
-                <View style={{ flex: 1 }} />
-
-                {/* Primary button (Follow/Edit) */}
-                {editMode ? (
-                  <Pressable
-                    onPress={onPressPrimary}
-                    onLongPress={onLongPressPrimary}
-                    delayLongPress={250}
-                    style={({ pressed }) => [
-                      styles.ghostBtn,
-                      {
-                        borderColor: colors.border,
-                        backgroundColor: pressed ? colors.pressed : colors.background,
-                      },
-                    ]}
-                  >
-                    <ThemedText style={{ fontWeight: "700", color: colors.text }}>Edit profile</ThemedText>
-                  </Pressable>
-                ) : (
-                  <Pressable
-                    onPress={onPressPrimary}
-                    onLongPress={onLongPressPrimary}
-                    delayLongPress={250}
-                    style={({ pressed }) => [
-                      styles.primaryBtn,
-                      { backgroundColor: colors.text, opacity: pressed ? 0.85 : 1 },
-                    ]}
-                  >
-                    <ThemedText style={{ fontWeight: "800", color: colors.background }}>Follow</ThemedText>
-                  </Pressable>
-                )}
-              </View>
-
-              {/* BIO */}
-              <View style={styles.bioBlock}>
-                <ThemedText type="defaultSemiBold" style={[styles.displayName, { color: colors.text }]}>
-                  {profile.displayName}
-                </ThemedText>
-
-                <ThemedText style={[styles.handle, { color: colors.textSecondary }]}>@{profile.handle}</ThemedText>
-
-                {!!profile.bio && <ThemedText style={[styles.bio, { color: colors.text }]}>{profile.bio}</ThemedText>}
-
-                <View style={styles.metaRow}>
-                  <View style={styles.metaItem}>
-                    <Ionicons name="location-outline" size={14} color={colors.textSecondary} />
-                    <ThemedText style={[styles.metaText, { color: colors.textSecondary }]}>
-                      {profile.location ?? "—"}
-                    </ThemedText>
-                  </View>
-
-                  <View style={styles.metaItem}>
-                    <Ionicons name="link-outline" size={14} color={colors.textSecondary} />
-                    {profile.link ? (
-                      <ThemedText style={[styles.metaText, { color: colors.tint }]}>
-                        {profile.link.replace(/^https?:\/\//, "")}
-                      </ThemedText>
-                    ) : (
-                      <ThemedText style={[styles.metaText, { color: colors.textSecondary }]}>—</ThemedText>
-                    )}
-                  </View>
-                </View>
-
-                <View style={styles.metaRow}>
-                  <View style={styles.metaItem}>
-                    <Ionicons name="calendar-outline" size={14} color={colors.textSecondary} />
-                    <ThemedText style={[styles.metaText, { color: colors.textSecondary }]}>
-                      {profile.joinedDate ? formatJoined(profile.joinedDate) : "Joined"}
-                    </ThemedText>
-                  </View>
-                </View>
-
-                <View style={styles.followsRow}>
-                  <ThemedText style={{ color: colors.text }}>
-                    <ThemedText type="defaultSemiBold">{formatCount(profile.followingCount ?? 0)}</ThemedText>{" "}
-                    <ThemedText style={{ color: colors.textSecondary }}>Following</ThemedText>
-                  </ThemedText>
-
-                  <ThemedText style={{ color: colors.text }}>
-                    <ThemedText type="defaultSemiBold">{formatCount(profile.followerCount ?? 0)}</ThemedText>{" "}
-                    <ThemedText style={{ color: colors.textSecondary }}>Followers</ThemedText>
-                  </ThemedText>
-                </View>
-              </View>
-
-              {/* Tabs (UI only for now) */}
-              <View style={[styles.tabsBar, { borderBottomColor: colors.border }]}>
-                <Pressable style={({ pressed }) => [styles.tab, pressed && { opacity: 0.7 }]}>
-                  <ThemedText type="defaultSemiBold" style={{ color: colors.text }}>
-                    Posts
-                  </ThemedText>
-                  <View style={[styles.tabUnderline, { backgroundColor: colors.tint }]} />
-                </Pressable>
-
-                <Pressable style={({ pressed }) => [styles.tab, pressed && { opacity: 0.7 }]}>
-                  <ThemedText style={{ color: colors.textSecondary }}>Replies</ThemedText>
-                </Pressable>
-
-                <Pressable style={({ pressed }) => [styles.tab, pressed && { opacity: 0.7 }]}>
-                  <ThemedText style={{ color: colors.textSecondary }}>Media</ThemedText>
-                </Pressable>
-
-                <Pressable style={({ pressed }) => [styles.tab, pressed && { opacity: 0.7 }]}>
-                  <ThemedText style={{ color: colors.textSecondary }}>Likes</ThemedText>
-                </Pressable>
-              </View>
-            </View>
-          )}
-          renderItem={({ item }) => {
-            const authorProfile = getProfileById(String(item.authorProfileId));
-            if (!authorProfile) return null;
-
-            const canEditThisPost = canEditPost({ authorProfile, userId });
-
-            const row = (
-              <Pressable
-                onPress={() => router.push(`/(scenario)/${sid}/(tabs)/post/${String(item.id)}` as any)}
-                style={({ pressed }) => [{ backgroundColor: pressed ? colors.pressed : colors.background }]}
-              >
-                <PostCard scenarioId={sid} profile={authorProfile} item={item} variant="feed" showActions />
-              </Pressable>
-            );
-
-            return (
-              <SwipeableRow
-                enabled={canEditThisPost}
-                colors={colors}
-                rightThreshold={40}
-                onEdit={() => {
-                  router.push({
-                    pathname: "/modal/create-post",
-                    params: { scenarioId: sid, mode: "edit", postId: String(item.id) },
-                  } as any);
-                }}
-                onDelete={() => {
-                  Alert.alert("Delete post?", "This will remove the post.", [
-                    { text: "Cancel", style: "cancel" },
-                    {
-                      text: "Delete",
-                      style: "destructive",
-                      onPress: async () => {
-                        await onDeletePost(String(item.id));
-                      },
-                    },
-                  ]);
-                }}
-              >
-                {row}
-              </SwipeableRow>
-            );
-          }}
-          ListEmptyComponent={() => {
-            if (initialLoading) {
-              return (
-                <View style={{ padding: 18 }}>
-                  <ActivityIndicator />
-                </View>
-              );
-            }
-            return (
-              <View style={{ padding: 18 }}>
-                <ThemedText style={{ color: colors.textSecondary }}>No posts yet.</ThemedText>
-              </View>
-            );
-          }}
+        <ProfilePostsList
+          colors={colors as any}
+          sid={sid}
+          items={items}
+          initialLoading={initialLoading}
+          loadingMore={loadingMore}
+          onLoadMore={loadMore}
+          getProfileById={getProfileById as any}
+          userId={userId ?? null}
+          onDeletePost={onDeletePost}
+          ListHeaderComponent={headerEl}
         />
 
         {picking && (
@@ -532,6 +321,16 @@ export default function ProfileScreen() {
           title={profile.displayName}
           allowSave
         />
+
+        {overlay ? (
+          <ProfileStatusOverlay
+            visible={overlayOpen}
+            colors={colors as any}
+            title={overlay.title}
+            message={overlay.message}
+            onClose={() => setOverlayOpen(false)}
+          />
+        ) : null}
       </ThemedView>
     </GestureHandlerRootView>
   );
@@ -539,77 +338,6 @@ export default function ProfileScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1 },
-
-  headerMediaWrap: { height: 140, width: "100%", overflow: "hidden", position: "relative" },
-  headerMedia: { width: "100%", height: "100%" },
-
-  backBtn: {
-    position: "absolute",
-    left: 10,
-    top: "50%",
-    transform: [{ translateY: -17 }],
-    width: 34,
-    height: 34,
-    borderRadius: 999,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "rgba(255,255,255,0.18)",
-    zIndex: 10,
-  },
-
-  headerControls: { position: "absolute", right: 10, bottom: 10, flexDirection: "row", gap: 10, zIndex: 10 },
-  headerIconBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 999,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "rgba(0,0,0,0.55)",
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "rgba(255,255,255,0.18)",
-  },
-
-  avatarRow: { marginTop: -26, paddingHorizontal: 16, flexDirection: "row", alignItems: "flex-end", gap: 12 },
-  avatarOuter: { width: 88, height: 88, borderRadius: 999, padding: 4 },
-  avatarEditBadge: {
-    position: "absolute",
-    right: 2,
-    bottom: 2,
-    width: 28,
-    height: 28,
-    borderRadius: 999,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    zIndex: 20,
-    elevation: 20,
-  },
-
-  ghostBtn: {
-    height: 34,
-    paddingHorizontal: 14,
-    borderRadius: 999,
-    borderWidth: 1,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  primaryBtn: { height: 34, paddingHorizontal: 18, borderRadius: 999, alignItems: "center", justifyContent: "center" },
-
-  bioBlock: { paddingHorizontal: 16, paddingTop: 10, paddingBottom: 12, gap: 6 },
-  displayName: { fontSize: 20, fontWeight: "900", lineHeight: 24 },
-  handle: { fontSize: 14, marginTop: -2 },
-  bio: { fontSize: 15, lineHeight: 20, marginTop: 6 },
-
-  metaRow: { flexDirection: "row", flexWrap: "wrap", gap: 14, marginTop: 6, alignItems: "center" },
-  metaItem: { flexDirection: "row", alignItems: "center", gap: 6 },
-  metaText: { fontSize: 13 },
-
-  followsRow: { flexDirection: "row", gap: 16, marginTop: 8 },
-
-  tabsBar: { flexDirection: "row", justifyContent: "space-around", borderBottomWidth: StyleSheet.hairlineWidth },
-  tab: { paddingVertical: 12, paddingHorizontal: 10, alignItems: "center", gap: 8 },
-  tabUnderline: { height: 4, width: 48, borderRadius: 999, marginTop: 6 },
 
   pickerOverlay: {
     ...StyleSheet.absoluteFillObject,
@@ -619,6 +347,4 @@ const styles = StyleSheet.create({
     zIndex: 999,
     elevation: 999,
   },
-
-  pressedPop: { transform: [{ scale: 0.92 }] },
 });
