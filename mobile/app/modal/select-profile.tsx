@@ -10,6 +10,9 @@ import { Colors } from "@/constants/theme";
 import { useAppData } from "@/context/appData";
 import { useAuth } from "@/context/auth";
 
+import type { Profile } from "@/data/db/schema";
+import { canEditProfile } from "@/lib/permission";
+
 type TabKey = "mine" | "public";
 type ViewMode = "tabs" | "all"; // tabs = Mine/Public, all = single list (no tabs)
 
@@ -47,16 +50,21 @@ export default function SelectProfileModal() {
     [allProfiles, userId]
   );
 
-  const data =
-    mode === "all" ? allProfiles : tab === "mine" ? mine : publicProfiles;
+  const data = mode === "all" ? allProfiles : tab === "mine" ? mine : publicProfiles;
 
   const current = getSelectedProfileId(sid);
 
-  const Row = ({ item }: { item: any }) => {
+  const Row = ({ item }: { item: Profile }) => {
     const selectEnabled = mode !== "all"; //
 
     const active = String(item.id) === String(current);
     const owner = getUserById?.(String(item.ownerUserId));
+
+    const canEditThis = canEditProfile({
+      profile: item,
+      userId: userId ?? null,
+      selectedProfileId: current ?? null,
+    });
 
     return (
       <Pressable
@@ -83,9 +91,34 @@ export default function SelectProfileModal() {
           )}
 
           <View style={{ flex: 1, minWidth: 0 }}>
-            <ThemedText type="defaultSemiBold" numberOfLines={1}>
-              {item.displayName}
-            </ThemedText>
+            {/* name row + edit icon */}
+            <View style={styles.nameRow}>
+              <ThemedText type="defaultSemiBold" numberOfLines={1} style={{ flexShrink: 1 }}>
+                {item.displayName}
+              </ThemedText>
+
+              {canEditThis ? (
+                <Pressable
+                  onPress={(e) => {
+                    // prevent selecting profile when tapping pencil
+                    e?.stopPropagation?.();
+                    router.push({
+                      pathname: "/modal/create-profile",
+                      params: { scenarioId: sid, mode: "edit", profileId: String(item.id) },
+                    } as any);
+                  }}
+                  hitSlop={10}
+                  style={({ pressed }) => [
+                    styles.editIconBtn,
+                    { backgroundColor: pressed ? colors.pressed : "transparent" },
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Edit profile"
+                >
+                  <Ionicons name="create-outline" size={16} color={colors.textSecondary} />
+                </Pressable>
+              ) : null}
+            </View>
 
             <View style={styles.handleRow}>
               <ThemedText numberOfLines={1} style={{ color: colors.textSecondary }}>
@@ -121,7 +154,6 @@ export default function SelectProfileModal() {
       </Pressable>
     );
   };
-
 
   const CreateProfileHeader = () => {
     // show only when user is in Mine tab mode (not All, not Public)
@@ -204,7 +236,7 @@ export default function SelectProfileModal() {
         ItemSeparatorComponent={() => (
           <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: colors.border }} />
         )}
-        renderItem={({ item }) => <Row item={item} />}
+        renderItem={({ item }) => <Row item={item as Profile} />}
         ListEmptyComponent={() => (
           <View style={{ padding: 24 }}>
             <ThemedText style={{ color: colors.textSecondary }}>
@@ -293,6 +325,19 @@ const styles = StyleSheet.create({
     gap: 12,
     flex: 1,
     minWidth: 0,
+  },
+
+  nameRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+
+  editIconBtn: {
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+    borderRadius: 999,
+    marginLeft: 2,
   },
 
   right: {
