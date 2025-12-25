@@ -14,6 +14,13 @@ type ColorsLike = {
   text: string;
 };
 
+type PrimaryButtonOverride = {
+  label: string;
+  // "primary" keeps your original Follow styling
+  // "danger" makes it twitter-like outlined red for Blocked
+  variant?: "primary" | "danger";
+};
+
 type Props = {
   colors: ColorsLike;
   avatarUri: string | null;
@@ -26,6 +33,8 @@ type Props = {
   editMode: boolean;
   onPressPrimary: () => void;
   onLongPressPrimary: () => void;
+
+  primaryButtonOverride?: PrimaryButtonOverride;
 };
 
 export function ProfileAvatarRow({
@@ -38,7 +47,17 @@ export function ProfileAvatarRow({
   editMode,
   onPressPrimary,
   onLongPressPrimary,
+  primaryButtonOverride,
 }: Props) {
+  const overrideLabel = primaryButtonOverride?.label;
+  const overrideVariant = primaryButtonOverride?.variant ?? "primary";
+
+  const dangerRed = "#ff3b30";
+
+  const primaryLabel = overrideLabel ?? "Follow";
+
+  const isDanger = overrideVariant === "danger";
+
   return (
     <View style={styles.avatarRow}>
       <View style={[styles.avatarOuter, { backgroundColor: colors.background }]}>
@@ -88,9 +107,30 @@ export function ProfileAvatarRow({
           onPress={onPressPrimary}
           onLongPress={onLongPressPrimary}
           delayLongPress={250}
-          style={({ pressed }) => [styles.primaryBtn, { backgroundColor: colors.text, opacity: pressed ? 0.85 : 1 }]}
+          style={({ pressed }) => [
+            styles.primaryBtn,
+            // ✅ primary vs danger styling
+            isDanger
+              ? {
+                  backgroundColor: "transparent",
+                  borderWidth: 1,
+                  borderColor: dangerRed,
+                }
+              : {
+                  backgroundColor: colors.text,
+                  borderWidth: 0,
+                },
+            pressed && { opacity: 0.85 },
+          ]}
         >
-          <ThemedText style={{ fontWeight: "800", color: colors.background }}>Follow</ThemedText>
+          <ThemedText
+            style={{
+              fontWeight: "800",
+              color: isDanger ? dangerRed : colors.background,
+            }}
+          >
+            {primaryLabel}
+          </ThemedText>
         </Pressable>
       )}
     </View>
@@ -122,7 +162,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  primaryBtn: { height: 34, paddingHorizontal: 18, borderRadius: 999, alignItems: "center", justifyContent: "center" },
+  primaryBtn: {
+    height: 34,
+    paddingHorizontal: 18,
+    borderRadius: 999,
+    alignItems: "center",
+    justifyContent: "center",
+  },
 
   pressedPop: { transform: [{ scale: 0.92 }] },
 });

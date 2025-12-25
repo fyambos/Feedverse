@@ -4,84 +4,85 @@ import { StyleSheet, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
 import { ThemedText } from "@/components/themed-text";
-import { formatCount, formatJoined } from "@/lib/format";
 import type { Profile } from "@/data/db/schema";
+import type { ProfileViewState } from "@/components/profile/profileTypes";
 
 type ColorsLike = {
   text: string;
   textSecondary: string;
-  tint: string;
 };
 
 type Props = {
   colors: ColorsLike;
   profile: Profile;
+
+  viewState?: ProfileViewState;
+
+  showStats?: boolean;
+  forceStats?: { following: number; followers: number };
+
+  showLockOnName?: boolean;
 };
 
-export function ProfileBioBlock({ colors, profile }: Props) {
+export function ProfileBioBlock({
+  colors,
+  profile,
+  showStats = true,
+  forceStats,
+  showLockOnName,
+}: Props) {
+  const following =
+    typeof forceStats?.following === "number"
+      ? forceStats.following
+      : Number(profile.followingCount ?? 0);
+
+  const followers =
+    typeof forceStats?.followers === "number"
+      ? forceStats.followers
+      : Number((profile as any).followerCount ?? (profile as any).followersCount ?? 0);
+
   return (
-    <View style={styles.bioBlock}>
-      <ThemedText type="defaultSemiBold" style={[styles.displayName, { color: colors.text }]}>
-        {profile.displayName}
+    <View style={styles.wrap}>
+      <View style={styles.nameRow}>
+        <ThemedText type="defaultSemiBold" style={[styles.displayName, { color: colors.text }]} numberOfLines={1}>
+          {profile.displayName}
+        </ThemedText>
+
+        {showLockOnName ? (
+          <Ionicons name="lock-closed" size={16} color={colors.textSecondary} style={{ marginLeft: 6, marginTop: 2 }} />
+        ) : null}
+      </View>
+
+      <ThemedText style={[styles.handle, { color: colors.textSecondary }]} numberOfLines={1}>
+        @{profile.handle}
       </ThemedText>
 
-      <ThemedText style={[styles.handle, { color: colors.textSecondary }]}>@{profile.handle}</ThemedText>
+      {!!profile.bio ? (
+        <ThemedText style={[styles.bio, { color: colors.text }]}>{profile.bio}</ThemedText>
+      ) : null}
 
-      {!!profile.bio && <ThemedText style={[styles.bio, { color: colors.text }]}>{profile.bio}</ThemedText>}
+      {showStats ? (
+        <View style={styles.statsRow}>
+          <ThemedText style={{ color: colors.text }}>
+            <ThemedText type="defaultSemiBold">{following}</ThemedText>{" "}
+            <ThemedText style={{ color: colors.textSecondary }}>Following</ThemedText>
+          </ThemedText>
 
-      <View style={styles.metaRow}>
-        <View style={styles.metaItem}>
-          <Ionicons name="location-outline" size={14} color={colors.textSecondary} />
-          <ThemedText style={[styles.metaText, { color: colors.textSecondary }]}>
-            {profile.location ?? "—"}
+          <ThemedText style={{ color: colors.text }}>
+            <ThemedText type="defaultSemiBold">{followers}</ThemedText>{" "}
+            <ThemedText style={{ color: colors.textSecondary }}>Followers</ThemedText>
           </ThemedText>
         </View>
-
-        <View style={styles.metaItem}>
-          <Ionicons name="link-outline" size={14} color={colors.textSecondary} />
-          {profile.link ? (
-            <ThemedText style={[styles.metaText, { color: colors.tint }]}>
-              {profile.link.replace(/^https?:\/\//, "")}
-            </ThemedText>
-          ) : (
-            <ThemedText style={[styles.metaText, { color: colors.textSecondary }]}>—</ThemedText>
-          )}
-        </View>
-      </View>
-
-      <View style={styles.metaRow}>
-        <View style={styles.metaItem}>
-          <Ionicons name="calendar-outline" size={14} color={colors.textSecondary} />
-          <ThemedText style={[styles.metaText, { color: colors.textSecondary }]}>
-            {profile.joinedDate ? formatJoined(profile.joinedDate) : "Joined"}
-          </ThemedText>
-        </View>
-      </View>
-
-      <View style={styles.followsRow}>
-        <ThemedText style={{ color: colors.text }}>
-          <ThemedText type="defaultSemiBold">{formatCount(profile.followingCount ?? 0)}</ThemedText>{" "}
-          <ThemedText style={{ color: colors.textSecondary }}>Following</ThemedText>
-        </ThemedText>
-
-        <ThemedText style={{ color: colors.text }}>
-          <ThemedText type="defaultSemiBold">{formatCount(profile.followerCount ?? 0)}</ThemedText>{" "}
-          <ThemedText style={{ color: colors.textSecondary }}>Followers</ThemedText>
-        </ThemedText>
-      </View>
+      ) : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  bioBlock: { paddingHorizontal: 16, paddingTop: 10, paddingBottom: 12, gap: 6 },
-  displayName: { fontSize: 20, fontWeight: "900", lineHeight: 24 },
-  handle: { fontSize: 14, marginTop: -2 },
-  bio: { fontSize: 15, lineHeight: 20, marginTop: 6 },
-
-  metaRow: { flexDirection: "row", flexWrap: "wrap", gap: 14, marginTop: 6, alignItems: "center" },
-  metaItem: { flexDirection: "row", alignItems: "center", gap: 6 },
-  metaText: { fontSize: 13 },
-
-  followsRow: { flexDirection: "row", gap: 16, marginTop: 8 },
+  wrap: { paddingHorizontal: 16, paddingTop: 10, paddingBottom: 12 },
+  nameRow: { flexDirection: "row", alignItems: "center", maxWidth: "100%" },
+  displayName: { fontSize: 22, lineHeight: 26, maxWidth: "92%" },
+  handle: { marginTop: 2, fontSize: 15, opacity: 0.95 },
+  bio: { marginTop: 10, fontSize: 15, lineHeight: 20 },
+  statsRow: { marginTop: 12, flexDirection: "row", gap: 14 },
 });

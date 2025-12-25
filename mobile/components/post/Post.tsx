@@ -1,3 +1,4 @@
+// mobile/components/post/Post.tsx
 import React from "react";
 import { Alert, Modal, Pressable, StyleSheet, View } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
@@ -30,6 +31,17 @@ type Props = {
   showActions?: boolean;
 };
 
+type ProfileViewState =
+  | "normal"
+  | "muted"
+  | "blocked"
+  | "blocked_by"
+  | "suspended"
+  | "deactivated"
+  | "reactivated"
+  | "reported"
+  | "privated";
+
 /* -------------------------------------------------------------------------- */
 /* Helpers                                                                    */
 /* -------------------------------------------------------------------------- */
@@ -37,6 +49,28 @@ type Props = {
 function pluralize(n: number, singular: string, plural?: string) {
   const p = plural ?? `${singular}s`;
   return n === 1 ? singular : p;
+}
+
+function menuLabelToView(label: string): ProfileViewState | null {
+  switch (label) {
+    case "Block account":
+      return "blocked";
+    case "Get Blocked":
+      return "blocked_by";
+    case "Suspend account":
+      return "suspended";
+    case "Deactivate account":
+      return "deactivated";
+    case "Reactivate account":
+      return "reactivated";
+    case "Private account":
+      return "privated";
+    case "Mute account":
+      return "muted";
+    // NOTE: "Report post" is intentionally NOT mapped here.
+    default:
+      return null;
+  }
 }
 
 /* -------------------------------------------------------------------------- */
@@ -63,13 +97,15 @@ export function Post({
 
   const profileIdSlug = profile.id;
 
-  const openProfile = () => {
+  const openProfile = (view?: ProfileViewState) => {
     if (!sid || !profileIdSlug) return;
-    router.push(
-      `/(scenario)/${encodeURIComponent(sid)}/(tabs)/profile/${encodeURIComponent(
+
+    router.push({
+      pathname: `/(scenario)/${encodeURIComponent(sid)}/(tabs)/profile/${encodeURIComponent(
         profileIdSlug
-      )}` as any
-    );
+      )}`,
+      params: view ? { view } : {},
+    } as any);
   };
 
   const replyCount = item.replyCount ?? 0;
@@ -98,22 +134,37 @@ export function Post({
   // ----- menu
   const [menuOpen, setMenuOpen] = React.useState(false);
 
-  const MENU_OPTIONS = React.useMemo(
+  // keep this as the only "real" action
+  const REPORT_LABEL = "Report post";
+
+  // state previews (your existing ones)
+  const STATE_OPTIONS = React.useMemo(
     () => [
       "Block account",
-      "Report post",
       "Mute account",
       "Get Blocked",
       "Suspend account",
       "Deactivate account",
       "Reactivate account",
+      "Private account",
+      // keep "reported" state accessible if you want it (but NOT via "Report post"):
+      // "Show reported state",
     ],
     []
   );
 
-  const onMenuOption = (label: string) => {
+  const onReportPost = () => {
     setMenuOpen(false);
-    Alert.alert("Coming soon", label);
+
+    // real report entry point (not implemented yet)
+    // later you can router.push("/modal/report-post", {postId...}) or open a custom modal
+    Alert.alert("Report post", "Coming soon.");
+  };
+
+  const onStateOption = (label: string) => {
+    setMenuOpen(false);
+    const view = menuLabelToView(label);
+    if (view) openProfile(view);
   };
 
   const MenuModal = () => (
@@ -130,10 +181,26 @@ export function Post({
             { backgroundColor: colors.background, borderColor: colors.border },
           ]}
         >
-          {MENU_OPTIONS.map((label) => (
+          {/* Real report action */}
+          <Pressable
+            onPress={onReportPost}
+            style={({ pressed }) => [
+              styles.menuItem,
+              { backgroundColor: pressed ? colors.pressed : "transparent" },
+            ]}
+          >
+            <ThemedText style={{ color: "#ff3b30", fontSize: 15, fontWeight: "600" }}>
+              {REPORT_LABEL}
+            </ThemedText>
+          </Pressable>
+
+          <View style={[styles.menuDivider, { backgroundColor: colors.border }]} />
+
+          {/* State previews */}
+          {STATE_OPTIONS.map((label) => (
             <Pressable
               key={label}
-              onPress={() => onMenuOption(label)}
+              onPress={() => onStateOption(label)}
               style={({ pressed }) => [
                 styles.menuItem,
                 { backgroundColor: pressed ? colors.pressed : "transparent" },
@@ -156,7 +223,7 @@ export function Post({
           colors={colors}
           profile={profile}
           createdAtIso={item.createdAt}
-          onOpenProfile={openProfile}
+          onOpenProfile={() => openProfile()}
           onOpenMenu={() => setMenuOpen(true)}
         />
 
@@ -212,7 +279,7 @@ export function Post({
   return (
     <View style={styles.wrapReply}>
       <View style={styles.row}>
-        <Pressable onPress={openProfile} hitSlop={0} style={styles.avatarPress}>
+        <Pressable onPress={() => openProfile()} hitSlop={0} style={styles.avatarPress}>
           <Avatar uri={profile.avatarUrl} size={44} fallbackColor={colors.border} />
         </Pressable>
 
@@ -224,7 +291,7 @@ export function Post({
             createdAtIso={item.createdAt}
             isReply={isReply}
             replyingToHandle={replyingToHandle}
-            onOpenProfile={openProfile}
+            onOpenProfile={() => openProfile()}
             onOpenMenu={() => setMenuOpen(true)}
           />
 
@@ -294,4 +361,11 @@ const styles = StyleSheet.create({
   },
 
   menuItem: { paddingVertical: 12, paddingHorizontal: 12, borderRadius: 12 },
+
+  menuDivider: {
+    height: StyleSheet.hairlineWidth,
+    opacity: 0.9,
+    marginVertical: 6,
+    marginHorizontal: 8,
+  },
 });
