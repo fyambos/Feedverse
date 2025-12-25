@@ -1,11 +1,11 @@
 // mobile/components/profile/ProfileBioBlock.tsx
 import React from "react";
 import { StyleSheet, View } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
 
 import { ThemedText } from "@/components/themed-text";
 import type { Profile } from "@/data/db/schema";
 import type { ProfileViewState } from "@/components/profile/profileTypes";
+import { Fontisto } from "@expo/vector-icons";
 
 type ColorsLike = {
   text: string;
@@ -49,7 +49,7 @@ export function ProfileBioBlock({
         </ThemedText>
 
         {showLockOnName ? (
-          <Ionicons name="lock-closed" size={16} color={colors.textSecondary} style={{ marginLeft: 6, marginTop: 2 }} />
+          <Fontisto name="locked" size={16} color={colors.text} style={{ marginLeft: 6, marginTop: 2 }} />
         ) : null}
       </View>
 

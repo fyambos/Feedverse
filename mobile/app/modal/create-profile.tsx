@@ -10,6 +10,7 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   TextInput,
   View,
 } from "react-native";
@@ -91,20 +92,21 @@ export default function CreateProfileModal() {
   const [handle, setHandle] = useState(existing?.handle ?? "");
   const [bio, setBio] = useState(existing?.bio ?? "");
 
-  const [avatarUrl, setAvatarUrl] = useState<string | null>(
-    existing?.avatarUrl ?? null
-  );
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(existing?.avatarUrl ?? null);
+
+  // ✅ new: settings sliders
+  // Shared means "other users can play/use this character"
+  const [isPublic, setIsPublic] = useState<boolean>(existing?.isPublic ?? true);
+
+  // Private account is purely UI (lock + protected posts UI)
+  const [isPrivate, setIsPrivate] = useState<boolean>(existing?.isPrivate ?? false);
 
   // order requested: account size, followings, followers, joinedDate, location, link
   const [followingText, setFollowingText] = useState<string>(
-    existing && (existing as any)?.following != null
-      ? String((existing as any).following)
-      : ""
+    existing && (existing as any)?.following != null ? String((existing as any).following) : ""
   );
   const [followersText, setFollowersText] = useState<string>(
-    existing && (existing as any)?.followers != null
-      ? String((existing as any).followers)
-      : ""
+    existing && (existing as any)?.followers != null ? String((existing as any).followers) : ""
   );
 
   const initialJoinedISO =
@@ -122,22 +124,21 @@ export default function CreateProfileModal() {
   /* Actions                                                                    */
   /* -------------------------------------------------------------------------- */
 
-const pickAvatar = async () => {
-  setPicking(true);
-  try {
-    const uri = await pickAndPersistOneImage({
-      persistAs: "avatar",
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.9,
-    });
+  const pickAvatar = async () => {
+    setPicking(true);
+    try {
+      const uri = await pickAndPersistOneImage({
+        persistAs: "avatar",
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.9,
+      });
 
-    if (uri) setAvatarUrl(uri);
-  } finally {
-    setPicking(false);
-  }
-};
-
+      if (uri) setAvatarUrl(uri);
+    } finally {
+      setPicking(false);
+    }
+  };
 
   const setAccountSize = (size: "small" | "mid" | "big") => {
     const followers = pickFollowersForSize(size);
@@ -189,7 +190,11 @@ const pickAvatar = async () => {
 
         avatarUrl: avatarUrl ?? undefined,
 
-        // settings
+        // ✅ new: settings
+        isPublic,
+        isPrivate,
+
+        // existing settings
         followers,
         following,
         joinedDate: joinedDate.toISOString(), // default is today and is saved like this
@@ -213,16 +218,14 @@ const pickAvatar = async () => {
   /* -------------------------------------------------------------------------- */
 
   return (
-    <SafeAreaView
-      edges={["top"]}
-      style={{ flex: 1, backgroundColor: colors.background }}
-    >
+    <SafeAreaView edges={["top"]} style={{ flex: 1, backgroundColor: colors.background }}>
       <ThemedView style={[styles.container, { backgroundColor: colors.background }]}>
         {picking ? (
-                  <View style={styles.pickerOverlay} pointerEvents="auto">
-                            <ActivityIndicator size="large" color="#fff" />
-                          </View>
-                ) : null}
+          <View style={styles.pickerOverlay} pointerEvents="auto">
+            <ActivityIndicator size="large" color="#fff" />
+          </View>
+        ) : null}
+
         <KeyboardAvoidingView
           style={{ flex: 1 }}
           behavior={Platform.OS === "ios" ? "padding" : undefined}
@@ -234,9 +237,7 @@ const pickAvatar = async () => {
               <Ionicons name="close" size={24} color={colors.text} />
             </Pressable>
 
-            <ThemedText type="defaultSemiBold">
-              {isEdit ? "Edit profile" : "Create profile"}
-            </ThemedText>
+            <ThemedText type="defaultSemiBold">{isEdit ? "Edit profile" : "Create profile"}</ThemedText>
 
             <Pressable
               onPress={submit}
@@ -263,9 +264,7 @@ const pickAvatar = async () => {
               </Pressable>
 
               <Pressable onPress={pickAvatar} hitSlop={12}>
-                <ThemedText style={{ color: colors.tint, marginTop: 8 }}>
-                  Change avatar
-                </ThemedText>
+                <ThemedText style={{ color: colors.tint, marginTop: 8 }}>Change avatar</ThemedText>
               </Pressable>
             </View>
 
@@ -294,11 +293,7 @@ const pickAvatar = async () => {
                 placeholder="Bio (optional)"
                 placeholderTextColor={colors.textSecondary}
                 multiline
-                style={[
-                  styles.input,
-                  styles.bio,
-                  { color: colors.text, borderColor: colors.border },
-                ]}
+                style={[styles.input, styles.bio, { color: colors.text, borderColor: colors.border }]}
               />
             </View>
 
@@ -307,6 +302,42 @@ const pickAvatar = async () => {
               <ThemedText style={[styles.sectionTitle, { color: colors.textSecondary }]}>
                 Profile settings
               </ThemedText>
+
+              {/* ✅ Shared slider (isPublic) */}
+              <RowCard
+                label="Shared"
+                colors={colors}
+                right={
+                  <Switch
+                    value={!!isPublic}
+                    onValueChange={(v) => setIsPublic(!!v)}
+                    trackColor={{ false: colors.border, true: colors.tint }}
+                    thumbColor={Platform.OS === "android" ? colors.background : undefined}
+                  />
+                }
+              >
+                <ThemedText style={{ color: colors.textSecondary }}>
+                  Other players can use this profile
+                </ThemedText>
+              </RowCard>
+
+              {/* ✅ Private Account slider (isPrivate) */}
+              <RowCard
+                label="Private account"
+                colors={colors}
+                right={
+                  <Switch
+                    value={!!isPrivate}
+                    onValueChange={(v) => setIsPrivate(!!v)}
+                    trackColor={{ false: colors.border, true: colors.tint }}
+                    thumbColor={Platform.OS === "android" ? colors.background : undefined}
+                  />
+                }
+              >
+                <ThemedText style={{ color: colors.textSecondary }}>
+                  Show a lock icon
+                </ThemedText>
+              </RowCard>
 
               {/* 1) Account size */}
               <RowCard
@@ -379,9 +410,7 @@ const pickAvatar = async () => {
                       {formatCount(Number(followingText))}
                     </ThemedText>
                   ) : (
-                    <ThemedText style={{ color: colors.textSecondary, opacity: 0.4 }}>
-                      0
-                    </ThemedText>
+                    <ThemedText style={{ color: colors.textSecondary, opacity: 0.4 }}>0</ThemedText>
                   )
                 }
               >
@@ -405,7 +434,6 @@ const pickAvatar = async () => {
                 />
               </RowCard>
 
-
               {/* 3) Followers */}
               <RowCard
                 label="Followers"
@@ -416,9 +444,7 @@ const pickAvatar = async () => {
                       {formatCount(Number(followersText))}
                     </ThemedText>
                   ) : (
-                    <ThemedText style={{ color: colors.textSecondary, opacity: 0.4 }}>
-                      0
-                    </ThemedText>
+                    <ThemedText style={{ color: colors.textSecondary, opacity: 0.4 }}>0</ThemedText>
                   )
                 }
               >
@@ -439,15 +465,9 @@ const pickAvatar = async () => {
                 />
               </RowCard>
 
-
               {/* iOS picker shown INLINE here so it’s ABOVE the Joined row, and it doesn't close on wheel changes */}
               {Platform.OS === "ios" && showJoinedPicker ? (
-                <View
-                  style={[
-                    styles.pickerCard,
-                    { borderColor: colors.border, backgroundColor: colors.card },
-                  ]}
-                >
+                <View style={[styles.pickerCard, { borderColor: colors.border, backgroundColor: colors.card }]}>
                   <View style={styles.pickerHeader}>
                     <ThemedText style={{ color: colors.textSecondary, fontWeight: "800" }}>
                       Pick joined date
@@ -458,9 +478,7 @@ const pickAvatar = async () => {
                       hitSlop={10}
                       style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}
                     >
-                      <ThemedText style={{ color: colors.tint, fontWeight: "900" }}>
-                        Done
-                      </ThemedText>
+                      <ThemedText style={{ color: colors.tint, fontWeight: "900" }}>Done</ThemedText>
                     </Pressable>
                   </View>
 
@@ -497,9 +515,7 @@ const pickAvatar = async () => {
                   </Pressable>
                 }
               >
-                <ThemedText style={{ color: colors.textSecondary }}>
-                  Tap the date to change it
-                </ThemedText>
+                <ThemedText style={{ color: colors.textSecondary }}>Tap the date to change it</ThemedText>
               </RowCard>
 
               {/* Android date picker (dialog). It will open from here and close after selection. */}
@@ -628,7 +644,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-   pickerOverlay: {
+
+  pickerOverlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: "rgba(0,0,0,0.35)",
     alignItems: "center",
@@ -636,6 +653,7 @@ const styles = StyleSheet.create({
     zIndex: 999,
     elevation: 999,
   },
+
   // iOS inline picker card (shows ABOVE JoinedDate row)
   pickerCard: {
     borderWidth: 1,
