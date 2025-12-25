@@ -13,6 +13,12 @@ import { useAuth } from "@/context/auth";
 import type { Profile } from "@/data/db/schema";
 import { canEditProfile } from "@/lib/permission";
 
+import {
+  MAX_OWNED_PROFILES_PER_USER,
+  canCreateOwnedProfileForUser,
+  countOwnedProfilesForUser,
+} from "@/lib/rules";
+
 type TabKey = "mine" | "public";
 type ViewMode = "tabs" | "all"; // tabs = Mine/Public, all = single list (no tabs)
 
@@ -53,6 +59,15 @@ export default function SelectProfileModal() {
   const data = mode === "all" ? allProfiles : tab === "mine" ? mine : publicProfiles;
 
   const current = getSelectedProfileId(sid);
+
+  // ✅ limit: only owned + non-shared count
+  const ownedNonSharedCount = React.useMemo(() => {
+    return countOwnedProfilesForUser(allProfiles, userId ?? null);
+  }, [allProfiles, userId]);
+
+  const canCreate = React.useMemo(() => {
+    return canCreateOwnedProfileForUser(allProfiles, userId ?? null);
+  }, [allProfiles, userId]);
 
   const Row = ({ item }: { item: Profile }) => {
     const selectEnabled = mode !== "all"; //
@@ -100,7 +115,6 @@ export default function SelectProfileModal() {
               {canEditThis ? (
                 <Pressable
                   onPress={(e) => {
-                    // prevent selecting profile when tapping pencil
                     e?.stopPropagation?.();
                     router.push({
                       pathname: "/modal/create-profile",
@@ -128,7 +142,7 @@ export default function SelectProfileModal() {
               {item.isPublic ? (
                 <ThemedText style={[styles.publicBadge, { color: colors.textSecondary }]}>
                   {" "}
-                  • Public
+                  • Shared
                 </ThemedText>
               ) : null}
             </View>
@@ -159,10 +173,14 @@ export default function SelectProfileModal() {
     // show only when user is in Mine tab mode (not All, not Public)
     if (!(mode === "tabs" && tab === "mine")) return null;
 
+    const disabled = !canCreate;
+
     return (
       <View>
         <Pressable
+          disabled={disabled}
           onPress={() => {
+            if (disabled) return;
             router.push({
               pathname: "/modal/create-profile",
               params: { scenarioId: sid },
@@ -170,7 +188,10 @@ export default function SelectProfileModal() {
           }}
           style={({ pressed }) => [
             styles.row,
-            { backgroundColor: pressed ? colors.pressed : colors.background },
+            {
+              backgroundColor: pressed && !disabled ? colors.pressed : colors.background,
+              opacity: disabled ? 0.55 : 1,
+            },
           ]}
         >
           <View style={[styles.profileAvatar, styles.createAvatar, { borderColor: colors.border }]}>
@@ -181,13 +202,27 @@ export default function SelectProfileModal() {
             <ThemedText type="defaultSemiBold" style={{ color: colors.tint }}>
               Create a new profile
             </ThemedText>
-            <ThemedText style={{ color: colors.textSecondary }}>
-              Add a character for this scenario
-            </ThemedText>
+
+            {disabled ? (
+              <ThemedText style={{ color: colors.textSecondary }}>
+                Limit reached ({MAX_OWNED_PROFILES_PER_USER} owned profiles).
+              </ThemedText>
+            ) : (
+              <ThemedText style={{ color: colors.textSecondary }}>
+                Add a character for this scenario
+              </ThemedText>
+            )}
           </View>
 
           <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
         </Pressable>
+
+        {/* little counter line (optional but helpful) */}
+        <View style={{ paddingHorizontal: 16, paddingBottom: 10 }}>
+          <ThemedText style={{ color: colors.textSecondary, fontSize: 12 }}>
+            Owned profiles: {ownedNonSharedCount}/{MAX_OWNED_PROFILES_PER_USER} (shared profiles don’t count)
+          </ThemedText>
+        </View>
 
         <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: colors.border }} />
       </View>
@@ -224,7 +259,7 @@ export default function SelectProfileModal() {
       {mode === "tabs" ? (
         <View style={[styles.tabs, { borderBottomColor: colors.border }]}>
           <TabButton label="Mine" active={tab === "mine"} onPress={() => setTab("mine")} colors={colors} />
-          <TabButton label="Public" active={tab === "public"} onPress={() => setTab("public")} colors={colors} />
+          <TabButton label="Shared" active={tab === "public"} onPress={() => setTab("public")} colors={colors} />
         </View>
       ) : null}
 
