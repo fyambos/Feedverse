@@ -1,6 +1,12 @@
 // mobile/app/(scenario)/[scenarioId]/(tabs)/index.tsx
 import React, { useCallback, useMemo } from "react";
-import { FlatList, StyleSheet, View, Pressable, Animated as RNAnimated } from "react-native";
+import {
+  FlatList,
+  StyleSheet,
+  View,
+  Pressable,
+  Animated as RNAnimated,
+} from "react-native";
 import { useLocalSearchParams, router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 
@@ -11,23 +17,36 @@ import { useColorScheme } from "@/hooks/use-color-scheme";
 import { Post as PostCard } from "@/components/post/Post";
 import { useAuth } from "@/context/auth";
 import { useAppData } from "@/context/appData";
-
 import { SwipeableRow } from "@/components/ui/SwipeableRow";
 import { canEditPost } from "@/lib/permission";
 
 export default function HomeScreen() {
   const { scenarioId } = useLocalSearchParams<{ scenarioId: string }>();
-  const scheme = useColorScheme() ?? "light";
-  const colors = Colors[scheme];
-  const { userId } = useAuth();
-
   const sid = String(scenarioId ?? "");
 
-  const { isReady, listPostsForScenario, getProfileById, deletePost } = useAppData();
+  const scheme = useColorScheme() ?? "light";
+  const colors = Colors[scheme];
+
+  const { userId } = useAuth();
+  const {
+    isReady,
+    listPostsForScenario,
+    getProfileById,
+    deletePost,
+  } = useAppData();
+
+  /* -------------------------------------------------------------------------- */
+  /* Data                                                                        */
+  /* -------------------------------------------------------------------------- */
 
   const posts = useMemo(() => {
-    return isReady ? listPostsForScenario(sid) : [];
+    if (!isReady) return [];
+    return listPostsForScenario(sid);
   }, [isReady, listPostsForScenario, sid]);
+
+  /* -------------------------------------------------------------------------- */
+  /* FAB animation                                                               */
+  /* -------------------------------------------------------------------------- */
 
   const scale = React.useRef(new RNAnimated.Value(1)).current;
   const navLock = React.useRef(false);
@@ -38,8 +57,16 @@ export default function HomeScreen() {
   };
 
   const pressOut = () => {
-    RNAnimated.spring(scale, { toValue: 1, friction: 4, useNativeDriver: true }).start();
+    RNAnimated.spring(scale, {
+      toValue: 1,
+      friction: 4,
+      useNativeDriver: true,
+    }).start();
   };
+
+  /* -------------------------------------------------------------------------- */
+  /* Navigation                                                                  */
+  /* -------------------------------------------------------------------------- */
 
   const openCreatePost = () => {
     if (navLock.current) return;
@@ -59,47 +86,54 @@ export default function HomeScreen() {
     (postId: string) => {
       router.push({
         pathname: "/modal/create-post",
-        params: { scenarioId: sid, mode: "edit", postId: String(postId) },
+        params: { scenarioId: sid, mode: "edit", postId },
       } as any);
+    },
+    [sid]
+  );
+
+  const openPostDetail = useCallback(
+    (postId: string) => {
+      router.push(`/(scenario)/${sid}/(tabs)/post/${postId}` as any);
     },
     [sid]
   );
 
   const onDeletePost = useCallback(
     async (postId: string) => {
-      await deletePost(String(postId));
+      await deletePost(postId);
     },
     [deletePost]
   );
 
-  const openPostDetail = useCallback(
-    (postId: string) => {
-      router.push(`/(scenario)/${sid}/(tabs)/post/${String(postId)}` as any);
-    },
-    [sid]
-  );
+  /* -------------------------------------------------------------------------- */
+  /* Render                                                                      */
+  /* -------------------------------------------------------------------------- */
 
   return (
-    <ThemedView style={[styles.container, { backgroundColor: colors.background }]}>
+    <ThemedView
+      style={[styles.container, { backgroundColor: colors.background }]}
+    >
       <FlatList
         data={posts}
         keyExtractor={(item) => String(item.id)}
         contentContainerStyle={styles.list}
         ItemSeparatorComponent={() => (
-          <View style={[styles.separator, { backgroundColor: colors.border }]} />
+          <View
+            style={[styles.separator, { backgroundColor: colors.border }]}
+          />
         )}
         renderItem={({ item }) => {
           const profile = getProfileById(String(item.authorProfileId));
           if (!profile) return null;
 
-          const canEdit = canEditPost({ authorProfile: profile, userId });
+          const canEdit = canEditPost({
+            authorProfile: profile,
+            userId: userId ?? null,
+          });
 
           const content = (
-            <Pressable
-              onPress={() => {
-                openPostDetail(String(item.id));
-              }}
-            >
+            <Pressable onPress={() => openPostDetail(String(item.id))}>
               <PostCard
                 scenarioId={sid}
                 profile={profile as any}
@@ -124,37 +158,48 @@ export default function HomeScreen() {
         }}
         ListEmptyComponent={() => (
           <View style={{ padding: 16 }}>
-            <View style={{ gap: 6 }}>
-              <Pressable
-                onPress={openCreatePost}
-                style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}
+            <Pressable
+              onPress={openCreatePost}
+              style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}
+            >
+              <View
+                style={{
+                  borderWidth: StyleSheet.hairlineWidth,
+                  borderColor: colors.border,
+                  borderRadius: 16,
+                  padding: 14,
+                  backgroundColor: colors.card,
+                }}
               >
                 <View
-                  style={{
-                    borderWidth: StyleSheet.hairlineWidth,
-                    borderColor: colors.border,
-                    borderRadius: 16,
-                    padding: 14,
-                    backgroundColor: colors.card,
-                  }}
+                  style={{ flexDirection: "row", alignItems: "center", gap: 8 }}
                 >
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                    <Ionicons name="add" size={18} color={colors.tint} />
-                    <ThemedText style={{ color: colors.text, fontWeight: "800" }}>
-                      Create your first post
-                    </ThemedText>
-                  </View>
-                  <ThemedText style={{ color: colors.textSecondary, marginTop: 6 }}>
-                    Nothing here yet — post something to start the feed.
+                  <Ionicons name="add" size={18} color={colors.tint} />
+                  <ThemedText
+                    style={{ color: colors.text, fontWeight: "800" }}
+                  >
+                    Create your first post
                   </ThemedText>
                 </View>
-              </Pressable>
-            </View>
+
+                <ThemedText
+                  style={{ color: colors.textSecondary, marginTop: 6 }}
+                >
+                  Nothing here yet — post something to start the feed.
+                </ThemedText>
+              </View>
+            </Pressable>
           </View>
         )}
       />
 
-      <RNAnimated.View style={[styles.fab, { backgroundColor: colors.tint, transform: [{ scale }] }]}>
+      {/* FAB */}
+      <RNAnimated.View
+        style={[
+          styles.fab,
+          { backgroundColor: colors.tint, transform: [{ scale }] },
+        ]}
+      >
         <Pressable
           onPress={openCreatePost}
           onPressIn={pressIn}
@@ -169,6 +214,10 @@ export default function HomeScreen() {
     </ThemedView>
   );
 }
+
+/* -------------------------------------------------------------------------- */
+/* Styles                                                                      */
+/* -------------------------------------------------------------------------- */
 
 const styles = StyleSheet.create({
   container: { flex: 1 },

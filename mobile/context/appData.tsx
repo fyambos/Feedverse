@@ -1,11 +1,11 @@
 import React from "react";
-import type { DbV1, Post, Profile, Scenario, User } from "@/data/db/schema";
+import type { DbV3, Post, Profile, Scenario, User } from "@/data/db/schema";
 import { readDb, updateDb } from "@/data/db/storage";
 import { seedDbIfNeeded } from "@/data/db/seed";
 
 type AppDataState = {
   isReady: boolean;
-  db: DbV1 | null;
+  db: DbV3 | null;
 };
 
 type AppDataApi = {
@@ -54,6 +54,24 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     })();
   }, []);
 
+// Debugging: print scenarios after seeding
+/*
+React.useEffect(() => {
+  (async () => {
+    const existing = await readDb();
+    const db = await seedDbIfNeeded(existing);
+
+    // 🔍 DEBUG
+    if (__DEV__) {
+      const { debugPrintScenariosFromFeeds } =
+        await import("@/app/debug/printScenariosFromFeeds");
+      debugPrintScenariosFromFeeds();
+    }
+
+    setState({ isReady: true, db });
+  })();
+}, []);
+*/
   const db = state.db;
 
   const api = React.useMemo<AppDataApi>(() => {

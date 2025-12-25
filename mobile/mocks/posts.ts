@@ -6,7 +6,7 @@ export const MOCK_FEEDS: Record<string, Post[]> = {
     {
       id: "s1-post-1",
       scenarioId: "demo-kpop",
-      authorProfileId: "p1",
+      authorProfileId: "pr_kpop_jinnie",
       text: "first day back and i already lost my student card. again.",
       createdAt: "2025-12-20T09:12:00.000Z",
       replyCount: 2,
@@ -16,7 +16,7 @@ export const MOCK_FEEDS: Record<string, Post[]> = {
     {
       id: "s1-post-2",
       scenarioId: "demo-kpop",
-      authorProfileId: "p2",
+      authorProfileId: "pr_kpop_minho",
       text: "if you see someone running with a lanyard… no you didn’t.",
       createdAt: "2025-12-20T09:18:00.000Z",
       replyCount: 1,
@@ -27,7 +27,7 @@ export const MOCK_FEEDS: Record<string, Post[]> = {
     {
       id: "s1-post-3",
       scenarioId: "demo-kpop",
-      authorProfileId: "p4",
+      authorProfileId: "pr_kpop_winter",
       text: "who schedules an 8am lab and why do they still have a job",
       createdAt: "2025-12-20T06:58:00.000Z",
       replyCount: 0,
@@ -38,7 +38,7 @@ export const MOCK_FEEDS: Record<string, Post[]> = {
     {
       id: "s1-post-1-r1",
       scenarioId: "demo-kpop",
-      authorProfileId: "p3",
+      authorProfileId: "pr_kpop_jisung",
       text: "this has become a personality trait.",
       createdAt: "2025-12-20T09:21:00.000Z",
       parentPostId: "s1-post-1",
@@ -49,7 +49,7 @@ export const MOCK_FEEDS: Record<string, Post[]> = {
     {
       id: "s1-post-1-r2",
       scenarioId: "demo-kpop",
-      authorProfileId: "p4",
+      authorProfileId: "pr_kpop_winter",
       text: "you lose everything except confidence",
       createdAt: "2025-12-20T09:22:00.000Z",
       parentPostId: "s1-post-1",
@@ -60,7 +60,7 @@ export const MOCK_FEEDS: Record<string, Post[]> = {
     {
       id: "s1-post-2-r1",
       scenarioId: "demo-kpop",
-      authorProfileId: "p1",
+      authorProfileId: "pr_kpop_jinnie",
       text: "give it back. i will pay in emotional support.",
       createdAt: "2025-12-20T09:24:00.000Z",
       parentPostId: "s1-post-2",
@@ -74,7 +74,7 @@ export const MOCK_FEEDS: Record<string, Post[]> = {
     {
       id: "s2-post-1",
       scenarioId: "demo-mafia",
-      authorProfileId: "p5",
+      authorProfileId: "pr_mafia_driver",
       text: "first day of training. they said it would be ‘light’. it was a lie.",
       createdAt: "2025-12-21T15:10:00.000Z",
       replyCount: 2,
@@ -84,7 +84,7 @@ export const MOCK_FEEDS: Record<string, Post[]> = {
     {
       id: "s2-post-2",
       scenarioId: "demo-mafia",
-      authorProfileId: "p8",
+      authorProfileId: "pr_mafia_fixer",
       text: "why is everyone acting like sprinting at full speed is a warm-up",
       createdAt: "2025-12-21T15:14:00.000Z",
       replyCount: 1,
@@ -94,7 +94,7 @@ export const MOCK_FEEDS: Record<string, Post[]> = {
     {
       id: "s2-post-3",
       scenarioId: "demo-mafia",
-      authorProfileId: "p6",
+      authorProfileId: "pr_mafia_boss",
       text: "it’s not hard. you’re just dramatic.",
       createdAt: "2025-12-21T15:18:00.000Z",
       replyCount: 0,
@@ -105,7 +105,7 @@ export const MOCK_FEEDS: Record<string, Post[]> = {
     {
       id: "s2-post-1-r1",
       scenarioId: "demo-mafia",
-      authorProfileId: "p7",
+      authorProfileId: "pr_mafia_sniper",
       text: "wait for day 3. then complain.",
       createdAt: "2025-12-21T15:20:00.000Z",
       parentPostId: "s2-post-1",
@@ -114,7 +114,7 @@ export const MOCK_FEEDS: Record<string, Post[]> = {
     {
       id: "s2-post-1-r2",
       scenarioId: "demo-mafia",
-      authorProfileId: "p8",
+      authorProfileId: "pr_mafia_fixer",
       text: "day 3?? i was hoping to be dead by day 2",
       createdAt: "2025-12-21T15:22:00.000Z",
       parentPostId: "s2-post-1",
@@ -123,7 +123,7 @@ export const MOCK_FEEDS: Record<string, Post[]> = {
     {
       id: "s2-post-2-r1",
       scenarioId: "demo-mafia",
-      authorProfileId: "p5",
+      authorProfileId: "pr_mafia_driver",
       text: "you’re doing amazing sweetie (you’re not).",
       createdAt: "2025-12-21T15:25:00.000Z",
       parentPostId: "s2-post-2",
@@ -133,7 +133,7 @@ export const MOCK_FEEDS: Record<string, Post[]> = {
     {
       id: "s2-post-4",
       scenarioId: "demo-mafia",
-      authorProfileId: "p9",
+      authorProfileId: "pr_mafia_winter",
       text: "i thought this would be easier than my last job.",
       createdAt: "2025-12-21T16:00:00.000Z",
       quotedPostId: "s2-post-3",
@@ -142,15 +142,15 @@ export const MOCK_FEEDS: Record<string, Post[]> = {
       likeCount: 45,
     },
     {
-        id: "s2-post-5",
-        scenarioId: "demo-mafia",
-        authorProfileId: "p10",
-        text: "you're dramatic",
-        createdAt: "2025-12-21T16:00:00.000Z",
-        quotedPostId: "s2-post-3",
-        replyCount: 0,
-        repostCount: 1,
-        likeCount: 45,
-    }
+      id: "s2-post-5",
+      scenarioId: "demo-mafia",
+      authorProfileId: "pr_mafia_winter",
+      text: "you're dramatic",
+      createdAt: "2025-12-21T16:00:00.000Z",
+      quotedPostId: "s2-post-3",
+      replyCount: 0,
+      repostCount: 1,
+      likeCount: 45,
+    },
   ],
 };
