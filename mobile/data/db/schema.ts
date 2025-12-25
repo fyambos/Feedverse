@@ -43,8 +43,8 @@ export type Post = {
   quotedPostId?: string;
 };
 
-export type DbV1 = {
-  version: 1;
+export type DbV3 = {
+  version: 3;
   seededAt: string;
   users: Record<string, User>;
   scenarios: Record<string, Scenario>;

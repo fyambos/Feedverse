@@ -1,5 +1,5 @@
 // mobile/app/(scenario)/[scenarioId]/(tabs)/messages.tsx
-import React from "react";
+import React, { useEffect } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
@@ -8,10 +8,16 @@ import { ThemedView } from "@/components/themed-view";
 import { Colors } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 
+import { printAsyncStoragePretty,clearAllStorageWithVerify } from "@/app/debug/printScenariosFromFeeds";
+
 export default function MessagesScreen() {
   const scheme = useColorScheme() ?? "light";
   const colors = Colors[scheme];
-
+  
+useEffect(() => {
+  printAsyncStoragePretty();
+  
+}, []);
   return (
     <ThemedView style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={styles.center}>
