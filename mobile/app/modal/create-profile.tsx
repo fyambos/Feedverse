@@ -27,6 +27,7 @@ import { useAppData } from "@/context/appData";
 import { Avatar } from "@/components/ui/Avatar";
 import { pickAndPersistOneImage } from "@/components/ui/ImagePicker";
 import { formatCount } from "@/lib/format";
+import { RowCard } from "@/components/ui/RowCard";
 
 function normalizeHandle(input: string) {
   return String(input).trim().replace(/^@+/, "");
@@ -59,36 +60,6 @@ function pickFollowingBelowFollowers(followers: number) {
 
 function digitsOnly(s: string) {
   return String(s).replace(/[^\d]/g, "");
-}
-
-function RowCard({
-  label,
-  children,
-  colors,
-  right,
-}: {
-  label: string;
-  children: React.ReactNode;
-  colors: any;
-  right?: React.ReactNode;
-}) {
-  return (
-    <View
-      style={[
-        styles.card,
-        { backgroundColor: colors.card, borderColor: colors.border },
-      ]}
-    >
-      <View style={{ flex: 1 }}>
-        <ThemedText style={[styles.cardLabel, { color: colors.textSecondary }]}>
-          {label}
-        </ThemedText>
-        {children}
-      </View>
-
-      {right ? <View style={{ marginLeft: 12 }}>{right}</View> : null}
-    </View>
-  );
 }
 
 export default function CreateProfileModal() {
