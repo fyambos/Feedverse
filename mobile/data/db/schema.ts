@@ -3,6 +3,8 @@ export type User = {
   id: string;
   username: string;
   avatarUrl: string;
+  createdAt: string;
+  updatedAt?: string;
 };
 
 export type Scenario = {
@@ -18,7 +20,7 @@ export type Profile = {
   ownerUserId: string;
   displayName: string;
   handle: string;
-  avatarUrl: string;   // IMPORTANT: avatar lives here, not in separate keys
+  avatarUrl: string; 
   headerUrl?: string;
   bio?: string;
   isPublic?: boolean;
@@ -27,6 +29,8 @@ export type Profile = {
   link?: string;
   followerCount?: number;
   followingCount?: number;
+  createdAt: string;
+  updatedAt?: string;
 };
 
 export type Post = {
@@ -41,6 +45,7 @@ export type Post = {
   likeCount?: number;
   parentPostId?: string;
   quotedPostId?: string;
+  updatedAt?: string;
 };
 
 export type DbV3 = {
