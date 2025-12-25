@@ -21,26 +21,25 @@ type Props = {
   colors: ColorsLike;
   sid: string;
 
+  // ✅ the profile page you're browsing (me if it's me, author if it's author)
+  viewingProfileId: string;
+
   items: DbPost[];
   initialLoading: boolean;
   loadingMore: boolean;
   onLoadMore: () => void;
 
   getProfileById: (id: string) => Profile | undefined;
-
-  // ✅ add this so we can resolve parent chain / replyingTo / root tweet
   getPostById: (id: string) => DbPost | undefined;
 
   userId: string | null;
   onDeletePost: (postId: string) => Promise<void>;
 
   ListHeaderComponent: React.ReactElement;
-
   emptyText?: string;
 };
 
 function findRootPostId(getPostById: (id: string) => DbPost | undefined, start: DbPost): string {
-  // walk up parent chain until no parent. guard against cycles.
   let cur: DbPost | undefined = start;
   const seen = new Set<string>();
 
@@ -73,6 +72,7 @@ function getReplyingToHandle(
 export function ProfilePostsList({
   colors,
   sid,
+  viewingProfileId,
   items,
   initialLoading,
   loadingMore,
@@ -84,6 +84,10 @@ export function ProfilePostsList({
   ListHeaderComponent,
   emptyText,
 }: Props) {
+  const from = `/(scenario)/${encodeURIComponent(sid)}/(tabs)/profile/${encodeURIComponent(
+    String(viewingProfileId)
+  )}`;
+
   return (
     <FlatList
       data={items}
@@ -101,13 +105,7 @@ export function ProfilePostsList({
         );
       }}
       ItemSeparatorComponent={() => (
-        <View
-          style={{
-            height: StyleSheet.hairlineWidth,
-            backgroundColor: colors.border,
-            opacity: 0.9,
-          }}
-        />
+        <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: colors.border, opacity: 0.9 }} />
       )}
       contentContainerStyle={{ paddingBottom: Platform.OS === "ios" ? 24 : 16 }}
       ListHeaderComponent={ListHeaderComponent}
@@ -117,17 +115,28 @@ export function ProfilePostsList({
 
         const isReply = !!item.parentPostId;
 
-        // ✅ this is what your PostHeader uses in "replying to @..."
+        // ✅ "replying to @..."
         const replyingTo = isReply ? getReplyingToHandle(getPostById, getProfileById, item) : "";
 
-        // ✅ clicking a reply should go to the root tweet of the thread
+        // ✅ open root tweet for replies
         const targetPostId = isReply ? findRootPostId(getPostById, item) : String(item.id);
 
         const canEditThisPost = canEditPost({ authorProfile, userId });
 
         const row = (
-          <Pressable
-            onPress={() => router.push(`/(scenario)/${sid}/(tabs)/post/${encodeURIComponent(targetPostId)}` as any)}
+        <Pressable
+          onPress={() =>
+            router.push({
+              pathname: `/(scenario)/${encodeURIComponent(sid)}/(tabs)/post/${encodeURIComponent(
+                String(targetPostId)
+              )}`,
+              params: {
+                from: `/(scenario)/${encodeURIComponent(sid)}/(tabs)/profile/${encodeURIComponent(
+                  String(viewingProfileId)
+                )}`,
+              },
+            } as any)
+            }
             style={({ pressed }) => [{ backgroundColor: pressed ? colors.pressed : colors.background }]}
           >
             <PostCard
@@ -170,9 +179,7 @@ export function ProfilePostsList({
         }
         return (
           <View style={{ padding: 18 }}>
-            <ThemedText style={{ color: colors.textSecondary }}>
-              {emptyText ?? "No posts yet."}
-            </ThemedText>
+            <ThemedText style={{ color: colors.textSecondary }}>{emptyText ?? "No posts yet."}</ThemedText>
           </View>
         );
       }}

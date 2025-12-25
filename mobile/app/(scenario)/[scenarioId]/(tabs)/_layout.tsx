@@ -62,9 +62,7 @@ export default function TabLayout() {
               />
             </Pressable>
           ),
-          tabBarIcon: ({ color }) => (
-            <TabIcon iosName="house.fill" androidIonicon="home" color={color} />
-          ),
+          tabBarIcon: ({ color }) => <TabIcon iosName="house.fill" androidIonicon="home" color={color} />,
         }}
       />
 
@@ -105,13 +103,6 @@ export default function TabLayout() {
         name="post/[postId]"
         options={{
           href: null,
-          title: "Post",
-          headerShown: true,
-          headerLeft: () => (
-            <Pressable onPress={() => router.back()} hitSlop={12}>
-              <Ionicons name="chevron-back" size={26} color={colors.text} />
-            </Pressable>
-          ),
         }}
       />
 
