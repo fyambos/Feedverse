@@ -185,20 +185,60 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       },
 
       upsertProfile: async (p) => {
-        const next = await updateDb((prev) => ({
-          ...prev,
-          profiles: { ...prev.profiles, [String(p.id)]: p },
-        }));
+        const id = String(p.id);
+        const now = new Date().toISOString();
+
+        const next = await updateDb((prev) => {
+          const existing = prev.profiles[id];
+
+          const createdAt = existing?.createdAt ?? p.createdAt ?? now;
+
+          return {
+            ...prev,
+            profiles: {
+              ...prev.profiles,
+              [id]: {
+                ...(existing ?? {}),
+                ...p,
+                id,
+                createdAt,
+                joinedDate: p.joinedDate ?? existing?.joinedDate ?? createdAt,
+                updatedAt: now,
+              },
+            },
+          };
+        });
+
+        setState({ isReady: true, db: next });
+      },
+      
+      upsertPost: async (p) => {
+        const id = String(p.id);
+        const now = new Date().toISOString();
+
+        const next = await updateDb((prev) => {
+          const existing = prev.posts[id];
+
+          const createdAt = existing?.createdAt ?? p.createdAt ?? now;
+
+          return {
+            ...prev,
+            posts: {
+              ...prev.posts,
+              [id]: {
+                ...(existing ?? {}),
+                ...p,
+                id,
+                createdAt,
+                updatedAt: now,
+              },
+            },
+          };
+        });
+
         setState({ isReady: true, db: next });
       },
 
-      upsertPost: async (p) => {
-        const next = await updateDb((prev) => ({
-          ...prev,
-          posts: { ...prev.posts, [String(p.id)]: p },
-        }));
-        setState({ isReady: true, db: next });
-      },
 
       deletePost: async (postId) => {
         const id = String(postId);

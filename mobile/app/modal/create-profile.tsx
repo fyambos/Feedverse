@@ -1,62 +1,95 @@
 // mobile/app/modal/create-profile.tsx
-import React, { useEffect, useMemo, useState } from "react";
+
+import React, { useMemo, useState } from "react";
+import DateTimePicker from "@react-native-community/datetimepicker";
 import {
+  Alert,
   KeyboardAvoidingView,
-  Keyboard,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   TextInput,
   View,
-  Modal,
-  ScrollView,
 } from "react-native";
-import DateTimePicker from "@react-native-community/datetimepicker";
 import { router, useLocalSearchParams } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { Ionicons } from "@expo/vector-icons";
 
+import { ThemedView } from "@/components/themed-view";
 import { ThemedText } from "@/components/themed-text";
-import { useColorScheme } from "@/hooks/use-color-scheme";
 import { Colors } from "@/constants/theme";
+import { useColorScheme } from "@/hooks/use-color-scheme";
+
 import { useAuth } from "@/context/auth";
 import { useAppData } from "@/context/appData";
 
 import { Avatar } from "@/components/ui/Avatar";
 import { pickAndPersistOneImage } from "@/components/ui/ImagePicker";
-
-import type { Profile } from "@/data/db/schema";
-
-/* -------------------------------------------------------------------------- */
-/* Helpers                                                                    */
-/* -------------------------------------------------------------------------- */
-
-function makeId(prefix: string) {
-  return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-}
+import { formatCount } from "@/lib/format";
 
 function normalizeHandle(input: string) {
-  // storage is without "@"
-  return String(input ?? "").trim().replace(/^@+/, "").toLowerCase();
+  return String(input).trim().replace(/^@+/, "");
 }
 
-function toOptionalInt(v: string, max = 99_000_000_000) {
-  const digits = String(v ?? "").replace(/[^0-9]/g, "");
-  if (!digits) return undefined;
-  const n = Number(digits);
-  if (!Number.isFinite(n)) return undefined;
-  return Math.min(max, Math.max(0, Math.floor(n)));
+function clampInt(n: number, min = 0, max = 99_000_000) {
+  const x = Number.isFinite(n) ? n : min;
+  return Math.max(min, Math.min(max, Math.floor(x)));
 }
 
-function normalizeLink(v: string) {
-  const s = String(v ?? "").trim();
-  if (!s) return undefined;
-  if (/^https?:\/\//i.test(s)) return s;
-  return `https://${s}`;
+function randInt(min: number, max: number) {
+  const lo = Math.min(min, max);
+  const hi = Math.max(min, max);
+  return Math.floor(lo + Math.random() * (hi - lo + 1));
 }
 
-/* -------------------------------------------------------------------------- */
-/* Component                                                                  */
-/* -------------------------------------------------------------------------- */
+function pickFollowersForSize(size: "small" | "mid" | "big") {
+  if (size === "small") return randInt(0, 500);
+  if (size === "mid") return randInt(1000, 5000);
+  return randInt(800_000, 3_000_000);
+}
+
+function pickFollowingBelowFollowers(followers: number) {
+  if (followers <= 0) return 0;
+  const max = Math.max(0, followers - 1);
+  const min = Math.max(0, Math.floor(followers * 0.05));
+  const hi = Math.max(min, Math.floor(followers * 0.7));
+  return clampInt(randInt(min, Math.min(hi, max)), 0, max);
+}
+
+function digitsOnly(s: string) {
+  return String(s).replace(/[^\d]/g, "");
+}
+
+function RowCard({
+  label,
+  children,
+  colors,
+  right,
+}: {
+  label: string;
+  children: React.ReactNode;
+  colors: any;
+  right?: React.ReactNode;
+}) {
+  return (
+    <View
+      style={[
+        styles.card,
+        { backgroundColor: colors.card, borderColor: colors.border },
+      ]}
+    >
+      <View style={{ flex: 1 }}>
+        <ThemedText style={[styles.cardLabel, { color: colors.textSecondary }]}>
+          {label}
+        </ThemedText>
+        {children}
+      </View>
+
+      {right ? <View style={{ marginLeft: 12 }}>{right}</View> : null}
+    </View>
+  );
+}
 
 export default function CreateProfileModal() {
   const { scenarioId, profileId } = useLocalSearchParams<{
@@ -64,358 +97,565 @@ export default function CreateProfileModal() {
     profileId?: string;
   }>();
 
+  const sid = String(scenarioId ?? "");
+  const isEdit = !!profileId;
+
   const scheme = useColorScheme() ?? "light";
   const colors = Colors[scheme];
 
-  const sid = String(scenarioId ?? "");
-  const isEdit = !!profileId;
-  const pid = isEdit ? String(profileId) : "";
-
   const { userId } = useAuth();
-  const { isReady, getProfileById, upsertProfile, setSelectedProfileId } = useAppData();
+  const { getProfileById, upsertProfile } = useAppData();
 
-  const DEFAULT_AVATAR = "https://i.pravatar.cc/150?img=14";
+  const existing = useMemo(() => {
+    if (!isEdit || !profileId) return null;
+    return getProfileById(String(profileId));
+  }, [isEdit, profileId, getProfileById]);
 
-  const LIMITS = {
-    displayName: 50,
-    handle: 30,
-    bio: 160,
-    location: 30,
-    link: 120,
-  } as const;
+  /* -------------------------------------------------------------------------- */
+  /* Form state                                                                 */
+  /* -------------------------------------------------------------------------- */
 
-  const [avatarUrl, setAvatarUrl] = useState<string | null>(DEFAULT_AVATAR);
+  const [displayName, setDisplayName] = useState(existing?.displayName ?? "");
+  const [handle, setHandle] = useState(existing?.handle ?? "");
+  const [bio, setBio] = useState(existing?.bio ?? "");
 
-  const [name, setName] = useState("");
-  const [handle, setHandle] = useState("");
-  const [bio, setBio] = useState("");
-
-  const [location, setLocation] = useState("");
-  const [link, setLink] = useState("");
-
-  const [joinedDate, setJoinedDate] = useState<Date | null>(null);
-  const [showJoinedPicker, setShowJoinedPicker] = useState(false);
-
-  const [following, setFollowing] = useState("");
-  const [followers, setFollowers] = useState("");
-
-  /* ---------------------------------------------------------------------- */
-  /* Hydrate edit mode                                                      */
-  /* ---------------------------------------------------------------------- */
-
-  useEffect(() => {
-    if (!isReady || !isEdit || !pid) return;
-
-    const existing = getProfileById(pid);
-    if (!existing) return;
-
-    setName(existing.displayName || "");
-    setHandle(existing.handle || "");
-    setBio(existing.bio || "");
-    setLocation(existing.location || "");
-    setLink(existing.link || "");
-
-    setJoinedDate(existing.joinedDate ? new Date(existing.joinedDate) : null);
-    setFollowing(existing.followingCount != null ? String(existing.followingCount) : "");
-    setFollowers(existing.followerCount != null ? String(existing.followerCount) : "");
-    setAvatarUrl(existing.avatarUrl || DEFAULT_AVATAR);
-  }, [isReady, isEdit, pid, getProfileById]);
-
-  const canSubmit = useMemo(
-    () => name.trim().length > 0 && normalizeHandle(handle).length > 0,
-    [name, handle]
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(
+    existing?.avatarUrl ?? null
   );
 
-  /* ---------------------------------------------------------------------- */
-  /* Avatar                                                                 */
-  /* ---------------------------------------------------------------------- */
+  // order requested: account size, followings, followers, joinedDate, location, link
+  const [followingText, setFollowingText] = useState<string>(
+    existing && (existing as any)?.following != null
+      ? String((existing as any).following)
+      : ""
+  );
+  const [followersText, setFollowersText] = useState<string>(
+    existing && (existing as any)?.followers != null
+      ? String((existing as any).followers)
+      : ""
+  );
 
-  const onPickAvatar = async () => {
+  const initialJoinedISO =
+    (existing as any)?.joinedDate ?? existing?.createdAt ?? new Date().toISOString();
+  const [joinedDate, setJoinedDate] = useState<Date>(new Date(initialJoinedISO));
+  const [showJoinedPicker, setShowJoinedPicker] = useState(false);
+
+  const [location, setLocation] = useState((existing as any)?.location ?? "");
+  const [link, setLink] = useState((existing as any)?.link ?? "");
+
+  const [submitting, setSubmitting] = useState(false);
+
+  /* -------------------------------------------------------------------------- */
+  /* Actions                                                                    */
+  /* -------------------------------------------------------------------------- */
+
+  const pickAvatar = async () => {
     const uri = await pickAndPersistOneImage({
       persistAs: "avatar",
       allowsEditing: true,
+      aspect: [1, 1],
       quality: 0.9,
     });
-    if (!uri) return;
-    setAvatarUrl(uri);
+    if (uri) setAvatarUrl(uri);
   };
 
-  /* ---------------------------------------------------------------------- */
-  /* Save                                                                   */
-  /* ---------------------------------------------------------------------- */
-
-  const onSave = async () => {
-    const payload: Profile = {
-      id: isEdit && pid ? pid : makeId("pr"),
-      scenarioId: sid,
-      ownerUserId: String(userId ?? "u14"),
-      displayName: name.trim(),
-      handle: normalizeHandle(handle),
-      avatarUrl: avatarUrl || DEFAULT_AVATAR,
-      bio: bio.trim() || undefined,
-      location: location.trim() || undefined,
-      link: normalizeLink(link),
-      joinedDate: joinedDate ? joinedDate.toISOString().slice(0, 10) : undefined,
-      followingCount: toOptionalInt(following),
-      followerCount: toOptionalInt(followers),
-    };
-
-    await upsertProfile(payload);
-    await setSelectedProfileId(sid, payload.id);
-    router.back();
+  const setAccountSize = (size: "small" | "mid" | "big") => {
+    const followers = pickFollowersForSize(size);
+    const following = pickFollowingBelowFollowers(followers);
+    setFollowersText(String(followers));
+    setFollowingText(String(following));
   };
 
-  /* ---------------------------------------------------------------------- */
-  /* Render                                                                 */
-  /* ---------------------------------------------------------------------- */
+  const submit = async () => {
+    if (submitting) return;
+
+    if (!displayName.trim() || !handle.trim()) {
+      Alert.alert("Missing fields", "Display name and handle are required.");
+      return;
+    }
+    if (!userId) {
+      Alert.alert("Not logged in", "You need a user to create a profile.");
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const now = new Date().toISOString();
+      const createdAt = existing?.createdAt ?? now;
+
+      const followers = followersText.trim().length
+        ? clampInt(Number(digitsOnly(followersText)) || 0, 0, 99_000_000)
+        : undefined;
+
+      const rawFollowing = followingText.trim().length
+        ? clampInt(Number(digitsOnly(followingText)) || 0, 0, 99_000_000)
+        : undefined;
+
+      let following = rawFollowing;
+
+      // keep invariant: following < followers when possible (only if both exist)
+      if (followers != null && following != null && followers > 0 && following >= followers) {
+        following = Math.max(0, followers - 1);
+      }
+
+      await upsertProfile({
+        id: existing?.id ?? `profile_${Date.now()}`,
+        scenarioId: sid,
+        ownerUserId: String(userId),
+
+        displayName: displayName.trim(),
+        handle: normalizeHandle(handle),
+        bio: bio.trim() || undefined,
+
+        avatarUrl: avatarUrl ?? undefined,
+
+        // settings
+        followers,
+        following,
+        joinedDate: joinedDate.toISOString(), // default is today and is saved like this
+        location: location.trim() || undefined,
+        link: link.trim() || undefined,
+
+        createdAt,
+        updatedAt: now,
+      } as any);
+
+      router.back();
+    } catch {
+      Alert.alert("Error", "Could not save profile.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  /* -------------------------------------------------------------------------- */
+  /* Render                                                                     */
+  /* -------------------------------------------------------------------------- */
 
   return (
-    <SafeAreaView edges={["top"]} style={{ flex: 1, backgroundColor: colors.background }}>
-      <Pressable
-        style={{ flex: 1 }}
-        onPress={() => {
-          Keyboard.dismiss();
-          setShowJoinedPicker(false);
-        }}
-      >
-        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
+    <SafeAreaView
+      edges={["top"]}
+      style={{ flex: 1, backgroundColor: colors.background }}
+    >
+      <ThemedView style={[styles.container, { backgroundColor: colors.background }]}>
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          keyboardVerticalOffset={Platform.OS === "ios" ? 6 : 0}
+        >
+          {/* Header */}
           <View style={[styles.header, { borderBottomColor: colors.border }]}>
-            <ThemedText type="defaultSemiBold" style={{ fontSize: 18 }}>
+            <Pressable onPress={() => router.back()} hitSlop={12}>
+              <Ionicons name="close" size={24} color={colors.text} />
+            </Pressable>
+
+            <ThemedText type="defaultSemiBold">
               {isEdit ? "Edit profile" : "Create profile"}
             </ThemedText>
 
-            <Pressable onPress={() => router.back()} hitSlop={12}>
-              <ThemedText style={{ color: colors.tint, fontWeight: "700" }}>Cancel</ThemedText>
+            <Pressable
+              onPress={submit}
+              disabled={submitting}
+              hitSlop={12}
+              style={{ opacity: submitting ? 0.5 : 1 }}
+            >
+              <ThemedText style={{ color: colors.tint, fontWeight: "800" }}>
+                {isEdit ? "Save" : "Create"}
+              </ThemedText>
             </Pressable>
           </View>
 
-          {/* Avatar */}
-          <View style={styles.avatarWrap}>
-            <Pressable onPress={onPickAvatar} hitSlop={12} style={styles.avatarBtn}>
-              <Avatar uri={avatarUrl} size={96} fallbackColor={colors.border} />
-              <View
-                style={[
-                  styles.avatarOverlay,
-                  { backgroundColor: colors.tint, borderColor: colors.background },
-                ]}
-              >
-                <ThemedText style={styles.avatarPlus}>＋</ThemedText>
-              </View>
-            </Pressable>
-
-            <ThemedText style={[styles.avatarHint, { color: colors.textSecondary }]}>
-              Add profile photo
-            </ThemedText>
-          </View>
-
-          <ScrollView keyboardShouldPersistTaps="handled" style={{ flex: 1 }}>
-            <View style={styles.form}>
-              <Input label="Display name" value={name} onChangeText={setName} colors={colors} />
-              <Input
-                label="Handle"
-                value={handle}
-                onChangeText={setHandle}
-                colors={colors}
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
-              <Input label="Bio (optional)" value={bio} onChangeText={setBio} colors={colors} multiline />
-              <Input
-                label="Location (optional)"
-                value={location}
-                onChangeText={setLocation}
-                colors={colors}
-              />
-              <Input
-                label="Link (optional)"
-                value={link}
-                onChangeText={setLink}
-                colors={colors}
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
-
-              <Pressable
-                onPress={() => {
-                  Keyboard.dismiss();
-                  setShowJoinedPicker(true);
-                }}
-                style={({ pressed }) => [
-                  styles.inputWrap,
-                  { borderColor: colors.border, backgroundColor: pressed ? colors.pressed : "transparent" },
-                ]}
-              >
-                <ThemedText style={{ fontSize: 12, color: colors.textSecondary }}>Joined date</ThemedText>
-                <ThemedText style={{ fontSize: 16, color: colors.text }}>
-                  {(joinedDate ?? new Date()).toLocaleDateString()}
-                </ThemedText>
+          <ScrollView
+            style={{ flex: 1 }}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
+            contentContainerStyle={{ paddingBottom: 24 }}
+          >
+            {/* Avatar */}
+            <View style={styles.avatarWrap}>
+              <Pressable onPress={pickAvatar} hitSlop={12}>
+                <Avatar uri={avatarUrl} size={96} fallbackColor={colors.border} />
               </Pressable>
 
-              <View style={styles.row2}>
-                <Input
-                  label="Following (optional)"
-                  value={following}
-                  onChangeText={setFollowing}
-                  colors={colors}
-                  keyboardType="number-pad"
-                />
-                <Input
-                  label="Followers (optional)"
-                  value={followers}
-                  onChangeText={setFollowers}
-                  colors={colors}
-                  keyboardType="number-pad"
-                />
-              </View>
-
-              <Pressable
-                disabled={!canSubmit}
-                onPress={onSave}
-                style={({ pressed }) => [
-                  styles.primaryBtn,
-                  { backgroundColor: colors.text, opacity: !canSubmit ? 0.4 : pressed ? 0.85 : 1 },
-                ]}
-              >
-                <ThemedText style={{ color: colors.background, fontWeight: "700" }}>
-                  {isEdit ? "Save" : "Create"}
+              <Pressable onPress={pickAvatar} hitSlop={12}>
+                <ThemedText style={{ color: colors.tint, marginTop: 8 }}>
+                  Change avatar
                 </ThemedText>
               </Pressable>
             </View>
-          </ScrollView>
 
-          {/* Joined date picker */}
-          <Modal visible={showJoinedPicker} transparent animationType="fade">
-            <Pressable style={styles.pickerBackdrop} onPress={() => setShowJoinedPicker(false)}>
-              <Pressable
+            {/* Basic fields */}
+            <View style={styles.form}>
+              <TextInput
+                value={displayName}
+                onChangeText={setDisplayName}
+                placeholder="Display name"
+                placeholderTextColor={colors.textSecondary}
+                style={[styles.input, { color: colors.text, borderColor: colors.border }]}
+              />
+
+              <TextInput
+                value={handle}
+                onChangeText={setHandle}
+                placeholder="@handle"
+                placeholderTextColor={colors.textSecondary}
+                autoCapitalize="none"
+                style={[styles.input, { color: colors.text, borderColor: colors.border }]}
+              />
+
+              <TextInput
+                value={bio}
+                onChangeText={setBio}
+                placeholder="Bio (optional)"
+                placeholderTextColor={colors.textSecondary}
+                multiline
                 style={[
-                  styles.pickerModalCard,
-                  { backgroundColor: colors.card, borderColor: colors.border },
+                  styles.input,
+                  styles.bio,
+                  { color: colors.text, borderColor: colors.border },
                 ]}
+              />
+            </View>
+
+            {/* Profile settings */}
+            <View style={[styles.section, { borderTopColor: colors.border }]}>
+              <ThemedText style={[styles.sectionTitle, { color: colors.textSecondary }]}>
+                Profile settings
+              </ThemedText>
+
+              {/* 1) Account size */}
+              <RowCard
+                label="Account size"
+                colors={colors}
+                right={
+                  <View style={{ flexDirection: "row", gap: 10 }}>
+                    <Pressable
+                      onPress={() => setAccountSize("small")}
+                      hitSlop={10}
+                      style={({ pressed }) => [
+                        styles.sizeBtn,
+                        {
+                          borderColor: colors.border,
+                          backgroundColor: pressed ? colors.pressed : "transparent",
+                        },
+                      ]}
+                      accessibilityRole="button"
+                      accessibilityLabel="Small account"
+                    >
+                      <Ionicons name="person-outline" size={18} color={colors.textSecondary} />
+                    </Pressable>
+
+                    <Pressable
+                      onPress={() => setAccountSize("mid")}
+                      hitSlop={10}
+                      style={({ pressed }) => [
+                        styles.sizeBtn,
+                        {
+                          borderColor: colors.border,
+                          backgroundColor: pressed ? colors.pressed : "transparent",
+                        },
+                      ]}
+                      accessibilityRole="button"
+                      accessibilityLabel="Medium account"
+                    >
+                      <Ionicons name="people-outline" size={18} color={colors.textSecondary} />
+                    </Pressable>
+
+                    <Pressable
+                      onPress={() => setAccountSize("big")}
+                      hitSlop={10}
+                      style={({ pressed }) => [
+                        styles.sizeBtn,
+                        {
+                          borderColor: colors.border,
+                          backgroundColor: pressed ? colors.pressed : "transparent",
+                        },
+                      ]}
+                      accessibilityRole="button"
+                      accessibilityLabel="Big account"
+                    >
+                      <Ionicons name="people" size={18} color={colors.textSecondary} />
+                    </Pressable>
+                  </View>
+                }
               >
+                <ThemedText style={{ color: colors.textSecondary }}>
+                  Tap an icon to generate followers & following
+                </ThemedText>
+              </RowCard>
+
+              {/* 2) Followings */}
+              <RowCard
+                label="Followings"
+                colors={colors}
+                right={
+                  followingText ? (
+                    <ThemedText style={{ color: colors.textSecondary }}>
+                      {formatCount(Number(followingText))}
+                    </ThemedText>
+                  ) : (
+                    <ThemedText style={{ color: colors.textSecondary, opacity: 0.4 }}>
+                      0
+                    </ThemedText>
+                  )
+                }
+              >
+                <TextInput
+                  value={followingText}
+                  onChangeText={(v) => {
+                    const next = digitsOnly(v);
+                    const f = Number(digitsOnly(followersText)) || 0;
+                    const g = Number(next || "0") || 0;
+
+                    if (f > 0 && next.length && g >= f) {
+                      setFollowingText(String(Math.max(0, f - 1)));
+                    } else {
+                      setFollowingText(next);
+                    }
+                  }}
+                  placeholder="0"
+                  placeholderTextColor={colors.textSecondary}
+                  keyboardType="number-pad"
+                  style={[styles.rowInput, { color: colors.text }]}
+                />
+              </RowCard>
+
+
+              {/* 3) Followers */}
+              <RowCard
+                label="Followers"
+                colors={colors}
+                right={
+                  followersText ? (
+                    <ThemedText style={{ color: colors.textSecondary }}>
+                      {formatCount(Number(followersText))}
+                    </ThemedText>
+                  ) : (
+                    <ThemedText style={{ color: colors.textSecondary, opacity: 0.4 }}>
+                      0
+                    </ThemedText>
+                  )
+                }
+              >
+                <TextInput
+                  value={followersText}
+                  onChangeText={(v) => {
+                    const next = digitsOnly(v);
+                    setFollowersText(next);
+
+                    const f = Number(next || "0") || 0;
+                    const g = Number(digitsOnly(followingText)) || 0;
+                    if (f > 0 && g >= f) setFollowingText(String(Math.max(0, f - 1)));
+                  }}
+                  placeholder="0"
+                  placeholderTextColor={colors.textSecondary}
+                  keyboardType="number-pad"
+                  style={[styles.rowInput, { color: colors.text }]}
+                />
+              </RowCard>
+
+
+              {/* iOS picker shown INLINE here so it’s ABOVE the Joined row, and it doesn't close on wheel changes */}
+              {Platform.OS === "ios" && showJoinedPicker ? (
+                <View
+                  style={[
+                    styles.pickerCard,
+                    { borderColor: colors.border, backgroundColor: colors.card },
+                  ]}
+                >
+                  <View style={styles.pickerHeader}>
+                    <ThemedText style={{ color: colors.textSecondary, fontWeight: "800" }}>
+                      Pick joined date
+                    </ThemedText>
+
+                    <Pressable
+                      onPress={() => setShowJoinedPicker(false)}
+                      hitSlop={10}
+                      style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}
+                    >
+                      <ThemedText style={{ color: colors.tint, fontWeight: "900" }}>
+                        Done
+                      </ThemedText>
+                    </Pressable>
+                  </View>
+
+                  <DateTimePicker
+                    value={joinedDate}
+                    mode="date"
+                    display="spinner"
+                    onChange={(_, selected) => {
+                      // keep open on iOS; just update the value
+                      if (selected) setJoinedDate(selected);
+                    }}
+                    style={{ alignSelf: "stretch" }}
+                  />
+                </View>
+              ) : null}
+
+              {/* 4) JoinedDate */}
+              <RowCard
+                label="Joined date"
+                colors={colors}
+                right={
+                  <Pressable
+                    onPress={() => setShowJoinedPicker((v) => !v)}
+                    hitSlop={10}
+                    style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}
+                  >
+                    <ThemedText style={{ color: colors.tint, fontWeight: "900" }}>
+                      {joinedDate.toLocaleDateString(undefined, {
+                        day: "2-digit",
+                        month: "short",
+                        year: "numeric",
+                      })}
+                    </ThemedText>
+                  </Pressable>
+                }
+              >
+                <ThemedText style={{ color: colors.textSecondary }}>
+                  Tap the date to change it
+                </ThemedText>
+              </RowCard>
+
+              {/* Android date picker (dialog). It will open from here and close after selection. */}
+              {Platform.OS === "android" && showJoinedPicker ? (
                 <DateTimePicker
-                  value={joinedDate ?? new Date()}
+                  value={joinedDate}
                   mode="date"
-                  display={Platform.OS === "ios" ? "spinner" : "default"}
-                  onChange={(_, date) => {
-                    if (date) setJoinedDate(date);
-                    if (Platform.OS !== "ios") setShowJoinedPicker(false);
+                  display="default"
+                  onChange={(_, selected) => {
+                    // Android uses a dialog; close after picking (or cancel)
+                    setShowJoinedPicker(false);
+                    if (selected) setJoinedDate(selected);
                   }}
                 />
-              </Pressable>
-            </Pressable>
-          </Modal>
+              ) : null}
+
+              {/* 5) Location */}
+              <RowCard label="Location" colors={colors}>
+                <TextInput
+                  value={location}
+                  onChangeText={setLocation}
+                  placeholder="e.g. paris, france"
+                  placeholderTextColor={colors.textSecondary}
+                  style={[styles.rowInput, { color: colors.text }]}
+                />
+              </RowCard>
+
+              {/* 6) Link */}
+              <RowCard label="Link" colors={colors}>
+                <TextInput
+                  value={link}
+                  onChangeText={setLink}
+                  placeholder="e.g. https://..."
+                  placeholderTextColor={colors.textSecondary}
+                  autoCapitalize="none"
+                  style={[styles.rowInput, { color: colors.text }]}
+                />
+              </RowCard>
+            </View>
+          </ScrollView>
         </KeyboardAvoidingView>
-      </Pressable>
+      </ThemedView>
     </SafeAreaView>
   );
 }
 
-/* -------------------------------------------------------------------------- */
-/* Input                                                                     */
-/* -------------------------------------------------------------------------- */
-
-function Input(props: any) {
-  const { label, colors, ...rest } = props;
-  return (
-    <View style={[styles.inputWrap, { borderColor: colors.border }]}>
-      <ThemedText style={{ fontSize: 12, color: colors.textSecondary }}>{label}</ThemedText>
-      <TextInput {...rest} style={[styles.input, { color: colors.text }]} />
-    </View>
-  );
-}
-
-/* -------------------------------------------------------------------------- */
-/* Styles                                                                     */
-/* -------------------------------------------------------------------------- */
-
 const styles = StyleSheet.create({
+  container: { flex: 1 },
+
   header: {
     paddingHorizontal: 16,
-    paddingVertical: 14,
+    paddingVertical: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
     flexDirection: "row",
+    alignItems: "center",
     justifyContent: "space-between",
   },
 
+  avatarWrap: {
+    alignItems: "center",
+    paddingVertical: 20,
+    gap: 6,
+  },
+
   form: {
-    padding: 16,
-    gap: 14,
-  },
-
-  row2: {
-    flexDirection: "row",
+    paddingHorizontal: 16,
     gap: 12,
-  },
-
-  inputWrap: {
-    borderWidth: 1,
-    borderRadius: 14,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingBottom: 10,
   },
 
   input: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     fontSize: 16,
-    paddingVertical: 2,
   },
 
-  primaryBtn: {
-    marginTop: 8,
-    height: 48,
-    borderRadius: 999,
-    alignItems: "center",
-    justifyContent: "center",
+  bio: {
+    minHeight: 90,
+    textAlignVertical: "top",
   },
 
-  avatarWrap: {
+  section: {
+    borderTopWidth: StyleSheet.hairlineWidth,
     paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 4,
-    alignItems: "center",
+    paddingTop: 14,
+    gap: 10,
   },
 
-  avatarBtn: {
-    position: "relative",
-  },
-
-  avatarOverlay: {
-    position: "absolute",
-    right: 0,
-    bottom: 0,
-    width: 32,
-    height: 32,
-    borderRadius: 999,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 2,
-  },
-
-  avatarPlus: {
-    color: "#fff",
-    fontSize: 20,
+  sectionTitle: {
+    fontSize: 12,
     fontWeight: "800",
+    textTransform: "uppercase",
+    letterSpacing: 0.4,
+    marginBottom: 2,
   },
 
-  avatarHint: {
-    marginTop: 8,
-    fontSize: 13,
-    fontWeight: "600",
-    opacity: 0.9,
-  },
-
-  pickerBackdrop: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.35)",
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 16,
-  },
-
-  pickerModalCard: {
-    width: "100%",
-    maxWidth: 520,
+  card: {
     borderWidth: 1,
     borderRadius: 16,
-    padding: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+
+  cardLabel: {
+    fontSize: 12,
+    marginBottom: 6,
+    fontWeight: "800",
+    textTransform: "uppercase",
+    letterSpacing: 0.3,
+  },
+
+  rowInput: {
+    fontSize: 16,
+    paddingVertical: 0,
+  },
+
+  sizeBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  // iOS inline picker card (shows ABOVE JoinedDate row)
+  pickerCard: {
+    borderWidth: 1,
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingTop: 10,
+    paddingBottom: 6,
+  },
+  pickerHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingBottom: 6,
   },
 });

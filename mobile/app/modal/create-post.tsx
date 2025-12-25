@@ -33,10 +33,28 @@ import { pickAndPersistManyImages } from "@/components/ui/ImagePicker";
 
 const MAX_IMAGES = 4;
 
+/* -------------------------------------------------------------------------- */
+/* Helpers                                                                     */
+/* -------------------------------------------------------------------------- */
+
 function clampInt(n: number, min = 0, max = 99_000_000) {
   if (Number.isNaN(n)) return min;
   return Math.max(min, Math.min(max, n));
 }
+
+function randInt(min: number, max: number) {
+  const a = Math.ceil(min);
+  const b = Math.floor(max);
+  return Math.floor(Math.random() * (b - a + 1)) + a;
+}
+
+function toCountStringOrEmpty(n: number) {
+  return n > 0 ? String(n) : "";
+}
+
+/* -------------------------------------------------------------------------- */
+/* RowCard                                                                     */
+/* -------------------------------------------------------------------------- */
 
 function RowCard({
   label,
@@ -59,6 +77,10 @@ function RowCard({
     </View>
   );
 }
+
+/* -------------------------------------------------------------------------- */
+/* Quoted card (kept minimal)                                                  */
+/* -------------------------------------------------------------------------- */
 
 function QuotedPostCard({
   quotedPost,
@@ -84,17 +106,11 @@ function QuotedPostCard({
 
       <View style={{ flex: 1 }}>
         <View style={styles.quoteTopRow}>
-          <ThemedText
-            numberOfLines={1}
-            style={{ fontWeight: "800", color: colors.text, maxWidth: "70%" }}
-          >
+          <ThemedText numberOfLines={1} style={{ fontWeight: "800", color: colors.text, maxWidth: "70%" }}>
             {qpAuthor?.displayName ?? "Unknown"}
           </ThemedText>
 
-          <ThemedText
-            numberOfLines={1}
-            style={{ color: colors.textSecondary, marginLeft: 8, flexShrink: 1 }}
-          >
+          <ThemedText numberOfLines={1} style={{ color: colors.textSecondary, marginLeft: 8, flexShrink: 1 }}>
             @{qpAuthor?.handle ?? "unknown"}
           </ThemedText>
 
@@ -116,6 +132,10 @@ function QuotedPostCard({
     </View>
   );
 }
+
+/* -------------------------------------------------------------------------- */
+/* Screen                                                                      */
+/* -------------------------------------------------------------------------- */
 
 export default function CreatePostModal() {
   const { scenarioId, postId, parentPostId, quotedPostId } = useLocalSearchParams<{
@@ -165,9 +185,13 @@ export default function CreatePostModal() {
 
   const [text, setText] = useState("");
   const [imageUrls, setImageUrls] = useState<string[]>([]);
+
+  // Post settings
   const [date, setDate] = useState<Date>(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [pickerMode, setPickerMode] = useState<"date" | "time">("date");
+
+  // store as strings so "0" can be placeholder, not forced
   const [replyCount, setReplyCount] = useState("");
   const [repostCount, setRepostCount] = useState("");
   const [likeCount, setLikeCount] = useState("");
@@ -209,10 +233,12 @@ export default function CreatePostModal() {
     setAuthorProfileId(String(found.authorProfileId));
     setText(found.text ?? "");
     setDate(new Date(found.createdAt));
-    setReplyCount(String(found.replyCount ?? 0));
-    setRepostCount(String(found.repostCount ?? 0));
-    setLikeCount(String(found.likeCount ?? 0));
     setImageUrls((found.imageUrls ?? []).slice(0, MAX_IMAGES));
+
+    // keep placeholders for 0
+    setReplyCount(toCountStringOrEmpty(found.replyCount ?? 0));
+    setRepostCount(toCountStringOrEmpty(found.repostCount ?? 0));
+    setLikeCount(toCountStringOrEmpty(found.likeCount ?? 0));
 
     setParentId(found.parentPostId ? String(found.parentPostId) : replyParent);
     setQuoteId(found.quotedPostId ? String(found.quotedPostId) : q);
@@ -230,9 +256,7 @@ export default function CreatePostModal() {
   ]);
 
   /**
-   * ✅ IMPORTANT FIX:
-   * When you come back from /modal/select-profile, expo-router sometimes doesn’t
-   * re-run your effects the way you expect. Using focus ensures we sync reliably.
+   * When you come back from /modal/select-profile, ensure we sync reliably.
    */
   useFocusEffect(
     useCallback(() => {
@@ -243,30 +267,53 @@ export default function CreatePostModal() {
         setPickAuthorArmed(false);
       }
 
-      // also: if we have no author yet, pick a sensible default
       if (!isEdit && !authorProfileId) {
         const next = selectedId ?? fallbackOwnedProfileId;
         if (next) setAuthorProfileId(String(next));
       }
-    }, [
-      isReady,
-      isEdit,
-      pickAuthorArmed,
-      selectedId,
-      authorProfileId,
-      fallbackOwnedProfileId,
-    ])
+    }, [isReady, isEdit, pickAuthorArmed, selectedId, authorProfileId, fallbackOwnedProfileId])
   );
 
   // keep DB selection synced (so other screens know “current profile”)
   useEffect(() => {
     if (!isReady) return;
-    if (isEdit) return; // don’t mutate scenario selection while editing an old post
+    if (isEdit) return;
     if (!authorProfileId) return;
     if (selectedId === authorProfileId) return;
 
     setSelectedProfileId(sid, String(authorProfileId)).catch(() => {});
   }, [isReady, isEdit, sid, authorProfileId, selectedId, setSelectedProfileId]);
+
+  /* -------------------------------------------------------------------------- */
+  /* Counts                                                                      */
+  /* -------------------------------------------------------------------------- */
+
+  const counts = useMemo(() => {
+    const r1 = clampInt(Number(replyCount || 0), 0, 99_000_000);
+    const r2 = clampInt(Number(repostCount || 0), 0, 99_000_000);
+    const r3 = clampInt(Number(likeCount || 0), 0, 99_000_000);
+    return { reply: r1, repost: r2, like: r3 };
+  }, [replyCount, repostCount, likeCount]);
+
+  const setEngagementPreset = (preset: "few" | "mid" | "lot") => {
+    // choose likes first, then derive repost/reply so it stays believable
+    let likes = 0;
+
+    if (preset === "few") likes = randInt(0, 80);
+    if (preset === "mid") likes = randInt(120, 6_000);
+    if (preset === "lot") likes = randInt(30_000, 2_000_000);
+
+    const reposts = clampInt(randInt(Math.floor(likes * 0.03), Math.max(0, Math.floor(likes * 0.22))), 0, likes);
+    const replies = clampInt(randInt(Math.floor(reposts * 0.15), Math.max(0, Math.floor(reposts * 0.65))), 0, reposts);
+
+    setLikeCount(toCountStringOrEmpty(likes));
+    setRepostCount(toCountStringOrEmpty(reposts));
+    setReplyCount(toCountStringOrEmpty(replies));
+  };
+
+  /* -------------------------------------------------------------------------- */
+  /* Media                                                                       */
+  /* -------------------------------------------------------------------------- */
 
   const pickImages = async () => {
     const remaining = Math.max(0, MAX_IMAGES - imageUrls.length);
@@ -289,14 +336,11 @@ export default function CreatePostModal() {
     setImageUrls((prev) => prev.filter((_, i) => i !== idx));
   };
 
-  const canPost = text.trim().length > 0 && !!authorProfileId;
+  /* -------------------------------------------------------------------------- */
+  /* Submit                                                                      */
+  /* -------------------------------------------------------------------------- */
 
-  const counts = useMemo(() => {
-    const r1 = clampInt(Number(replyCount || 0), 0, 99_000_000);
-    const r2 = clampInt(Number(repostCount || 0), 0, 99_000_000);
-    const r3 = clampInt(Number(likeCount || 0), 0, 99_000_000);
-    return { reply: r1, repost: r2, like: r3 };
-  }, [replyCount, repostCount, likeCount]);
+  const canPost = text.trim().length > 0 && !!authorProfileId;
 
   const onPost = async () => {
     if (!canPost) return;
@@ -321,12 +365,55 @@ export default function CreatePostModal() {
 
     await upsertPost(base);
 
-    // keep selection consistent after posting
     if (!isEdit) {
       await setSelectedProfileId(sid, String(authorProfileId));
     }
 
     router.back();
+  };
+
+  /* -------------------------------------------------------------------------- */
+  /* iOS Picker (stays open until Done / tap outside)                            */
+  /* -------------------------------------------------------------------------- */
+
+  const openPicker = (mode: "date" | "time") => {
+    setPickerMode(mode);
+    setShowDatePicker(true);
+  };
+
+  const closePicker = () => setShowDatePicker(false);
+
+  const PickerOverlayIOS = () => {
+    if (!showDatePicker || Platform.OS !== "ios") return null;
+
+    return (
+      <Pressable style={styles.pickerOverlay} onPress={closePicker}>
+        <Pressable
+          onPress={() => {}}
+          style={[styles.pickerCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+        >
+          <View style={styles.pickerHeader}>
+            <ThemedText style={{ color: colors.text, fontWeight: "800" }}>
+              {pickerMode === "date" ? "Choose date" : "Choose time"}
+            </ThemedText>
+
+            <Pressable onPress={closePicker} hitSlop={10} style={({ pressed }) => [pressed && { opacity: 0.7 }]}>
+              <ThemedText style={{ color: colors.tint, fontWeight: "800" }}>Done</ThemedText>
+            </Pressable>
+          </View>
+
+          <DateTimePicker
+            value={date}
+            mode={pickerMode}
+            display="spinner"
+            onChange={(_, selected) => {
+              // ✅ iOS: do NOT close here; just update value
+              if (selected) setDate(selected);
+            }}
+          />
+        </Pressable>
+      </Pressable>
+    );
   };
 
   return (
@@ -466,7 +553,11 @@ export default function CreatePostModal() {
                 <Ionicons name="camera-outline" size={22} color={colors.tint} />
               </Pressable>
 
-              <Pressable onPress={pickImages} hitSlop={10} style={({ pressed }) => [styles.toolBtn, pressed && { opacity: 0.7 }]}>
+              <Pressable
+                onPress={pickImages}
+                hitSlop={10}
+                style={({ pressed }) => [styles.toolBtn, pressed && { opacity: 0.7 }]}
+              >
                 <Ionicons name="image-outline" size={22} color={colors.tint} />
               </Pressable>
 
@@ -479,27 +570,16 @@ export default function CreatePostModal() {
             <View style={styles.section}>
               <ThemedText style={[styles.sectionTitle, { color: colors.textSecondary }]}>Post settings</ThemedText>
 
+              {/* Date/Time */}
               <RowCard label="Date" colors={colors}>
                 <View style={{ flexDirection: "row", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-                  <Pressable
-                    onPress={() => {
-                      setPickerMode("date");
-                      setShowDatePicker(true);
-                    }}
-                    style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}
-                  >
+                  <Pressable onPress={() => openPicker("date")} style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}>
                     <ThemedText style={{ color: colors.tint, fontWeight: "700" }}>
                       {date.toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" })}
                     </ThemedText>
                   </Pressable>
 
-                  <Pressable
-                    onPress={() => {
-                      setPickerMode("time");
-                      setShowDatePicker(true);
-                    }}
-                    style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}
-                  >
+                  <Pressable onPress={() => openPicker("time")} style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}>
                     <ThemedText style={{ color: colors.tint, fontWeight: "700" }}>
                       {date.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}
                     </ThemedText>
@@ -507,6 +587,39 @@ export default function CreatePostModal() {
                 </View>
               </RowCard>
 
+              {/* Engagement preset (few/mid/lot) */}
+              <RowCard label="Engagement" colors={colors}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                  <Pressable
+                    onPress={() => setEngagementPreset("few")}
+                    hitSlop={8}
+                    style={({ pressed }) => [styles.presetBtn, { borderColor: colors.border, opacity: pressed ? 0.7 : 1 }]}
+                  >
+                    <Ionicons name="person-outline" size={18} color={colors.text} />
+                    <ThemedText style={{ color: colors.text, fontWeight: "700" }}>few</ThemedText>
+                  </Pressable>
+
+                  <Pressable
+                    onPress={() => setEngagementPreset("mid")}
+                    hitSlop={8}
+                    style={({ pressed }) => [styles.presetBtn, { borderColor: colors.border, opacity: pressed ? 0.7 : 1 }]}
+                  >
+                    <Ionicons name="people-outline" size={18} color={colors.text} />
+                    <ThemedText style={{ color: colors.text, fontWeight: "700" }}>mid</ThemedText>
+                  </Pressable>
+
+                  <Pressable
+                    onPress={() => setEngagementPreset("lot")}
+                    hitSlop={8}
+                    style={({ pressed }) => [styles.presetBtn, { borderColor: colors.border, opacity: pressed ? 0.7 : 1 }]}
+                  >
+                    <Ionicons name="rocket-outline" size={18} color={colors.text} />
+                    <ThemedText style={{ color: colors.text, fontWeight: "700" }}>lot</ThemedText>
+                  </Pressable>
+                </View>
+              </RowCard>
+
+              {/* Counts (same pattern as your profile row style: input + formatted right) */}
               <View style={styles.rowGrid}>
                 <View style={{ flex: 1 }}>
                   <RowCard
@@ -562,23 +675,31 @@ export default function CreatePostModal() {
               </RowCard>
             </View>
 
-            {showDatePicker && (
+            {/* Android picker: OK to close on select */}
+            {showDatePicker && Platform.OS !== "ios" ? (
               <DateTimePicker
                 value={date}
                 mode={pickerMode}
-                display={Platform.OS === "ios" ? "spinner" : "default"}
-                onChange={(_: any, selected: Date | undefined) => {
+                display="default"
+                onChange={(_, selected) => {
                   setShowDatePicker(false);
                   if (selected) setDate(selected);
                 }}
               />
-            )}
+            ) : null}
           </ScrollView>
+
+          {/* iOS picker overlay (does not auto-close) */}
+          <PickerOverlayIOS />
         </KeyboardAvoidingView>
       </ThemedView>
     </SafeAreaView>
   );
 }
+
+/* -------------------------------------------------------------------------- */
+/* Styles                                                                      */
+/* -------------------------------------------------------------------------- */
 
 const styles = StyleSheet.create({
   screen: { flex: 1 },
@@ -735,5 +856,38 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 8,
     borderRadius: 999,
+  },
+
+  presetBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 999,
+  },
+
+  // iOS picker overlay
+  pickerOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 18,
+    backgroundColor: "rgba(0,0,0,0.35)",
+  },
+  pickerCard: {
+    width: "100%",
+    borderRadius: 18,
+    borderWidth: StyleSheet.hairlineWidth,
+    overflow: "hidden",
+    paddingBottom: 8,
+  },
+  pickerHeader: {
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
   },
 });

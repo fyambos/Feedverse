@@ -23,6 +23,7 @@ export async function seedDbIfNeeded(existing: DbV3 | null) {
     id: String(u.id),
     username: String(u.username),
     avatarUrl: String(u.avatarUrl),
+    createdAt: String(u.createdAt ?? new Date().toISOString()),
   }));
 
   const profiles: Profile[] = MOCK_PROFILES.map((p) => ({
@@ -43,6 +44,8 @@ export async function seedDbIfNeeded(existing: DbV3 | null) {
         ? (p as any).followersCount
         : (p as any).followerCount ?? 0,
     followingCount: Number.isFinite((p as any).followingCount) ? (p as any).followingCount : 0,
+    createdAt: String(p.createdAt ?? new Date().toISOString()),
+    updatedAt: String(p.updatedAt ?? new Date().toISOString()),
   }));
 
   const posts: Post[] = [];
