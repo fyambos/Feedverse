@@ -1,11 +1,5 @@
 import React from "react";
-import {
-  FlatList,
-  Image,
-  Pressable,
-  StyleSheet,
-  View,
-} from "react-native";
+import { FlatList, Image, Pressable, StyleSheet, View } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -17,6 +11,7 @@ import { useAppData } from "@/context/appData";
 import { useAuth } from "@/context/auth";
 
 type TabKey = "mine" | "public";
+type ViewMode = "tabs" | "all"; // tabs = Mine/Public, all = single list (no tabs)
 
 export default function SelectProfileModal() {
   const { scenarioId } = useLocalSearchParams<{ scenarioId: string }>();
@@ -32,9 +27,10 @@ export default function SelectProfileModal() {
     getSelectedProfileId,
     setSelectedProfileId,
     getUserById,
-  } = useAppData() as any;
+  } = useAppData();
 
   const [tab, setTab] = React.useState<TabKey>("mine");
+  const [mode, setMode] = React.useState<ViewMode>("tabs");
 
   const allProfiles = React.useMemo(() => {
     if (!isReady) return [];
@@ -42,179 +38,188 @@ export default function SelectProfileModal() {
   }, [isReady, sid, listProfilesForScenario]);
 
   const mine = React.useMemo(
-    () => allProfiles.filter((p: any) => p.ownerUserId === String(userId)),
+    () => allProfiles.filter((p) => String(p.ownerUserId) === String(userId)),
     [allProfiles, userId]
   );
 
   const publicProfiles = React.useMemo(
-    () =>
-      allProfiles.filter(
-        (p: any) =>
-          p.isPublic && p.ownerUserId !== String(userId)
-      ),
+    () => allProfiles.filter((p) => !!p.isPublic && String(p.ownerUserId) !== String(userId)),
     [allProfiles, userId]
   );
 
-  const data = tab === "mine" ? mine : publicProfiles;
+  const data =
+    mode === "all" ? allProfiles : tab === "mine" ? mine : publicProfiles;
+
   const current = getSelectedProfileId(sid);
+
+  const Row = ({ item }: { item: any }) => {
+    const selectEnabled = mode !== "all"; //
+
+    const active = String(item.id) === String(current);
+    const owner = getUserById?.(String(item.ownerUserId));
+
+    return (
+      <Pressable
+        disabled={!selectEnabled}
+        onPress={async () => {
+          if (!selectEnabled) return;
+          await setSelectedProfileId(sid, String(item.id));
+          router.back();
+        }}
+        style={({ pressed }) => [
+          styles.row,
+          {
+            backgroundColor: pressed && selectEnabled ? colors.pressed : colors.background,
+            opacity: selectEnabled ? 1 : 0.88, // subtle “read-only” feel
+          },
+        ]}
+      >
+        {/* LEFT: profile */}
+        <View style={styles.left}>
+          {item.avatarUrl ? (
+            <Image source={{ uri: item.avatarUrl }} style={styles.profileAvatar} />
+          ) : (
+            <View style={[styles.profileAvatar, { backgroundColor: colors.border }]} />
+          )}
+
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <ThemedText type="defaultSemiBold" numberOfLines={1}>
+              {item.displayName}
+            </ThemedText>
+
+            <View style={styles.handleRow}>
+              <ThemedText numberOfLines={1} style={{ color: colors.textSecondary }}>
+                @{item.handle}
+              </ThemedText>
+
+              {item.isPublic ? (
+                <ThemedText style={[styles.publicBadge, { color: colors.textSecondary }]}>
+                  {" "}
+                  • Public
+                </ThemedText>
+              ) : null}
+            </View>
+          </View>
+        </View>
+
+        {/* RIGHT: owner (+ check only when selectable) */}
+        <View style={styles.right}>
+          {owner?.avatarUrl ? (
+            <Image source={{ uri: owner.avatarUrl }} style={styles.ownerAvatar} />
+          ) : (
+            <View style={[styles.ownerAvatar, { backgroundColor: colors.border }]} />
+          )}
+
+          <ThemedText numberOfLines={1} style={{ fontSize: 12, color: colors.textSecondary }}>
+            {owner?.username ?? "unknown"}
+          </ThemedText>
+
+          {selectEnabled && active ? (
+            <ThemedText style={{ color: colors.tint, fontWeight: "800", marginLeft: 6 }}>✓</ThemedText>
+          ) : null}
+        </View>
+      </Pressable>
+    );
+  };
+
+
+  const CreateProfileHeader = () => {
+    // show only when user is in Mine tab mode (not All, not Public)
+    if (!(mode === "tabs" && tab === "mine")) return null;
+
+    return (
+      <View>
+        <Pressable
+          onPress={() => {
+            router.push({
+              pathname: "/modal/create-profile",
+              params: { scenarioId: sid },
+            } as any);
+          }}
+          style={({ pressed }) => [
+            styles.row,
+            { backgroundColor: pressed ? colors.pressed : colors.background },
+          ]}
+        >
+          <View style={[styles.profileAvatar, styles.createAvatar, { borderColor: colors.border }]}>
+            <Ionicons name="add" size={22} color={colors.tint} />
+          </View>
+
+          <View style={{ flex: 1 }}>
+            <ThemedText type="defaultSemiBold" style={{ color: colors.tint }}>
+              Create a new profile
+            </ThemedText>
+            <ThemedText style={{ color: colors.textSecondary }}>
+              Add a character for this scenario
+            </ThemedText>
+          </View>
+
+          <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
+        </Pressable>
+
+        <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: colors.border }} />
+      </View>
+    );
+  };
 
   return (
     <SafeAreaView edges={["top"]} style={[styles.screen, { backgroundColor: colors.background }]}>
       {/* Header */}
       <View style={[styles.header, { borderBottomColor: colors.border }]}>
         <ThemedText type="defaultSemiBold" style={{ fontSize: 18 }}>
-          Choose profile
+          {mode === "all" ? "All profiles" : "Choose profile"}
         </ThemedText>
 
-        <Pressable onPress={() => router.back()} hitSlop={12}>
-          <ThemedText style={{ color: colors.tint, fontWeight: "700" }}>
-            Done
-          </ThemedText>
+        {/* RIGHT ICON: toggle ALL vs tabs */}
+        <Pressable
+          onPress={() => {
+            setMode((m) => (m === "all" ? "tabs" : "all"));
+          }}
+          hitSlop={12}
+          style={({ pressed }) => [{ padding: 6, opacity: pressed ? 0.6 : 1 }]}
+          accessibilityRole="button"
+          accessibilityLabel={mode === "all" ? "Show tabs" : "Show all profiles"}
+        >
+          <Ionicons
+            name={mode === "all" ? "albums-outline" : "people-outline"}
+            size={20}
+            color={colors.textSecondary}
+          />
         </Pressable>
       </View>
 
-      {/* Tabs */}
-      <View style={[styles.tabs, { borderBottomColor: colors.border }]}>
-        <TabButton
-          label="Mine"
-          active={tab === "mine"}
-          onPress={() => setTab("mine")}
-          colors={colors}
-        />
-        <TabButton
-          label="Public"
-          active={tab === "public"}
-          onPress={() => setTab("public")}
-          colors={colors}
-        />
-      </View>
+      {/* Tabs (only when mode === tabs) */}
+      {mode === "tabs" ? (
+        <View style={[styles.tabs, { borderBottomColor: colors.border }]}>
+          <TabButton label="Mine" active={tab === "mine"} onPress={() => setTab("mine")} colors={colors} />
+          <TabButton label="Public" active={tab === "public"} onPress={() => setTab("public")} colors={colors} />
+        </View>
+      ) : null}
 
       {/* List */}
       <FlatList
         data={data}
         keyExtractor={(p) => String(p.id)}
+        ListHeaderComponent={CreateProfileHeader}
         ItemSeparatorComponent={() => (
           <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: colors.border }} />
         )}
-        renderItem={({ item }) => {
-          const active = String(item.id) === String(current);
-          const owner = getUserById?.(String(item.ownerUserId));
-
-          return (
-            <Pressable
-              onPress={async () => {
-                await setSelectedProfileId(sid, String(item.id));
-                router.back();
-              }}
-              style={({ pressed }) => [
-                styles.row,
-                { backgroundColor: pressed ? colors.pressed : colors.background },
-              ]}
-            >
-              {/* LEFT */}
-              <View style={styles.left}>
-                {item.avatarUrl ? (
-                  <Image source={{ uri: item.avatarUrl }} style={styles.profileAvatar} />
-                ) : (
-                  <View style={[styles.profileAvatar, { backgroundColor: colors.border }]} />
-                )}
-
-                <View style={{ flex: 1, minWidth: 0 }}>
-                  <ThemedText type="defaultSemiBold" numberOfLines={1}>
-                    {item.displayName}
-                  </ThemedText>
-
-                  <View style={styles.handleRow}>
-                    <ThemedText numberOfLines={1} style={{ color: colors.textSecondary }}>
-                      @{item.handle}
-                    </ThemedText>
-
-                    {item.isPublic ? (
-                      <ThemedText style={[styles.publicBadge, { color: colors.textSecondary }]}>
-                        {" "}
-                        • Public
-                      </ThemedText>
-                    ) : null}
-                  </View>
-                </View>
-              </View>
-
-              {/* RIGHT */}
-              <View style={styles.right}>
-                {owner?.avatarUrl ? (
-                  <Image source={{ uri: owner.avatarUrl }} style={styles.ownerAvatar} />
-                ) : (
-                  <View style={[styles.ownerAvatar, { backgroundColor: colors.border }]} />
-                )}
-
-                <ThemedText
-                  numberOfLines={1}
-                  style={{ fontSize: 12, color: colors.textSecondary }}
-                >
-                  {owner?.username ?? item.ownerUserId}
-                </ThemedText>
-
-                {active ? (
-                  <ThemedText style={{ color: colors.tint, fontWeight: "800", marginLeft: 6 }}>
-                    ✓
-                  </ThemedText>
-                ) : null}
-              </View>
-            </Pressable>
-          );
-        }}
+        renderItem={({ item }) => <Row item={item} />}
         ListEmptyComponent={() => (
           <View style={{ padding: 24 }}>
             <ThemedText style={{ color: colors.textSecondary }}>
-              {tab === "mine"
+              {mode === "all"
+                ? "No profiles in this scenario."
+                : tab === "mine"
                 ? "You don’t own any profiles in this scenario."
                 : "No public profiles available."}
             </ThemedText>
           </View>
         )}
-        ListFooterComponent={
-          tab === "mine" ? (
-            <>
-              <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: colors.border }} />
-
-              <Pressable
-                onPress={() => {
-                  router.push({
-                    pathname: "/modal/create-profile",
-                    params: { scenarioId: sid },
-                  } as any);
-                }}
-                style={({ pressed }) => [
-                  styles.row,
-                  { backgroundColor: pressed ? colors.pressed : colors.background },
-                ]}
-              >
-                <View style={[styles.profileAvatar, styles.createAvatar, { borderColor: colors.border }]}>
-                  <Ionicons name="add" size={22} color={colors.tint} />
-                </View>
-
-                <View style={{ flex: 1 }}>
-                  <ThemedText type="defaultSemiBold" style={{ color: colors.tint }}>
-                    Create a new profile
-                  </ThemedText>
-                  <ThemedText style={{ color: colors.textSecondary }}>
-                    Add a character for this scenario
-                  </ThemedText>
-                </View>
-
-                <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
-              </Pressable>
-            </>
-          ) : null
-        }
       />
     </SafeAreaView>
   );
 }
-
-/* -------------------------------------------------------------------------- */
-/* Small Tab Button                                                           */
-/* -------------------------------------------------------------------------- */
 
 function TabButton({
   label,
@@ -237,27 +242,22 @@ function TabButton({
       >
         {label}
       </ThemedText>
-      {active ? (
-        <View style={[styles.tabIndicator, { backgroundColor: colors.tint }]} />
-      ) : null}
+      {active ? <View style={[styles.tabIndicator, { backgroundColor: colors.tint }]} /> : null}
     </Pressable>
   );
 }
-
-/* -------------------------------------------------------------------------- */
-/* Styles                                                                     */
-/* -------------------------------------------------------------------------- */
 
 const styles = StyleSheet.create({
   screen: { flex: 1 },
 
   header: {
-    paddingHorizontal: 16,
-    paddingVertical: 14,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    gap: 10,
   },
 
   tabs: {
