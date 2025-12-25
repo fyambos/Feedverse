@@ -12,6 +12,7 @@ import {
   Platform,
   ScrollView,
   Alert,
+  ActivityIndicator,
 } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -81,11 +82,17 @@ function QuotedPostCard({
 
       <View style={{ flex: 1 }}>
         <View style={styles.quoteTopRow}>
-          <ThemedText numberOfLines={1} style={{ fontWeight: "800", color: colors.text, maxWidth: "70%" }}>
+          <ThemedText
+            numberOfLines={1}
+            style={{ fontWeight: "800", color: colors.text, maxWidth: "70%" }}
+          >
             {qpAuthor?.displayName ?? "Unknown"}
           </ThemedText>
 
-          <ThemedText numberOfLines={1} style={{ color: colors.textSecondary, marginLeft: 8, flexShrink: 1 }}>
+          <ThemedText
+            numberOfLines={1}
+            style={{ color: colors.textSecondary, marginLeft: 8, flexShrink: 1 }}
+          >
             @{qpAuthor?.handle ?? "unknown"}
           </ThemedText>
 
@@ -100,7 +107,10 @@ function QuotedPostCard({
           </ThemedText>
         </View>
 
-        <ThemedText numberOfLines={3} style={{ color: colors.text, marginTop: 6, lineHeight: 18 }}>
+        <ThemedText
+          numberOfLines={3}
+          style={{ color: colors.text, marginTop: 6, lineHeight: 18 }}
+        >
           {quotedPost.text}
         </ThemedText>
       </View>
@@ -139,17 +149,17 @@ export default function CreatePostModal() {
     upsertPost,
   } = useAppData();
 
-  // AppData-selected profile (source of truth)
   const selectedId = getSelectedProfileId(sid);
 
   const fallbackOwnedProfileId = useMemo(() => {
-    const mine = listProfilesForScenario(sid).find((p) => String(p.ownerUserId) === String(userId ?? ""));
+    const mine = listProfilesForScenario(sid).find(
+      (p) => String(p.ownerUserId) === String(userId ?? "")
+    );
     return mine?.id ?? null;
   }, [sid, listProfilesForScenario, userId]);
 
   const initialAuthorId = selectedId ?? fallbackOwnedProfileId;
 
-  // local author state (so edit mode locks it + to control UI)
   const [authorProfileId, setAuthorProfileId] = useState<string | null>(initialAuthorId);
   const [pickAuthorArmed, setPickAuthorArmed] = useState(false);
 
@@ -161,12 +171,13 @@ export default function CreatePostModal() {
   const [text, setText] = useState("");
   const [imageUrls, setImageUrls] = useState<string[]>([]);
 
+  const [picking, setpicking] = useState(false);
+
   // Post settings
   const [date, setDate] = useState<Date>(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [pickerMode, setPickerMode] = useState<"date" | "time">("date");
 
-  // store as strings so "0" can be placeholder, not forced
   const [replyCount, setReplyCount] = useState("");
   const [repostCount, setRepostCount] = useState("");
   const [likeCount, setLikeCount] = useState("");
@@ -230,9 +241,6 @@ export default function CreatePostModal() {
     initialAuthorId,
   ]);
 
-  /**
-   * When you come back from /modal/select-profile, ensure we sync reliably.
-   */
   useFocusEffect(
     useCallback(() => {
       if (!isReady) return;
@@ -249,7 +257,6 @@ export default function CreatePostModal() {
     }, [isReady, isEdit, pickAuthorArmed, selectedId, authorProfileId, fallbackOwnedProfileId])
   );
 
-  // keep DB selection synced (so other screens know “current profile”)
   useEffect(() => {
     if (!isReady) return;
     if (isEdit) return;
@@ -271,15 +278,22 @@ export default function CreatePostModal() {
   }, [replyCount, repostCount, likeCount]);
 
   const setEngagementPreset = (preset: "few" | "mid" | "lot") => {
-    // choose likes first, then derive repost/reply so it stays believable
     let likes = 0;
 
     if (preset === "few") likes = randInt(0, 80);
     if (preset === "mid") likes = randInt(120, 6_000);
     if (preset === "lot") likes = randInt(30_000, 2_000_000);
 
-    const reposts = clampInt(randInt(Math.floor(likes * 0.03), Math.max(0, Math.floor(likes * 0.22))), 0, likes);
-    const replies = clampInt(randInt(Math.floor(reposts * 0.15), Math.max(0, Math.floor(reposts * 0.65))), 0, reposts);
+    const reposts = clampInt(
+      randInt(Math.floor(likes * 0.03), Math.max(0, Math.floor(likes * 0.22))),
+      0,
+      likes
+    );
+    const replies = clampInt(
+      randInt(Math.floor(reposts * 0.15), Math.max(0, Math.floor(reposts * 0.65))),
+      0,
+      reposts
+    );
 
     setLikeCount(toCountStringOrEmpty(likes));
     setRepostCount(toCountStringOrEmpty(reposts));
@@ -297,14 +311,19 @@ export default function CreatePostModal() {
       return;
     }
 
-    const picked = await pickAndPersistManyImages({
-      remaining,
-      persistAs: "img",
-      quality: 0.9,
-    });
+    setpicking(true);
+    try {
+      const picked = await pickAndPersistManyImages({
+        remaining,
+        persistAs: "img",
+        quality: 0.9,
+      });
 
-    if (!picked.length) return;
-    setImageUrls((prev) => [...prev, ...picked].slice(0, MAX_IMAGES));
+      if (!picked.length) return;
+      setImageUrls((prev) => [...prev, ...picked].slice(0, MAX_IMAGES));
+    } finally {
+      setpicking(false);
+    }
   };
 
   const removeImageAt = (idx: number) => {
@@ -365,15 +384,24 @@ export default function CreatePostModal() {
       <Pressable style={styles.pickerOverlay} onPress={closePicker}>
         <Pressable
           onPress={() => {}}
-          style={[styles.pickerCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+          style={[
+            styles.pickerCard,
+            { backgroundColor: colors.card, borderColor: colors.border },
+          ]}
         >
           <View style={styles.pickerHeader}>
             <ThemedText style={{ color: colors.text, fontWeight: "800" }}>
               {pickerMode === "date" ? "Choose date" : "Choose time"}
             </ThemedText>
 
-            <Pressable onPress={closePicker} hitSlop={10} style={({ pressed }) => [pressed && { opacity: 0.7 }]}>
-              <ThemedText style={{ color: colors.tint, fontWeight: "800" }}>Done</ThemedText>
+            <Pressable
+              onPress={closePicker}
+              hitSlop={10}
+              style={({ pressed }) => [pressed && { opacity: 0.7 }]}
+            >
+              <ThemedText style={{ color: colors.tint, fontWeight: "800" }}>
+                Done
+              </ThemedText>
             </Pressable>
           </View>
 
@@ -382,7 +410,6 @@ export default function CreatePostModal() {
             mode={pickerMode}
             display="spinner"
             onChange={(_, selected) => {
-              // ✅ iOS: do NOT close here; just update value
               if (selected) setDate(selected);
             }}
           />
@@ -394,6 +421,12 @@ export default function CreatePostModal() {
   return (
     <SafeAreaView edges={["top"]} style={{ flex: 1, backgroundColor: colors.background }}>
       <ThemedView style={[styles.screen, { backgroundColor: colors.background }]}>
+        {picking ? (
+          <View style={styles.pickerOverlay} pointerEvents="auto">
+                    <ActivityIndicator size="large" color="#fff" />
+                  </View>
+        ) : null}
+
         <KeyboardAvoidingView
           style={{ flex: 1 }}
           behavior={Platform.OS === "ios" ? "padding" : undefined}
@@ -440,7 +473,10 @@ export default function CreatePostModal() {
                 onPress={() => {
                   if (isEdit) return;
                   setPickAuthorArmed(true);
-                  router.push({ pathname: "/modal/select-profile", params: { scenarioId: sid } } as any);
+                  router.push({
+                    pathname: "/modal/select-profile",
+                    params: { scenarioId: sid },
+                  } as any);
                 }}
                 hitSlop={10}
                 style={({ pressed }) => [pressed && !isEdit && { opacity: 0.75 }]}
@@ -510,21 +546,30 @@ export default function CreatePostModal() {
                       },
                     ]}
                   >
-                    <QuotedPostCard quotedPost={quotedPost} colors={colors} getProfileById={getProfileById} />
+                    <QuotedPostCard
+                      quotedPost={quotedPost}
+                      colors={colors}
+                      getProfileById={getProfileById}
+                    />
                   </Pressable>
                 ) : null}
               </View>
             </View>
 
             <View style={{ alignItems: "flex-end", marginTop: 4 }}>
-              <ThemedText style={{ color: colors.textSecondary, fontSize: 12 }}>{text.length}/500</ThemedText>
+              <ThemedText style={{ color: colors.textSecondary, fontSize: 12 }}>
+                {text.length}/500
+              </ThemedText>
             </View>
 
             <View style={[styles.softDivider, { backgroundColor: colors.border }]} />
 
             {/* TOOLBAR */}
             <View style={[styles.toolbar, { borderTopColor: colors.border }]}>
-              <Pressable hitSlop={10} style={({ pressed }) => [styles.toolBtn, pressed && { opacity: 0.7 }]}>
+              <Pressable
+                hitSlop={10}
+                style={({ pressed }) => [styles.toolBtn, pressed && { opacity: 0.7 }]}
+              >
                 <Ionicons name="camera-outline" size={22} color={colors.tint} />
               </Pressable>
 
@@ -536,25 +581,36 @@ export default function CreatePostModal() {
                 <Ionicons name="image-outline" size={22} color={colors.tint} />
               </Pressable>
 
-              <Pressable hitSlop={10} style={({ pressed }) => [styles.toolBtn, pressed && { opacity: 0.7 }]}>
+              <Pressable
+                hitSlop={10}
+                style={({ pressed }) => [styles.toolBtn, pressed && { opacity: 0.7 }]}
+              >
                 <MaterialIcons name="gif" size={22} color={colors.tint} />
               </Pressable>
             </View>
 
             {/* META CONTROLS */}
             <View style={styles.section}>
-              <ThemedText style={[styles.sectionTitle, { color: colors.textSecondary }]}>Post settings</ThemedText>
+              <ThemedText style={[styles.sectionTitle, { color: colors.textSecondary }]}>
+                Post settings
+              </ThemedText>
 
               {/* Date/Time */}
               <RowCard label="Date" colors={colors}>
                 <View style={{ flexDirection: "row", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-                  <Pressable onPress={() => openPicker("date")} style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}>
+                  <Pressable
+                    onPress={() => openPicker("date")}
+                    style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}
+                  >
                     <ThemedText style={{ color: colors.tint, fontWeight: "700" }}>
                       {date.toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" })}
                     </ThemedText>
                   </Pressable>
 
-                  <Pressable onPress={() => openPicker("time")} style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}>
+                  <Pressable
+                    onPress={() => openPicker("time")}
+                    style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}
+                  >
                     <ThemedText style={{ color: colors.tint, fontWeight: "700" }}>
                       {date.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}
                     </ThemedText>
@@ -568,7 +624,10 @@ export default function CreatePostModal() {
                   <Pressable
                     onPress={() => setEngagementPreset("few")}
                     hitSlop={8}
-                    style={({ pressed }) => [styles.presetBtn, { borderColor: colors.border, opacity: pressed ? 0.7 : 1 }]}
+                    style={({ pressed }) => [
+                      styles.presetBtn,
+                      { borderColor: colors.border, opacity: pressed ? 0.7 : 1 },
+                    ]}
                   >
                     <Ionicons name="person-outline" size={18} color={colors.text} />
                     <ThemedText style={{ color: colors.text, fontWeight: "700" }}>few</ThemedText>
@@ -577,7 +636,10 @@ export default function CreatePostModal() {
                   <Pressable
                     onPress={() => setEngagementPreset("mid")}
                     hitSlop={8}
-                    style={({ pressed }) => [styles.presetBtn, { borderColor: colors.border, opacity: pressed ? 0.7 : 1 }]}
+                    style={({ pressed }) => [
+                      styles.presetBtn,
+                      { borderColor: colors.border, opacity: pressed ? 0.7 : 1 },
+                    ]}
                   >
                     <Ionicons name="people-outline" size={18} color={colors.text} />
                     <ThemedText style={{ color: colors.text, fontWeight: "700" }}>mid</ThemedText>
@@ -586,7 +648,10 @@ export default function CreatePostModal() {
                   <Pressable
                     onPress={() => setEngagementPreset("lot")}
                     hitSlop={8}
-                    style={({ pressed }) => [styles.presetBtn, { borderColor: colors.border, opacity: pressed ? 0.7 : 1 }]}
+                    style={({ pressed }) => [
+                      styles.presetBtn,
+                      { borderColor: colors.border, opacity: pressed ? 0.7 : 1 },
+                    ]}
                   >
                     <Ionicons name="rocket-outline" size={18} color={colors.text} />
                     <ThemedText style={{ color: colors.text, fontWeight: "700" }}>lot</ThemedText>
@@ -594,7 +659,7 @@ export default function CreatePostModal() {
                 </View>
               </RowCard>
 
-              {/* Counts (same pattern as your profile row style: input + formatted right) */}
+              {/* Counts */}
               <View style={styles.rowGrid}>
                 <View style={{ flex: 1 }}>
                   <RowCard
@@ -650,7 +715,7 @@ export default function CreatePostModal() {
               </RowCard>
             </View>
 
-            {/* Android picker: OK to close on select */}
+            {/* Android picker */}
             {showDatePicker && Platform.OS !== "ios" ? (
               <DateTimePicker
                 value={date}
@@ -664,7 +729,7 @@ export default function CreatePostModal() {
             ) : null}
           </ScrollView>
 
-          {/* iOS picker overlay (does not auto-close) */}
+          {/* iOS picker overlay */}
           <PickerOverlayIOS />
         </KeyboardAvoidingView>
       </ThemedView>
@@ -798,21 +863,6 @@ const styles = StyleSheet.create({
     gap: 10,
   },
 
-  rowCard: {
-    borderWidth: 1,
-    borderRadius: 16,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    flexDirection: "row",
-    alignItems: "center",
-  },
-
-  rowLabel: {
-    fontSize: 12,
-    marginBottom: 6,
-    fontWeight: "700",
-  },
-
   rowInput: {
     fontSize: 16,
     paddingVertical: 0,
@@ -843,13 +893,13 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
 
-  // iOS picker overlay
-  pickerOverlay: {
+   pickerOverlay: {
     ...StyleSheet.absoluteFillObject,
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 18,
     backgroundColor: "rgba(0,0,0,0.35)",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 999,
+    elevation: 999,
   },
   pickerCard: {
     width: "100%",

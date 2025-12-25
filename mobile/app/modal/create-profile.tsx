@@ -3,6 +3,7 @@
 import React, { useMemo, useState } from "react";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import {
+  ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
   Platform,
@@ -115,20 +116,28 @@ export default function CreateProfileModal() {
   const [link, setLink] = useState((existing as any)?.link ?? "");
 
   const [submitting, setSubmitting] = useState(false);
+  const [picking, setPicking] = useState(false);
 
   /* -------------------------------------------------------------------------- */
   /* Actions                                                                    */
   /* -------------------------------------------------------------------------- */
 
-  const pickAvatar = async () => {
+const pickAvatar = async () => {
+  setPicking(true);
+  try {
     const uri = await pickAndPersistOneImage({
       persistAs: "avatar",
       allowsEditing: true,
       aspect: [1, 1],
       quality: 0.9,
     });
+
     if (uri) setAvatarUrl(uri);
-  };
+  } finally {
+    setPicking(false);
+  }
+};
+
 
   const setAccountSize = (size: "small" | "mid" | "big") => {
     const followers = pickFollowersForSize(size);
@@ -209,6 +218,11 @@ export default function CreateProfileModal() {
       style={{ flex: 1, backgroundColor: colors.background }}
     >
       <ThemedView style={[styles.container, { backgroundColor: colors.background }]}>
+        {picking ? (
+                  <View style={styles.pickerOverlay} pointerEvents="auto">
+                            <ActivityIndicator size="large" color="#fff" />
+                          </View>
+                ) : null}
         <KeyboardAvoidingView
           style={{ flex: 1 }}
           behavior={Platform.OS === "ios" ? "padding" : undefined}
@@ -614,7 +628,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-
+   pickerOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.35)",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 999,
+    elevation: 999,
+  },
   // iOS inline picker card (shows ABOVE JoinedDate row)
   pickerCard: {
     borderWidth: 1,
