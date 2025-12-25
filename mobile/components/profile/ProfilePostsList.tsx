@@ -27,11 +27,48 @@ type Props = {
   onLoadMore: () => void;
 
   getProfileById: (id: string) => Profile | undefined;
+
+  // ✅ add this so we can resolve parent chain / replyingTo / root tweet
+  getPostById: (id: string) => DbPost | undefined;
+
   userId: string | null;
   onDeletePost: (postId: string) => Promise<void>;
 
   ListHeaderComponent: React.ReactElement;
+
+  emptyText?: string;
 };
+
+function findRootPostId(getPostById: (id: string) => DbPost | undefined, start: DbPost): string {
+  // walk up parent chain until no parent. guard against cycles.
+  let cur: DbPost | undefined = start;
+  const seen = new Set<string>();
+
+  while (cur?.parentPostId) {
+    const curId = String(cur.id);
+    if (seen.has(curId)) break;
+    seen.add(curId);
+
+    const parent = getPostById(String(cur.parentPostId));
+    if (!parent) break;
+
+    cur = parent;
+  }
+
+  return String(cur?.id ?? start.id);
+}
+
+function getReplyingToHandle(
+  getPostById: (id: string) => DbPost | undefined,
+  getProfileById: (id: string) => Profile | undefined,
+  post: DbPost
+): string {
+  if (!post.parentPostId) return "";
+  const parent = getPostById(String(post.parentPostId));
+  if (!parent) return "";
+  const parentAuthor = getProfileById(String(parent.authorProfileId));
+  return parentAuthor?.handle ?? "";
+}
 
 export function ProfilePostsList({
   colors,
@@ -41,9 +78,11 @@ export function ProfilePostsList({
   loadingMore,
   onLoadMore,
   getProfileById,
+  getPostById,
   userId,
   onDeletePost,
   ListHeaderComponent,
+  emptyText,
 }: Props) {
   return (
     <FlatList
@@ -62,7 +101,13 @@ export function ProfilePostsList({
         );
       }}
       ItemSeparatorComponent={() => (
-        <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: colors.border, opacity: 0.9 }} />
+        <View
+          style={{
+            height: StyleSheet.hairlineWidth,
+            backgroundColor: colors.border,
+            opacity: 0.9,
+          }}
+        />
       )}
       contentContainerStyle={{ paddingBottom: Platform.OS === "ios" ? 24 : 16 }}
       ListHeaderComponent={ListHeaderComponent}
@@ -70,14 +115,29 @@ export function ProfilePostsList({
         const authorProfile = getProfileById(String(item.authorProfileId));
         if (!authorProfile) return null;
 
+        const isReply = !!item.parentPostId;
+
+        // ✅ this is what your PostHeader uses in "replying to @..."
+        const replyingTo = isReply ? getReplyingToHandle(getPostById, getProfileById, item) : "";
+
+        // ✅ clicking a reply should go to the root tweet of the thread
+        const targetPostId = isReply ? findRootPostId(getPostById, item) : String(item.id);
+
         const canEditThisPost = canEditPost({ authorProfile, userId });
 
         const row = (
           <Pressable
-            onPress={() => router.push(`/(scenario)/${sid}/(tabs)/post/${String(item.id)}` as any)}
+            onPress={() => router.push(`/(scenario)/${sid}/(tabs)/post/${encodeURIComponent(targetPostId)}` as any)}
             style={({ pressed }) => [{ backgroundColor: pressed ? colors.pressed : colors.background }]}
           >
-            <PostCard scenarioId={sid} profile={authorProfile} item={item} variant="feed" showActions />
+            <PostCard
+              scenarioId={sid}
+              profile={authorProfile}
+              item={item}
+              variant={isReply ? "reply" : "feed"}
+              replyingTo={replyingTo}
+              showActions
+            />
           </Pressable>
         );
 
@@ -93,8 +153,6 @@ export function ProfilePostsList({
               } as any);
             }}
             onDelete={() => {
-              // keep UI confirm outside if you prefer — left here minimal to avoid duplicating Alert
-              // you can wrap onDeletePost with an Alert in the page
               onDeletePost(String(item.id));
             }}
           >
@@ -112,7 +170,9 @@ export function ProfilePostsList({
         }
         return (
           <View style={{ padding: 18 }}>
-            <ThemedText style={{ color: colors.textSecondary }}>No posts yet.</ThemedText>
+            <ThemedText style={{ color: colors.textSecondary }}>
+              {emptyText ?? "No posts yet."}
+            </ThemedText>
           </View>
         );
       }}
