@@ -442,7 +442,7 @@ export default function ProfileScreen() {
         profile={profile}
         viewState={viewState}
         forceStats={forcedStats}
-        showLockOnName={isPrivated && profile.isPrivate !== true}
+        showLockOnName={(isPrivated && profile.isPrivate !== true) || profile.isPrivate === true}
         showStats={viewState === "normal" || viewState === "muted" || viewState === "reactivated"}
       />
 

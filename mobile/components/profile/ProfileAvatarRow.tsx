@@ -16,8 +16,6 @@ type ColorsLike = {
 
 type PrimaryButtonOverride = {
   label: string;
-  // "primary" keeps your original Follow styling
-  // "danger" makes it twitter-like outlined red for Blocked
   variant?: "primary" | "danger";
 };
 
