@@ -17,16 +17,31 @@ import { Lightbox } from "@/components/media/LightBox";
 
 import { canEditProfile } from "@/lib/permission";
 
+// split profile components
 import { ProfileHeaderMedia } from "@/components/profile/ProfileHeaderMedia";
 import { ProfileAvatarRow } from "@/components/profile/ProfileAvatarRow";
 import { ProfileBioBlock } from "@/components/profile/ProfileBioBlock";
-import { ProfileTabsBar } from "@/components/profile/ProfileTabsBar";
+import { ProfileTabsBar, type ProfileTab } from "@/components/profile/ProfileTabsBar";
 import { ProfilePostsList } from "@/components/profile/ProfilePostsList";
 import { ProfileStatusOverlay } from "@/components/profile/ProfileStatusOverlay";
 import type { ProfileOverlayConfig } from "@/components/profile/profileTypes";
 
 type Cursor = string | null;
 const PAGE_SIZE = 10;
+
+function hasAnyMedia(p: any) {
+  // supports multiple possible shapes so Media tab “just works”
+  const urls = p?.imageUrls;
+  if (Array.isArray(urls) && urls.length > 0) return true;
+
+  const single = p?.imageUrl;
+  if (typeof single === "string" && single.length > 0) return true;
+
+  const media = p?.media;
+  if (Array.isArray(media) && media.length > 0) return true;
+
+  return false;
+}
 
 export default function ProfileScreen() {
   const { scenarioId, profileId } = useLocalSearchParams<{ scenarioId: string; profileId: string }>();
@@ -41,6 +56,7 @@ export default function ProfileScreen() {
     deletePost,
     upsertProfile,
     getSelectedProfileId,
+    getPostById,
   } = useAppData();
 
   const sid = decodeURIComponent(String(scenarioId ?? ""));
@@ -57,16 +73,17 @@ export default function ProfileScreen() {
     selectedProfileId: selectedId ? String(selectedId) : null,
   });
 
+  // ✅ tabs (controlled by page)
+  const [activeTab, setActiveTab] = useState<ProfileTab>("posts");
+
+  // --- edit mode
   const [editMode, setEditMode] = useState(false);
-  useEffect(() => {
-    setEditMode(!!isCurrentSelected);
-  }, [isCurrentSelected]);
+  useEffect(() => setEditMode(!!isCurrentSelected), [isCurrentSelected]);
 
   const showCameras = editMode;
 
-  // -------- picker lock
+  // --- picker lock
   const [picking, setPicking] = useState(false);
-
   const withPickerLock = useCallback(
     async <T,>(fn: () => Promise<T>) => {
       if (picking) return null as any;
@@ -84,7 +101,7 @@ export default function ProfileScreen() {
     Alert.alert("Not allowed", "You can't modify this profile.");
   }, []);
 
-  // -------- lightbox
+  // --- lightbox
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxUrls, setLightboxUrls] = useState<string[]>([]);
   const [lightboxIndex, setLightboxIndex] = useState(0);
@@ -130,7 +147,32 @@ export default function ProfileScreen() {
     await upsertProfile({ ...profile, headerUrl: uri });
   }, [profile, canModifyProfile, denyModify, upsertProfile, withPickerLock]);
 
-  // -------- posts paging
+  // ✅ tab-aware filter
+  const includeReplies = activeTab === "replies";
+
+  const postFilterForTab = useCallback(
+    (tab: ProfileTab) => (p: any) => {
+      if (!profile) return false;
+      if (String(p.authorProfileId) !== String(profile.id)) return false;
+
+      if (tab === "media") return hasAnyMedia(p);
+      if (tab === "replies") return !!p.parentPostId;
+      if (tab === "likes") return false; // later
+      return true; // posts
+    },
+    [profile]
+  );
+
+  const emptyText =
+    activeTab === "media"
+      ? "No media yet."
+      : activeTab === "replies"
+      ? "No replies yet."
+      : activeTab === "likes"
+      ? "No likes yet."
+      : "No posts yet.";
+
+  // --- infinite scroll paging
   const [items, setItems] = useState<any[]>([]);
   const [cursor, setCursor] = useState<Cursor>(null);
   const [hasMore, setHasMore] = useState(true);
@@ -145,15 +187,15 @@ export default function ProfileScreen() {
       scenarioId: sid,
       limit: PAGE_SIZE,
       cursor: null,
-      filter: (p) => String(p.authorProfileId) === String(profile.id),
-      includeReplies: false,
+      filter: postFilterForTab(activeTab),
+      includeReplies,
     });
 
     setItems(page.items);
     setCursor(page.nextCursor);
     setHasMore(!!page.nextCursor);
     setInitialLoading(false);
-  }, [isReady, profile, listPostsPage, sid]);
+  }, [isReady, profile, listPostsPage, sid, activeTab, includeReplies, postFilterForTab]);
 
   const loadMore = useCallback(() => {
     if (!isReady || !profile) return;
@@ -168,8 +210,8 @@ export default function ProfileScreen() {
         scenarioId: sid,
         limit: PAGE_SIZE,
         cursor,
-        filter: (p) => String(p.authorProfileId) === String(profile.id),
-        includeReplies: false,
+        filter: postFilterForTab(activeTab),
+        includeReplies,
       });
 
       setItems((prev) => [...prev, ...page.items]);
@@ -179,8 +221,9 @@ export default function ProfileScreen() {
       setLoadingMore(false);
       loadingLock.current = false;
     }
-  }, [isReady, profile, hasMore, listPostsPage, sid, cursor]);
+  }, [isReady, profile, hasMore, listPostsPage, sid, cursor, activeTab, includeReplies, postFilterForTab]);
 
+  // ✅ IMPORTANT: reset paging + reload whenever tab changes
   useEffect(() => {
     setItems([]);
     setCursor(null);
@@ -188,9 +231,8 @@ export default function ProfileScreen() {
     setInitialLoading(true);
 
     if (isReady && profile) loadFirstPage();
-  }, [isReady, profile, sid, loadFirstPage]);
+  }, [isReady, profile, sid, activeTab, loadFirstPage]);
 
-  // keep delete confirm here (so ProfilePostsList stays dumb)
   const onDeletePost = useCallback(
     async (postId: string) => {
       return new Promise<void>((resolve) => {
@@ -229,14 +271,10 @@ export default function ProfileScreen() {
 
   const onLongPressPrimary = useCallback(() => setEditMode((v) => !v), []);
 
-  // -------- moderation/profile states (placeholder for later)
-  // When you implement: compute this based on viewer/profile relations and show overlay and/or change empty state.
+  // moderation/profile states placeholder
   const overlay: ProfileOverlayConfig | null = null;
   const [overlayOpen, setOverlayOpen] = useState(false);
-
-  useEffect(() => {
-    setOverlayOpen(!!overlay);
-  }, [overlay]);
+  useEffect(() => setOverlayOpen(!!overlay), [overlay]);
 
   if (!isReady) {
     return (
@@ -287,7 +325,16 @@ export default function ProfileScreen() {
       />
 
       <ProfileBioBlock colors={colors as any} profile={profile} />
-      <ProfileTabsBar colors={colors as any} />
+
+      <ProfileTabsBar
+        colors={colors as any}
+        activeTab={activeTab}
+        onChangeTab={(t: ProfileTab) => {
+          if (t === activeTab) return;
+          setActiveTab(t);
+        }}
+      />
+
     </View>
   );
 
@@ -302,9 +349,11 @@ export default function ProfileScreen() {
           loadingMore={loadingMore}
           onLoadMore={loadMore}
           getProfileById={getProfileById as any}
+          getPostById={getPostById as any}
           userId={userId ?? null}
           onDeletePost={onDeletePost}
           ListHeaderComponent={headerEl}
+          emptyText={emptyText}
         />
 
         {picking && (
@@ -338,7 +387,6 @@ export default function ProfileScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1 },
-
   pickerOverlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: "rgba(0,0,0,0.35)",
