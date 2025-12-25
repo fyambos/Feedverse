@@ -60,12 +60,16 @@ export function Post({
   // keep old behavior where openProfile uses route param if needed
   const { scenarioId: scenarioIdParam } = useLocalSearchParams<{ scenarioId: string }>();
   const sid = String(scenarioId ?? item.scenarioId ?? scenarioIdParam ?? "");
-  const handleSlug = profile.handle;
+
+  // ✅ switched from handle -> profileId
+  const profileIdSlug = profile.id;
 
   const openProfile = () => {
-    if (!sid || !handleSlug) return;
+    if (!sid || !profileIdSlug) return;
     router.push(
-      `/(scenario)/${encodeURIComponent(sid)}/(tabs)/profile/${encodeURIComponent(handleSlug)}` as any
+      `/(scenario)/${encodeURIComponent(sid)}/(tabs)/profile/${encodeURIComponent(
+        profileIdSlug
+      )}` as any
     );
   };
 
@@ -204,6 +208,8 @@ export function Post({
   }
 
   // ===== FEED / REPLY VIEW =====
+  // this prop name is still "replyingToHandle" in PostHeader.
+  // if you also renamed it there, update this accordingly.
   const replyingToHandle = replyingTo ? replyingTo : "";
 
   return (
