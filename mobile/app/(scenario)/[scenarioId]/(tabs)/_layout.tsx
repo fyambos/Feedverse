@@ -116,7 +116,7 @@ export default function TabLayout() {
       />
 
       <Tabs.Screen
-        name="profile/[handle]"
+        name="profile/[profileId]"
         options={{
           href: null,
           headerShown: false,

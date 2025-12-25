@@ -1,3 +1,4 @@
+// mobile/app/(scenario)/[scenarioId]/(tabs)/profile/[profileId].tsx
 import React, { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import {
   ActivityIndicator,
@@ -25,7 +26,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 
 import { Avatar } from "@/components/ui/Avatar";
 import { pickAndPersistOneImage } from "@/components/ui/ImagePicker";
-import { formatCount, formatJoined, normalizeHandle } from "@/lib/format";
+import { formatCount, formatJoined } from "@/lib/format";
 
 import { Lightbox } from "@/components/media/LightBox";
 import { SwipeableRow } from "@/components/ui/SwipeableRow";
@@ -36,7 +37,7 @@ type Cursor = string | null;
 const PAGE_SIZE = 10;
 
 export default function ProfileScreen() {
-  const { scenarioId, handle } = useLocalSearchParams<{ scenarioId: string; handle: string }>();
+  const { scenarioId, profileId } = useLocalSearchParams<{ scenarioId: string; profileId: string }>();
   const scheme = useColorScheme() ?? "light";
   const colors = Colors[scheme];
   const { userId } = useAuth();
@@ -44,7 +45,6 @@ export default function ProfileScreen() {
   const {
     isReady,
     getProfileById,
-    getProfileByHandle,
     listPostsPage,
     deletePost,
     upsertProfile,
@@ -52,12 +52,11 @@ export default function ProfileScreen() {
   } = useAppData();
 
   const sid = decodeURIComponent(String(scenarioId ?? ""));
-  const wanted = normalizeHandle(decodeURIComponent(String(handle ?? "")));
+  const pid = decodeURIComponent(String(profileId ?? ""));
 
-  const profile = useMemo(() => getProfileByHandle(sid, wanted), [sid, wanted, getProfileByHandle]);
+  const profile = useMemo(() => getProfileById(String(pid)), [pid, getProfileById]);
 
   const selectedId = getSelectedProfileId(sid);
-
   const isCurrentSelected = !!profile && !!selectedId && String(selectedId) === String(profile.id);
 
   const canModifyProfile = canEditProfile({
@@ -136,42 +135,6 @@ export default function ProfileScreen() {
     await upsertProfile({ ...profile, headerUrl: uri });
   }, [profile, canModifyProfile, denyModify, upsertProfile, withPickerLock]);
 
-  const onDeletePost = useCallback(
-    async (postId: string) => {
-      await deletePost(postId);
-      // after delete, reload first page
-      loadFirstPage();
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [deletePost]
-  );
-
-  const onPressPrimary = useCallback(() => {
-    if (!profile) return;
-
-    if (editMode) {
-      if (!canModifyProfile) return denyModify();
-
-      router.push({
-        pathname: "/modal/create-profile",
-        params: { scenarioId: sid, mode: "edit", profileId: profile.id },
-      } as any);
-      return;
-    }
-
-    Alert.alert("Not yet", "Follow logic later.");
-  }, [profile, editMode, canModifyProfile, denyModify, sid]);
-
-  const onLongPressPrimary = useCallback(() => {
-    setEditMode((v) => !v);
-  }, []);
-
-  const showCameras = editMode;
-
-  /* -------------------------------------------------------------------------- */
-  /* Paging (profile posts)                                                     */
-  /* -------------------------------------------------------------------------- */
-
   const [items, setItems] = useState<any[]>([]);
   const [cursor, setCursor] = useState<Cursor>(null);
   const [hasMore, setHasMore] = useState(true);
@@ -231,9 +194,35 @@ export default function ProfileScreen() {
     if (isReady && profile) loadFirstPage();
   }, [isReady, profile, sid, loadFirstPage]);
 
-  /* -------------------------------------------------------------------------- */
-  /* Guard screens                                                              */
-  /* -------------------------------------------------------------------------- */
+  const onDeletePost = useCallback(
+    async (postId: string) => {
+      await deletePost(postId);
+      loadFirstPage();
+    },
+    [deletePost, loadFirstPage]
+  );
+
+  const onPressPrimary = useCallback(() => {
+    if (!profile) return;
+
+    if (editMode) {
+      if (!canModifyProfile) return denyModify();
+
+      router.push({
+        pathname: "/modal/create-profile",
+        params: { scenarioId: sid, mode: "edit", profileId: profile.id },
+      } as any);
+      return;
+    }
+
+    Alert.alert("Not yet", "Follow logic later.");
+  }, [profile, editMode, canModifyProfile, denyModify, sid]);
+
+  const onLongPressPrimary = useCallback(() => {
+    setEditMode((v) => !v);
+  }, []);
+
+  const showCameras = editMode;
 
   if (!isReady) {
     return (
@@ -253,16 +242,12 @@ export default function ProfileScreen() {
       <ThemedView style={[styles.screen, { backgroundColor: colors.background }]}>
         <View style={{ padding: 16 }}>
           <ThemedText style={{ color: colors.textSecondary }}>
-            Profile not found for {wanted} in scenario {sid}.
+            Profile not found for id {pid}.
           </ThemedText>
         </View>
       </ThemedView>
     );
   }
-
-  /* -------------------------------------------------------------------------- */
-  /* Render                                                                     */
-  /* -------------------------------------------------------------------------- */
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
