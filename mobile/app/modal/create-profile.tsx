@@ -22,7 +22,7 @@ import { useAuth } from "@/context/auth";
 import { useAppData } from "@/context/appData";
 
 import { Avatar } from "@/components/ui/Avatar";
-import { pickAndPersistOneImage } from "@/components/ui/AvatarPicker";
+import { pickAndPersistOneImage } from "@/components/ui/ImagePicker";
 
 import type { Profile } from "@/data/db/schema";
 

@@ -8,6 +8,23 @@ type AppDataState = {
   db: DbV3 | null;
 };
 
+type PostCursor = string; // `${createdAt}|${id}`
+
+type PostsPageArgs = {
+  scenarioId: string;
+  limit?: number;
+  cursor?: PostCursor | null; // null/undefined => first page
+  // optional filter (reusable for profile/search later)
+  filter?: (p: Post) => boolean;
+  // optional: include replies or not
+  includeReplies?: boolean; // default false
+};
+
+type PostsPageResult = {
+  items: Post[];
+  nextCursor: PostCursor | null;
+};
+
 type AppDataApi = {
   // selectors
   getUserById: (id: string) => User | null;
@@ -24,6 +41,9 @@ type AppDataApi = {
   listPostsForScenario: (scenarioId: string) => Post[];
   listRepliesForPost: (postId: string) => Post[];
 
+  // NEW: paged listing (feed/profile/search can all reuse)
+  listPostsPage: (args: PostsPageArgs) => PostsPageResult;
+
   getSelectedProfileId: (scenarioId: string) => string | null;
 
   // actions
@@ -36,8 +56,25 @@ type AppDataApi = {
 const Ctx = React.createContext<(AppDataState & AppDataApi) | null>(null);
 
 function normalizeHandle(input: string) {
-  // storage is "felix" (no @). but accept "@felix" from UI.
   return String(input).trim().replace(/^@+/, "").toLowerCase();
+}
+
+function makePostCursor(p: Post): PostCursor {
+  return `${String(p.createdAt)}|${String(p.id)}`;
+}
+
+function sortDescByCreatedAtThenId(a: Post, b: Post) {
+  // createdAt desc, id desc for stability
+  const c = String(b.createdAt).localeCompare(String(a.createdAt));
+  if (c !== 0) return c;
+  return String(b.id).localeCompare(String(a.id));
+}
+
+function sortAscByCreatedAtThenId(a: Post, b: Post) {
+  // used for replies
+  const c = String(a.createdAt).localeCompare(String(b.createdAt));
+  if (c !== 0) return c;
+  return String(a.id).localeCompare(String(b.id));
 }
 
 export function AppDataProvider({ children }: { children: React.ReactNode }) {
@@ -54,24 +91,6 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     })();
   }, []);
 
-// Debugging: print scenarios after seeding
-/*
-React.useEffect(() => {
-  (async () => {
-    const existing = await readDb();
-    const db = await seedDbIfNeeded(existing);
-
-    // 🔍 DEBUG
-    if (__DEV__) {
-      const { debugPrintScenariosFromFeeds } =
-        await import("@/app/debug/printScenariosFromFeeds");
-      debugPrintScenariosFromFeeds();
-    }
-
-    setState({ isReady: true, db });
-  })();
-}, []);
-*/
   const db = state.db;
 
   const api = React.useMemo<AppDataApi>(() => {
@@ -106,15 +125,46 @@ React.useEffect(() => {
         db
           ? Object.values(db.posts)
               .filter((p) => p.scenarioId === String(scenarioId) && !p.parentPostId)
-              .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+              .sort(sortDescByCreatedAtThenId)
           : [],
 
       listRepliesForPost: (postId) =>
         db
           ? Object.values(db.posts)
               .filter((p) => p.parentPostId === String(postId))
-              .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+              .sort(sortAscByCreatedAtThenId)
           : [],
+
+      // --- NEW: paged posts (reusable everywhere)
+      listPostsPage: ({ scenarioId, limit = 15, cursor, filter, includeReplies = false }) => {
+        if (!db) return { items: [], nextCursor: null };
+
+        // 1) build candidate list
+        let items = Object.values(db.posts).filter((p) => p.scenarioId === String(scenarioId));
+
+        if (!includeReplies) {
+          items = items.filter((p) => !p.parentPostId);
+        }
+
+        if (filter) {
+          items = items.filter(filter);
+        }
+
+        // 2) sort (feed style)
+        items.sort(sortDescByCreatedAtThenId);
+
+        // 3) apply cursor (start AFTER cursor item)
+        let startIndex = 0;
+        if (cursor) {
+          const idx = items.findIndex((p) => makePostCursor(p) === cursor);
+          startIndex = idx >= 0 ? idx + 1 : 0;
+        }
+
+        const page = items.slice(startIndex, startIndex + limit);
+        const next = page.length === limit ? makePostCursor(page[page.length - 1]) : null;
+
+        return { items: page, nextCursor: next };
+      },
 
       // --- selection
       getSelectedProfileId: (scenarioId) => {
@@ -155,15 +205,13 @@ React.useEffect(() => {
         const next = await updateDb((prev) => {
           if (!prev.posts[id]) return prev;
 
-          // irreversible delete: remove the post + its replies (optional but usually desired)
           const posts = { ...prev.posts };
 
-          // delete replies to this post
+          // delete replies
           for (const p of Object.values(posts)) {
             if (p.parentPostId === id) delete posts[p.id];
           }
 
-          // delete the post itself
           delete posts[id];
 
           return { ...prev, posts };

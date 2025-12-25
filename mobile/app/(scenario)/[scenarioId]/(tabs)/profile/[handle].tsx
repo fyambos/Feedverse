@@ -1,5 +1,4 @@
-// mobile/app/(scenario)/[scenarioId]/(tabs)/profile/[handle].tsx
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -25,13 +24,16 @@ import { useAppData } from "@/context/appData";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 
 import { Avatar } from "@/components/ui/Avatar";
-import { pickAndPersistOneImage } from "@/components/ui/AvatarPicker";
+import { pickAndPersistOneImage } from "@/components/ui/ImagePicker";
 import { formatCount, formatJoined, normalizeHandle } from "@/lib/format";
 
 import { Lightbox } from "@/components/media/LightBox";
 import { SwipeableRow } from "@/components/ui/SwipeableRow";
 
 import { canEditPost, canEditProfile } from "@/lib/permission";
+
+type Cursor = string | null;
+const PAGE_SIZE = 10;
 
 export default function ProfileScreen() {
   const { scenarioId, handle } = useLocalSearchParams<{ scenarioId: string; handle: string }>();
@@ -43,7 +45,7 @@ export default function ProfileScreen() {
     isReady,
     getProfileById,
     getProfileByHandle,
-    listPostsForScenario,
+    listPostsPage,
     deletePost,
     upsertProfile,
     getSelectedProfileId,
@@ -56,8 +58,6 @@ export default function ProfileScreen() {
 
   const selectedId = getSelectedProfileId(sid);
 
-  const isOwner = !!profile && profile.ownerUserId === userId;
-  const isPublic = !!profile && !!profile.isPublic;
   const isCurrentSelected = !!profile && !!selectedId && String(selectedId) === String(profile.id);
 
   const canModifyProfile = canEditProfile({
@@ -70,7 +70,7 @@ export default function ProfileScreen() {
 
   useEffect(() => {
     setEditMode(!!isCurrentSelected);
-  }, [isCurrentSelected, sid, wanted]);
+  }, [isCurrentSelected]);
 
   const [picking, setPicking] = useState(false);
 
@@ -136,18 +136,13 @@ export default function ProfileScreen() {
     await upsertProfile({ ...profile, headerUrl: uri });
   }, [profile, canModifyProfile, denyModify, upsertProfile, withPickerLock]);
 
-  const myPosts = useMemo(() => {
-    if (!profile) return [];
-    const all = listPostsForScenario(sid);
-    return all
-      .filter((p) => String(p.authorProfileId) === String(profile.id))
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  }, [sid, profile, listPostsForScenario]);
-
   const onDeletePost = useCallback(
     async (postId: string) => {
       await deletePost(postId);
+      // after delete, reload first page
+      loadFirstPage();
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [deletePost]
   );
 
@@ -172,6 +167,73 @@ export default function ProfileScreen() {
   }, []);
 
   const showCameras = editMode;
+
+  /* -------------------------------------------------------------------------- */
+  /* Paging (profile posts)                                                     */
+  /* -------------------------------------------------------------------------- */
+
+  const [items, setItems] = useState<any[]>([]);
+  const [cursor, setCursor] = useState<Cursor>(null);
+  const [hasMore, setHasMore] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(true);
+  const loadingLock = useRef(false);
+
+  const loadFirstPage = useCallback(() => {
+    if (!isReady || !profile) return;
+
+    const page = listPostsPage({
+      scenarioId: sid,
+      limit: PAGE_SIZE,
+      cursor: null,
+      filter: (p) => String(p.authorProfileId) === String(profile.id),
+      includeReplies: false,
+    });
+
+    setItems(page.items);
+    setCursor(page.nextCursor);
+    setHasMore(!!page.nextCursor);
+    setInitialLoading(false);
+  }, [isReady, profile, listPostsPage, sid]);
+
+  const loadMore = useCallback(() => {
+    if (!isReady || !profile) return;
+    if (!hasMore) return;
+    if (loadingLock.current) return;
+
+    loadingLock.current = true;
+    setLoadingMore(true);
+
+    try {
+      const page = listPostsPage({
+        scenarioId: sid,
+        limit: PAGE_SIZE,
+        cursor,
+        filter: (p) => String(p.authorProfileId) === String(profile.id),
+        includeReplies: false,
+      });
+
+      setItems((prev) => [...prev, ...page.items]);
+      setCursor(page.nextCursor);
+      setHasMore(!!page.nextCursor);
+    } finally {
+      setLoadingMore(false);
+      loadingLock.current = false;
+    }
+  }, [isReady, profile, hasMore, listPostsPage, sid, cursor]);
+
+  useEffect(() => {
+    setItems([]);
+    setCursor(null);
+    setHasMore(true);
+    setInitialLoading(true);
+
+    if (isReady && profile) loadFirstPage();
+  }, [isReady, profile, sid, loadFirstPage]);
+
+  /* -------------------------------------------------------------------------- */
+  /* Guard screens                                                              */
+  /* -------------------------------------------------------------------------- */
 
   if (!isReady) {
     return (
@@ -198,12 +260,28 @@ export default function ProfileScreen() {
     );
   }
 
+  /* -------------------------------------------------------------------------- */
+  /* Render                                                                     */
+  /* -------------------------------------------------------------------------- */
+
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <ThemedView style={[styles.screen, { backgroundColor: colors.background }]}>
         <FlatList
-          data={myPosts}
+          data={items}
           keyExtractor={(p) => String(p.id)}
+          onEndReachedThreshold={0.6}
+          onEndReached={() => {
+            if (!initialLoading) loadMore();
+          }}
+          ListFooterComponent={() => {
+            if (!loadingMore) return <View style={{ height: 24 }} />;
+            return (
+              <View style={{ paddingVertical: 16, alignItems: "center" }}>
+                <ActivityIndicator />
+              </View>
+            );
+          }}
           ItemSeparatorComponent={() => (
             <View
               style={{
@@ -304,9 +382,7 @@ export default function ProfileScreen() {
                       },
                     ]}
                   >
-                    <ThemedText style={{ fontWeight: "700", color: colors.text }}>
-                      Edit profile
-                    </ThemedText>
+                    <ThemedText style={{ fontWeight: "700", color: colors.text }}>Edit profile</ThemedText>
                   </Pressable>
                 ) : (
                   <Pressable
@@ -318,9 +394,7 @@ export default function ProfileScreen() {
                       { backgroundColor: colors.text, opacity: pressed ? 0.85 : 1 },
                     ]}
                   >
-                    <ThemedText style={{ fontWeight: "800", color: colors.background }}>
-                      Follow
-                    </ThemedText>
+                    <ThemedText style={{ fontWeight: "800", color: colors.background }}>Follow</ThemedText>
                   </Pressable>
                 )}
               </View>
@@ -331,13 +405,9 @@ export default function ProfileScreen() {
                   {profile.displayName}
                 </ThemedText>
 
-                <ThemedText style={[styles.handle, { color: colors.textSecondary }]}>
-                  @{profile.handle}
-                </ThemedText>
+                <ThemedText style={[styles.handle, { color: colors.textSecondary }]}>@{profile.handle}</ThemedText>
 
-                {!!profile.bio && (
-                  <ThemedText style={[styles.bio, { color: colors.text }]}>{profile.bio}</ThemedText>
-                )}
+                {!!profile.bio && <ThemedText style={[styles.bio, { color: colors.text }]}>{profile.bio}</ThemedText>}
 
                 <View style={styles.metaRow}>
                   <View style={styles.metaItem}>
@@ -381,7 +451,7 @@ export default function ProfileScreen() {
                 </View>
               </View>
 
-              {/* Tabs */}
+              {/* Tabs (UI only for now) */}
               <View style={[styles.tabsBar, { borderBottomColor: colors.border }]}>
                 <Pressable style={({ pressed }) => [styles.tab, pressed && { opacity: 0.7 }]}>
                   <ThemedText type="defaultSemiBold" style={{ color: colors.text }}>
@@ -447,11 +517,20 @@ export default function ProfileScreen() {
               </SwipeableRow>
             );
           }}
-          ListEmptyComponent={() => (
-            <View style={{ padding: 18 }}>
-              <ThemedText style={{ color: colors.textSecondary }}>No posts yet.</ThemedText>
-            </View>
-          )}
+          ListEmptyComponent={() => {
+            if (initialLoading) {
+              return (
+                <View style={{ padding: 18 }}>
+                  <ActivityIndicator />
+                </View>
+              );
+            }
+            return (
+              <View style={{ padding: 18 }}>
+                <ThemedText style={{ color: colors.textSecondary }}>No posts yet.</ThemedText>
+              </View>
+            );
+          }}
         />
 
         {picking && (
