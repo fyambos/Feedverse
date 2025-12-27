@@ -219,7 +219,7 @@ const styles = StyleSheet.create({
   },
 
   actionsReply: {
-    paddingVertical: 2,
+    paddingVertical: 0,
   },
 
   actionsDetail: {

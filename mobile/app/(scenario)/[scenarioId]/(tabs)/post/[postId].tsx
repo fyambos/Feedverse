@@ -71,7 +71,10 @@ export default function PostScreen() {
     }
 
     const walk = (parentId: string) => {
-      const children = listRepliesForPost(parentId);
+      const children = [...listRepliesForPost(parentId)].sort((a, b) =>
+        String(a.createdAt).localeCompare(String(b.createdAt))
+      );
+
       for (const child of children) {
         result.push(child);
         walk(String(child.id));
@@ -133,10 +136,7 @@ export default function PostScreen() {
               </View>
             ) : null
           }
-          ItemSeparatorComponent={() => (
-            <View style={[styles.sep, { backgroundColor: colors.border }]} />
-          )}
-          renderItem={({ item }) => {
+          renderItem={({ item, index }) => {
             const itemId = String(item.id);
 
             const authorProfileId = item.authorProfileId ? String(item.authorProfileId) : "";
@@ -156,6 +156,10 @@ export default function PostScreen() {
 
             const canEdit = canEditPost({ authorProfile: profile, userId });
 
+            const next = thread[index + 1];
+            const showThreadLine =
+              !!next && String(next.parentPostId ?? "") === String(item.id);
+
             const content = (
               <PostCard
                 scenarioId={sid}
@@ -164,6 +168,7 @@ export default function PostScreen() {
                 variant={variant}
                 replyingTo={parentProfile?.handle}
                 showActions
+                showThreadLine={showThreadLine}
               />
             );
 
