@@ -16,14 +16,14 @@ const userRepository = new UserRepository();
 export const RegisterUserService = async (
   input: RegisterRequest,
 ): Promise<{ user?: RegisterResponse; errors?: ValidationError[] }> => {
-  const { username, email, password } = input;
+  const { username, email, password_hash } = input;
 
   const errors: ValidationError[] = [];
 
   const emailError = validateEmail(email);
   if (emailError) errors.push(emailError);
 
-  const passwordError = validatePassword(password);
+  const passwordError = validatePassword(password_hash);
   if (passwordError) errors.push(passwordError);
 
   if (errors.length > 0) {
@@ -45,13 +45,13 @@ export const RegisterUserService = async (
 
   const uuid = uuidv4();
   const date = new Date();
-  const hashedPassword = await bcrypt.hash(password, 10);
+  const hashedPassword = await bcrypt.hash(password_hash, 10);
 
   const userCreated = await userRepository.create({
     id: uuid,
     username: username,
     email: email,
-    password: hashedPassword,
+    password_hash: hashedPassword,
     created_at: date,
     updated_at: date,
   });
@@ -61,8 +61,8 @@ export const RegisterUserService = async (
     User: {
       id: userCreated.id,
       email: userCreated.email,
-      createdAt: userCreated.createdAt,
-      updatedAt: userCreated.updatedAt,
+      created_at: userCreated.created_at,
+      updated_at: userCreated.updated_at,
     },
   };
 
