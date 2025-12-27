@@ -5,7 +5,7 @@ export type UserSettings = {
    * When true, timestamps are shown across the app.
    */
   showTimestamps?: boolean;
-  darkMode?: 'light' | 'dark' | 'system';
+  darkMode?: "light" | "dark" | "system";
 };
 
 export type User = {
@@ -42,6 +42,7 @@ export type Profile = {
   createdAt: string;
   updatedAt?: string;
   isPrivate?: boolean;
+
   likedPostIds?: string[];
 };
 
@@ -61,12 +62,23 @@ export type Post = {
   updatedAt?: string;
 };
 
-export type DbV3 = {
-  version: 3;
+// ✅ repost event (THIS is the source of truth)
+export type Repost = {
+  id: string;
+  scenarioId: string;
+  profileId: string;
+  postId: string;
+  createdAt: string; 
+};
+
+export type DbV4 = {
+  version: 4;
   seededAt: string;
   users: Record<string, User>;
   scenarios: Record<string, Scenario>;
   profiles: Record<string, Profile>;
   posts: Record<string, Post>;
+  reposts: Record<string, Repost>;
+
   selectedProfileByScenario: Record<string, string>;
 };

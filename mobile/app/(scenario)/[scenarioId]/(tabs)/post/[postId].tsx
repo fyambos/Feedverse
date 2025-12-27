@@ -1,3 +1,5 @@
+// mobile/app/(scenario)/[scenarioId]/(tabs)/post/[postId].tsx
+
 import React, { useCallback, useMemo } from "react";
 import { FlatList, Pressable, StyleSheet, View } from "react-native";
 import { Stack, useLocalSearchParams, router } from "expo-router";
@@ -39,9 +41,12 @@ export default function PostScreen() {
     getProfileById,
     listRepliesForPost,
     deletePost,
-    // ✅ NEW
+
     toggleLike,
     isPostLikedBySelectedProfile,
+
+    toggleRepost,
+    isPostRepostedBySelectedProfile,
   } = useAppData();
 
   const openEditPost = useCallback(
@@ -64,16 +69,13 @@ export default function PostScreen() {
   const root = isReady ? getPostById(pid) : null;
   const isDeletedRoot = isReady && !root;
 
-  const isMissingParent =
-    isReady && !!root?.parentPostId && !getPostById(String(root.parentPostId));
-
+  const isMissingParent = isReady && !!root?.parentPostId && !getPostById(String(root.parentPostId));
   const showDeletedPlaceholder = isDeletedRoot || isMissingParent;
 
   const thread = useMemo(() => {
     if (!isReady) return null;
 
     const result: Post[] = [];
-
     if (root) result.push(root);
 
     const walk = (parentId: string) => {
@@ -147,9 +149,7 @@ export default function PostScreen() {
             if (!profile) return null;
 
             const parent = item.parentPostId ? getPostById(String(item.parentPostId)) : null;
-            const parentProfile = parent?.authorProfileId
-              ? getProfileById(String(parent.authorProfileId))
-              : null;
+            const parentProfile = parent?.authorProfileId ? getProfileById(String(parent.authorProfileId)) : null;
 
             const isRoot = itemId === pid;
             const focusedIsReply = isRoot && !!item.parentPostId;
@@ -160,8 +160,8 @@ export default function PostScreen() {
             const next = thread[index + 1];
             const showThreadLine = !!next && String(next.parentPostId ?? "") === String(item.id);
 
-            // ✅ like state for this post id
             const liked = isPostLikedBySelectedProfile(sid, itemId);
+            const reposted = isPostRepostedBySelectedProfile(sid, itemId);
 
             const content = (
               <PostCard
@@ -172,9 +172,10 @@ export default function PostScreen() {
                 replyingTo={parentProfile?.handle}
                 showActions
                 showThreadLine={showThreadLine}
-                // ✅ NEW
                 isLiked={liked}
                 onLike={() => toggleLike(sid, itemId)}
+                isReposted={reposted}
+                onRepost={() => toggleRepost(sid, itemId)}
               />
             );
 
@@ -198,7 +199,6 @@ export default function PostScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  sep: { height: StyleSheet.hairlineWidth, opacity: 0.8 },
   deletedWrap: {
     marginHorizontal: 16,
     marginVertical: 12,

@@ -27,16 +27,6 @@ import type { ProfileOverlayConfig, ProfileViewState } from "@/components/profil
 type Cursor = string | null;
 const PAGE_SIZE = 10;
 
-function hasAnyMedia(p: any) {
-  const urls = p?.imageUrls;
-  if (Array.isArray(urls) && urls.length > 0) return true;
-  const single = p?.imageUrl;
-  if (typeof single === "string" && single.length > 0) return true;
-  const media = p?.media;
-  if (Array.isArray(media) && media.length > 0) return true;
-  return false;
-}
-
 function BigMessage({
   colors,
   title,
@@ -68,16 +58,21 @@ export default function ProfileScreen() {
   const {
     isReady,
     getProfileById,
-    listPostsPage,
     deletePost,
     upsertProfile,
     getSelectedProfileId,
     getPostById,
 
-    // ✅ NEW
     toggleLike,
     isPostLikedBySelectedProfile,
-  } = useAppData();
+
+    toggleRepost,
+    isPostRepostedBySelectedProfile,
+
+    // ✅ new api (reposts are not stored on profile anymore)
+    listProfileFeedPage,
+    isPostRepostedByProfileId,
+  } = useAppData() as any;
 
   const sid = decodeURIComponent(String(scenarioId ?? ""));
   const pid = decodeURIComponent(String(profileId ?? ""));
@@ -224,22 +219,25 @@ export default function ProfileScreen() {
     return null;
   }, [isBlockedBy, isBlocked, isSuspended, isPrivated, at]);
 
-  const includeReplies = activeTab === "replies";
+  // ✅ repost label (no legacy repostedPostIds)
+  // we show the banner only when the viewing profile reposted that post and the post is not authored by them
+  const repostLabelForPost = useCallback(
+    (postAuthorProfileId: string, postId: string) => {
+      if (!profile) return null;
 
-  const postFilterForTab = useCallback(
-    (tab: ProfileTab) => (p: any) => {
-      if (!profile) return false;
-      if (String(p.authorProfileId) !== String(profile.id)) return false;
+      const authoredByProfile = String(postAuthorProfileId) === String(profile.id);
+      if (authoredByProfile) return null;
 
-      if (tab === "media") return hasAnyMedia(p);
-      if (tab === "replies") return !!p.parentPostId;
-      if (tab === "likes") {
-        const liked = profile?.likedPostIds ?? [];
-        return liked.includes(String(p.id));
-      }
-      return true;
+      const repostedByViewing = isPostRepostedByProfileId
+        ? isPostRepostedByProfileId(String(profile.id), String(postId))
+        : false;
+
+      if (!repostedByViewing) return null;
+
+      if (isCurrentSelected) return "retweeted by you";
+      return `retweeted by ${profile.displayName}`;
     },
-    [profile]
+    [profile, isCurrentSelected, isPostRepostedByProfileId]
   );
 
   const emptyText =
@@ -251,6 +249,7 @@ export default function ProfileScreen() {
       ? "No likes yet."
       : "No posts yet.";
 
+  // ===== FEED (uses listProfileFeedPage so reposts bump to top) =====
   const [items, setItems] = useState<any[]>([]);
   const [cursor, setCursor] = useState<Cursor>(null);
   const [hasMore, setHasMore] = useState(true);
@@ -261,19 +260,20 @@ export default function ProfileScreen() {
   const loadFirstPage = useCallback(() => {
     if (!isReady || !profile) return;
 
-    const page = listPostsPage({
+    const page = listProfileFeedPage({
       scenarioId: sid,
+      profileId: String(profile.id),
+      tab: activeTab, // "posts" includes repost events ordered by repost createdAt
       limit: PAGE_SIZE,
       cursor: null,
-      filter: postFilterForTab(activeTab),
-      includeReplies,
     });
 
-    setItems(page.items);
+    // ProfilePostsList still expects DbPost[], so we pass the underlying post objects.
+    setItems(page.items.map((it: any) => it.post));
     setCursor(page.nextCursor);
     setHasMore(!!page.nextCursor);
     setInitialLoading(false);
-  }, [isReady, profile, listPostsPage, sid, activeTab, includeReplies, postFilterForTab]);
+  }, [isReady, profile, listProfileFeedPage, sid, activeTab]);
 
   const loadMore = useCallback(() => {
     if (!isReady || !profile) return;
@@ -284,22 +284,22 @@ export default function ProfileScreen() {
     setLoadingMore(true);
 
     try {
-      const page = listPostsPage({
+      const page = listProfileFeedPage({
         scenarioId: sid,
+        profileId: String(profile.id),
+        tab: activeTab,
         limit: PAGE_SIZE,
         cursor,
-        filter: postFilterForTab(activeTab),
-        includeReplies,
       });
 
-      setItems((prev) => [...prev, ...page.items]);
+      setItems((prev) => [...prev, ...page.items.map((it: any) => it.post)]);
       setCursor(page.nextCursor);
       setHasMore(!!page.nextCursor);
     } finally {
       setLoadingMore(false);
       loadingLock.current = false;
     }
-  }, [isReady, profile, hasMore, listPostsPage, sid, cursor, activeTab, includeReplies, postFilterForTab]);
+  }, [isReady, profile, hasMore, listProfileFeedPage, sid, cursor, activeTab]);
 
   useEffect(() => {
     setItems([]);
@@ -371,12 +371,8 @@ export default function ProfileScreen() {
           </View>
         </View>
         <View style={styles.deactivatedBody}>
-          <ThemedText style={[styles.bigTitle, { color: colors.text }]}>
-            This account doesn’t exist
-          </ThemedText>
-          <ThemedText style={[styles.bigBody, { color: colors.textSecondary }]}>
-            Try searching for another.
-          </ThemedText>
+          <ThemedText style={[styles.bigTitle, { color: colors.text }]}>This account doesn’t exist</ThemedText>
+          <ThemedText style={[styles.bigBody, { color: colors.textSecondary }]}>Try searching for another.</ThemedText>
         </View>
       </ThemedView>
     );
@@ -482,9 +478,15 @@ export default function ProfileScreen() {
             onDeletePost={onDeletePost}
             ListHeaderComponent={headerEl}
             emptyText={emptyText}
-            // ✅ NEW: like support in ALL tabs
+            // likes
             getIsLiked={(postId: string) => isPostLikedBySelectedProfile(sid, String(postId))}
             onLikePost={(postId: string) => toggleLike(sid, String(postId))}
+            // reposts
+            getIsReposted={(postId: string) => isPostRepostedBySelectedProfile(sid, String(postId))}
+            onRepostPost={(postId: string) => toggleRepost(sid, String(postId))}
+            repostLabelForPost={(postAuthorProfileId: string, postId: string) =>
+              repostLabelForPost(postAuthorProfileId, postId)
+            }
           />
         )}
 

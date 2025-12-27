@@ -1,3 +1,5 @@
+// mobile/app/(scenario)/[scenarioId]/(tabs)/index.tsx
+
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FlatList, StyleSheet, View, Pressable, Animated as RNAnimated, ActivityIndicator } from "react-native";
 import { useLocalSearchParams, router } from "expo-router";
@@ -14,7 +16,6 @@ import { SwipeableRow } from "@/components/ui/SwipeableRow";
 import { canEditPost } from "@/lib/permission";
 
 type Cursor = string | null;
-
 const PAGE_SIZE = 12;
 
 export default function HomeScreen() {
@@ -25,11 +26,18 @@ export default function HomeScreen() {
   const colors = Colors[scheme];
 
   const { userId } = useAuth();
-  const { isReady, listPostsPage, getProfileById, deletePost, toggleLike, isPostLikedBySelectedProfile } = useAppData();
+  const {
+    isReady,
+    listPostsPage,
+    getProfileById,
+    deletePost,
 
-  /* -------------------------------------------------------------------------- */
-  /* Paging state                                                               */
-  /* -------------------------------------------------------------------------- */
+    toggleLike,
+    isPostLikedBySelectedProfile,
+
+    toggleRepost,
+    isPostRepostedBySelectedProfile,
+  } = useAppData();
 
   const [items, setItems] = useState<any[]>([]);
   const [cursor, setCursor] = useState<Cursor>(null);
@@ -68,7 +76,6 @@ export default function HomeScreen() {
     }
   }, [isReady, hasMore, listPostsPage, sid, cursor]);
 
-  // reset when scenario changes / db becomes ready
   useEffect(() => {
     setItems([]);
     setCursor(null);
@@ -77,10 +84,6 @@ export default function HomeScreen() {
 
     if (isReady) loadFirstPage();
   }, [sid, isReady, loadFirstPage]);
-
-  /* -------------------------------------------------------------------------- */
-  /* FAB animation                                                               */
-  /* -------------------------------------------------------------------------- */
 
   const scale = React.useRef(new RNAnimated.Value(1)).current;
   const navLock = React.useRef(false);
@@ -93,10 +96,6 @@ export default function HomeScreen() {
   const pressOut = () => {
     RNAnimated.spring(scale, { toValue: 1, friction: 4, useNativeDriver: true }).start();
   };
-
-  /* -------------------------------------------------------------------------- */
-  /* Navigation                                                                  */
-  /* -------------------------------------------------------------------------- */
 
   const openCreatePost = () => {
     if (navLock.current) return;
@@ -132,15 +131,10 @@ export default function HomeScreen() {
   const onDeletePost = useCallback(
     async (postId: string) => {
       await deletePost(postId);
-      // simple refresh: reload first page so UI stays consistent
       loadFirstPage();
     },
     [deletePost, loadFirstPage]
   );
-
-  /* -------------------------------------------------------------------------- */
-  /* Render                                                                      */
-  /* -------------------------------------------------------------------------- */
 
   const data = useMemo(() => items, [items]);
 
@@ -168,10 +162,13 @@ export default function HomeScreen() {
           if (!profile) return null;
 
           const canEdit = canEditPost({ authorProfile: profile, userId: userId ?? null });
-          const liked = isPostLikedBySelectedProfile(sid, String(item.id));
+
+          const postId = String(item.id);
+          const liked = isPostLikedBySelectedProfile(sid, postId);
+          const reposted = isPostRepostedBySelectedProfile(sid, postId);
 
           const content = (
-            <Pressable onPress={() => openPostDetail(String(item.id))}>
+            <Pressable onPress={() => openPostDetail(postId)}>
               <PostCard
                 scenarioId={sid}
                 profile={profile as any}
@@ -179,7 +176,9 @@ export default function HomeScreen() {
                 variant="feed"
                 showActions
                 isLiked={liked}
-                onLike={() => toggleLike(sid, String(item.id))}
+                onLike={() => toggleLike(sid, postId)}
+                isReposted={reposted}
+                onRepost={() => toggleRepost(sid, postId)}
               />
             </Pressable>
           );
@@ -189,8 +188,8 @@ export default function HomeScreen() {
               enabled={canEdit}
               colors={colors}
               rightThreshold={24}
-              onEdit={() => openEditPost(String(item.id))}
-              onDelete={() => onDeletePost(String(item.id))}
+              onEdit={() => openEditPost(postId)}
+              onDelete={() => onDeletePost(postId)}
             >
               {content}
             </SwipeableRow>
@@ -234,7 +233,6 @@ export default function HomeScreen() {
         }}
       />
 
-      {/* FAB */}
       <RNAnimated.View style={[styles.fab, { backgroundColor: colors.tint, transform: [{ scale }] }]}>
         <Pressable
           onPress={openCreatePost}
