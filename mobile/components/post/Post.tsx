@@ -53,21 +53,20 @@ function pluralize(n: number, singular: string, plural?: string) {
 
 function menuLabelToView(label: string): ProfileViewState | null {
   switch (label) {
-    case "Block account":
+    case "Blocked account":
       return "blocked";
-    case "Get Blocked":
+    case "Blocked by account":
       return "blocked_by";
-    case "Suspend account":
+    case "Suspended account":
       return "suspended";
-    case "Deactivate account":
+    case "Deactivated account":
       return "deactivated";
-    case "Reactivate account":
+    case "Reactivated account":
       return "reactivated";
-    case "Private account":
+    case "Privated account":
       return "privated";
-    case "Mute account":
+    case "Muted account":
       return "muted";
-    // NOTE: "Report post" is intentionally NOT mapped here.
     default:
       return null;
   }
@@ -134,21 +133,19 @@ export function Post({
   // ----- menu
   const [menuOpen, setMenuOpen] = React.useState(false);
 
-  // keep this as the only "real" action
+  // the only "real" action
   const REPORT_LABEL = "Report post";
 
-  // state previews (your existing ones)
+  // state previews
   const STATE_OPTIONS = React.useMemo(
     () => [
-      "Block account",
-      "Mute account",
-      "Get Blocked",
-      "Suspend account",
-      "Deactivate account",
-      "Reactivate account",
+      "Blocked account",
+      "Muted account",
+      "Blocked by account",
+      "Suspended account",
+      "Deactivated account",
+      "Reactivated account",
       "Private account",
-      // keep "reported" state accessible if you want it (but NOT via "Report post"):
-      // "Show reported state",
     ],
     []
   );
