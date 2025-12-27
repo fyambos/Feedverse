@@ -46,6 +46,7 @@ export async function seedDbIfNeeded(existing: DbV3 | null) {
     followingCount: Number.isFinite((p as any).followingCount) ? (p as any).followingCount : 0,
     createdAt: String(p.createdAt ?? new Date().toISOString()),
     updatedAt: String(p.updatedAt ?? new Date().toISOString()),
+    likedPostIds: Array.isArray((p as any).likedPostIds) ? (p as any).likedPostIds.map(String) : [],
   }));
 
   const posts: Post[] = [];

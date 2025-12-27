@@ -33,7 +33,16 @@ export default function PostScreen() {
   const fromPath = typeof from === "string" && from.length > 0 ? from : null;
 
   const { userId } = useAuth();
-  const { isReady, getPostById, getProfileById, listRepliesForPost, deletePost } = useAppData();
+  const {
+    isReady,
+    getPostById,
+    getProfileById,
+    listRepliesForPost,
+    deletePost,
+    // ✅ NEW
+    toggleLike,
+    isPostLikedBySelectedProfile,
+  } = useAppData();
 
   const openEditPost = useCallback(
     (id: string) => {
@@ -65,10 +74,7 @@ export default function PostScreen() {
 
     const result: Post[] = [];
 
-    // only add root if it exists
-    if (root) {
-      result.push(root);
-    }
+    if (root) result.push(root);
 
     const walk = (parentId: string) => {
       const children = [...listRepliesForPost(parentId)].sort((a, b) =>
@@ -82,7 +88,6 @@ export default function PostScreen() {
     };
 
     walk(pid);
-
     return result;
   }, [isReady, root, pid, listRepliesForPost]);
 
@@ -127,9 +132,7 @@ export default function PostScreen() {
           ListHeaderComponent={
             showDeletedPlaceholder ? (
               <View style={[styles.deletedWrap, { borderColor: colors.border }]}>
-                <ThemedText style={{ color: colors.text, fontWeight: "700" }}>
-                  Deleted post
-                </ThemedText>
+                <ThemedText style={{ color: colors.text, fontWeight: "700" }}>Deleted post</ThemedText>
                 <ThemedText style={{ color: colors.textSecondary, marginTop: 4 }}>
                   This post is no longer available.
                 </ThemedText>
@@ -150,15 +153,15 @@ export default function PostScreen() {
 
             const isRoot = itemId === pid;
             const focusedIsReply = isRoot && !!item.parentPostId;
-
-            // if the opened post is itself a reply, keep it styled as a reply
             const variant = isRoot && !focusedIsReply ? "detail" : "reply";
 
             const canEdit = canEditPost({ authorProfile: profile, userId });
 
             const next = thread[index + 1];
-            const showThreadLine =
-              !!next && String(next.parentPostId ?? "") === String(item.id);
+            const showThreadLine = !!next && String(next.parentPostId ?? "") === String(item.id);
+
+            // ✅ like state for this post id
+            const liked = isPostLikedBySelectedProfile(sid, itemId);
 
             const content = (
               <PostCard
@@ -169,6 +172,9 @@ export default function PostScreen() {
                 replyingTo={parentProfile?.handle}
                 showActions
                 showThreadLine={showThreadLine}
+                // ✅ NEW
+                isLiked={liked}
+                onLike={() => toggleLike(sid, itemId)}
               />
             );
 

@@ -1,4 +1,3 @@
-// mobile/app/(scenario)/[scenarioId]/(tabs)/profile/[profileId].tsx
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Alert, StyleSheet, View } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
@@ -17,7 +16,6 @@ import { Lightbox } from "@/components/media/LightBox";
 
 import { canEditProfile } from "@/lib/permission";
 
-// split profile components
 import { ProfileHeaderMedia } from "@/components/profile/ProfileHeaderMedia";
 import { ProfileAvatarRow } from "@/components/profile/ProfileAvatarRow";
 import { ProfileBioBlock } from "@/components/profile/ProfileBioBlock";
@@ -75,6 +73,10 @@ export default function ProfileScreen() {
     upsertProfile,
     getSelectedProfileId,
     getPostById,
+
+    // ✅ NEW
+    toggleLike,
+    isPostLikedBySelectedProfile,
   } = useAppData();
 
   const sid = decodeURIComponent(String(scenarioId ?? ""));
@@ -94,13 +96,11 @@ export default function ProfileScreen() {
   const [activeTab, setActiveTab] = useState<ProfileTab>("posts");
   const [isFollowing, setIsFollowing] = useState(false);
 
-  // --- edit mode
   const [editMode, setEditMode] = useState(false);
   useEffect(() => setEditMode(!!isCurrentSelected), [isCurrentSelected]);
 
   const showCameras = editMode;
 
-  // --- picker lock
   const [picking, setPicking] = useState(false);
   const withPickerLock = useCallback(
     async <T,>(fn: () => Promise<T>) => {
@@ -119,7 +119,6 @@ export default function ProfileScreen() {
     Alert.alert("Not allowed", "You can't modify this profile.");
   }, []);
 
-  // --- lightbox
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxUrls, setLightboxUrls] = useState<string[]>([]);
   const [lightboxIndex, setLightboxIndex] = useState(0);
@@ -175,16 +174,13 @@ export default function ProfileScreen() {
   const isReactivated = viewState === "reactivated";
   const isMuted = viewState === "muted";
 
-  // show tabs only for "normal" + muted
   const showTabs = viewState === "normal" || viewState === "muted";
 
-  // muted modal
   const [mutedModalOpen, setMutedModalOpen] = useState(false);
   useEffect(() => {
     setMutedModalOpen(viewState === "muted");
   }, [viewState]);
 
-  // overlays
   const [overlay, setOverlay] = useState<ProfileOverlayConfig | null>(null);
   const [overlayOpen, setOverlayOpen] = useState(false);
 
@@ -228,9 +224,6 @@ export default function ProfileScreen() {
     return null;
   }, [isBlockedBy, isBlocked, isSuspended, isPrivated, at]);
 
-  // ----------------------------
-  // Tabs + paging
-  // ----------------------------
   const includeReplies = activeTab === "replies";
 
   const postFilterForTab = useCallback(
@@ -240,7 +233,10 @@ export default function ProfileScreen() {
 
       if (tab === "media") return hasAnyMedia(p);
       if (tab === "replies") return !!p.parentPostId;
-      if (tab === "likes") return false;
+      if (tab === "likes") {
+        const liked = profile?.likedPostIds ?? [];
+        return liked.includes(String(p.id));
+      }
       return true;
     },
     [profile]
@@ -347,15 +343,11 @@ export default function ProfileScreen() {
       return;
     }
 
-    // UI-only follow toggle (no backend yet)
     setIsFollowing((v) => !v);
   }, [profile, editMode, canModifyProfile, denyModify, sid]);
 
   const onLongPressPrimary = useCallback(() => setEditMode((v) => !v), []);
 
-  // ----------------------------
-  // ✅ early returns (safe now)
-  // ----------------------------
   if (!isReady) {
     return (
       <ThemedView
@@ -369,21 +361,15 @@ export default function ProfileScreen() {
     );
   }
 
-  // ✅ DEACTIVATED: blank header + blank pfp + message, no stats/tabs/posts
   if (isDeactivated) {
     return (
       <ThemedView style={[styles.screen, { backgroundColor: colors.background }]}>
-        {/* empty header */}
         <View style={[styles.deactivatedHeader, { backgroundColor: colors.border }]} />
-
-        {/* blank pfp (positioned like your avatar row) */}
         <View style={styles.deactivatedAvatarRow}>
           <View style={[styles.deactivatedAvatarOuter, { backgroundColor: colors.background }]}>
             <View style={[styles.deactivatedAvatarInner, { backgroundColor: colors.border }]} />
           </View>
         </View>
-
-        {/* big message */}
         <View style={styles.deactivatedBody}>
           <ThemedText style={[styles.bigTitle, { color: colors.text }]}>
             This account doesn’t exist
@@ -406,7 +392,6 @@ export default function ProfileScreen() {
     );
   }
 
-  // ✅ for reactivated: force 0/0 stats
   const forcedStats = isReactivated ? { following: 0, followers: 0 } : undefined;
 
   const headerEl = (
@@ -432,15 +417,9 @@ export default function ProfileScreen() {
         onLongPressPrimary={onLongPressPrimary}
         primaryButtonOverride={
           isBlocked
-            ? {
-                label: "Blocked",
-                variant: "danger",
-              }
+            ? { label: "Blocked", variant: "danger" }
             : !editMode
-            ? {
-                label: isFollowing ? "Following" : "Follow",
-                variant: isFollowing ? "ghost" : "primary",
-              }
+            ? { label: isFollowing ? "Following" : "Follow", variant: isFollowing ? "ghost" : "primary" }
             : undefined
         }
       />
@@ -503,6 +482,9 @@ export default function ProfileScreen() {
             onDeletePost={onDeletePost}
             ListHeaderComponent={headerEl}
             emptyText={emptyText}
+            // ✅ NEW: like support in ALL tabs
+            getIsLiked={(postId: string) => isPostLikedBySelectedProfile(sid, String(postId))}
+            onLikePost={(postId: string) => toggleLike(sid, String(postId))}
           />
         )}
 
@@ -560,49 +542,18 @@ const styles = StyleSheet.create({
     elevation: 999,
   },
 
-  bigWrap: {
-    paddingTop: 22,
-    paddingHorizontal: 16,
-    paddingBottom: 18,
-  },
-  bigTitle: {
-    fontSize: 34,
-    lineHeight: 40,
-    fontWeight: "800",
-    letterSpacing: -0.4,
-  },
-  bigBody: {
-    marginTop: 12,
-    fontSize: 15,
-    lineHeight: 20,
-    opacity: 0.92,
-  },
+  bigWrap: { paddingTop: 22, paddingHorizontal: 16, paddingBottom: 18 },
+  bigTitle: { fontSize: 34, lineHeight: 40, fontWeight: "800", letterSpacing: -0.4 },
+  bigBody: { marginTop: 12, fontSize: 15, lineHeight: 20, opacity: 0.92 },
 
-  // deactivated UI
-  deactivatedHeader: {
-    height: 140,
-    opacity: 0.15,
-  },
+  deactivatedHeader: { height: 140, opacity: 0.15 },
   deactivatedAvatarRow: {
     marginTop: -26,
     paddingHorizontal: 16,
     flexDirection: "row",
     alignItems: "flex-end",
   },
-  deactivatedAvatarOuter: {
-    width: 88,
-    height: 88,
-    borderRadius: 999,
-    padding: 4,
-  },
-  deactivatedAvatarInner: {
-    width: 80,
-    height: 80,
-    borderRadius: 999,
-    opacity: 0.35,
-  },
-  deactivatedBody: {
-    paddingTop: 22,
-    paddingHorizontal: 16,
-  },
+  deactivatedAvatarOuter: { width: 88, height: 88, borderRadius: 999, padding: 4 },
+  deactivatedAvatarInner: { width: 80, height: 80, borderRadius: 999, opacity: 0.35 },
+  deactivatedBody: { paddingTop: 22, paddingHorizontal: 16 },
 });

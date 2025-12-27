@@ -42,6 +42,7 @@ export type Profile = {
   createdAt: string;
   updatedAt?: string;
   isPrivate?: boolean;
+  likedPostIds?: string[];
 };
 
 export type Post = {
