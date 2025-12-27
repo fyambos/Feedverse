@@ -1,5 +1,12 @@
 import React from "react";
-import { ActivityIndicator, FlatList, Platform, Pressable, StyleSheet, View } from "react-native";
+import {
+  ActivityIndicator,
+  FlatList,
+  Platform,
+  Pressable,
+  StyleSheet,
+  View,
+} from "react-native";
 
 import { ThemedText } from "@/components/themed-text";
 import { Post as PostCard } from "@/components/post/Post";
@@ -37,9 +44,19 @@ type Props = {
   emptyText?: string;
   disableEngagement?: boolean;
 
-  // ✅ NEW — optional like support
+  // ✅ likes
   getIsLiked?: (postId: string) => boolean;
   onLikePost?: (postId: string) => void | Promise<void>;
+
+  // ✅ reposts
+  getIsReposted?: (postId: string) => boolean;
+  onRepostPost?: (postId: string) => void | Promise<void>;
+
+  // ✅ repost banner text
+  repostLabelForPost?: (
+    postAuthorProfileId: string,
+    postId: string
+  ) => string | null;
 };
 
 function findRootPostId(
@@ -89,8 +106,12 @@ export function ProfilePostsList({
   onDeletePost,
   ListHeaderComponent,
   emptyText,
+  disableEngagement,
   getIsLiked,
   onLikePost,
+  getIsReposted,
+  onRepostPost,
+  repostLabelForPost,
 }: Props) {
   return (
     <FlatList
@@ -117,7 +138,9 @@ export function ProfilePostsList({
           }}
         />
       )}
-      contentContainerStyle={{ paddingBottom: Platform.OS === "ios" ? 24 : 16 }}
+      contentContainerStyle={{
+        paddingBottom: Platform.OS === "ios" ? 24 : 16,
+      }}
       ListHeaderComponent={ListHeaderComponent}
       renderItem={({ item }) => {
         const authorProfile = getProfileById(String(item.authorProfileId));
@@ -132,10 +155,19 @@ export function ProfilePostsList({
           ? findRootPostId(getPostById, item)
           : String(item.id);
 
-        const canEditThisPost = canEditPost({ authorProfile, userId });
+        const canEditThisPost = canEditPost({
+          authorProfile,
+          userId,
+        });
 
         const postId = String(item.id);
+
         const isLiked = getIsLiked ? getIsLiked(postId) : false;
+        const isReposted = getIsReposted ? getIsReposted(postId) : false;
+
+        const repostLabel = repostLabelForPost
+          ? repostLabelForPost(String(item.authorProfileId), postId)
+          : null;
 
         const row = (
           <Pressable
@@ -154,7 +186,11 @@ export function ProfilePostsList({
               } as any)
             }
             style={({ pressed }) => [
-              { backgroundColor: pressed ? colors.pressed : colors.background },
+              {
+                backgroundColor: pressed
+                  ? colors.pressed
+                  : colors.background,
+              },
             ]}
           >
             <PostCard
@@ -163,12 +199,19 @@ export function ProfilePostsList({
               item={item}
               variant={isReply ? "reply" : "feed"}
               replyingTo={replyingTo}
-              showActions
-              // ✅ LIKE SUPPORT
+              showActions={!disableEngagement}
+              // ❤️ likes
               isLiked={isLiked}
               onLike={
                 onLikePost ? () => onLikePost(postId) : undefined
               }
+              // 🔁 reposts
+              isReposted={isReposted}
+              onRepost={
+                onRepostPost ? () => onRepostPost(postId) : undefined
+              }
+              // 🔁 banner
+              repostedByLabel={repostLabel}
             />
           </Pressable>
         );
@@ -181,7 +224,11 @@ export function ProfilePostsList({
             onEdit={() => {
               router.push({
                 pathname: "/modal/create-post",
-                params: { scenarioId: sid, mode: "edit", postId },
+                params: {
+                  scenarioId: sid,
+                  mode: "edit",
+                  postId,
+                },
               } as any);
             }}
             onDelete={() => {

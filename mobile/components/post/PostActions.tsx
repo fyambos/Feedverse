@@ -1,3 +1,4 @@
+// mobile/components/post/PostActions.tsx
 import React from "react";
 import { Alert, Animated, Pressable, StyleSheet, View, Platform } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -10,7 +11,7 @@ import { formatCount } from "@/lib/format";
 type ColorsLike = {
   icon: string;
   textSecondary: string;
-  tint: string;
+  tint: string; // your blue
   pressed: string;
 };
 
@@ -25,12 +26,18 @@ type Props = {
   onReply: () => void;
   onQuote: () => void;
 
+  // ✅ likes
   onLike?: () => void;
-  onShare?: () => void;
   isLiked?: boolean;
+
+  // ✅ reposts
+  onRepost?: () => void | Promise<void>;
+  isReposted?: boolean;
+
+  onShare?: () => void;
 };
 
-function RepostIcon({ color }: { color: string }) {
+function RepostIconStatic({ color }: { color: string }) {
   if (Platform.OS === "ios") {
     return <IconSymbol name="arrow.2.squarepath" size={23} color={color} />;
   }
@@ -45,9 +52,14 @@ export function PostActions({
   likeCount = 0,
   onReply,
   onQuote,
+
   onLike,
-  onShare,
   isLiked = false,
+
+  onRepost,
+  isReposted = false,
+
+  onShare,
 }: Props) {
   const isDetail = variant === "detail";
   const showActionCounts = !isDetail;
@@ -58,6 +70,17 @@ export function PostActions({
   const shareScale = React.useRef(new Animated.Value(1)).current;
 
   const likeBurst = React.useRef(new Animated.Value(0)).current;
+
+  // ✅ tint “state” for repost (0 => default, 1 => tinted)
+  const repostTint = React.useRef(new Animated.Value(isReposted ? 1 : 0)).current;
+
+  React.useEffect(() => {
+    Animated.timing(repostTint, {
+      toValue: isReposted ? 1 : 0,
+      duration: 180,
+      useNativeDriver: true, // ✅ we only animate opacity now
+    }).start();
+  }, [isReposted, repostTint]);
 
   const pop = (v: Animated.Value) => {
     v.setValue(1);
@@ -73,18 +96,8 @@ export function PostActions({
     if (goingToLiked) {
       Animated.sequence([
         Animated.timing(likeScale, { toValue: 0.86, duration: 60, useNativeDriver: true }),
-        Animated.spring(likeScale, {
-          toValue: 1.1,
-          friction: 4,
-          tension: 240,
-          useNativeDriver: true,
-        }),
-        Animated.spring(likeScale, {
-          toValue: 1,
-          friction: 4,
-          tension: 240,
-          useNativeDriver: true,
-        }),
+        Animated.spring(likeScale, { toValue: 1.1, friction: 4, tension: 240, useNativeDriver: true }),
+        Animated.spring(likeScale, { toValue: 1, friction: 4, tension: 240, useNativeDriver: true }),
       ]).start();
 
       likeBurst.setValue(0);
@@ -114,6 +127,12 @@ export function PostActions({
     inputRange: [0, 0.4, 1],
     outputRange: [0, 0.35, 0],
   });
+
+  // ✅ Crossfade values for repost tint (no animated color props)
+  const repostOnOpacity = repostTint; // 0..1
+  const repostOffOpacity = repostTint.interpolate({ inputRange: [0, 1], outputRange: [1, 0] });
+
+  const showRepostCount = showActionCounts && repostCount > 0;
 
   return (
     <View style={[styles.actions, isDetail ? styles.actionsDetail : styles.actionsReply]}>
@@ -157,7 +176,8 @@ export function PostActions({
           <Pressable
             onPress={() => {
               pop(repostScale);
-              comingSoon("Reposting");
+              if (onRepost) onRepost();
+              else comingSoon("Reposting");
             }}
             onLongPress={() => {
               pop(repostScale);
@@ -171,21 +191,45 @@ export function PostActions({
             accessibilityLabel="Repost"
           >
             <Animated.View style={{ transform: [{ scale: repostScale }] }}>
-              <RepostIcon color={colors.icon} />
+              <View style={styles.repostIconStack}>
+                {/* OFF (grey) */}
+                <Animated.View style={{ opacity: repostOffOpacity }}>
+                  <RepostIconStatic color={colors.icon} />
+                </Animated.View>
+
+                {/* ON (tinted) */}
+                <Animated.View style={[styles.repostIconOn, { opacity: repostOnOpacity }]}>
+                  <RepostIconStatic color={colors.tint} />
+                </Animated.View>
+              </View>
             </Animated.View>
           </Pressable>
 
-          {showActionCounts ? (
-            <ThemedText
-              style={[
-                styles.actionCount,
-                { color: colors.textSecondary, opacity: repostCount > 0 ? 1 : 0 },
-              ]}
-            >
-              {repostCount > 0 ? formatCount(repostCount) : "0"}
-            </ThemedText>
+          {/* ✅ only show count if > 0 */}
+          {showRepostCount ? (
+            <View style={styles.repostCountStack}>
+              <Animated.Text
+                style={[
+                  styles.actionCount,
+                  { color: colors.textSecondary, opacity: repostOffOpacity as any },
+                ]}
+              >
+                {formatCount(repostCount)}
+              </Animated.Text>
+
+              <Animated.Text
+                style={[
+                  styles.actionCount,
+                  styles.repostCountOn,
+                  { color: colors.tint, opacity: repostOnOpacity as any },
+                ]}
+              >
+                {formatCount(repostCount)}
+              </Animated.Text>
+            </View>
           ) : (
-            <ThemedText style={[styles.actionCount, { opacity: 0 }]}>0</ThemedText>
+            // keep spacing stable without showing "0"
+            <View style={{ width: 0, height: 0 }} />
           )}
         </View>
       </View>
@@ -198,7 +242,6 @@ export function PostActions({
               const goingToLiked = !isLiked;
               likePop(goingToLiked);
 
-              // ✅ IMPORTANT: if onLike exists, DO NOT show Coming Soon
               if (onLike) onLike();
               else comingSoon("Liking");
             }}
@@ -291,6 +334,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 2,
     borderRadius: 999,
   },
+
+  // ✅ repost crossfade helpers
+  repostIconStack: { width: 26, height: 26, alignItems: "center", justifyContent: "center" },
+  repostIconOn: { position: "absolute" },
+
+  repostCountStack: { minWidth: 18, alignItems: "flex-start", justifyContent: "center" },
+  repostCountOn: { position: "absolute", left: 0 },
 
   likeIconWrap: {
     width: 26,

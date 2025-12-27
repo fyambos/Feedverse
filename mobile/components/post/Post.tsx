@@ -1,6 +1,10 @@
+// mobile/components/post/Post.tsx
+
 import React from "react";
 import { Alert, Modal, Pressable, StyleSheet, View } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
+import AntDesign from "@expo/vector-icons/AntDesign";
 
 import { ThemedText } from "@/components/themed-text";
 import { Colors } from "@/constants/theme";
@@ -15,10 +19,6 @@ import { PostActions } from "@/components/post/PostActions";
 import { PostHeader } from "@/components/post/PostHeader";
 import { PostBody } from "@/components/post/PostBody";
 
-/* -------------------------------------------------------------------------- */
-/* Types                                                                      */
-/* -------------------------------------------------------------------------- */
-
 export type PostVariant = "feed" | "detail" | "reply";
 
 type Props = {
@@ -30,9 +30,16 @@ type Props = {
   showActions?: boolean;
   showThreadLine?: boolean;
 
-  // ✅ NEW: allow screens/lists to control likes
+  // likes
   isLiked?: boolean;
   onLike?: () => void;
+
+  // reposts
+  isReposted?: boolean;
+  onRepost?: () => void | Promise<void>;
+
+  // ✅ label shown above the post (ex: "retweeted by you")
+  repostedByLabel?: string | null;
 };
 
 type ProfileViewState =
@@ -45,10 +52,6 @@ type ProfileViewState =
   | "reactivated"
   | "reported"
   | "privated";
-
-/* -------------------------------------------------------------------------- */
-/* Helpers                                                                    */
-/* -------------------------------------------------------------------------- */
 
 function pluralize(n: number, singular: string, plural?: string) {
   const p = plural ?? `${singular}s`;
@@ -76,10 +79,6 @@ function menuLabelToView(label: string): ProfileViewState | null {
   }
 }
 
-/* -------------------------------------------------------------------------- */
-/* Component                                                                  */
-/* -------------------------------------------------------------------------- */
-
 export function Post({
   scenarioId,
   profile,
@@ -89,9 +88,13 @@ export function Post({
   showActions = true,
   showThreadLine = false,
 
-  // ✅ NEW
   isLiked = false,
   onLike,
+
+  isReposted = false,
+  onRepost,
+
+  repostedByLabel = null,
 }: Props) {
   const scheme = useColorScheme() ?? "light";
   const colors = Colors[scheme];
@@ -102,15 +105,11 @@ export function Post({
   const { scenarioId: scenarioIdParam } = useLocalSearchParams<{ scenarioId: string }>();
   const sid = String(scenarioId ?? item.scenarioId ?? scenarioIdParam ?? "");
 
-  const profileIdSlug = profile.id;
-
   const openProfile = (view?: ProfileViewState) => {
-    if (!sid || !profileIdSlug) return;
+    if (!sid || !profile.id) return;
 
     router.push({
-      pathname: `/(scenario)/${encodeURIComponent(sid)}/(tabs)/profile/${encodeURIComponent(
-        profileIdSlug
-      )}`,
+      pathname: `/(scenario)/${encodeURIComponent(sid)}/(tabs)/profile/${encodeURIComponent(profile.id)}`,
       params: view ? { view } : {},
     } as any);
   };
@@ -193,7 +192,7 @@ export function Post({
     </Modal>
   );
 
-  // ===== DETAIL VIEW =====
+  // ===== DETAIL =====
   if (isDetail) {
     return (
       <View style={styles.wrap}>
@@ -246,20 +245,31 @@ export function Post({
             likeCount={likeCount}
             onReply={onReply}
             onQuote={onQuote}
-            // ✅ NEW
             isLiked={isLiked}
             onLike={onLike}
+            isReposted={isReposted}
+            onRepost={onRepost}
           />
         )}
       </View>
     );
   }
 
-  // ===== FEED / REPLY VIEW =====
+  // ===== FEED / REPLY =====
   const replyingToHandle = replyingTo ? replyingTo : "";
 
   return (
     <View style={styles.wrapReply}>
+      {/* ✅ repost banner */}
+      {repostedByLabel ? (
+        <View style={styles.repostBanner}>
+          <AntDesign name="retweet" size={14} color={colors.tint} />
+          <ThemedText style={[styles.repostBannerText, { color: colors.textSecondary }]}>
+            {repostedByLabel}
+          </ThemedText>
+        </View>
+      ) : null}
+
       <View style={styles.row}>
         <View style={styles.avatarCol}>
           {showThreadLine ? <View style={[styles.threadLine, { backgroundColor: colors.border }]} /> : null}
@@ -294,9 +304,10 @@ export function Post({
               likeCount={likeCount}
               onReply={onReply}
               onQuote={onQuote}
-              // ✅ NEW
               isLiked={isLiked}
               onLike={onLike}
+              isReposted={isReposted}
+              onRepost={onRepost}
             />
           )}
         </View>
@@ -305,13 +316,19 @@ export function Post({
   );
 }
 
-/* -------------------------------------------------------------------------- */
-/* Styles                                                                     */
-/* -------------------------------------------------------------------------- */
-
 const styles = StyleSheet.create({
   wrap: { paddingHorizontal: 16, paddingVertical: 12 },
   wrapReply: { paddingHorizontal: 16, paddingVertical: 4 },
+
+  repostBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingLeft: 44 + 12, // align with text column
+    paddingBottom: 2,
+    paddingTop: 2,
+  },
+  repostBannerText: { fontSize: 13, fontWeight: "600" },
 
   row: { flexDirection: "row", alignItems: "flex-start", gap: 12 },
   rightCol: { flex: 1, paddingTop: 0 },
