@@ -1,10 +1,20 @@
-//mobile/data/db/schema.ts
+// mobile/data/db/schema.ts
+
+export type UserSettings = {
+  /**
+   * When true, timestamps are shown across the app.
+   */
+  showTimestamps?: boolean;
+  darkMode?: 'light' | 'dark' | 'system';
+};
+
 export type User = {
   id: string;
   username: string;
   avatarUrl: string;
   createdAt: string;
   updatedAt?: string;
+  settings?: UserSettings;
 };
 
 export type Scenario = {
@@ -20,7 +30,7 @@ export type Profile = {
   ownerUserId: string;
   displayName: string;
   handle: string;
-  avatarUrl: string; 
+  avatarUrl: string;
   headerUrl?: string;
   bio?: string;
   isPublic?: boolean;
@@ -46,6 +56,7 @@ export type Post = {
   likeCount?: number;
   parentPostId?: string;
   quotedPostId?: string;
+  insertedAt: string;
   updatedAt?: string;
 };
 

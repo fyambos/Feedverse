@@ -60,11 +60,11 @@ function normalizeHandle(input: string) {
 }
 
 function makePostCursor(p: Post): PostCursor {
-  return `${String(p.createdAt)}|${String(p.id)}`;
+  return `${String(p.insertedAt)}|${String(p.id)}`;
 }
 
 function sortDescByCreatedAtThenId(a: Post, b: Post) {
-  // createdAt desc, id desc for stability
+  // createdAt desc, id desc for stability (narrative order with createdAt being editable)
   const c = String(b.createdAt).localeCompare(String(a.createdAt));
   if (c !== 0) return c;
   return String(b.id).localeCompare(String(a.id));
@@ -212,32 +212,34 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         setState({ isReady: true, db: next });
       },
       
-      upsertPost: async (p) => {
-        const id = String(p.id);
-        const now = new Date().toISOString();
+upsertPost: async (p) => {
+  const id = String(p.id);
+  const now = new Date().toISOString();
 
-        const next = await updateDb((prev) => {
-          const existing = prev.posts[id];
+  const next = await updateDb((prev) => {
+    const existing = prev.posts[id];
 
-          const createdAt = existing?.createdAt ?? p.createdAt ?? now;
+    const insertedAt = existing?.insertedAt ?? p.insertedAt ?? now; // stable
+    const createdAt = p.createdAt ?? existing?.createdAt ?? now;     // peut changer
 
-          return {
-            ...prev,
-            posts: {
-              ...prev.posts,
-              [id]: {
-                ...(existing ?? {}),
-                ...p,
-                id,
-                createdAt,
-                updatedAt: now,
-              },
-            },
-          };
-        });
-
-        setState({ isReady: true, db: next });
+    return {
+      ...prev,
+      posts: {
+        ...prev.posts,
+        [id]: {
+          ...(existing ?? {}),
+          ...p,
+          id,
+          insertedAt,
+          createdAt,
+          updatedAt: now,
+        },
       },
+    };
+  });
+
+  setState({ isReady: true, db: next });
+},
 
 
       deletePost: async (postId) => {
@@ -246,12 +248,6 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
           if (!prev.posts[id]) return prev;
 
           const posts = { ...prev.posts };
-
-          // delete replies
-          for (const p of Object.values(posts)) {
-            if (p.parentPostId === id) delete posts[p.id];
-          }
-
           delete posts[id];
 
           return { ...prev, posts };

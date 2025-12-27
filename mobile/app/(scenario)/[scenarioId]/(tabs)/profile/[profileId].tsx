@@ -184,12 +184,14 @@ export default function ProfileScreen() {
     setMutedModalOpen(viewState === "muted");
   }, [viewState]);
 
-  // overlays (existing)
-  const overlay: ProfileOverlayConfig | null = null;
+  // overlays
+  const [overlay, setOverlay] = useState<ProfileOverlayConfig | null>(null);
   const [overlayOpen, setOverlayOpen] = useState(false);
-  useEffect(() => setOverlayOpen(!!overlay), [overlay]);
 
-  // ✅ compute handle text safely (no hooks after early returns)
+  useEffect(() => {
+    setOverlayOpen(!!overlay);
+  }, [overlay]);
+
   const at = useMemo(() => {
     const h = profile?.handle ? String(profile.handle) : "";
     if (!h) return "@";
@@ -201,14 +203,14 @@ export default function ProfileScreen() {
       return {
         title: `${at} has blocked you`,
         body:
-          `You can view public posts from ${at}, but you are blocked from engaging with them. ` +
+          `You are blocked from engaging with ${at}, you cannot view public posts from them.` +
           `You also cannot follow or message ${at}.`,
       };
     }
     if (isBlocked) {
       return {
         title: `You blocked ${at}`,
-        body: `You can’t see posts from ${at} or interact with this account.`,
+        body: `They cannot see posts from you or interact with your account.`,
       };
     }
     if (isSuspended) {
