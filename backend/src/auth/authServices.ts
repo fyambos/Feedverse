@@ -81,7 +81,7 @@ export const RegisterUserService = async (
 
 export const LoginUserService = async (
   input: LoginRequest,
-): Promise<{ user?: LoginResponse; error?: string }> => {
+): Promise<{ user?: LoginResponse; error?: unknown }> => {
   const { email, password_hash } = input;
 
   const emailError = validateEmail(email);
@@ -105,10 +105,9 @@ export const LoginUserService = async (
     return { error: VALIDATION.INVALID_PASSWORD };
   }
 
-  const loginDate = new Date();
-
-  await userRepository.updateLastLogin(email, loginDate);
   /*
+  const loginDate = new Date();
+  await userRepository.updateLastLogin(email, loginDate);
   const { password_hash: _pwd, ...userWithoutPassword } = userFetched;
 
   return { user: userWithoutPassword as LoginResponse };

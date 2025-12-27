@@ -1,6 +1,5 @@
 import { NextFunction, Request, Response } from "express";
 import jwt from "jsonwebtoken";
-import { SECRET_KEY } from "../config/constants";
 import { User } from "../users/userModels";
 import { AUTH, HTTP_STATUS } from "../config/constants";
 
@@ -16,7 +15,7 @@ export const authMiddleware = async (
       throw new Error();
     }
 
-    jwt.verify(token, SECRET_KEY, (err: unknown, user: User) => {
+    jwt.verify(token, AUTH.SECRET_KEY, (err: unknown, user: User) => {
       if (err)
         return res.status(HTTP_STATUS.FORBIDDEN).send(AUTH.INVALID_TOKEN);
       req.user = user;

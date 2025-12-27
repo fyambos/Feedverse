@@ -34,10 +34,12 @@ export class UserRepository {
     return result.rows[0];
   }
 
+  /*
   async updateLastLogin(email: string, loginDate: Date): Promise<void> {
     const query = "UPDATE users SET last_login = $1 WHERE email = $2";
     await pool.query(query, [loginDate, email]);
   }
+*/
 
   async updateAvatar_url(userId: string, avatar_url: string): Promise<void> {
     const query =
