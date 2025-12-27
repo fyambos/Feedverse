@@ -165,6 +165,8 @@ export const TEST_DATA = {
   // Utilisateur de test
   TEST_USER_EMAIL: "usertest@yopmail.com",
   TEST_USER_PASSWORD: "@Password1",
+  AVATAR_URL:
+    "https://i.scdn.co/image/ab6761610000e5eb7d4e246f8c54be347e06bffe",
 
   // Messages de test
   TEST_LOGIN_SHOULD_SUCCEED:

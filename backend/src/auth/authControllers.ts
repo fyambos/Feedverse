@@ -18,12 +18,14 @@ export const RegisterController = async (req: Request, res: Response) => {
   }
 
   try {
-    const { username, email, password } = req.body;
+    const { username, name, email, password_hash, avatar_url } = req.body;
 
     const result = await RegisterUserService({
       username,
+      name,
       email,
-      password,
+      password_hash,
+      avatar_url,
     });
 
     if (result.errors) {
@@ -52,9 +54,9 @@ export const LoginController = async (req: Request, res: Response) => {
   }
 
   try {
-    const { email, password } = req.body;
+    const { email, password_hash } = req.body;
 
-    const result = await LoginUserService({ email, password });
+    const result = await LoginUserService({ email, password_hash });
 
     if (result.error) {
       return res.status(HTTP_STATUS.UNAUTHORIZED).json({
