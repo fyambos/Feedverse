@@ -1,4 +1,3 @@
-// mobile/components/post/Post.tsx
 import React from "react";
 import { Alert, Modal, Pressable, StyleSheet, View } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
@@ -30,6 +29,10 @@ type Props = {
   replyingTo?: string;
   showActions?: boolean;
   showThreadLine?: boolean;
+
+  // ✅ NEW: allow screens/lists to control likes
+  isLiked?: boolean;
+  onLike?: () => void;
 };
 
 type ProfileViewState =
@@ -85,6 +88,10 @@ export function Post({
   replyingTo,
   showActions = true,
   showThreadLine = false,
+
+  // ✅ NEW
+  isLiked = false,
+  onLike,
 }: Props) {
   const scheme = useColorScheme() ?? "light";
   const colors = Colors[scheme];
@@ -92,7 +99,6 @@ export function Post({
   const isDetail = variant === "detail";
   const isReply = variant === "reply" || (!!item.parentPostId && variant !== "detail");
 
-  // keep old behavior where openProfile uses route param if needed
   const { scenarioId: scenarioIdParam } = useLocalSearchParams<{ scenarioId: string }>();
   const sid = String(scenarioId ?? item.scenarioId ?? scenarioIdParam ?? "");
 
@@ -115,7 +121,6 @@ export function Post({
 
   const hasDetailCounts = isDetail && (repostCount > 0 || likeCount > 0);
 
-  // ----- actions
   const onReply = () => {
     if (!sid) return;
     router.push({
@@ -132,13 +137,9 @@ export function Post({
     } as any);
   };
 
-  // ----- menu
   const [menuOpen, setMenuOpen] = React.useState(false);
-
-  // the only "real" action
   const REPORT_LABEL = "Report post";
 
-  // state previews
   const STATE_OPTIONS = React.useMemo(
     () => [
       "Blocked account",
@@ -154,9 +155,6 @@ export function Post({
 
   const onReportPost = () => {
     setMenuOpen(false);
-
-    // real report entry point (not implemented yet)
-    // later you can router.push("/modal/report-post", {postId...}) or open a custom modal
     Alert.alert("Report post", "Coming soon.");
   };
 
@@ -167,26 +165,12 @@ export function Post({
   };
 
   const MenuModal = () => (
-    <Modal
-      transparent
-      visible={menuOpen}
-      animationType="fade"
-      onRequestClose={() => setMenuOpen(false)}
-    >
+    <Modal transparent visible={menuOpen} animationType="fade" onRequestClose={() => setMenuOpen(false)}>
       <Pressable style={styles.menuBackdrop} onPress={() => setMenuOpen(false)}>
-        <Pressable
-          style={[
-            styles.menuSheet,
-            { backgroundColor: colors.background, borderColor: colors.border },
-          ]}
-        >
-          {/* Real report action */}
+        <Pressable style={[styles.menuSheet, { backgroundColor: colors.background, borderColor: colors.border }]}>
           <Pressable
             onPress={onReportPost}
-            style={({ pressed }) => [
-              styles.menuItem,
-              { backgroundColor: pressed ? colors.pressed : "transparent" },
-            ]}
+            style={({ pressed }) => [styles.menuItem, { backgroundColor: pressed ? colors.pressed : "transparent" }]}
           >
             <ThemedText style={{ color: "#ff3b30", fontSize: 15, fontWeight: "600" }}>
               {REPORT_LABEL}
@@ -195,15 +179,11 @@ export function Post({
 
           <View style={[styles.menuDivider, { backgroundColor: colors.border }]} />
 
-          {/* State previews */}
           {STATE_OPTIONS.map((label) => (
             <Pressable
               key={label}
               onPress={() => onStateOption(label)}
-              style={({ pressed }) => [
-                styles.menuItem,
-                { backgroundColor: pressed ? colors.pressed : "transparent" },
-              ]}
+              style={({ pressed }) => [styles.menuItem, { backgroundColor: pressed ? colors.pressed : "transparent" }]}
             >
               <ThemedText style={{ color: colors.text, fontSize: 15 }}>{label}</ThemedText>
             </Pressable>
@@ -266,6 +246,9 @@ export function Post({
             likeCount={likeCount}
             onReply={onReply}
             onQuote={onQuote}
+            // ✅ NEW
+            isLiked={isLiked}
+            onLike={onLike}
           />
         )}
       </View>
@@ -279,9 +262,7 @@ export function Post({
     <View style={styles.wrapReply}>
       <View style={styles.row}>
         <View style={styles.avatarCol}>
-          {showThreadLine ? (
-            <View style={[styles.threadLine, { backgroundColor: colors.border }]} />
-          ) : null}
+          {showThreadLine ? <View style={[styles.threadLine, { backgroundColor: colors.border }]} /> : null}
 
           <Pressable onPress={() => openProfile()} hitSlop={0} style={styles.avatarPress}>
             <Avatar uri={profile.avatarUrl} size={44} fallbackColor={colors.border} />
@@ -302,13 +283,7 @@ export function Post({
 
           <MenuModal />
 
-          <PostBody
-            sid={sid}
-            variant={isReply ? "reply" : "feed"}
-            colors={colors}
-            item={item}
-            isReply={isReply}
-          />
+          <PostBody sid={sid} variant={isReply ? "reply" : "feed"} colors={colors} item={item} isReply={isReply} />
 
           {showActions && (
             <PostActions
@@ -319,6 +294,9 @@ export function Post({
               likeCount={likeCount}
               onReply={onReply}
               onQuote={onQuote}
+              // ✅ NEW
+              isLiked={isLiked}
+              onLike={onLike}
             />
           )}
         </View>
@@ -335,28 +313,17 @@ const styles = StyleSheet.create({
   wrap: { paddingHorizontal: 16, paddingVertical: 12 },
   wrapReply: { paddingHorizontal: 16, paddingVertical: 4 },
 
-  row: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 12,
-  },
-
+  row: { flexDirection: "row", alignItems: "flex-start", gap: 12 },
   rightCol: { flex: 1, paddingTop: 0 },
   avatarPress: { alignSelf: "flex-start" },
 
   dateLine: { marginTop: 12, fontSize: 13 },
-
   divider: { height: StyleSheet.hairlineWidth, marginVertical: 12 },
 
   countsRow: { flexDirection: "row", gap: 16 },
   countItem: { fontSize: 14 },
 
-  menuBackdrop: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.35)",
-    justifyContent: "flex-end",
-  },
-
+  menuBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.35)", justifyContent: "flex-end" },
   menuSheet: {
     borderTopLeftRadius: 18,
     borderTopRightRadius: 18,
@@ -364,9 +331,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 8,
   },
-
   menuItem: { paddingVertical: 12, paddingHorizontal: 12, borderRadius: 12 },
-
   menuDivider: {
     height: StyleSheet.hairlineWidth,
     opacity: 0.9,
@@ -374,19 +339,13 @@ const styles = StyleSheet.create({
     marginHorizontal: 8,
   },
 
-avatarCol: {
-  width: 44,
-  alignItems: "center",
-  position: "relative", 
-  alignSelf: "stretch"
-},
-
-threadLine: {
-  position: "absolute",
-  top: 50,     
-  bottom: 0, 
-  width: 2,
-  borderRadius: 4,
-  opacity: 0.85,
-},
+  avatarCol: { width: 44, alignItems: "center", position: "relative", alignSelf: "stretch" },
+  threadLine: {
+    position: "absolute",
+    top: 50,
+    bottom: 0,
+    width: 2,
+    borderRadius: 4,
+    opacity: 0.85,
+  },
 });

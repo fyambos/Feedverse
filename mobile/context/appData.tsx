@@ -41,7 +41,6 @@ type AppDataApi = {
   listPostsForScenario: (scenarioId: string) => Post[];
   listRepliesForPost: (postId: string) => Post[];
 
-  // NEW: paged listing (feed/profile/search can all reuse)
   listPostsPage: (args: PostsPageArgs) => PostsPageResult;
 
   getSelectedProfileId: (scenarioId: string) => string | null;
@@ -51,6 +50,8 @@ type AppDataApi = {
   upsertProfile: (p: Profile) => Promise<void>;
   upsertPost: (p: Post) => Promise<void>;
   deletePost: (postId: string) => Promise<void>;
+  toggleLike: (scenarioId: string, postId: string) => Promise<void>;
+  isPostLikedBySelectedProfile: (scenarioId: string, postId: string) => boolean;
 };
 
 const Ctx = React.createContext<(AppDataState & AppDataApi) | null>(null);
@@ -135,7 +136,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
               .sort(sortAscByCreatedAtThenId)
           : [],
 
-      // --- NEW: paged posts (reusable everywhere)
+      // paged posts (reusable everywhere)
       listPostsPage: ({ scenarioId, limit = 15, cursor, filter, includeReplies = false }) => {
         if (!db) return { items: [], nextCursor: null };
 
@@ -212,35 +213,84 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         setState({ isReady: true, db: next });
       },
       
-upsertPost: async (p) => {
-  const id = String(p.id);
-  const now = new Date().toISOString();
+      upsertPost: async (p) => {
+        const id = String(p.id);
+        const now = new Date().toISOString();
 
-  const next = await updateDb((prev) => {
-    const existing = prev.posts[id];
+        const next = await updateDb((prev) => {
+          const existing = prev.posts[id];
 
-    const insertedAt = existing?.insertedAt ?? p.insertedAt ?? now; // stable
-    const createdAt = p.createdAt ?? existing?.createdAt ?? now;     // peut changer
+          const insertedAt = existing?.insertedAt ?? p.insertedAt ?? now; // stable
+          const createdAt = p.createdAt ?? existing?.createdAt ?? now;     // peut changer
 
-    return {
-      ...prev,
-      posts: {
-        ...prev.posts,
-        [id]: {
-          ...(existing ?? {}),
-          ...p,
-          id,
-          insertedAt,
-          createdAt,
-          updatedAt: now,
-        },
+          return {
+            ...prev,
+            posts: {
+              ...prev.posts,
+              [id]: {
+                ...(existing ?? {}),
+                ...p,
+                id,
+                insertedAt,
+                createdAt,
+                updatedAt: now,
+              },
+            },
+          };
+        });
+
+        setState({ isReady: true, db: next });
       },
-    };
-  });
 
-  setState({ isReady: true, db: next });
-},
+      isPostLikedBySelectedProfile: (scenarioId, postId) => {
+        if (!db) return false;
+        const sel = db.selectedProfileByScenario[String(scenarioId)];
+        if (!sel) return false;
+        const pr = db.profiles[String(sel)];
+        const arr = pr?.likedPostIds ?? [];
+        return arr.includes(String(postId));
+      },
 
+      toggleLike: async (scenarioId, postId) => {
+        const sid = String(scenarioId);
+        const pid = String(postId);
+
+        const next = await updateDb((prev) => {
+          const selectedProfileId = prev.selectedProfileByScenario[sid];
+          if (!selectedProfileId) return prev;
+
+          const liker = prev.profiles[String(selectedProfileId)];
+          const post = prev.posts[pid];
+          if (!liker || !post) return prev;
+
+          const liked = (liker.likedPostIds ?? []).map(String);
+          const already = liked.includes(pid);
+
+          const nextLiked = already ? liked.filter((x) => x !== pid) : [...liked, pid];
+
+          return {
+            ...prev,
+            profiles: {
+              ...prev.profiles,
+              [String(liker.id)]: {
+                ...liker,
+                likedPostIds: nextLiked,
+                updatedAt: new Date().toISOString(),
+              },
+            },
+            posts: {
+              ...prev.posts,
+              [pid]: {
+                ...post,
+                likeCount: Math.max(0, (post.likeCount ?? 0) + (already ? -1 : 1)),
+                updatedAt: new Date().toISOString(),
+              },
+            },
+          };
+        });
+
+        setState({ isReady: true, db: next });
+      },
 
       deletePost: async (postId) => {
         const id = String(postId);

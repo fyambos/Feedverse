@@ -25,7 +25,7 @@ export default function HomeScreen() {
   const colors = Colors[scheme];
 
   const { userId } = useAuth();
-  const { isReady, listPostsPage, getProfileById, deletePost } = useAppData();
+  const { isReady, listPostsPage, getProfileById, deletePost, toggleLike, isPostLikedBySelectedProfile } = useAppData();
 
   /* -------------------------------------------------------------------------- */
   /* Paging state                                                               */
@@ -168,10 +168,19 @@ export default function HomeScreen() {
           if (!profile) return null;
 
           const canEdit = canEditPost({ authorProfile: profile, userId: userId ?? null });
+          const liked = isPostLikedBySelectedProfile(sid, String(item.id));
 
           const content = (
             <Pressable onPress={() => openPostDetail(String(item.id))}>
-              <PostCard scenarioId={sid} profile={profile as any} item={item as any} variant="feed" showActions />
+              <PostCard
+                scenarioId={sid}
+                profile={profile as any}
+                item={item as any}
+                variant="feed"
+                showActions
+                isLiked={liked}
+                onLike={() => toggleLike(sid, String(item.id))}
+              />
             </Pressable>
           );
 

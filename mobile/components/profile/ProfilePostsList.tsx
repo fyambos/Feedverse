@@ -1,4 +1,3 @@
-// mobile/components/profile/ProfilePostsList.tsx
 import React from "react";
 import { ActivityIndicator, FlatList, Platform, Pressable, StyleSheet, View } from "react-native";
 
@@ -37,9 +36,16 @@ type Props = {
   ListHeaderComponent: React.ReactElement;
   emptyText?: string;
   disableEngagement?: boolean;
+
+  // ✅ NEW — optional like support
+  getIsLiked?: (postId: string) => boolean;
+  onLikePost?: (postId: string) => void | Promise<void>;
 };
 
-function findRootPostId(getPostById: (id: string) => DbPost | undefined, start: DbPost): string {
+function findRootPostId(
+  getPostById: (id: string) => DbPost | undefined,
+  start: DbPost
+): string {
   let cur: DbPost | undefined = start;
   const seen = new Set<string>();
 
@@ -83,11 +89,9 @@ export function ProfilePostsList({
   onDeletePost,
   ListHeaderComponent,
   emptyText,
+  getIsLiked,
+  onLikePost,
 }: Props) {
-  const from = `/(scenario)/${encodeURIComponent(sid)}/(tabs)/profile/${encodeURIComponent(
-    String(viewingProfileId)
-  )}`;
-
   return (
     <FlatList
       data={items}
@@ -105,7 +109,13 @@ export function ProfilePostsList({
         );
       }}
       ItemSeparatorComponent={() => (
-        <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: colors.border, opacity: 0.9 }} />
+        <View
+          style={{
+            height: StyleSheet.hairlineWidth,
+            backgroundColor: colors.border,
+            opacity: 0.9,
+          }}
+        />
       )}
       contentContainerStyle={{ paddingBottom: Platform.OS === "ios" ? 24 : 16 }}
       ListHeaderComponent={ListHeaderComponent}
@@ -114,28 +124,38 @@ export function ProfilePostsList({
         if (!authorProfile) return null;
 
         const isReply = !!item.parentPostId;
+        const replyingTo = isReply
+          ? getReplyingToHandle(getPostById, getProfileById, item)
+          : "";
 
-        const replyingTo = isReply ? getReplyingToHandle(getPostById, getProfileById, item) : "";
-
-        const targetPostId = isReply ? findRootPostId(getPostById, item) : String(item.id);
+        const targetPostId = isReply
+          ? findRootPostId(getPostById, item)
+          : String(item.id);
 
         const canEditThisPost = canEditPost({ authorProfile, userId });
 
+        const postId = String(item.id);
+        const isLiked = getIsLiked ? getIsLiked(postId) : false;
+
         const row = (
-        <Pressable
-          onPress={() =>
-            router.push({
-              pathname: `/(scenario)/${encodeURIComponent(sid)}/(tabs)/post/${encodeURIComponent(
-                String(targetPostId)
-              )}`,
-              params: {
-                from: `/(scenario)/${encodeURIComponent(sid)}/(tabs)/profile/${encodeURIComponent(
-                  String(viewingProfileId)
-                )}`,
-              },
-            } as any)
+          <Pressable
+            onPress={() =>
+              router.push({
+                pathname: `/(scenario)/${encodeURIComponent(
+                  sid
+                )}/(tabs)/post/${encodeURIComponent(targetPostId)}`,
+                params: {
+                  from: `/(scenario)/${encodeURIComponent(
+                    sid
+                  )}/(tabs)/profile/${encodeURIComponent(
+                    String(viewingProfileId)
+                  )}`,
+                },
+              } as any)
             }
-            style={({ pressed }) => [{ backgroundColor: pressed ? colors.pressed : colors.background }]}
+            style={({ pressed }) => [
+              { backgroundColor: pressed ? colors.pressed : colors.background },
+            ]}
           >
             <PostCard
               scenarioId={sid}
@@ -144,6 +164,11 @@ export function ProfilePostsList({
               variant={isReply ? "reply" : "feed"}
               replyingTo={replyingTo}
               showActions
+              // ✅ LIKE SUPPORT
+              isLiked={isLiked}
+              onLike={
+                onLikePost ? () => onLikePost(postId) : undefined
+              }
             />
           </Pressable>
         );
@@ -156,11 +181,11 @@ export function ProfilePostsList({
             onEdit={() => {
               router.push({
                 pathname: "/modal/create-post",
-                params: { scenarioId: sid, mode: "edit", postId: String(item.id) },
+                params: { scenarioId: sid, mode: "edit", postId },
               } as any);
             }}
             onDelete={() => {
-              onDeletePost(String(item.id));
+              onDeletePost(postId);
             }}
           >
             {row}
@@ -177,7 +202,9 @@ export function ProfilePostsList({
         }
         return (
           <View style={{ padding: 18 }}>
-            <ThemedText style={{ color: colors.textSecondary }}>{emptyText ?? "No posts yet."}</ThemedText>
+            <ThemedText style={{ color: colors.textSecondary }}>
+              {emptyText ?? "No posts yet."}
+            </ThemedText>
           </View>
         );
       }}
