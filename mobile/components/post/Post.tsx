@@ -29,6 +29,7 @@ type Props = {
   variant?: PostVariant;
   replyingTo?: string;
   showActions?: boolean;
+  showThreadLine?: boolean;
 };
 
 type ProfileViewState =
@@ -83,6 +84,7 @@ export function Post({
   variant = "feed",
   replyingTo,
   showActions = true,
+  showThreadLine = false,
 }: Props) {
   const scheme = useColorScheme() ?? "light";
   const colors = Colors[scheme];
@@ -276,9 +278,15 @@ export function Post({
   return (
     <View style={styles.wrapReply}>
       <View style={styles.row}>
-        <Pressable onPress={() => openProfile()} hitSlop={0} style={styles.avatarPress}>
-          <Avatar uri={profile.avatarUrl} size={44} fallbackColor={colors.border} />
-        </Pressable>
+        <View style={styles.avatarCol}>
+          {showThreadLine ? (
+            <View style={[styles.threadLine, { backgroundColor: colors.border }]} />
+          ) : null}
+
+          <Pressable onPress={() => openProfile()} hitSlop={0} style={styles.avatarPress}>
+            <Avatar uri={profile.avatarUrl} size={44} fallbackColor={colors.border} />
+          </Pressable>
+        </View>
 
         <View style={styles.rightCol}>
           <PostHeader
@@ -365,4 +373,20 @@ const styles = StyleSheet.create({
     marginVertical: 6,
     marginHorizontal: 8,
   },
+
+avatarCol: {
+  width: 44,
+  alignItems: "center",
+  position: "relative", 
+  alignSelf: "stretch"
+},
+
+threadLine: {
+  position: "absolute",
+  top: 50,     
+  bottom: 0, 
+  width: 2,
+  borderRadius: 4,
+  opacity: 0.85,
+},
 });
