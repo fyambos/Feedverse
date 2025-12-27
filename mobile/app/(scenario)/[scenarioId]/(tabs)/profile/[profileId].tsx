@@ -92,6 +92,7 @@ export default function ProfileScreen() {
   });
 
   const [activeTab, setActiveTab] = useState<ProfileTab>("posts");
+  const [isFollowing, setIsFollowing] = useState(false);
 
   // --- edit mode
   const [editMode, setEditMode] = useState(false);
@@ -164,7 +165,6 @@ export default function ProfileScreen() {
     await upsertProfile({ ...profile, headerUrl: uri });
   }, [profile, canModifyProfile, denyModify, upsertProfile, withPickerLock]);
 
-  // ✅ view state (NO early returns before all hooks)
   const viewState: ProfileViewState = (view as ProfileViewState) ?? "normal";
 
   const isBlockedBy = viewState === "blocked_by";
@@ -347,7 +347,8 @@ export default function ProfileScreen() {
       return;
     }
 
-    Alert.alert("Not yet", "Follow logic later.");
+    // UI-only follow toggle (no backend yet)
+    setIsFollowing((v) => !v);
   }, [profile, editMode, canModifyProfile, denyModify, sid]);
 
   const onLongPressPrimary = useCallback(() => setEditMode((v) => !v), []);
@@ -434,6 +435,11 @@ export default function ProfileScreen() {
             ? {
                 label: "Blocked",
                 variant: "danger",
+              }
+            : !editMode
+            ? {
+                label: isFollowing ? "Following" : "Follow",
+                variant: isFollowing ? "ghost" : "primary",
               }
             : undefined
         }

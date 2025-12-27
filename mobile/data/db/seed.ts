@@ -67,6 +67,8 @@ export async function seedDbIfNeeded(existing: DbV3 | null) {
         likeCount: m.likeCount ?? 0,
         parentPostId: m.parentPostId ?? undefined,
         quotedPostId: m.quotedPostId ?? undefined,
+        insertedAt: String(m.insertedAt ?? new Date().toISOString()),
+        updatedAt: typeof m.updatedAt === "string" ? m.updatedAt : undefined,
       });
     }
   }
