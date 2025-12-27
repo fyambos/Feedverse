@@ -12,6 +12,7 @@ export const MOCK_FEEDS: Record<string, Post[]> = {
       replyCount: 2,
       repostCount: 1,
       likeCount: 34,
+      insertedAt: "2025-12-20T09:12:05.000Z",
     },
     {
       id: "s1-post-2",
@@ -23,6 +24,7 @@ export const MOCK_FEEDS: Record<string, Post[]> = {
       repostCount: 4,
       likeCount: 210,
       quotedPostId: "s1-post-1",
+      insertedAt: "2025-12-20T09:18:10.000Z",
     },
     {
       id: "s1-post-3",
@@ -33,6 +35,7 @@ export const MOCK_FEEDS: Record<string, Post[]> = {
       replyCount: 0,
       repostCount: 0,
       likeCount: 12,
+      insertedAt: "2025-12-20T06:58:15.000Z",
     },
     // replies
     {
@@ -45,6 +48,7 @@ export const MOCK_FEEDS: Record<string, Post[]> = {
       replyCount: 0,
       repostCount: 0,
       likeCount: 40,
+      insertedAt: "2025-12-20T09:21:05.000Z",
     },
     {
       id: "s1-post-1-r2",
@@ -56,6 +60,7 @@ export const MOCK_FEEDS: Record<string, Post[]> = {
       replyCount: 0,
       repostCount: 0,
       likeCount: 55,
+      insertedAt: "2025-12-20T09:22:10.000Z",
     },
     {
       id: "s1-post-2-r1",
@@ -67,6 +72,7 @@ export const MOCK_FEEDS: Record<string, Post[]> = {
       replyCount: 0,
       repostCount: 0,
       likeCount: 78,
+      insertedAt: "2025-12-20T09:24:15.000Z",
     },
   ],
 
@@ -80,6 +86,7 @@ export const MOCK_FEEDS: Record<string, Post[]> = {
       replyCount: 2,
       repostCount: 2,
       likeCount: 98,
+      insertedAt: "2025-12-21T15:10:05.000Z",
     },
     {
       id: "s2-post-2",
@@ -90,6 +97,7 @@ export const MOCK_FEEDS: Record<string, Post[]> = {
       replyCount: 1,
       repostCount: 0,
       likeCount: 62,
+      insertedAt: "2025-12-21T15:14:10.000Z",
     },
     {
       id: "s2-post-3",
@@ -101,6 +109,7 @@ export const MOCK_FEEDS: Record<string, Post[]> = {
       repostCount: 3,
       likeCount: 140,
       quotedPostId: "s2-post-1",
+      insertedAt: "2025-12-21T15:18:15.000Z",
     },
     {
       id: "s2-post-1-r1",
@@ -110,6 +119,7 @@ export const MOCK_FEEDS: Record<string, Post[]> = {
       createdAt: "2025-12-21T15:20:00.000Z",
       parentPostId: "s2-post-1",
       likeCount: 80,
+      insertedAt: "2025-12-21T15:20:05.000Z",
     },
     {
       id: "s2-post-1-r2",
@@ -119,6 +129,7 @@ export const MOCK_FEEDS: Record<string, Post[]> = {
       createdAt: "2025-12-21T15:22:00.000Z",
       parentPostId: "s2-post-1",
       likeCount: 100,
+      insertedAt: "2025-12-21T15:22:10.000Z",
     },
     {
       id: "s2-post-2-r1",
@@ -128,6 +139,7 @@ export const MOCK_FEEDS: Record<string, Post[]> = {
       createdAt: "2025-12-21T15:25:00.000Z",
       parentPostId: "s2-post-2",
       likeCount: 120,
+      insertedAt: "2025-12-21T15:25:15.000Z",
     },
     // quotes
     {
@@ -140,6 +152,7 @@ export const MOCK_FEEDS: Record<string, Post[]> = {
       replyCount: 0,
       repostCount: 1,
       likeCount: 45,
+      insertedAt: "2025-12-21T16:00:20.000Z",
     },
     {
       id: "s2-post-5",
@@ -151,6 +164,7 @@ export const MOCK_FEEDS: Record<string, Post[]> = {
       replyCount: 0,
       repostCount: 1,
       likeCount: 45,
+      insertedAt: "2025-12-21T16:00:25.000Z",
     },
   ],
 };

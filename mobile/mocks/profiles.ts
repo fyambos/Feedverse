@@ -9,6 +9,8 @@ export const MOCK_PROFILES: Profile[] = [
     avatarUrl: 'https://i.pravatar.cc/200?img=47',
     bio: 'dance major menace',
     isPublic: true,
+    createdAt: '2023-01-15T10:00:00Z',
+    updatedAt: '2023-02-20T12:00:00Z',
   },
   {
     id: 'pr_kpop_minho',
@@ -19,6 +21,8 @@ export const MOCK_PROFILES: Profile[] = [
     avatarUrl: 'https://i.pravatar.cc/200?img=14',
     bio: 'i know where the snacks are',
     isPublic: false,
+    createdAt: '2023-01-15T10:00:00Z',
+    updatedAt: '2023-02-20T12:00:00Z',
   },
   {
     id: 'pr_kpop_jisung',
@@ -29,6 +33,8 @@ export const MOCK_PROFILES: Profile[] = [
     avatarUrl: 'https://i.pravatar.cc/200?img=22',
     bio: 'unhinged but helpful',
     isPublic: false,
+    createdAt: '2023-01-15T10:00:00Z',
+    updatedAt: '2023-02-20T12:00:00Z',
   },
 
   {
@@ -39,6 +45,8 @@ export const MOCK_PROFILES: Profile[] = [
     handle: 'crownrebellion',
     avatarUrl: 'https://i.pravatar.cc/200?img=9',
     isPublic: false,
+    createdAt: '2023-01-15T10:00:00Z',
+    updatedAt: '2023-02-20T12:00:00Z',
   },
   {
     id: 'pr_roy_butler',
@@ -48,6 +56,8 @@ export const MOCK_PROFILES: Profile[] = [
     handle: 'protocolmin',
     avatarUrl: 'https://i.pravatar.cc/200?img=21',
     isPublic: false,
+    createdAt: '2023-01-15T10:00:00Z',
+    updatedAt: '2023-02-20T12:00:00Z',
   },
   {
     id: 'pr_roy_linda',
@@ -57,6 +67,8 @@ export const MOCK_PROFILES: Profile[] = [
     handle: 'chamberaid',
     avatarUrl: 'https://i.pravatar.cc/200?img=28',
     isPublic: false,
+    createdAt: '2023-01-15T10:00:00Z',
+    updatedAt: '2023-02-20T12:00:00Z',
   },
 
   {
@@ -67,6 +79,8 @@ export const MOCK_PROFILES: Profile[] = [
     handle: 'jiniret',
     avatarUrl: 'https://i.pravatar.cc/200?img=19',
     isPublic: false,
+    createdAt: '2023-01-15T10:00:00Z',
+    updatedAt: '2023-02-20T12:00:00Z',
   },
   {
     id: 'pr_mafia_boss',
@@ -76,6 +90,8 @@ export const MOCK_PROFILES: Profile[] = [
     handle: 'bullalpha',
     avatarUrl: 'https://i.pravatar.cc/200?img=37',
     isPublic: false,
+    createdAt: '2023-01-15T10:00:00Z',
+    updatedAt: '2023-02-20T12:00:00Z',
   },
   {
     id: 'pr_mafia_sniper',
@@ -85,6 +101,8 @@ export const MOCK_PROFILES: Profile[] = [
     handle: 'scopezero',
     avatarUrl: 'https://i.pravatar.cc/200?img=41',
     isPublic: false,
+    createdAt: '2023-01-15T10:00:00Z',
+    updatedAt: '2023-02-20T12:00:00Z',
   },
   {
     id: 'pr_mafia_fixer',
@@ -94,6 +112,8 @@ export const MOCK_PROFILES: Profile[] = [
     handle: 'pharmacist',
     avatarUrl: 'https://i.pravatar.cc/200?img=45',
     isPublic: false,
+    createdAt: '2023-01-15T10:00:00Z',
+    updatedAt: '2023-02-20T12:00:00Z',
   },
   {
   id: 'pr_kpop_winter',
@@ -109,6 +129,8 @@ export const MOCK_PROFILES: Profile[] = [
   link: 'https://bbunnll.dev',
   followingCount: 182,
   followerCount: 4301,
+    createdAt: '2023-01-15T10:00:00Z',
+    updatedAt: '2023-02-20T12:00:00Z',
   },
   {
   id: 'pr_kpop_solar',
@@ -124,6 +146,8 @@ export const MOCK_PROFILES: Profile[] = [
   link: 'https://bbunnll.dev',
   followingCount: 182,
   followerCount: 4301,
+    createdAt: '2023-01-15T10:00:00Z',
+    updatedAt: '2023-02-20T12:00:00Z',
   },
   {
   id: 'pr_kpop_admin',
@@ -133,6 +157,8 @@ export const MOCK_PROFILES: Profile[] = [
   handle: 'admin',
   avatarUrl: 'https://i.pravatar.cc/150?img=16',
   isPublic: false,
+    createdAt: '2023-01-15T10:00:00Z',
+    updatedAt: '2023-02-20T12:00:00Z',
 },
 {
   id: 'pr_royalty_winter',
@@ -142,6 +168,8 @@ export const MOCK_PROFILES: Profile[] = [
   handle: 'bbunnll',
   avatarUrl: 'https://i.pravatar.cc/150?img=17',
   isPublic: false,
+    createdAt: '2023-01-15T10:00:00Z',
+    updatedAt: '2023-02-20T12:00:00Z',
 },
 {
   id: 'pr_mafia_winter',
@@ -151,5 +179,7 @@ export const MOCK_PROFILES: Profile[] = [
   handle: 'bbunnll',
   avatarUrl: 'https://i.pravatar.cc/150?img=18',
   isPublic: false,
+    createdAt: '2023-01-15T10:00:00Z',
+    updatedAt: '2023-02-20T12:00:00Z',
 },
 ];
