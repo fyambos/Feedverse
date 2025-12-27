@@ -15,12 +15,6 @@ export const DATABASE_NAME = process.env.DB_NAME;
 export const DATABASE_SSL_MODE = Boolean(process.env.DB_SSLMODE);
 
 // ============================================================================
-// JWT
-// ============================================================================
-
-export const SECRET_KEY = process.env.JWT_SECRET;
-
-// ============================================================================
 // CODES DE STATUT HTTP
 // ============================================================================
 
@@ -60,6 +54,7 @@ export const AUTH = {
   MISSING_TOKEN: "Token d'authentification manquant",
   INVALID_CREDENTIALS: "Email ou mot de passe incorrect",
   EXPIRATION_TIME: "1h",
+  SECRET_KEY: process.env.JWT_SECRET,
 } as const;
 
 // ============================================================================
