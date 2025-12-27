@@ -169,9 +169,26 @@ export default function CreatePostModal() {
     return getProfileById(String(authorProfileId));
   }, [authorProfileId, getProfileById]);
 
-  const [text, setText] = useState("");
+  const [threadTexts, setThreadTexts] = useState<string[]>([""]);
+  const [focusedThreadIndex, setFocusedThreadIndex] = useState<number>(0);
   const [imageUrls, setImageUrls] = useState<string[]>([]);
   const [picking, setpicking] = useState(false);
+  // Thread composer (old Twitter +)
+  const setThreadTextAt = useCallback((idx: number, value: string) => {
+    setThreadTexts((prev) => {
+      const next = [...prev];
+      next[idx] = value.slice(0, 500);
+      return next;
+    });
+  }, []);
+
+  const addThreadItem = useCallback(() => {
+    setThreadTexts((prev) => [...prev, ""]);
+  }, []);
+
+  const removeThreadItem = useCallback((idx: number) => {
+    setThreadTexts((prev) => prev.filter((_, i) => i !== idx));
+  }, []);
 
   // Post settings
   const [date, setDate] = useState<Date>(new Date());
@@ -184,6 +201,8 @@ export default function CreatePostModal() {
 
   const [parentId, setParentId] = useState<string | undefined>(undefined);
   const [quoteId, setQuoteId] = useState<string | undefined>(undefined);
+  // insertedAt should be preserved in edit mode; for create we set it at submit time
+  const [insertedAt, setInsertedAt] = useState<string>("");
 
   const quotedPost = useMemo(() => {
     if (!quoteId) return null;
@@ -216,7 +235,7 @@ export default function CreatePostModal() {
     }
 
     setAuthorProfileId(String(found.authorProfileId));
-    setText(found.text ?? "");
+    setThreadTexts([found.text ?? ""]);
     setDate(new Date(found.createdAt));
     setImageUrls((found.imageUrls ?? []).slice(0, MAX_IMAGES));
 
@@ -227,6 +246,8 @@ export default function CreatePostModal() {
 
     setParentId(found.parentPostId ? String(found.parentPostId) : replyParent);
     setQuoteId(found.quotedPostId ? String(found.quotedPostId) : q);
+    // preserve original insertedAt for edits
+    setInsertedAt(found.insertedAt ?? found.createdAt ?? new Date().toISOString());
 
     setHydrated(true);
   }, [
@@ -343,7 +364,10 @@ export default function CreatePostModal() {
   /* Submit                                                                      */
   /* -------------------------------------------------------------------------- */
 
-  const canPost = text.trim().length > 0 && !!authorProfileId;
+  const canPost =
+    !!authorProfileId &&
+    threadTexts.length > 0 &&
+    threadTexts.every((t) => t.trim().length > 0);
 
   const onPost = async () => {
     if (!canPost) return;
@@ -352,26 +376,84 @@ export default function CreatePostModal() {
       return;
     }
 
-    const base: Post = {
-      id: isEdit ? editingPostId : makeId("po"),
-      scenarioId: sid,
-      authorProfileId: String(authorProfileId),
-      text: text.trim(),
-      createdAt: date.toISOString(),
-      imageUrls: imageUrls.slice(0, MAX_IMAGES),
-      replyCount: counts.reply,
-      repostCount: counts.repost,
-      likeCount: counts.like,
-      parentPostId: parentId,
-      quotedPostId: quoteId,
-    };
+    const isStandaloneCreate = !isEdit && !parentId && !quoteId;
 
-    await upsertPost(base);
+    // EDIT: single post only (no threading)
+    if (isEdit) {
+      const base: Post = {
+        id: editingPostId,
+        scenarioId: sid,
+        authorProfileId: String(authorProfileId),
+        text: (threadTexts[0] ?? "").trim(),
+        createdAt: date.toISOString(),
+        imageUrls: imageUrls.slice(0, MAX_IMAGES),
+        replyCount: counts.reply,
+        repostCount: counts.repost,
+        likeCount: counts.like,
+        parentPostId: parentId,
+        quotedPostId: quoteId,
+        insertedAt: insertedAt || new Date().toISOString(), // preserve when available
+      };
 
-    if (!isEdit) {
-      await setSelectedProfileId(sid, String(authorProfileId));
+      await upsertPost(base);
+      router.back();
+      return;
     }
 
+    // CREATE: if reply/quote, keep single post behavior
+    if (!isStandaloneCreate) {
+      const postedAtIso = new Date().toISOString();
+      const base: Post = {
+        id: makeId("po"),
+        scenarioId: sid,
+        authorProfileId: String(authorProfileId),
+        text: (threadTexts[0] ?? "").trim(),
+        createdAt: postedAtIso,
+        imageUrls: imageUrls.slice(0, MAX_IMAGES),
+        replyCount: counts.reply,
+        repostCount: counts.repost,
+        likeCount: counts.like,
+        parentPostId: parentId,
+        quotedPostId: quoteId,
+        insertedAt: postedAtIso,
+      };
+
+      await upsertPost(base);
+      await setSelectedProfileId(sid, String(authorProfileId));
+      router.back();
+      return;
+    }
+
+    // CREATE: thread (chain items as replies to previous)
+    const baseTime = new Date();
+    const insertedAtBaseIso = baseTime.toISOString();
+    let prevId: string | undefined = undefined;
+
+    for (let i = 0; i < threadTexts.length; i++) {
+      const id = makeId("po");
+      const createdAt = new Date(baseTime.getTime() + i * 1000).toISOString(); // stable order
+
+      const post: Post = {
+        id,
+        scenarioId: sid,
+        authorProfileId: String(authorProfileId),
+        text: threadTexts[i].trim(),
+        createdAt,
+        // keep media + engagement only on first post for now
+        imageUrls: i === 0 ? imageUrls.slice(0, MAX_IMAGES) : [],
+        replyCount: i === 0 ? counts.reply : 0,
+        repostCount: i === 0 ? counts.repost : 0,
+        likeCount: i === 0 ? counts.like : 0,
+        parentPostId: i === 0 ? undefined : prevId,
+        quotedPostId: undefined,
+        insertedAt: insertedAtBaseIso,
+      };
+
+      await upsertPost(post);
+      prevId = id;
+    }
+
+    await setSelectedProfileId(sid, String(authorProfileId));
     router.back();
   };
 
@@ -495,18 +577,88 @@ export default function CreatePostModal() {
               </Pressable>
 
               <View style={{ flex: 1 }}>
-                <TextInput
-                  value={text}
-                  onChangeText={(v) => setText(v.slice(0, 500))}
-                  placeholder="What’s happening?"
-                  placeholderTextColor={colors.textMuted}
-                  multiline
-                  style={[styles.input, { color: colors.text }]}
-                  selectionColor={colors.tint}
-                  maxLength={500}
-                  scrollEnabled
-                  textAlignVertical="top"
-                />
+                {threadTexts.map((value, idx) => {
+                  const isLast = idx === threadTexts.length - 1;
+                  const canRemove = !isEdit && !parentId && !quoteId && threadTexts.length > 1;
+
+                  return (
+                    <View key={`thread_${idx}`} style={styles.threadItemWrap}>
+                      {/* remove button (inline, but does NOT steal width from the input) */}
+                      {canRemove ? (
+                        <Pressable
+                          onPress={() => removeThreadItem(idx)}
+                          hitSlop={10}
+                          style={({ pressed }) => [
+                            styles.threadRemoveFloat,
+                            {
+                              opacity: pressed ? 0.6 : 1,
+                              borderColor: colors.border,
+                              backgroundColor: colors.background,
+                            },
+                          ]}
+                        >
+                          <Ionicons name="close" size={14} color={colors.textSecondary} />
+                        </Pressable>
+                      ) : null}
+
+                      <TextInput
+                        value={value}
+                        onChangeText={(v) => setThreadTextAt(idx, v)}
+                        onFocus={() => setFocusedThreadIndex(idx)}
+                        placeholder={idx === 0 ? "What’s happening?" : "Add another post"}
+                        placeholderTextColor={colors.textMuted}
+                        multiline
+                        style={[
+                          styles.input,
+                          styles.threadInput,
+                          { color: colors.text, paddingRight: canRemove ? 34 : 0 },
+                        ]}
+                        selectionColor={colors.tint}
+                        maxLength={500}
+                        scrollEnabled
+                        textAlignVertical="top"
+                      />
+
+                      {/* per-item footer (right-aligned count like before; only for focused input) */}
+                      <View style={styles.threadFooterRow}>
+                        <View style={{ flex: 1 }} />
+
+                        {focusedThreadIndex === idx ? (
+                          <ThemedText style={{ color: colors.textSecondary, fontSize: 12 }}>
+                            {value.length}/500
+                          </ThemedText>
+                        ) : null}
+
+                        {!isEdit && !parentId && !quoteId && isLast ? (
+                          <Pressable
+                            onPress={addThreadItem}
+                            disabled={(threadTexts[threadTexts.length - 1] ?? "").trim().length === 0}
+                            hitSlop={10}
+                            style={({ pressed }) => [
+                              styles.threadPlusTiny,
+                              {
+                                opacity:
+                                  (threadTexts[threadTexts.length - 1] ?? "").trim().length === 0
+                                    ? 0.35
+                                    : pressed
+                                    ? 0.8
+                                    : 1,
+                              },
+                            ]}
+                          >
+                            <Ionicons name="add" size={16} color={colors.tint} />
+                          </Pressable>
+                        ) : null}
+                      </View>
+
+                      {/* full-width divider between thread items (spans under the avatar too) */}
+                      {!isLast ? (
+                        <View style={[styles.threadDividerFull, { backgroundColor: colors.border }]} />
+                      ) : null}
+                    </View>
+                  );
+                })}
+
 
                 {/* image preview grid + remove */}
                 {imageUrls.length > 0 ? (
@@ -558,11 +710,6 @@ export default function CreatePostModal() {
               </View>
             </View>
 
-            <View style={{ alignItems: "flex-end", marginTop: 4 }}>
-              <ThemedText style={{ color: colors.textSecondary, fontSize: 12 }}>
-                {text.length}/500
-              </ThemedText>
-            </View>
 
             <View style={[styles.softDivider, { backgroundColor: colors.border }]} />
 
@@ -900,4 +1047,53 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
   },
+  // threadDivider is kept but not used in the new UI; can be kept for legacy
+
+  threadItemWrap: {
+    width: "100%",
+    alignSelf: "stretch",
+    position: "relative",
+  },
+  threadRemoveFloat: {
+    position: "absolute",
+    top: 0,
+    right: 0,
+    width: 26,
+    height: 26,
+    borderRadius: 999,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: StyleSheet.hairlineWidth,
+    zIndex: 2,
+  },
+  threadInput: {
+    width: "100%",
+    alignSelf: "stretch",
+    maxHeight: 260,
+  },
+  threadFooterRow: {
+    marginTop: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    gap: 10,
+  },
+  threadDividerFull: {
+    height: StyleSheet.hairlineWidth,
+    opacity: 0.9,
+    marginTop: 12,
+    width: "auto",
+    alignSelf: "stretch",
+    // extend the divider to the left so it covers the avatar column too
+    marginLeft: -(42 + 12),
+  },
+  threadPlusTiny: {
+    width: 18,
+    height: 18,
+    borderRadius: 999,
+    alignItems: "center",
+    justifyContent: "center",
+  },
 });
+
+  
