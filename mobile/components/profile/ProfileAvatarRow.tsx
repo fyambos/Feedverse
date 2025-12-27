@@ -16,7 +16,7 @@ type ColorsLike = {
 
 type PrimaryButtonOverride = {
   label: string;
-  variant?: "primary" | "danger";
+  variant?: "primary" | "ghost" | "danger";
 };
 
 type Props = {
@@ -49,12 +49,13 @@ export function ProfileAvatarRow({
 }: Props) {
   const overrideLabel = primaryButtonOverride?.label;
   const overrideVariant = primaryButtonOverride?.variant ?? "primary";
-
-  const dangerRed = "#ff3b30";
-
   const primaryLabel = overrideLabel ?? "Follow";
 
+  const isGhost = overrideVariant === "ghost";
   const isDanger = overrideVariant === "danger";
+
+  const primaryBorderColor = isDanger ? "#ff3b30" : colors.border;
+  const primaryTextColor = isDanger ? "#ff3b30" : isGhost ? colors.text : colors.background;
 
   return (
     <View style={styles.avatarRow}>
@@ -106,29 +107,16 @@ export function ProfileAvatarRow({
           onLongPress={onLongPressPrimary}
           delayLongPress={250}
           style={({ pressed }) => [
-            styles.primaryBtn,
-            // ✅ primary vs danger styling
-            isDanger
+            isGhost || isDanger ? styles.ghostBtn : styles.primaryBtn,
+            isGhost || isDanger
               ? {
-                  backgroundColor: "transparent",
-                  borderWidth: 1,
-                  borderColor: dangerRed,
+                  borderColor: primaryBorderColor,
+                  backgroundColor: pressed ? colors.pressed : "transparent",
                 }
-              : {
-                  backgroundColor: colors.text,
-                  borderWidth: 0,
-                },
-            pressed && { opacity: 0.85 },
+              : { backgroundColor: colors.text, opacity: pressed ? 0.85 : 1 },
           ]}
         >
-          <ThemedText
-            style={{
-              fontWeight: "800",
-              color: isDanger ? dangerRed : colors.background,
-            }}
-          >
-            {primaryLabel}
-          </ThemedText>
+          <ThemedText style={{ fontWeight: "800", color: primaryTextColor }}>{primaryLabel}</ThemedText>
         </Pressable>
       )}
     </View>
@@ -160,13 +148,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  primaryBtn: {
-    height: 34,
-    paddingHorizontal: 18,
-    borderRadius: 999,
-    alignItems: "center",
-    justifyContent: "center",
-  },
+  primaryBtn: { height: 34, paddingHorizontal: 18, borderRadius: 999, alignItems: "center", justifyContent: "center" },
 
   pressedPop: { transform: [{ scale: 0.92 }] },
 });
