@@ -17,15 +17,16 @@ export class UserRepository {
 
   async create(userData: CreateUserData): Promise<User> {
     const query = `
-      INSERT INTO users (id, username, email, password, created_at, updated_at)
-      VALUES ($1, $2, $3, $4, $5, $6)
+      INSERT INTO users (id, username, email, password_hash, avatar_url, created_at, updated_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
       RETURNING *
     `;
     const result = await pool.query(query, [
       userData.id,
       userData.username,
       userData.email,
-      userData.password,
+      userData.password_hash,
+      userData.avatar_url,
       userData.created_at,
       userData.updated_at,
     ]);
@@ -37,13 +38,10 @@ export class UserRepository {
     await pool.query(query, [loginDate, email]);
   }
 
-  async updateProfilePicture(
-    userId: string,
-    profilePicture: string,
-  ): Promise<void> {
+  async updateAvatar_url(userId: string, avatar_url: string): Promise<void> {
     const query =
-      "UPDATE users SET profile_picture = $1, updated_at = $2 WHERE id = $3";
-    await pool.query(query, [profilePicture, new Date(), userId]);
+      "UPDATE users SET avatar_url = $1, updated_at = $2 WHERE id = $3";
+    await pool.query(query, [avatar_url, new Date(), userId]);
   }
 
   async findByGoogleId(googleId: string): Promise<User | null> {
