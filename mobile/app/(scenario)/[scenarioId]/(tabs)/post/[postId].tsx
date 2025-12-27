@@ -1,4 +1,3 @@
-// mobile/app/(scenario)/[scenarioId]/(tabs)/post/[postId].tsx
 import React, { useCallback, useMemo } from "react";
 import { FlatList, Pressable, StyleSheet, View } from "react-native";
 import { Stack, useLocalSearchParams, router } from "expo-router";
@@ -54,11 +53,22 @@ export default function PostScreen() {
   );
 
   const root = isReady ? getPostById(pid) : null;
+  const isDeletedRoot = isReady && !root;
+
+  const isMissingParent =
+    isReady && !!root?.parentPostId && !getPostById(String(root.parentPostId));
+
+  const showDeletedPlaceholder = isDeletedRoot || isMissingParent;
 
   const thread = useMemo(() => {
-    if (!root) return null;
+    if (!isReady) return null;
 
-    const result: Post[] = [root];
+    const result: Post[] = [];
+
+    // only add root if it exists
+    if (root) {
+      result.push(root);
+    }
 
     const walk = (parentId: string) => {
       const children = listRepliesForPost(parentId);
@@ -68,9 +78,10 @@ export default function PostScreen() {
       }
     };
 
-    walk(String(root.id));
+    walk(pid);
+
     return result;
-  }, [root, listRepliesForPost]);
+  }, [isReady, root, pid, listRepliesForPost]);
 
   return (
     <ThemedView style={[styles.container, { backgroundColor: colors.background }]}>
@@ -102,7 +113,7 @@ export default function PostScreen() {
         <ThemedView style={[styles.container, { backgroundColor: colors.background, padding: 16 }]}>
           <ThemedText style={{ color: colors.textSecondary }}>Loading…</ThemedText>
         </ThemedView>
-      ) : !root || !thread ? (
+      ) : !thread ? (
         <ThemedView style={[styles.container, { backgroundColor: colors.background, padding: 16 }]}>
           <ThemedText style={{ color: colors.textSecondary }}>Post not found.</ThemedText>
         </ThemedView>
@@ -110,6 +121,18 @@ export default function PostScreen() {
         <FlatList
           data={thread}
           keyExtractor={(i) => String(i.id)}
+          ListHeaderComponent={
+            showDeletedPlaceholder ? (
+              <View style={[styles.deletedWrap, { borderColor: colors.border }]}>
+                <ThemedText style={{ color: colors.text, fontWeight: "700" }}>
+                  Deleted post
+                </ThemedText>
+                <ThemedText style={{ color: colors.textSecondary, marginTop: 4 }}>
+                  This post is no longer available.
+                </ThemedText>
+              </View>
+            ) : null
+          }
           ItemSeparatorComponent={() => (
             <View style={[styles.sep, { backgroundColor: colors.border }]} />
           )}
@@ -125,8 +148,11 @@ export default function PostScreen() {
               ? getProfileById(String(parent.authorProfileId))
               : null;
 
-            const isRoot = itemId === String(root.id);
-            const variant = isRoot ? "detail" : "reply";
+            const isRoot = itemId === pid;
+            const focusedIsReply = isRoot && !!item.parentPostId;
+
+            // if the opened post is itself a reply, keep it styled as a reply
+            const variant = isRoot && !focusedIsReply ? "detail" : "reply";
 
             const canEdit = canEditPost({ authorProfile: profile, userId });
 
@@ -162,4 +188,12 @@ export default function PostScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   sep: { height: StyleSheet.hairlineWidth, opacity: 0.8 },
+  deletedWrap: {
+    marginHorizontal: 16,
+    marginVertical: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 14,
+    padding: 14,
+    opacity: 0.9,
+  },
 });
