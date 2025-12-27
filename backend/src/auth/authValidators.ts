@@ -14,6 +14,12 @@ export const validateEmail = (email: string): ValidationError | null => {
   return null;
 };
 
+export const nameFormatting = (username: string) => {
+  return String(username)
+    .toLocaleLowerCase()
+    .replace(/[^a-zA-Z0-9]/g, "");
+};
+
 export const validatePassword = (password: string): ValidationError | null => {
   if (!password || password.length === 0) {
     return {
