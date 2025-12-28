@@ -548,7 +548,7 @@ export default function CreatePostModal() {
 
                 {quotedPost ? (
                   <View style={{ marginTop: 12 }}>
-                    <QuotedPostCard quotedPost={quotedPost} colors={colors} getProfileById={getProfileById} />
+                    <QuotedPostCard quotedPost={quotedPost} colors={colors} getProfileById={getProfileById} scenarioId={sid} />
                   </View>
                 ) : null}
               </View>
