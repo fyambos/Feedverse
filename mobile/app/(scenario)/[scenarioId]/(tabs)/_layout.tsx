@@ -7,6 +7,9 @@ import { IconSymbol } from "@/components/ui/icon-symbol";
 import { Ionicons } from "@expo/vector-icons";
 import { Colors } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
+import { useAppData } from "@/context/appData";
+import { Avatar } from "@/components/ui/Avatar";
+import { View } from "react-native";
 
 function TabIcon({
   iosName,
@@ -29,7 +32,10 @@ export default function TabLayout() {
   const { scenarioId } = useLocalSearchParams<{ scenarioId: string }>();
   const colorScheme = useColorScheme() ?? "light";
   const colors = Colors[colorScheme];
-
+  const { getProfileById, getSelectedProfileId } = useAppData();
+  const selectedProfileId = getSelectedProfileId(String(scenarioId));
+  const selectedProfile = selectedProfileId ? getProfileById(String(selectedProfileId)) : null;
+  
   return (
     <Tabs
       screenOptions={{
@@ -43,6 +49,29 @@ export default function TabLayout() {
         name="index"
         options={{
           title: "",
+          headerLeft: () => (
+            <Pressable
+              onPress={() =>
+                router.push({
+                  pathname: "/modal/select-profile",
+                  params: { scenarioId: String(scenarioId) },
+                } as any)
+              }
+              hitSlop={12}
+              style={({ pressed }) => [
+                { opacity: pressed ? 0.7 : 1, marginLeft: 12 },
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel="Switch Profile"
+            >
+              <Avatar
+                uri={selectedProfile?.avatarUrl ?? null}
+                size={30}
+                fallbackColor={colors.border}
+              />
+            </Pressable>
+          ),
+
           headerTitle: () => (
             <Pressable
               onPress={() =>
@@ -62,7 +91,10 @@ export default function TabLayout() {
               />
             </Pressable>
           ),
-          tabBarIcon: ({ color }) => <TabIcon iosName="house.fill" androidIonicon="home" color={color} />,
+
+          tabBarIcon: ({ color }) => (
+            <TabIcon iosName="house.fill" androidIonicon="home" color={color} />
+          ),
         }}
       />
 
