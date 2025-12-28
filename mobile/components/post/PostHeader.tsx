@@ -30,6 +30,9 @@ type Props = {
 
   showMenu?: boolean;
   isInteractive?: boolean;
+
+  // ✅ NEW
+  showTimestamps?: boolean;
 };
 
 export function PostHeader({
@@ -43,6 +46,7 @@ export function PostHeader({
   onOpenMenu,
   showMenu = true,
   isInteractive = true,
+  showTimestamps = true,
 }: Props) {
   const isDetail = variant === "detail";
   const showRelative = !isDetail;
@@ -116,7 +120,7 @@ export function PostHeader({
           <Pressable onPress={onOpenProfile} hitSlop={0} style={styles.inlinePress}>
             <ThemedText style={[styles.handleInline, { color: colors.textSecondary }]} numberOfLines={1}>
               @{profile.handle}
-              {showRelative ? ` · ${formatRelativeTime(createdAtIso)}` : ""}
+              {showRelative && showTimestamps ? ` · ${formatRelativeTime(createdAtIso)}` : ""}
             </ThemedText>
           </Pressable>
         </View>

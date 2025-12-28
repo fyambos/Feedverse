@@ -1,5 +1,3 @@
-// mobile/components/post/Post.tsx
-
 import React from "react";
 import { Alert, Modal, Pressable, StyleSheet, View } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
@@ -18,6 +16,9 @@ import { PostActions } from "@/components/post/PostActions";
 import { PostHeader } from "@/components/post/PostHeader";
 import { PostBody } from "@/components/post/PostBody";
 
+import { useAuth } from "@/context/auth";
+import { useAppData } from "@/context/appData";
+
 export type PostVariant = "feed" | "detail" | "reply";
 
 type Props = {
@@ -29,7 +30,6 @@ type Props = {
   showActions?: boolean;
   showThreadLine?: boolean;
 
-  // NEW
   showMenu?: boolean;
   isInteractive?: boolean;
   showQuoted?: boolean;
@@ -105,6 +105,13 @@ export function Post({
 }: Props) {
   const scheme = useColorScheme() ?? "light";
   const colors = Colors[scheme];
+
+  const { userId } = useAuth();
+  const { getUserById } = useAppData();
+
+  const currentUser = userId ? getUserById(String(userId)) : null;
+  // default true unless explicitly false
+  const showTimestampsPref = currentUser?.settings?.showTimestamps !== false;
 
   const addVideoIcon = Boolean((item as any).addVideoIcon);
 
@@ -182,19 +189,9 @@ export function Post({
     if (!canOpenMenu) return null;
 
     return (
-      <Modal
-        transparent
-        visible={menuOpen}
-        animationType="fade"
-        onRequestClose={() => setMenuOpen(false)}
-      >
+      <Modal transparent visible={menuOpen} animationType="fade" onRequestClose={() => setMenuOpen(false)}>
         <Pressable style={styles.menuBackdrop} onPress={() => setMenuOpen(false)}>
-          <Pressable
-            style={[
-              styles.menuSheet,
-              { backgroundColor: colors.background, borderColor: colors.border },
-            ]}
-          >
+          <Pressable style={[styles.menuSheet, { backgroundColor: colors.background, borderColor: colors.border }]}>
             <Pressable
               onPress={onReportPost}
               style={({ pressed }) => [
@@ -245,6 +242,7 @@ export function Post({
           onOpenMenu={handleOpenMenu}
           showMenu={showMenu}
           isInteractive={isInteractive}
+          showTimestamps={showTimestampsPref}
         />
 
         <MenuModal />
@@ -258,9 +256,11 @@ export function Post({
           showQuoted={showQuoted}
         />
 
-        <ThemedText style={[styles.dateLine, { color: colors.textSecondary }]}>
-          {formatDetailTimestamp(item.createdAt)}
-        </ThemedText>
+        {showTimestampsPref ? (
+          <ThemedText style={[styles.dateLine, { color: colors.textSecondary }]}>
+            {formatDetailTimestamp(item.createdAt)}
+          </ThemedText>
+        ) : null}
 
         {hasDetailCounts && (
           <>
@@ -309,7 +309,6 @@ export function Post({
 
   return (
     <View style={styles.wrapReply}>
-      {/* repost banner */}
       {repostedByLabel ? (
         <View style={styles.repostBanner}>
           <AntDesign name="retweet" size={14} color={colors.tint} />
@@ -323,12 +322,7 @@ export function Post({
         <View style={styles.avatarCol}>
           {showThreadLine ? <View style={[styles.threadLine, { backgroundColor: colors.border }]} /> : null}
 
-          <Pressable
-            onPress={() => openProfile()}
-            hitSlop={0}
-            style={styles.avatarPress}
-            disabled={!canNavigate}
-          >
+          <Pressable onPress={() => openProfile()} hitSlop={0} style={styles.avatarPress} disabled={!canNavigate}>
             <Avatar uri={profile.avatarUrl} size={44} fallbackColor={colors.border} />
           </Pressable>
         </View>
@@ -345,6 +339,7 @@ export function Post({
             onOpenMenu={handleOpenMenu}
             showMenu={showMenu}
             isInteractive={isInteractive}
+            showTimestamps={showTimestampsPref}
           />
 
           <MenuModal />
@@ -388,7 +383,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    paddingLeft: 44 + 12, // align with text column
+    paddingLeft: 44 + 12,
     paddingBottom: 2,
     paddingTop: 2,
   },
