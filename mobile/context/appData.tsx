@@ -1,4 +1,3 @@
-// mobile/context/appData.tsx
 import React from "react";
 import type { DbV4, Post, Profile, Scenario, User, Repost, UserSettings } from "@/data/db/schema";
 import { readDb, updateDb } from "@/data/db/storage";
@@ -76,6 +75,9 @@ type AppDataApi = {
   upsertProfile: (p: Profile) => Promise<void>;
   upsertPost: (p: Post) => Promise<void>;
   deletePost: (postId: string) => Promise<void>;
+
+  // ✅ NEW
+  updateUserSettings: (userId: string, settings: UserSettings) => Promise<void>;
 
   toggleLike: (scenarioId: string, postId: string) => Promise<void>;
   isPostLikedBySelectedProfile: (scenarioId: string, postId: string) => boolean;
@@ -207,7 +209,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         return { items: page, nextCursor: next };
       },
 
-      // profile feed page (posts tab shows authored posts + repost events, ordered by activityAt)
+      // profile feed page
       listProfileFeedPage: ({ scenarioId, profileId, tab, limit = 15, cursor }) => {
         if (!db) return { items: [], nextCursor: null };
 
@@ -215,32 +217,25 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         const pid = String(profileId);
 
         const posts = Object.values(db.posts).filter((p) => p.scenarioId === sid);
-
         const authoredPosts = posts.filter((p) => String(p.authorProfileId) === pid);
 
-        // likes tab depends on profile.likedPostIds
         const profile = db.profiles[pid];
         const likedSet = new Set<string>((profile?.likedPostIds ?? []).map(String));
 
-        // helper: find repost events by this profile
         const repostEvents = Object.values(db.reposts ?? {}).filter(
           (r) => String(r.scenarioId) === sid && String(r.profileId) === pid
         );
 
-        // build feed candidates
         const items: ProfileFeedItem[] = [];
 
         if (tab === "posts") {
-          // authored posts as activity = post.createdAt (or insertedAt? keep createdAt for narrative)
           for (const p of authoredPosts.filter((p) => !p.parentPostId)) {
             items.push({ kind: "post", post: p, activityAt: String(p.createdAt) });
           }
 
-          // reposts as activity = repost.createdAt
           for (const r of repostEvents) {
             const post = db.posts[String(r.postId)];
             if (!post) continue;
-            // typically do not show replies in profile “posts” tab
             if (post.parentPostId) continue;
 
             items.push({
@@ -267,12 +262,10 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         if (tab === "likes") {
           for (const p of posts) {
             if (!likedSet.has(String(p.id))) continue;
-            // likes are better ordered by "when liked", but we don't store it yet, so fallback to post.createdAt
             items.push({ kind: "post", post: p, activityAt: String(p.createdAt) });
           }
         }
 
-        // sort by activityAt desc, then kind, then post.id (stable)
         items.sort((a, b) => {
           const c = String(b.activityAt).localeCompare(String(a.activityAt));
           if (c !== 0) return c;
@@ -281,7 +274,6 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
           return String(b.post.id).localeCompare(String(a.post.id));
         });
 
-        // cursor (start after)
         let startIndex = 0;
         if (cursor) {
           const idx = items.findIndex((it) => makeFeedCursor(it) === cursor);
@@ -346,8 +338,8 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         const next = await updateDb((prev) => {
           const existing = prev.posts[id];
 
-          const insertedAt = existing?.insertedAt ?? p.insertedAt ?? now; // stable
-          const createdAt = p.createdAt ?? existing?.createdAt ?? now; // editable
+          const insertedAt = existing?.insertedAt ?? p.insertedAt ?? now;
+          const createdAt = p.createdAt ?? existing?.createdAt ?? now;
 
           return {
             ...prev,
@@ -446,7 +438,6 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       },
 
       // ===== REPOSTS (events) =====
-
       getRepostEventForProfile: (profileId: string, postId: string) => {
         if (!db) return null;
         const id = `${String(profileId)}|${String(postId)}`;
@@ -486,10 +477,8 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
           const now = new Date().toISOString();
 
           if (already) {
-            // remove repost event
             delete reposts[key];
           } else {
-            // add repost event
             reposts[key] = {
               id: key,
               scenarioId: sid,
@@ -524,7 +513,6 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
           const posts = { ...prev.posts };
           delete posts[id];
 
-          // also delete repost events pointing to this post
           const reposts = { ...(prev as any).reposts };
           for (const k of Object.keys(reposts ?? {})) {
             if (String(reposts[k]?.postId) === id) delete reposts[k];
