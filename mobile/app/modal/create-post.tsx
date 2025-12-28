@@ -34,13 +34,17 @@ import { RowCard } from "@/components/ui/RowCard";
 
 const MAX_IMAGES = 4;
 
+// counts
+const MAX_COUNT = 999_999_999_999;
+const MAX_COUNT_DIGITS = 12;
+
 /* -------------------------------------------------------------------------- */
 /* Helpers                                                                     */
 /* -------------------------------------------------------------------------- */
 
-function clampInt(n: number, min = 0, max = 99_000_000) {
-  if (Number.isNaN(n)) return min;
-  return Math.max(min, Math.min(max, n));
+function clampInt(n: number, min = 0, max = MAX_COUNT) {
+  const x = Number.isFinite(n) ? Math.floor(n) : min;
+  return Math.max(min, Math.min(max, x));
 }
 
 function randInt(min: number, max: number) {
@@ -51,6 +55,36 @@ function randInt(min: number, max: number) {
 
 function toCountStringOrEmpty(n: number) {
   return n > 0 ? String(n) : "";
+}
+
+function digitsOnly(s: string) {
+  return String(s ?? "").replace(/[^\d]/g, "");
+}
+
+// typing-safe: cannot type infinite digits, and never exceeds MAX_COUNT
+function limitCountText(s: string) {
+  const raw = digitsOnly(s).slice(0, MAX_COUNT_DIGITS);
+  if (!raw) return "";
+  const n = Number(raw) || 0;
+  const clamped = clampInt(n, 0, MAX_COUNT);
+  return clamped <= 0 ? "" : String(clamped);
+}
+
+// db-safe: always clamp when converting to number
+function clampCountFromText(text: string, min = 0, max = MAX_COUNT) {
+  const n = Number(digitsOnly(text || "0")) || 0;
+  return clampInt(n, min, max);
+}
+
+function uniqueLimit(arr: string[], limit: number) {
+  const out: string[] = [];
+  for (const x of arr) {
+    if (!x) continue;
+    if (out.includes(x)) continue;
+    out.push(x);
+    if (out.length >= limit) break;
+  }
+  return out;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -224,6 +258,11 @@ export default function CreatePostModal() {
     setAddVideoIcon(false);
   }, []);
 
+  // SECURE: author must exist in this scenario (front-only guard)
+  const scenarioProfileIds = useMemo(() => {
+    return new Set(listProfilesForScenario(sid).map((p) => String(p.id)));
+  }, [sid, listProfilesForScenario]);
+
   // hydrate edit mode OR wire reply/quote in create mode
   useEffect(() => {
     if (!isReady) return;
@@ -261,13 +300,13 @@ export default function CreatePostModal() {
     } else {
       setVideoThumbUri(null);
       setAddVideoIcon(false);
-      setImageUrls(raw);
+      setImageUrls(uniqueLimit(raw, MAX_IMAGES));
     }
 
     // keep placeholders for 0
-    setReplyCount(toCountStringOrEmpty(found.replyCount ?? 0));
-    setRepostCount(toCountStringOrEmpty(found.repostCount ?? 0));
-    setLikeCount(toCountStringOrEmpty(found.likeCount ?? 0));
+    setReplyCount(toCountStringOrEmpty(clampInt(found.replyCount ?? 0)));
+    setRepostCount(toCountStringOrEmpty(clampInt(found.repostCount ?? 0)));
+    setLikeCount(toCountStringOrEmpty(clampInt(found.likeCount ?? 0)));
 
     setParentId(found.parentPostId ? String(found.parentPostId) : replyParent);
     setQuoteId(found.quotedPostId ? String(found.quotedPostId) : q);
@@ -321,14 +360,15 @@ export default function CreatePostModal() {
   }, [isReady, isEdit, sid, authorProfileId, selectedId, setSelectedProfileId]);
 
   /* -------------------------------------------------------------------------- */
-  /* Counts                                                                      */
+  /* Counts (SECURE)                                                            */
   /* -------------------------------------------------------------------------- */
 
   const counts = useMemo(() => {
-    const r1 = clampInt(Number(replyCount || 0), 0, 99_000_000);
-    const r2 = clampInt(Number(repostCount || 0), 0, 99_000_000);
-    const r3 = clampInt(Number(likeCount || 0), 0, 99_000_000);
-    return { reply: r1, repost: r2, like: r3 };
+    return {
+      reply: clampCountFromText(replyCount),
+      repost: clampCountFromText(repostCount),
+      like: clampCountFromText(likeCount),
+    };
   }, [replyCount, repostCount, likeCount]);
 
   const setEngagementPreset = (preset: "few" | "mid" | "lot") => {
@@ -384,7 +424,7 @@ export default function CreatePostModal() {
       setAddVideoIcon(false);
       setVideoThumbUri(null);
 
-      setImageUrls((prev) => [...prev, ...picked].slice(0, MAX_IMAGES));
+      setImageUrls((prev) => uniqueLimit([...prev, ...picked], MAX_IMAGES));
     } finally {
       setpicking(false);
     }
@@ -415,7 +455,7 @@ export default function CreatePostModal() {
       setAddVideoIcon(false);
       setVideoThumbUri(null);
 
-      setImageUrls((prev) => [...prev, persistedUri].slice(0, MAX_IMAGES));
+      setImageUrls((prev) => uniqueLimit([...prev, persistedUri], MAX_IMAGES));
     } finally {
       setpicking(false);
     }
@@ -453,15 +493,28 @@ export default function CreatePostModal() {
 
   const onPost = async () => {
     if (!canPost) return;
+
     if (!authorProfileId) {
       router.back();
       return;
     }
 
-    const mediaForPost = videoThumbUri
-      ? [videoThumbUri]
-      : imageUrls.slice(0, MAX_IMAGES);
+    const safeAuthorId = String(authorProfileId);
 
+    // SECURE: prevent injected author id
+    if (!scenarioProfileIds.has(safeAuthorId)) {
+      Alert.alert("Invalid author", "Pick a valid profile for this scenario.");
+      return;
+    }
+
+    // SECURE: only store clamped counts
+    const safeCounts = {
+      reply: clampInt(counts.reply, 0, MAX_COUNT),
+      repost: clampInt(counts.repost, 0, MAX_COUNT),
+      like: clampInt(counts.like, 0, MAX_COUNT),
+    };
+
+    const mediaForPost = videoThumbUri ? [videoThumbUri] : uniqueLimit(imageUrls, MAX_IMAGES);
     const addVideoIconForPost = Boolean(videoThumbUri) && addVideoIcon;
 
     const isStandaloneCreate = !isEdit && !parentId && !quoteId;
@@ -471,13 +524,13 @@ export default function CreatePostModal() {
       const base: Post & { addVideoIcon?: boolean } = {
         id: editingPostId,
         scenarioId: sid,
-        authorProfileId: String(authorProfileId),
+        authorProfileId: safeAuthorId,
         text: (threadTexts[0] ?? "").trim(),
         createdAt: date.toISOString(),
         imageUrls: mediaForPost,
-        replyCount: counts.reply,
-        repostCount: counts.repost,
-        likeCount: counts.like,
+        replyCount: safeCounts.reply,
+        repostCount: safeCounts.repost,
+        likeCount: safeCounts.like,
         parentPostId: parentId,
         quotedPostId: quoteId,
         insertedAt: insertedAt || new Date().toISOString(), // preserve when available
@@ -495,13 +548,13 @@ export default function CreatePostModal() {
       const base: Post & { addVideoIcon?: boolean } = {
         id: makeId("po"),
         scenarioId: sid,
-        authorProfileId: String(authorProfileId),
+        authorProfileId: safeAuthorId,
         text: (threadTexts[0] ?? "").trim(),
         createdAt: postedAtIso,
         imageUrls: mediaForPost,
-        replyCount: counts.reply,
-        repostCount: counts.repost,
-        likeCount: counts.like,
+        replyCount: safeCounts.reply,
+        repostCount: safeCounts.repost,
+        likeCount: safeCounts.like,
         parentPostId: parentId,
         quotedPostId: quoteId,
         insertedAt: postedAtIso,
@@ -509,7 +562,7 @@ export default function CreatePostModal() {
       };
 
       await upsertPost(base as any);
-      await setSelectedProfileId(sid, String(authorProfileId));
+      await setSelectedProfileId(sid, safeAuthorId);
       router.back();
       return;
     }
@@ -526,14 +579,14 @@ export default function CreatePostModal() {
       const post: Post & { addVideoIcon?: boolean } = {
         id,
         scenarioId: sid,
-        authorProfileId: String(authorProfileId),
+        authorProfileId: safeAuthorId,
         text: threadTexts[i].trim(),
         createdAt,
         // keep media + engagement only on first post for now
         imageUrls: i === 0 ? mediaForPost : [],
-        replyCount: i === 0 ? counts.reply : 0,
-        repostCount: i === 0 ? counts.repost : 0,
-        likeCount: i === 0 ? counts.like : 0,
+        replyCount: i === 0 ? safeCounts.reply : 0,
+        repostCount: i === 0 ? safeCounts.repost : 0,
+        likeCount: i === 0 ? safeCounts.like : 0,
         parentPostId: i === 0 ? undefined : prevId,
         quotedPostId: undefined,
         insertedAt: insertedAtBaseIso,
@@ -544,7 +597,7 @@ export default function CreatePostModal() {
       prevId = id;
     }
 
-    await setSelectedProfileId(sid, String(authorProfileId));
+    await setSelectedProfileId(sid, safeAuthorId);
     router.back();
   };
 
@@ -601,10 +654,7 @@ export default function CreatePostModal() {
   };
 
   return (
-    <SafeAreaView
-      edges={["top"]}
-      style={{ flex: 1, backgroundColor: colors.background }}
-    >
+    <SafeAreaView edges={["top"]} style={{ flex: 1, backgroundColor: colors.background }}>
       <ThemedView style={[styles.screen, { backgroundColor: colors.background }]}>
         {picking ? (
           <View style={styles.pickerOverlay} pointerEvents="auto">
@@ -624,9 +674,7 @@ export default function CreatePostModal() {
               hitSlop={12}
               style={({ pressed }) => [pressed && { opacity: 0.7 }]}
             >
-              <ThemedText style={{ color: colors.text, fontSize: 16 }}>
-                Cancel
-              </ThemedText>
+              <ThemedText style={{ color: colors.text, fontSize: 16 }}>Cancel</ThemedText>
             </Pressable>
 
             <Pressable
@@ -657,7 +705,6 @@ export default function CreatePostModal() {
             <View style={styles.composer}>
               <Pressable
                 onPress={() => {
-                  // arm selection and remember current selectedId so we can detect a real change
                   setPickAuthorArmed(true);
                   setPickAuthorPrevSelectedId(selectedId ? String(selectedId) : "");
                   router.push({
@@ -682,7 +729,6 @@ export default function CreatePostModal() {
 
                   return (
                     <View key={`thread_${idx}`} style={styles.threadItemWrap}>
-                      {/* remove button (inline, but does NOT steal width from the input) */}
                       {canRemove ? (
                         <Pressable
                           onPress={() => removeThreadItem(idx)}
@@ -696,11 +742,7 @@ export default function CreatePostModal() {
                             },
                           ]}
                         >
-                          <Ionicons
-                            name="close"
-                            size={14}
-                            color={colors.textSecondary}
-                          />
+                          <Ionicons name="close" size={14} color={colors.textSecondary} />
                         </Pressable>
                       ) : null}
 
@@ -722,7 +764,6 @@ export default function CreatePostModal() {
                         textAlignVertical="top"
                       />
 
-                      {/* per-item footer (right-aligned count like before; only for focused input) */}
                       <View style={styles.threadFooterRow}>
                         <View style={{ flex: 1 }} />
 
@@ -735,9 +776,7 @@ export default function CreatePostModal() {
                         {!isEdit && !parentId && !quoteId && isLast ? (
                           <Pressable
                             onPress={addThreadItem}
-                            disabled={
-                              (threadTexts[threadTexts.length - 1] ?? "").trim().length === 0
-                            }
+                            disabled={(threadTexts[threadTexts.length - 1] ?? "").trim().length === 0}
                             hitSlop={10}
                             style={({ pressed }) => [
                               styles.threadPlusTiny,
@@ -756,14 +795,8 @@ export default function CreatePostModal() {
                         ) : null}
                       </View>
 
-                      {/* full-width divider between thread items (spans under the avatar too) */}
                       {!isLast ? (
-                        <View
-                          style={[
-                            styles.threadDividerFull,
-                            { backgroundColor: colors.border },
-                          ]}
-                        />
+                        <View style={[styles.threadDividerFull, { backgroundColor: colors.border }]} />
                       ) : null}
                     </View>
                   );
@@ -830,9 +863,7 @@ export default function CreatePostModal() {
                 {quotedPost ? (
                   <Pressable
                     onPress={() => {
-                      router.push(
-                        `/(scenario)/${sid}/(tabs)/post/${String(quotedPost.id)}` as any
-                      );
+                      router.push(`/(scenario)/${sid}/(tabs)/post/${String(quotedPost.id)}` as any);
                     }}
                     style={({ pressed }) => [
                       styles.quoteCard,
@@ -842,11 +873,7 @@ export default function CreatePostModal() {
                       },
                     ]}
                   >
-                    <QuotedPostCard
-                      quotedPost={quotedPost}
-                      colors={colors}
-                      getProfileById={getProfileById}
-                    />
+                    <QuotedPostCard quotedPost={quotedPost} colors={colors} getProfileById={getProfileById} />
                   </Pressable>
                 ) : null}
               </View>
@@ -872,14 +899,10 @@ export default function CreatePostModal() {
                 <Ionicons name="image-outline" size={22} color={colors.tint} />
               </Pressable>
 
-              <Pressable
-                hitSlop={10}
-                style={({ pressed }) => [styles.toolBtn, pressed && { opacity: 0.7 }]}
-              >
+              <Pressable hitSlop={10} style={({ pressed }) => [styles.toolBtn, pressed && { opacity: 0.7 }]}>
                 <MaterialIcons name="gif" size={22} color={colors.tint} />
               </Pressable>
 
-              {/* fake video thumbnail picker */}
               <Pressable
                 onPress={pickVideoThumb}
                 hitSlop={10}
@@ -891,41 +914,19 @@ export default function CreatePostModal() {
 
             {/* META CONTROLS */}
             <View style={styles.section}>
-              <ThemedText style={[styles.sectionTitle, { color: colors.textSecondary }]}>
-                Post settings
-              </ThemedText>
+              <ThemedText style={[styles.sectionTitle, { color: colors.textSecondary }]}>Post settings</ThemedText>
 
               <RowCard label="Date" colors={colors}>
-                <View
-                  style={{
-                    flexDirection: "row",
-                    gap: 12,
-                    alignItems: "center",
-                    flexWrap: "wrap",
-                  }}
-                >
-                  <Pressable
-                    onPress={() => openPicker("date")}
-                    style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}
-                  >
+                <View style={{ flexDirection: "row", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+                  <Pressable onPress={() => openPicker("date")} style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}>
                     <ThemedText style={{ color: colors.tint, fontWeight: "700" }}>
-                      {date.toLocaleDateString(undefined, {
-                        day: "2-digit",
-                        month: "short",
-                        year: "numeric",
-                      })}
+                      {date.toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" })}
                     </ThemedText>
                   </Pressable>
 
-                  <Pressable
-                    onPress={() => openPicker("time")}
-                    style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}
-                  >
+                  <Pressable onPress={() => openPicker("time")} style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}>
                     <ThemedText style={{ color: colors.tint, fontWeight: "700" }}>
-                      {date.toLocaleTimeString(undefined, {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
+                      {date.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}
                     </ThemedText>
                   </Pressable>
                 </View>
@@ -942,9 +943,7 @@ export default function CreatePostModal() {
                     ]}
                   >
                     <Ionicons name="person-outline" size={18} color={colors.text} />
-                    <ThemedText style={{ color: colors.text, fontWeight: "700" }}>
-                      few
-                    </ThemedText>
+                    <ThemedText style={{ color: colors.text, fontWeight: "700" }}>few</ThemedText>
                   </Pressable>
 
                   <Pressable
@@ -956,9 +955,7 @@ export default function CreatePostModal() {
                     ]}
                   >
                     <Ionicons name="people-outline" size={18} color={colors.text} />
-                    <ThemedText style={{ color: colors.text, fontWeight: "700" }}>
-                      mid
-                    </ThemedText>
+                    <ThemedText style={{ color: colors.text, fontWeight: "700" }}>mid</ThemedText>
                   </Pressable>
 
                   <Pressable
@@ -970,9 +967,7 @@ export default function CreatePostModal() {
                     ]}
                   >
                     <Ionicons name="rocket-outline" size={18} color={colors.text} />
-                    <ThemedText style={{ color: colors.text, fontWeight: "700" }}>
-                      lot
-                    </ThemedText>
+                    <ThemedText style={{ color: colors.text, fontWeight: "700" }}>lot</ThemedText>
                   </Pressable>
                 </View>
               </RowCard>
@@ -982,15 +977,12 @@ export default function CreatePostModal() {
                   <RowCard
                     label="Replies"
                     colors={colors}
-                    right={
-                      <ThemedText style={{ color: colors.textSecondary }}>
-                        {formatCount(counts.reply)}
-                      </ThemedText>
-                    }
+                    right={<ThemedText style={{ color: colors.textSecondary }}>{formatCount(counts.reply)}</ThemedText>}
                   >
                     <TextInput
                       value={replyCount}
-                      onChangeText={setReplyCount}
+                      maxLength={MAX_COUNT_DIGITS}
+                      onChangeText={(v) => setReplyCount(limitCountText(v))}
                       placeholder="0"
                       placeholderTextColor={colors.textMuted}
                       keyboardType="number-pad"
@@ -1004,15 +996,12 @@ export default function CreatePostModal() {
                   <RowCard
                     label="Reposts"
                     colors={colors}
-                    right={
-                      <ThemedText style={{ color: colors.textSecondary }}>
-                        {formatCount(counts.repost)}
-                      </ThemedText>
-                    }
+                    right={<ThemedText style={{ color: colors.textSecondary }}>{formatCount(counts.repost)}</ThemedText>}
                   >
                     <TextInput
                       value={repostCount}
-                      onChangeText={setRepostCount}
+                      maxLength={MAX_COUNT_DIGITS}
+                      onChangeText={(v) => setRepostCount(limitCountText(v))}
                       placeholder="0"
                       placeholderTextColor={colors.textMuted}
                       keyboardType="number-pad"
@@ -1026,15 +1015,12 @@ export default function CreatePostModal() {
               <RowCard
                 label="Likes"
                 colors={colors}
-                right={
-                  <ThemedText style={{ color: colors.textSecondary }}>
-                    {formatCount(counts.like)}
-                  </ThemedText>
-                }
+                right={<ThemedText style={{ color: colors.textSecondary }}>{formatCount(counts.like)}</ThemedText>}
               >
                 <TextInput
                   value={likeCount}
-                  onChangeText={setLikeCount}
+                  maxLength={MAX_COUNT_DIGITS}
+                  onChangeText={(v) => setLikeCount(limitCountText(v))}
                   placeholder="0"
                   placeholderTextColor={colors.textMuted}
                   keyboardType="number-pad"
