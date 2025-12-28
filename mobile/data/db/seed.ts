@@ -124,6 +124,11 @@ export async function seedDbIfNeeded(existing: any | null) {
     name: String(s.name),
     cover: String(s.cover),
     playerIds: Array.from(new Set((s.playerIds ?? []).map(String))),
+    createdAt: String(s.createdAt ?? new Date().toISOString()),
+    updatedAt: String(s.updatedAt ?? new Date().toISOString()),
+    inviteCode: String(s.inviteCode),
+    
+
   }));
 
   // no reposts in seed by default (unless you want to pre-seed them later)

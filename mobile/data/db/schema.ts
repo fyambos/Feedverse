@@ -24,7 +24,7 @@ export type Scenario = {
   playerIds: string[];
   createdAt: string;
   updatedAt?: string;
-  inviteCode?: string;
+  inviteCode: string;
 };
 
 export type Profile = {

@@ -1,9 +1,9 @@
-// mobile/app/(scenario)/index.tsx  (or wherever your ScenarioListScreen lives)
-import React, { useMemo } from "react";
-import { StyleSheet, FlatList, Pressable, Image, View } from "react-native";
+import React, { useMemo, useState } from "react";
+import { StyleSheet, FlatList, Pressable, Image, View, Modal, Alert } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router, Stack } from "expo-router";
+import * as Clipboard from "expo-clipboard";
 
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
@@ -13,6 +13,15 @@ import { useColorScheme } from "@/hooks/use-color-scheme";
 import { useAuth } from "@/context/auth";
 import { useAppData } from "@/context/appData";
 
+const MAX_PLAYERS = 20;
+
+type ScenarioMenuState = {
+  open: boolean;
+  scenarioId: string | null;
+  inviteCode: string | null;
+  scenarioName: string | null;
+};
+
 export default function ScenarioListScreen() {
   const colorScheme = useColorScheme() ?? "light";
   const colors = Colors[colorScheme];
@@ -21,9 +30,20 @@ export default function ScenarioListScreen() {
   const { signOut } = useAuth();
   const { isReady, listScenarios, getUserById } = useAppData();
 
+  const [menu, setMenu] = useState<ScenarioMenuState>({
+    open: false,
+    scenarioId: null,
+    inviteCode: null,
+    scenarioName: null,
+  });
+
   const onLogout = async () => {
     await signOut();
     router.replace("/(auth)/login");
+  };
+  
+  const openSettings = () => {
+    router.push("/(scenario)/settings" as any);
   };
 
   const scenarios = useMemo(() => (isReady ? listScenarios() : []), [isReady, listScenarios]);
@@ -31,6 +51,78 @@ export default function ScenarioListScreen() {
   const openScenario = (scenarioId: string) => {
     router.push(`/(scenario)/${scenarioId}` as any);
   };
+
+  const openScenarioMenu = (scenario: any) => {
+    setMenu({
+      open: true,
+      scenarioId: String(scenario.id),
+      inviteCode: scenario.inviteCode ? String(scenario.inviteCode) : null,
+      scenarioName: scenario.name ? String(scenario.name) : "Scenario",
+    });
+  };
+
+  const closeScenarioMenu = () => {
+    setMenu({ open: false, scenarioId: null, inviteCode: null, scenarioName: null });
+  };
+
+  const copyInviteCode = async () => {
+    if (!menu.inviteCode) {
+      Alert.alert("No invite code", "This scenario has no invite code.");
+      return;
+    }
+    await Clipboard.setStringAsync(menu.inviteCode);
+    closeScenarioMenu();
+    Alert.alert("Copied", "Invite code copied to clipboard.");
+  };
+
+  const leaveScenario = () => {
+    const name = menu.scenarioName ?? "this scenario";
+    Alert.alert(
+      "Leave scenario?",
+      `Are you sure you want to leave ${name}?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Leave",
+          style: "destructive",
+          onPress: () => {
+            closeScenarioMenu();
+            Alert.alert("Leaving", "Hook this up to your leaveScenario() logic.");
+          },
+        },
+      ]
+    );
+  };
+
+  const ScenarioMenuSheet = () => (
+    <Modal transparent visible={menu.open} animationType="fade" onRequestClose={closeScenarioMenu}>
+      <Pressable style={styles.menuBackdrop} onPress={closeScenarioMenu}>
+        <Pressable style={[styles.menuSheet, { backgroundColor: colors.background, borderColor: colors.border }]}>
+          <Pressable
+            onPress={copyInviteCode}
+            style={({ pressed }) => [styles.menuItem, { backgroundColor: pressed ? colors.pressed : "transparent" }]}
+          >
+            <Ionicons name="copy-outline" size={18} color={colors.text} />
+            <ThemedText style={{ color: colors.text, fontSize: 15, fontWeight: "600" }}>
+              Copy Invite Code
+            </ThemedText>
+          </Pressable>
+
+          <View style={[styles.menuDivider, { backgroundColor: colors.border }]} />
+
+          <Pressable
+            onPress={leaveScenario}
+            style={({ pressed }) => [styles.menuItem, { backgroundColor: pressed ? colors.pressed : "transparent" }]}
+          >
+            <Ionicons name="exit-outline" size={18} color="#ff3b30" />
+            <ThemedText style={{ color: "#ff3b30", fontSize: 15, fontWeight: "700" }}>
+              Leave Scenario
+            </ThemedText>
+          </Pressable>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
 
   return (
     <>
@@ -47,7 +139,6 @@ export default function ScenarioListScreen() {
         ]}
       >
         <View style={styles.topBarRow}>
-          {/* left spacer to keep title centered */}
           <View style={styles.topBarSide} />
 
           <ThemedText type="defaultSemiBold" style={styles.topBarTitle}>
@@ -56,7 +147,7 @@ export default function ScenarioListScreen() {
 
           <View style={[styles.topBarSide, styles.topBarActions]}>
             <Pressable
-              onPress={() => {}}
+              onPress={openSettings}
               hitSlop={10}
               style={({ pressed }) => [styles.headerIconBtn, pressed && { opacity: 0.6 }]}
               accessibilityRole="button"
@@ -79,7 +170,6 @@ export default function ScenarioListScreen() {
       </View>
 
       <ThemedView style={[styles.container, { backgroundColor: colors.background }]}>
-        <ThemedText style={styles.subtitle}>Choose a scenario to enter its universe</ThemedText>
 
         <FlatList
           data={scenarios}
@@ -87,7 +177,7 @@ export default function ScenarioListScreen() {
           contentContainerStyle={styles.list}
           renderItem={({ item }) => {
             const players = (item.playerIds ?? [])
-              .map((id) => getUserById(String(id)))
+              .map((id: string) => getUserById(String(id)))
               .filter(Boolean);
 
             return (
@@ -102,11 +192,28 @@ export default function ScenarioListScreen() {
                 <Image source={{ uri: item.cover }} style={styles.cover} resizeMode="cover" />
 
                 <View style={styles.cardContent}>
-                  <ThemedText type="defaultSemiBold">{item.name}</ThemedText>
+                  <View style={styles.titleRow}>
+                    <ThemedText type="defaultSemiBold" numberOfLines={1} style={{ flex: 1 }}>
+                      {item.name}
+                    </ThemedText>
+
+                    <Pressable
+                      onPress={(e) => {
+                        if (e?.stopPropagation) e.stopPropagation();
+                        openScenarioMenu(item);
+                      }}
+                      hitSlop={10}
+                      style={({ pressed }) => [styles.dotsBtn, pressed && { opacity: 0.6 }]}
+                      accessibilityRole="button"
+                      accessibilityLabel="Scenario options"
+                    >
+                      <Ionicons name="ellipsis-horizontal" size={18} color={colors.icon} />
+                    </Pressable>
+                  </View>
 
                   <View style={styles.playersRow}>
                     <View style={styles.avatars}>
-                      {players.slice(0, 4).map((player, index) => (
+                      {players.slice(0, 4).map((player: any, index: number) => (
                         <Image
                           key={String(player!.id)}
                           source={{ uri: player!.avatarUrl }}
@@ -122,7 +229,7 @@ export default function ScenarioListScreen() {
                     </View>
 
                     <ThemedText style={[styles.playerCount, { color: colors.textMuted }]}>
-                      {players.length} players
+                      {players.length}/{MAX_PLAYERS} Players
                     </ThemedText>
                   </View>
                 </View>
@@ -138,6 +245,8 @@ export default function ScenarioListScreen() {
           )}
         />
       </ThemedView>
+
+      <ScenarioMenuSheet />
     </>
   );
 }
@@ -153,7 +262,20 @@ const styles = StyleSheet.create({
 
   card: { borderRadius: 14, borderWidth: 1, overflow: "hidden" },
   cover: { width: "100%", height: 120 },
+
   cardContent: { padding: 12, gap: 8 },
+
+  titleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+
+  dotsBtn: {
+    padding: 6,
+    borderRadius: 999,
+    alignSelf: "flex-start",
+  },
 
   playersRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   avatars: { flexDirection: "row", alignItems: "center" },
@@ -188,5 +310,29 @@ const styles = StyleSheet.create({
   },
   topBarTitle: {
     fontSize: 18,
+  },
+
+  // menu sheet
+  menuBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.35)", justifyContent: "flex-end" },
+  menuSheet: {
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingVertical: 8,
+    paddingHorizontal: 8,
+  },
+  menuItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+  },
+  menuDivider: {
+    height: StyleSheet.hairlineWidth,
+    opacity: 0.9,
+    marginVertical: 6,
+    marginHorizontal: 8,
   },
 });
