@@ -134,27 +134,32 @@ export function PostActions({
     <View style={[styles.actions, isDetail ? styles.actionsDetail : styles.actionsReply]}>
       {/* Reply */}
       <View style={styles.actionSlot}>
-        <View style={styles.action}>
-          <Pressable
-            onPress={() => {
-              pop(replyScale);
-              onReply();
-            }}
-            hitSlop={6}
-            pressRetentionOffset={6}
-            style={styles.iconPressable}
-            accessibilityRole="button"
-            accessibilityLabel="Reply"
-          >
-            <Animated.View style={{ transform: [{ scale: replyScale }] }}>
-              <SimpleLineIcons name="bubble" size={20} color={colors.icon} />
-            </Animated.View>
-          </Pressable>
+        <View style={[styles.action, styles.replyActionNudge]}>
+          <View style={styles.iconBox}>
+            <Pressable
+              onPress={() => {
+                pop(replyScale);
+                onReply();
+              }}
+              hitSlop={6}
+              pressRetentionOffset={6}
+              style={styles.iconPressable}
+              accessibilityRole="button"
+              accessibilityLabel="Reply"
+            >
+              <Animated.View
+                style={[styles.replyIconNudge, { transform: [{ scale: replyScale }] }]}
+              >
+                <SimpleLineIcons name="bubble" size={20} color={colors.icon} />
+              </Animated.View>
+            </Pressable>
+          </View>
 
           {showActionCounts ? (
             <ThemedText
               style={[
                 styles.actionCount,
+                styles.actionCountNudge,
                 { color: colors.textSecondary, opacity: replyCount > 0 ? 1 : 0 },
               ]}
             >
@@ -201,31 +206,32 @@ export function PostActions({
             </Animated.View>
           </Pressable>
 
-          {/* only show count if > 0 */}
-          {showRepostCount ? (
+          {/* Repost count */}
+          {showActionCounts ? (
             <View style={styles.repostCountStack}>
               <Animated.Text
                 style={[
                   styles.actionCount,
-                  { color: colors.textSecondary, opacity: repostOffOpacity as any },
+                  styles.actionCountNudge,
+                  { color: colors.textSecondary, opacity: showRepostCount ? repostOffOpacity as any : 0 },
                 ]}
               >
-                {formatCount(repostCount)}
+                {showRepostCount ? formatCount(repostCount) : "0"}
               </Animated.Text>
 
               <Animated.Text
                 style={[
                   styles.actionCount,
                   styles.repostCountOn,
-                  { color: colors.tint, opacity: repostOnOpacity as any },
+                  styles.actionCountNudge,
+                  { color: colors.tint, opacity: showRepostCount ? repostOnOpacity as any : 0 },
                 ]}
               >
-                {formatCount(repostCount)}
+                {showRepostCount ? formatCount(repostCount) : "0"}
               </Animated.Text>
             </View>
           ) : (
-            // keep spacing stable without showing "0"
-            <View style={{ width: 0, height: 0 }} />
+            <ThemedText style={[styles.actionCount, { opacity: 0 }]}>0</ThemedText>
           )}
         </View>
       </View>
@@ -270,6 +276,7 @@ export function PostActions({
             <ThemedText
               style={[
                 styles.actionCount,
+                styles.actionCountNudge,
                 { color: colors.textSecondary, opacity: likeCount > 0 ? 1 : 0 },
               ]}
             >
@@ -284,22 +291,24 @@ export function PostActions({
       {/* Share */}
       <View style={styles.actionSlot}>
         <View style={styles.action}>
-          <Pressable
-            onPress={() => {
-              pop(shareScale);
-              if (onShare) onShare();
-              else comingSoon("Sharing");
-            }}
-            hitSlop={6}
-            pressRetentionOffset={6}
-            style={styles.iconPressable}
-            accessibilityRole="button"
-            accessibilityLabel="Share"
-          >
-            <Animated.View style={{ transform: [{ scale: shareScale }] }}>
-              <Ionicons name="share-outline" size={22} color={colors.icon} />
-            </Animated.View>
-          </Pressable>
+          <View style={styles.iconBox}>
+            <Pressable
+              onPress={() => {
+                pop(shareScale);
+                if (onShare) onShare();
+                else comingSoon("Sharing");
+              }}
+              hitSlop={6}
+              pressRetentionOffset={6}
+              style={styles.iconPressable}
+              accessibilityRole="button"
+              accessibilityLabel="Share"
+            >
+              <Animated.View style={{ transform: [{ scale: shareScale }] }}>
+                <Ionicons name="share-outline" size={22} color={colors.icon} />
+              </Animated.View>
+            </Pressable>
+          </View>
 
           <ThemedText style={[styles.actionCount, { opacity: 0 }]}>0</ThemedText>
         </View>
@@ -323,8 +332,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
 
-  actionCount: { fontSize: 14, minWidth: 18 },
-
+  actionCount: { fontSize: 14, minWidth: 44, textAlign: "left" },
   iconPressable: {
     paddingVertical: 2,
     paddingHorizontal: 2,
@@ -351,4 +359,21 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     borderWidth: 2,
   },
+  iconBox: {
+  width: 26,
+  height: 26,
+  alignItems: "center",
+  justifyContent: "center",
+},
+
+replyActionNudge: {
+  transform: [{ translateY: 1.5 }],
+},
+
+replyIconNudge: {
+  transform: [{ translateY: 1 }],
+},
+actionCountNudge: {
+  transform: [{ translateX: -4 }],
+},
 });
