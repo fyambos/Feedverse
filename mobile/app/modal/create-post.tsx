@@ -29,6 +29,7 @@ import { useAuth } from "@/context/auth";
 import { formatCount, makeId } from "@/lib/format";
 
 import { pickAndPersistManyImages } from "@/components/ui/ImagePicker";
+import { takeAndPersistPhoto } from "@/lib/media/takePicture";
 import { RowCard } from "@/components/ui/RowCard";
 
 const MAX_IMAGES = 4;
@@ -359,6 +360,23 @@ export default function CreatePostModal() {
   const removeImageAt = (idx: number) => {
     setImageUrls((prev) => prev.filter((_, i) => i !== idx));
   };
+
+  const takePhoto = async () => {
+  const remaining = Math.max(0, MAX_IMAGES - imageUrls.length);
+  if (remaining <= 0) {
+    Alert.alert("Limit reached", `You can add up to ${MAX_IMAGES} images.`);
+    return;
+  }
+
+  setpicking(true);
+  try {
+    const persistedUri = await takeAndPersistPhoto("img");
+    if (!persistedUri) return;
+    setImageUrls((prev) => [...prev, persistedUri].slice(0, MAX_IMAGES));
+  } finally {
+    setpicking(false);
+  }
+};
 
   /* -------------------------------------------------------------------------- */
   /* Submit                                                                      */
@@ -715,9 +733,9 @@ export default function CreatePostModal() {
 
             {/* TOOLBAR */}
             <View style={[styles.toolbar, { borderTopColor: colors.border }]}>
-              <Pressable hitSlop={10} style={({ pressed }) => [styles.toolBtn, pressed && { opacity: 0.7 }]}>
-                <Ionicons name="camera-outline" size={22} color={colors.tint} />
-              </Pressable>
+            <Pressable onPress={takePhoto} hitSlop={10} style={({ pressed }) => [styles.toolBtn, pressed && { opacity: 0.7 }]}>
+              <Ionicons name="camera-outline" size={22} color={colors.tint} />
+            </Pressable>
 
               <Pressable
                 onPress={pickImages}
