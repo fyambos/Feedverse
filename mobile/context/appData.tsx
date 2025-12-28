@@ -1,3 +1,4 @@
+// mobile/context/appData.tsx
 import React from "react";
 import type { DbV4, Post, Profile, Scenario, User, Repost, UserSettings } from "@/data/db/schema";
 import { readDb, updateDb } from "@/data/db/storage";
@@ -76,8 +77,10 @@ type AppDataApi = {
   upsertPost: (p: Post) => Promise<void>;
   deletePost: (postId: string) => Promise<void>;
 
-  // ✅ NEW
   updateUserSettings: (userId: string, settings: UserSettings) => Promise<void>;
+
+  // ✅ NEW
+  updateUserAvatar: (userId: string, avatarUrl?: string | null) => Promise<void>;
 
   toggleLike: (scenarioId: string, postId: string) => Promise<void>;
   isPostLikedBySelectedProfile: (scenarioId: string, postId: string) => boolean;
@@ -378,6 +381,30 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                   ...(existing.settings ?? {}),
                   ...(settings ?? {}),
                 },
+                updatedAt: now,
+              },
+            },
+          };
+        });
+
+        setState({ isReady: true, db: next as any });
+      },
+
+      updateUserAvatar: async (userId: string, avatarUrl?: string | null) => {
+        const id = String(userId);
+        const now = new Date().toISOString();
+
+        const next = await updateDb((prev) => {
+          const existing = prev.users[id];
+          if (!existing) return prev;
+
+          return {
+            ...prev,
+            users: {
+              ...prev.users,
+              [id]: {
+                ...existing,
+                avatarUrl: avatarUrl || existing.avatarUrl,
                 updatedAt: now,
               },
             },
