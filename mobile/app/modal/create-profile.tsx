@@ -31,11 +31,47 @@ import { pickAndPersistOneImage } from "@/components/ui/ImagePicker";
 import { formatCount } from "@/lib/format";
 import { RowCard } from "@/components/ui/RowCard";
 
-function normalizeHandle(input: string) {
-  return String(input).trim().replace(/^@+/, "");
+/* -------------------------------------------------------------------------- */
+/* Field security (front-only)                                                */
+/* -------------------------------------------------------------------------- */
+
+const MAX_DISPLAY_NAME = 50;
+const MAX_HANDLE = 20;
+const MAX_BIO = 160; // keep your "tweet bio" feel
+const MAX_LOCATION = 30;
+const MAX_LINK = 120;
+
+const MAX_COUNT = 99_000_000;
+const MAX_COUNT_DIGITS = String(MAX_COUNT).length; // 8
+
+function trimTo(s: string, max: number) {
+  return String(s ?? "").trim().slice(0, max);
 }
 
-function clampInt(n: number, min = 0, max = 99_000_000) {
+function normalizeHandle(input: string) {
+  // remove @, lowercase, keep only a-z 0-9 _ .
+  const raw = String(input ?? "").trim().replace(/^@+/, "").toLowerCase();
+  const cleaned = raw.replace(/[^a-z0-9_.]/g, "");
+  return cleaned.slice(0, MAX_HANDLE);
+}
+
+function normalizeBio(input: string) {
+  // collapse whitespace/newlines; keep readable
+  return String(input ?? "").replace(/\s+/g, " ").trim().slice(0, MAX_BIO);
+}
+
+function normalizeLocation(input: string) {
+  return trimTo(input, MAX_LOCATION);
+}
+
+function normalizeLink(input: string) {
+  const s = String(input ?? "").trim();
+  if (!s) return "";
+  // permissive; just prevent absurd length
+  return s.slice(0, MAX_LINK);
+}
+
+function clampInt(n: number, min = 0, max = MAX_COUNT) {
   const x = Number.isFinite(n) ? n : min;
   return Math.max(min, Math.min(max, Math.floor(x)));
 }
@@ -61,8 +97,18 @@ function pickFollowingBelowFollowers(followers: number) {
 }
 
 function digitsOnly(s: string) {
-  return String(s).replace(/[^\d]/g, "");
+  return String(s ?? "").replace(/[^\d]/g, "");
 }
+
+function limitCountText(s: string) {
+  // digits only + limit typing length
+  const raw = digitsOnly(s).slice(0, MAX_COUNT_DIGITS);
+  // optional: clamp while typing so "999999999" becomes "99000000" etc.
+  const n = Number(raw || "0") || 0;
+  return String(Math.min(n, MAX_COUNT));
+}
+
+/* -------------------------------------------------------------------------- */
 
 export default function CreateProfileModal() {
   const { scenarioId, profileId } = useLocalSearchParams<{
@@ -77,7 +123,7 @@ export default function CreateProfileModal() {
   const colors = Colors[scheme];
 
   const { userId } = useAuth();
-  const { getProfileById, upsertProfile } = useAppData();
+  const { getProfileById, upsertProfile, listProfilesForScenario } = useAppData();
 
   const existing = useMemo(() => {
     if (!isEdit || !profileId) return null;
@@ -149,12 +195,31 @@ export default function CreateProfileModal() {
   const submit = async () => {
     if (submitting) return;
 
-    if (!displayName.trim() || !handle.trim()) {
+    // sanitize first (front-only)
+    const safeDisplayName = trimTo(displayName, MAX_DISPLAY_NAME);
+    const safeHandle = normalizeHandle(handle);
+    const safeBio = normalizeBio(bio);
+    const safeLocation = normalizeLocation(location);
+    const safeLink = normalizeLink(link);
+
+    if (!safeDisplayName || !safeHandle) {
       Alert.alert("Missing fields", "Display name and handle are required.");
       return;
     }
     if (!userId) {
       Alert.alert("Not logged in", "You need a user to create a profile.");
+      return;
+    }
+
+    // handle must be unique per scenario (exclude self when editing)
+    const conflict = listProfilesForScenario(sid).find(
+      (p) =>
+        String(p.id) !== String(existing?.id ?? "") &&
+        normalizeHandle(p.handle) === safeHandle
+    );
+
+    if (conflict) {
+      Alert.alert("Handle taken", "This handle is already used in this scenario.");
       return;
     }
 
@@ -164,11 +229,11 @@ export default function CreateProfileModal() {
       const createdAt = existing?.createdAt ?? now;
 
       const followers = followersText.trim().length
-        ? clampInt(Number(digitsOnly(followersText)) || 0, 0, 99_000_000)
+        ? clampInt(Number(digitsOnly(followersText)) || 0, 0, MAX_COUNT)
         : undefined;
 
       const rawFollowing = followingText.trim().length
-        ? clampInt(Number(digitsOnly(followingText)) || 0, 0, 99_000_000)
+        ? clampInt(Number(digitsOnly(followingText)) || 0, 0, MAX_COUNT)
         : undefined;
 
       let following = rawFollowing;
@@ -183,9 +248,9 @@ export default function CreateProfileModal() {
         scenarioId: sid,
         ownerUserId: String(userId),
 
-        displayName: displayName.trim(),
-        handle: normalizeHandle(handle),
-        bio: bio.trim() || undefined,
+        displayName: safeDisplayName,
+        handle: safeHandle,
+        bio: safeBio ? safeBio : undefined,
 
         avatarUrl: avatarUrl ?? undefined,
 
@@ -194,9 +259,9 @@ export default function CreateProfileModal() {
 
         followers,
         following,
-        joinedDate: joinedDate.toISOString(), // default is today and is saved like this
-        location: location.trim() || undefined,
-        link: link.trim() || undefined,
+        joinedDate: joinedDate.toISOString(),
+        location: safeLocation ? safeLocation : undefined,
+        link: safeLink ? safeLink : undefined,
 
         createdAt,
         updatedAt: now,
@@ -269,24 +334,32 @@ export default function CreateProfileModal() {
             <View style={styles.form}>
               <TextInput
                 value={displayName}
-                onChangeText={setDisplayName}
+                onChangeText={(v) => setDisplayName(v.slice(0, MAX_DISPLAY_NAME))}
                 placeholder="Display name"
                 placeholderTextColor={colors.textSecondary}
                 style={[styles.input, { color: colors.text, borderColor: colors.border }]}
               />
 
-              <TextInput
-                value={handle}
-                onChangeText={setHandle}
-                placeholder="@handle"
-                placeholderTextColor={colors.textSecondary}
-                autoCapitalize="none"
-                style={[styles.input, { color: colors.text, borderColor: colors.border }]}
-              />
+              {/* Handle (no @ typing) */}
+              <View style={[styles.handleWrap, { borderColor: colors.border }]}>
+                <ThemedText style={{ color: colors.textSecondary, fontWeight: "800" }}>@</ThemedText>
+
+                <TextInput
+                  value={handle}
+                  onChangeText={(v) => setHandle(normalizeHandle(v))}
+                  placeholder="handle"
+                  placeholderTextColor={colors.textSecondary}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  keyboardType="ascii-capable"
+                  maxLength={MAX_HANDLE}
+                  style={[styles.handleInput, { color: colors.text }]}
+                />
+              </View>
 
               <TextInput
                 value={bio}
-                onChangeText={setBio}
+                onChangeText={(v) => setBio(v.slice(0, MAX_BIO))}
                 placeholder="Bio (optional)"
                 placeholderTextColor={colors.textSecondary}
                 multiline
@@ -296,11 +369,8 @@ export default function CreateProfileModal() {
 
             {/* Profile settings */}
             <View style={[styles.section, { borderTopColor: colors.border }]}>
-              <ThemedText style={[styles.sectionTitle, { color: colors.textSecondary }]}>
-                Profile settings
-              </ThemedText>
+              <ThemedText style={[styles.sectionTitle, { color: colors.textSecondary }]}>Profile settings</ThemedText>
 
-              {/*  Shared slider (isPublic) */}
               <RowCard
                 label="Shared"
                 colors={colors}
@@ -313,12 +383,9 @@ export default function CreateProfileModal() {
                   />
                 }
               >
-                <ThemedText style={{ color: colors.textSecondary }}>
-                  Other players can use this profile
-                </ThemedText>
+                <ThemedText style={{ color: colors.textSecondary }}>Other players can use this profile</ThemedText>
               </RowCard>
 
-              {/* Private Account slider (isPrivate) */}
               <RowCard
                 label="Private account"
                 colors={colors}
@@ -331,12 +398,10 @@ export default function CreateProfileModal() {
                   />
                 }
               >
-                <ThemedText style={{ color: colors.textSecondary }}>
-                  Show a lock icon
-                </ThemedText>
+                <ThemedText style={{ color: colors.textSecondary }}>Show a lock icon</ThemedText>
               </RowCard>
 
-              {/* 1) Account size */}
+              {/* Account size */}
               <RowCard
                 label="Account size"
                 colors={colors}
@@ -352,8 +417,6 @@ export default function CreateProfileModal() {
                           backgroundColor: pressed ? colors.pressed : "transparent",
                         },
                       ]}
-                      accessibilityRole="button"
-                      accessibilityLabel="Small account"
                     >
                       <Ionicons name="person-outline" size={18} color={colors.textSecondary} />
                     </Pressable>
@@ -368,8 +431,6 @@ export default function CreateProfileModal() {
                           backgroundColor: pressed ? colors.pressed : "transparent",
                         },
                       ]}
-                      accessibilityRole="button"
-                      accessibilityLabel="Medium account"
                     >
                       <Ionicons name="people-outline" size={18} color={colors.textSecondary} />
                     </Pressable>
@@ -384,8 +445,6 @@ export default function CreateProfileModal() {
                           backgroundColor: pressed ? colors.pressed : "transparent",
                         },
                       ]}
-                      accessibilityRole="button"
-                      accessibilityLabel="Big account"
                     >
                       <Ionicons name="people" size={18} color={colors.textSecondary} />
                     </Pressable>
@@ -397,7 +456,7 @@ export default function CreateProfileModal() {
                 </ThemedText>
               </RowCard>
 
-              {/* 2) Followings */}
+              {/* Followings */}
               <RowCard
                 label="Followings"
                 colors={colors}
@@ -413,15 +472,17 @@ export default function CreateProfileModal() {
               >
                 <TextInput
                   value={followingText}
+                  maxLength={MAX_COUNT_DIGITS}
                   onChangeText={(v) => {
-                    const next = digitsOnly(v);
+                    const next = limitCountText(v);
+
                     const f = Number(digitsOnly(followersText)) || 0;
                     const g = Number(next || "0") || 0;
 
                     if (f > 0 && next.length && g >= f) {
                       setFollowingText(String(Math.max(0, f - 1)));
                     } else {
-                      setFollowingText(next);
+                      setFollowingText(next === "0" ? "" : next);
                     }
                   }}
                   placeholder="0"
@@ -431,7 +492,7 @@ export default function CreateProfileModal() {
                 />
               </RowCard>
 
-              {/* 3) Followers */}
+              {/* Followers */}
               <RowCard
                 label="Followers"
                 colors={colors}
@@ -447,9 +508,10 @@ export default function CreateProfileModal() {
               >
                 <TextInput
                   value={followersText}
+                  maxLength={MAX_COUNT_DIGITS}
                   onChangeText={(v) => {
-                    const next = digitsOnly(v);
-                    setFollowersText(next);
+                    const next = limitCountText(v);
+                    setFollowersText(next === "0" ? "" : next);
 
                     const f = Number(next || "0") || 0;
                     const g = Number(digitsOnly(followingText)) || 0;
@@ -462,13 +524,11 @@ export default function CreateProfileModal() {
                 />
               </RowCard>
 
-              {/* iOS picker shown INLINE here so it’s ABOVE the Joined row, and it doesn't close on wheel changes */}
+              {/* iOS picker inline */}
               {Platform.OS === "ios" && showJoinedPicker ? (
                 <View style={[styles.pickerCard, { borderColor: colors.border, backgroundColor: colors.card }]}>
                   <View style={styles.pickerHeader}>
-                    <ThemedText style={{ color: colors.textSecondary, fontWeight: "800" }}>
-                      Pick joined date
-                    </ThemedText>
+                    <ThemedText style={{ color: colors.textSecondary, fontWeight: "800" }}>Pick joined date</ThemedText>
 
                     <Pressable
                       onPress={() => setShowJoinedPicker(false)}
@@ -484,7 +544,6 @@ export default function CreateProfileModal() {
                     mode="date"
                     display="spinner"
                     onChange={(_, selected) => {
-                      // keep open on iOS; just update the value
                       if (selected) setJoinedDate(selected);
                     }}
                     style={{ alignSelf: "stretch" }}
@@ -492,7 +551,7 @@ export default function CreateProfileModal() {
                 </View>
               ) : null}
 
-              {/* 4) JoinedDate */}
+              {/* JoinedDate */}
               <RowCard
                 label="Joined date"
                 colors={colors}
@@ -515,36 +574,36 @@ export default function CreateProfileModal() {
                 <ThemedText style={{ color: colors.textSecondary }}>Tap the date to change it</ThemedText>
               </RowCard>
 
-              {/* Android date picker (dialog). It will open from here and close after selection. */}
               {Platform.OS === "android" && showJoinedPicker ? (
                 <DateTimePicker
                   value={joinedDate}
                   mode="date"
                   display="default"
                   onChange={(_, selected) => {
-                    // Android uses a dialog; close after picking (or cancel)
                     setShowJoinedPicker(false);
                     if (selected) setJoinedDate(selected);
                   }}
                 />
               ) : null}
 
-              {/* 5) Location */}
+              {/* Location */}
               <RowCard label="Location" colors={colors}>
                 <TextInput
                   value={location}
-                  onChangeText={setLocation}
+                  maxLength={MAX_LOCATION}
+                  onChangeText={(v) => setLocation(v.slice(0, MAX_LOCATION))}
                   placeholder="e.g. paris, france"
                   placeholderTextColor={colors.textSecondary}
                   style={[styles.rowInput, { color: colors.text }]}
                 />
               </RowCard>
 
-              {/* 6) Link */}
+              {/* Link */}
               <RowCard label="Link" colors={colors}>
                 <TextInput
                   value={link}
-                  onChangeText={setLink}
+                  maxLength={MAX_LINK}
+                  onChangeText={(v) => setLink(v.slice(0, MAX_LINK))}
                   placeholder="e.g. https://..."
                   placeholderTextColor={colors.textSecondary}
                   autoCapitalize="none"
@@ -611,23 +670,6 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
 
-  card: {
-    borderWidth: 1,
-    borderRadius: 16,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    flexDirection: "row",
-    alignItems: "center",
-  },
-
-  cardLabel: {
-    fontSize: 12,
-    marginBottom: 6,
-    fontWeight: "800",
-    textTransform: "uppercase",
-    letterSpacing: 0.3,
-  },
-
   rowInput: {
     fontSize: 16,
     paddingVertical: 0,
@@ -651,7 +693,6 @@ const styles = StyleSheet.create({
     elevation: 999,
   },
 
-  // iOS inline picker card (shows ABOVE JoinedDate row)
   pickerCard: {
     borderWidth: 1,
     borderRadius: 16,
@@ -664,5 +705,20 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     paddingBottom: 6,
+  },
+
+  handleWrap: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  handleInput: {
+    flex: 1,
+    fontSize: 16,
+    paddingVertical: 0,
   },
 });
