@@ -1,16 +1,13 @@
 // mobile/app/modal/create-profile.tsx
 
 import React, { useMemo, useState } from "react";
-import DateTimePicker from "@react-native-community/datetimepicker";
 import {
-  ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
   Platform,
   Pressable,
   ScrollView,
   StyleSheet,
-  Switch,
   TextInput,
   View,
 } from "react-native";
@@ -26,87 +23,19 @@ import { useColorScheme } from "@/hooks/use-color-scheme";
 import { useAuth } from "@/context/auth";
 import { useAppData } from "@/context/appData";
 
-import { Avatar } from "@/components/ui/Avatar";
-import { pickAndPersistOneImage } from "@/components/ui/ImagePicker";
-import { formatCount } from "@/lib/format";
-import { RowCard } from "@/components/ui/RowCard";
+import { ProfileAvatarPicker } from "@/components/profile-edit/ProfileAvatarPicker";
+import { ProfileSettingsSection } from "@/components/profile-edit/ProfileSettingSection";
 
-/* -------------------------------------------------------------------------- */
-/* Field security (front-only)                                                */
-/* -------------------------------------------------------------------------- */
-
-const MAX_DISPLAY_NAME = 50;
-const MAX_HANDLE = 20;
-const MAX_BIO = 160; // keep your "tweet bio" feel
-const MAX_LOCATION = 30;
-const MAX_LINK = 120;
-
-const MAX_COUNT = 99_000_000;
-const MAX_COUNT_DIGITS = String(MAX_COUNT).length; // 8
-
-function trimTo(s: string, max: number) {
-  return String(s ?? "").trim().slice(0, max);
-}
-
-function normalizeHandle(input: string) {
-  // remove @, lowercase, keep only a-z 0-9 _ .
-  const raw = String(input ?? "").trim().replace(/^@+/, "").toLowerCase();
-  const cleaned = raw.replace(/[^a-z0-9_.]/g, "");
-  return cleaned.slice(0, MAX_HANDLE);
-}
-
-function normalizeBio(input: string) {
-  // collapse whitespace/newlines; keep readable
-  return String(input ?? "").replace(/\s+/g, " ").trim().slice(0, MAX_BIO);
-}
-
-function normalizeLocation(input: string) {
-  return trimTo(input, MAX_LOCATION);
-}
-
-function normalizeLink(input: string) {
-  const s = String(input ?? "").trim();
-  if (!s) return "";
-  // permissive; just prevent absurd length
-  return s.slice(0, MAX_LINK);
-}
-
-function clampInt(n: number, min = 0, max = MAX_COUNT) {
-  const x = Number.isFinite(n) ? n : min;
-  return Math.max(min, Math.min(max, Math.floor(x)));
-}
-
-function randInt(min: number, max: number) {
-  const lo = Math.min(min, max);
-  const hi = Math.max(min, max);
-  return Math.floor(lo + Math.random() * (hi - lo + 1));
-}
-
-function pickFollowersForSize(size: "small" | "mid" | "big") {
-  if (size === "small") return randInt(0, 500);
-  if (size === "mid") return randInt(1000, 5000);
-  return randInt(800_000, 3_000_000);
-}
-
-function pickFollowingBelowFollowers(followers: number) {
-  if (followers <= 0) return 0;
-  const max = Math.max(0, followers - 1);
-  const min = Math.max(0, Math.floor(followers * 0.05));
-  const hi = Math.max(min, Math.floor(followers * 0.7));
-  return clampInt(randInt(min, Math.min(hi, max)), 0, max);
-}
-
-function digitsOnly(s: string) {
-  return String(s ?? "").replace(/[^\d]/g, "");
-}
-
-function limitCountText(s: string) {
-  // digits only + limit typing length
-  const raw = digitsOnly(s).slice(0, MAX_COUNT_DIGITS);
-  // optional: clamp while typing so "999999999" becomes "99000000" etc.
-  const n = Number(raw || "0") || 0;
-  return String(Math.min(n, MAX_COUNT));
-}
+import {
+  PROFILE_LIMITS,
+  digitsOnly,
+  clampInt,
+  normalizeBio,
+  normalizeHandle,
+  normalizeLink,
+  normalizeLocation,
+  trimTo,
+} from "@/lib/profileForm";
 
 /* -------------------------------------------------------------------------- */
 
@@ -146,7 +75,6 @@ export default function CreateProfileModal() {
   // Private account is purely UI (lock + protected posts UI)
   const [isPrivate, setIsPrivate] = useState<boolean>(existing?.isPrivate ?? false);
 
-  // order requested: account size, followings, followers, joinedDate, location, link
   const [followingText, setFollowingText] = useState<string>(
     existing && (existing as any)?.following != null ? String((existing as any).following) : ""
   );
@@ -154,49 +82,22 @@ export default function CreateProfileModal() {
     existing && (existing as any)?.followers != null ? String((existing as any).followers) : ""
   );
 
-  const initialJoinedISO =
-    (existing as any)?.joinedDate ?? existing?.createdAt ?? new Date().toISOString();
+  const initialJoinedISO = (existing as any)?.joinedDate ?? existing?.createdAt ?? new Date().toISOString();
   const [joinedDate, setJoinedDate] = useState<Date>(new Date(initialJoinedISO));
-  const [showJoinedPicker, setShowJoinedPicker] = useState(false);
 
   const [location, setLocation] = useState((existing as any)?.location ?? "");
   const [link, setLink] = useState((existing as any)?.link ?? "");
 
   const [submitting, setSubmitting] = useState(false);
-  const [picking, setPicking] = useState(false);
 
   /* -------------------------------------------------------------------------- */
-  /* Actions                                                                    */
+  /* Submit                                                                     */
   /* -------------------------------------------------------------------------- */
-
-  const pickAvatar = async () => {
-    setPicking(true);
-    try {
-      const uri = await pickAndPersistOneImage({
-        persistAs: "avatar",
-        allowsEditing: true,
-        aspect: [1, 1],
-        quality: 0.9,
-      });
-
-      if (uri) setAvatarUrl(uri);
-    } finally {
-      setPicking(false);
-    }
-  };
-
-  const setAccountSize = (size: "small" | "mid" | "big") => {
-    const followers = pickFollowersForSize(size);
-    const following = pickFollowingBelowFollowers(followers);
-    setFollowersText(String(followers));
-    setFollowingText(String(following));
-  };
 
   const submit = async () => {
     if (submitting) return;
 
-    // sanitize first (front-only)
-    const safeDisplayName = trimTo(displayName, MAX_DISPLAY_NAME);
+    const safeDisplayName = trimTo(displayName, PROFILE_LIMITS.MAX_DISPLAY_NAME);
     const safeHandle = normalizeHandle(handle);
     const safeBio = normalizeBio(bio);
     const safeLocation = normalizeLocation(location);
@@ -213,9 +114,7 @@ export default function CreateProfileModal() {
 
     // handle must be unique per scenario (exclude self when editing)
     const conflict = listProfilesForScenario(sid).find(
-      (p) =>
-        String(p.id) !== String(existing?.id ?? "") &&
-        normalizeHandle(p.handle) === safeHandle
+      (p) => String(p.id) !== String(existing?.id ?? "") && normalizeHandle(p.handle) === safeHandle
     );
 
     if (conflict) {
@@ -229,11 +128,11 @@ export default function CreateProfileModal() {
       const createdAt = existing?.createdAt ?? now;
 
       const followers = followersText.trim().length
-        ? clampInt(Number(digitsOnly(followersText)) || 0, 0, MAX_COUNT)
+        ? clampInt(Number(digitsOnly(followersText)) || 0, 0, PROFILE_LIMITS.MAX_COUNT)
         : undefined;
 
       const rawFollowing = followingText.trim().length
-        ? clampInt(Number(digitsOnly(followingText)) || 0, 0, MAX_COUNT)
+        ? clampInt(Number(digitsOnly(followingText)) || 0, 0, PROFILE_LIMITS.MAX_COUNT)
         : undefined;
 
       let following = rawFollowing;
@@ -282,12 +181,6 @@ export default function CreateProfileModal() {
   return (
     <SafeAreaView edges={["top"]} style={{ flex: 1, backgroundColor: colors.background }}>
       <ThemedView style={[styles.container, { backgroundColor: colors.background }]}>
-        {picking ? (
-          <View style={styles.pickerOverlay} pointerEvents="auto">
-            <ActivityIndicator size="large" color="#fff" />
-          </View>
-        ) : null}
-
         <KeyboardAvoidingView
           style={{ flex: 1 }}
           behavior={Platform.OS === "ios" ? "padding" : undefined}
@@ -305,7 +198,7 @@ export default function CreateProfileModal() {
               onPress={submit}
               disabled={submitting}
               hitSlop={12}
-              style={{ opacity: submitting ? 0.5 : 1 }}
+              style={({ pressed }) => [{ opacity: submitting ? 0.5 : pressed ? 0.7 : 1 }]}
             >
               <ThemedText style={{ color: colors.tint, fontWeight: "800" }}>
                 {isEdit ? "Save" : "Create"}
@@ -320,27 +213,18 @@ export default function CreateProfileModal() {
             contentContainerStyle={{ paddingBottom: 24 }}
           >
             {/* Avatar */}
-            <View style={styles.avatarWrap}>
-              <Pressable onPress={pickAvatar} hitSlop={12}>
-                <Avatar uri={avatarUrl} size={96} fallbackColor={colors.border} />
-              </Pressable>
-
-              <Pressable onPress={pickAvatar} hitSlop={12}>
-                <ThemedText style={{ color: colors.tint, marginTop: 8 }}>Change avatar</ThemedText>
-              </Pressable>
-            </View>
+            <ProfileAvatarPicker avatarUrl={avatarUrl} setAvatarUrl={setAvatarUrl} colors={colors} />
 
             {/* Basic fields */}
             <View style={styles.form}>
               <TextInput
                 value={displayName}
-                onChangeText={(v) => setDisplayName(v.slice(0, MAX_DISPLAY_NAME))}
+                onChangeText={(v) => setDisplayName(v.slice(0, PROFILE_LIMITS.MAX_DISPLAY_NAME))}
                 placeholder="Display name"
                 placeholderTextColor={colors.textSecondary}
                 style={[styles.input, { color: colors.text, borderColor: colors.border }]}
               />
 
-              {/* Handle (no @ typing) */}
               <View style={[styles.handleWrap, { borderColor: colors.border }]}>
                 <ThemedText style={{ color: colors.textSecondary, fontWeight: "800" }}>@</ThemedText>
 
@@ -352,14 +236,14 @@ export default function CreateProfileModal() {
                   autoCapitalize="none"
                   autoCorrect={false}
                   keyboardType="ascii-capable"
-                  maxLength={MAX_HANDLE}
+                  maxLength={PROFILE_LIMITS.MAX_HANDLE}
                   style={[styles.handleInput, { color: colors.text }]}
                 />
               </View>
 
               <TextInput
                 value={bio}
-                onChangeText={(v) => setBio(v.slice(0, MAX_BIO))}
+                onChangeText={(v) => setBio(v.slice(0, PROFILE_LIMITS.MAX_BIO))}
                 placeholder="Bio (optional)"
                 placeholderTextColor={colors.textSecondary}
                 multiline
@@ -367,250 +251,26 @@ export default function CreateProfileModal() {
               />
             </View>
 
-            {/* Profile settings */}
-            <View style={[styles.section, { borderTopColor: colors.border }]}>
-              <ThemedText style={[styles.sectionTitle, { color: colors.textSecondary }]}>Profile settings</ThemedText>
-
-              <RowCard
-                label="Shared"
-                colors={colors}
-                right={
-                  <Switch
-                    value={!!isPublic}
-                    onValueChange={(v) => setIsPublic(!!v)}
-                    trackColor={{ false: colors.border, true: colors.tint }}
-                    thumbColor={Platform.OS === "android" ? colors.background : undefined}
-                  />
-                }
-              >
-                <ThemedText style={{ color: colors.textSecondary }}>Other players can use this profile</ThemedText>
-              </RowCard>
-
-              <RowCard
-                label="Private account"
-                colors={colors}
-                right={
-                  <Switch
-                    value={!!isPrivate}
-                    onValueChange={(v) => setIsPrivate(!!v)}
-                    trackColor={{ false: colors.border, true: colors.tint }}
-                    thumbColor={Platform.OS === "android" ? colors.background : undefined}
-                  />
-                }
-              >
-                <ThemedText style={{ color: colors.textSecondary }}>Show a lock icon</ThemedText>
-              </RowCard>
-
-              {/* Account size */}
-              <RowCard
-                label="Account size"
-                colors={colors}
-                right={
-                  <View style={{ flexDirection: "row", gap: 10 }}>
-                    <Pressable
-                      onPress={() => setAccountSize("small")}
-                      hitSlop={10}
-                      style={({ pressed }) => [
-                        styles.sizeBtn,
-                        {
-                          borderColor: colors.border,
-                          backgroundColor: pressed ? colors.pressed : "transparent",
-                        },
-                      ]}
-                    >
-                      <Ionicons name="person-outline" size={18} color={colors.textSecondary} />
-                    </Pressable>
-
-                    <Pressable
-                      onPress={() => setAccountSize("mid")}
-                      hitSlop={10}
-                      style={({ pressed }) => [
-                        styles.sizeBtn,
-                        {
-                          borderColor: colors.border,
-                          backgroundColor: pressed ? colors.pressed : "transparent",
-                        },
-                      ]}
-                    >
-                      <Ionicons name="people-outline" size={18} color={colors.textSecondary} />
-                    </Pressable>
-
-                    <Pressable
-                      onPress={() => setAccountSize("big")}
-                      hitSlop={10}
-                      style={({ pressed }) => [
-                        styles.sizeBtn,
-                        {
-                          borderColor: colors.border,
-                          backgroundColor: pressed ? colors.pressed : "transparent",
-                        },
-                      ]}
-                    >
-                      <Ionicons name="people" size={18} color={colors.textSecondary} />
-                    </Pressable>
-                  </View>
-                }
-              >
-                <ThemedText style={{ color: colors.textSecondary }}>
-                  Tap an icon to generate followers & following
-                </ThemedText>
-              </RowCard>
-
-              {/* Followings */}
-              <RowCard
-                label="Followings"
-                colors={colors}
-                right={
-                  followingText ? (
-                    <ThemedText style={{ color: colors.textSecondary }}>
-                      {formatCount(Number(followingText))}
-                    </ThemedText>
-                  ) : (
-                    <ThemedText style={{ color: colors.textSecondary, opacity: 0.4 }}>0</ThemedText>
-                  )
-                }
-              >
-                <TextInput
-                  value={followingText}
-                  maxLength={MAX_COUNT_DIGITS}
-                  onChangeText={(v) => {
-                    const next = limitCountText(v);
-
-                    const f = Number(digitsOnly(followersText)) || 0;
-                    const g = Number(next || "0") || 0;
-
-                    if (f > 0 && next.length && g >= f) {
-                      setFollowingText(String(Math.max(0, f - 1)));
-                    } else {
-                      setFollowingText(next === "0" ? "" : next);
-                    }
-                  }}
-                  placeholder="0"
-                  placeholderTextColor={colors.textSecondary}
-                  keyboardType="number-pad"
-                  style={[styles.rowInput, { color: colors.text }]}
-                />
-              </RowCard>
-
-              {/* Followers */}
-              <RowCard
-                label="Followers"
-                colors={colors}
-                right={
-                  followersText ? (
-                    <ThemedText style={{ color: colors.textSecondary }}>
-                      {formatCount(Number(followersText))}
-                    </ThemedText>
-                  ) : (
-                    <ThemedText style={{ color: colors.textSecondary, opacity: 0.4 }}>0</ThemedText>
-                  )
-                }
-              >
-                <TextInput
-                  value={followersText}
-                  maxLength={MAX_COUNT_DIGITS}
-                  onChangeText={(v) => {
-                    const next = limitCountText(v);
-                    setFollowersText(next === "0" ? "" : next);
-
-                    const f = Number(next || "0") || 0;
-                    const g = Number(digitsOnly(followingText)) || 0;
-                    if (f > 0 && g >= f) setFollowingText(String(Math.max(0, f - 1)));
-                  }}
-                  placeholder="0"
-                  placeholderTextColor={colors.textSecondary}
-                  keyboardType="number-pad"
-                  style={[styles.rowInput, { color: colors.text }]}
-                />
-              </RowCard>
-
-              {/* iOS picker inline */}
-              {Platform.OS === "ios" && showJoinedPicker ? (
-                <View style={[styles.pickerCard, { borderColor: colors.border, backgroundColor: colors.card }]}>
-                  <View style={styles.pickerHeader}>
-                    <ThemedText style={{ color: colors.textSecondary, fontWeight: "800" }}>Pick joined date</ThemedText>
-
-                    <Pressable
-                      onPress={() => setShowJoinedPicker(false)}
-                      hitSlop={10}
-                      style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}
-                    >
-                      <ThemedText style={{ color: colors.tint, fontWeight: "900" }}>Done</ThemedText>
-                    </Pressable>
-                  </View>
-
-                  <DateTimePicker
-                    value={joinedDate}
-                    mode="date"
-                    display="spinner"
-                    onChange={(_, selected) => {
-                      if (selected) setJoinedDate(selected);
-                    }}
-                    style={{ alignSelf: "stretch" }}
-                  />
-                </View>
-              ) : null}
-
-              {/* JoinedDate */}
-              <RowCard
-                label="Joined date"
-                colors={colors}
-                right={
-                  <Pressable
-                    onPress={() => setShowJoinedPicker((v) => !v)}
-                    hitSlop={10}
-                    style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}
-                  >
-                    <ThemedText style={{ color: colors.tint, fontWeight: "900" }}>
-                      {joinedDate.toLocaleDateString(undefined, {
-                        day: "2-digit",
-                        month: "short",
-                        year: "numeric",
-                      })}
-                    </ThemedText>
-                  </Pressable>
-                }
-              >
-                <ThemedText style={{ color: colors.textSecondary }}>Tap the date to change it</ThemedText>
-              </RowCard>
-
-              {Platform.OS === "android" && showJoinedPicker ? (
-                <DateTimePicker
-                  value={joinedDate}
-                  mode="date"
-                  display="default"
-                  onChange={(_, selected) => {
-                    setShowJoinedPicker(false);
-                    if (selected) setJoinedDate(selected);
-                  }}
-                />
-              ) : null}
-
-              {/* Location */}
-              <RowCard label="Location" colors={colors}>
-                <TextInput
-                  value={location}
-                  maxLength={MAX_LOCATION}
-                  onChangeText={(v) => setLocation(v.slice(0, MAX_LOCATION))}
-                  placeholder="e.g. paris, france"
-                  placeholderTextColor={colors.textSecondary}
-                  style={[styles.rowInput, { color: colors.text }]}
-                />
-              </RowCard>
-
-              {/* Link */}
-              <RowCard label="Link" colors={colors}>
-                <TextInput
-                  value={link}
-                  maxLength={MAX_LINK}
-                  onChangeText={(v) => setLink(v.slice(0, MAX_LINK))}
-                  placeholder="e.g. https://..."
-                  placeholderTextColor={colors.textSecondary}
-                  autoCapitalize="none"
-                  style={[styles.rowInput, { color: colors.text }]}
-                />
-              </RowCard>
-            </View>
+            {/* Settings (extracted) */}
+            <ProfileSettingsSection
+              colors={colors}
+              isPublic={isPublic}
+              setIsPublic={setIsPublic}
+              isPrivate={isPrivate}
+              setIsPrivate={setIsPrivate}
+              followersText={followersText}
+              setFollowersText={setFollowersText}
+              followingText={followingText}
+              setFollowingText={setFollowingText}
+              joinedDate={joinedDate}
+              setJoinedDate={setJoinedDate}
+              location={location}
+              setLocation={setLocation}
+              link={link}
+              setLink={setLink}
+              maxLocation={PROFILE_LIMITS.MAX_LOCATION}
+              maxLink={PROFILE_LIMITS.MAX_LINK}
+            />
           </ScrollView>
         </KeyboardAvoidingView>
       </ThemedView>
@@ -630,12 +290,6 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
 
-  avatarWrap: {
-    alignItems: "center",
-    paddingVertical: 20,
-    gap: 6,
-  },
-
   form: {
     paddingHorizontal: 16,
     gap: 12,
@@ -653,58 +307,6 @@ const styles = StyleSheet.create({
   bio: {
     minHeight: 90,
     textAlignVertical: "top",
-  },
-
-  section: {
-    borderTopWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: 16,
-    paddingTop: 14,
-    gap: 10,
-  },
-
-  sectionTitle: {
-    fontSize: 12,
-    fontWeight: "800",
-    textTransform: "uppercase",
-    letterSpacing: 0.4,
-    marginBottom: 2,
-  },
-
-  rowInput: {
-    fontSize: 16,
-    paddingVertical: 0,
-  },
-
-  sizeBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 999,
-    borderWidth: StyleSheet.hairlineWidth,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  pickerOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(0,0,0,0.35)",
-    alignItems: "center",
-    justifyContent: "center",
-    zIndex: 999,
-    elevation: 999,
-  },
-
-  pickerCard: {
-    borderWidth: 1,
-    borderRadius: 16,
-    paddingHorizontal: 12,
-    paddingTop: 10,
-    paddingBottom: 6,
-  },
-  pickerHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingBottom: 6,
   },
 
   handleWrap: {
