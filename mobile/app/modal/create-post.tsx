@@ -161,7 +161,7 @@ export default function CreatePostModal() {
 
   const [authorProfileId, setAuthorProfileId] = useState<string | null>(initialAuthorId);
 
-  // ✅ picking author while editing: arm + remember previous selectedId to avoid race
+  // picking author while editing: arm + remember previous selectedId to avoid race
   const [pickAuthorArmed, setPickAuthorArmed] = useState(false);
   const [pickAuthorPrevSelectedId, setPickAuthorPrevSelectedId] = useState<string | null>(null);
 
@@ -172,8 +172,14 @@ export default function CreatePostModal() {
 
   const [threadTexts, setThreadTexts] = useState<string[]>([""]);
   const [focusedThreadIndex, setFocusedThreadIndex] = useState<number>(0);
+
   const [imageUrls, setImageUrls] = useState<string[]>([]);
+  const [videoThumbUri, setVideoThumbUri] = useState<string | null>(null);
+
+  const [addVideoIcon, setAddVideoIcon] = useState<boolean>(false);
+
   const [picking, setpicking] = useState(false);
+
   // Thread composer (old Twitter +)
   const setThreadTextAt = useCallback((idx: number, value: string) => {
     setThreadTexts((prev) => {
@@ -212,6 +218,12 @@ export default function CreatePostModal() {
 
   const [hydrated, setHydrated] = useState(false);
 
+  const clearMedia = useCallback(() => {
+    setImageUrls([]);
+    setVideoThumbUri(null);
+    setAddVideoIcon(false);
+  }, []);
+
   // hydrate edit mode OR wire reply/quote in create mode
   useEffect(() => {
     if (!isReady) return;
@@ -238,7 +250,19 @@ export default function CreatePostModal() {
     setAuthorProfileId(String(found.authorProfileId));
     setThreadTexts([found.text ?? ""]);
     setDate(new Date(found.createdAt));
-    setImageUrls((found.imageUrls ?? []).slice(0, MAX_IMAGES));
+
+    const raw = (found.imageUrls ?? []).slice(0, MAX_IMAGES);
+    const foundAddVideoIcon = Boolean((found as any).addVideoIcon);
+
+    if (raw.length === 1 && foundAddVideoIcon) {
+      setVideoThumbUri(raw[0]);
+      setAddVideoIcon(true);
+      setImageUrls([]);
+    } else {
+      setVideoThumbUri(null);
+      setAddVideoIcon(false);
+      setImageUrls(raw);
+    }
 
     // keep placeholders for 0
     setReplyCount(toCountStringOrEmpty(found.replyCount ?? 0));
@@ -248,7 +272,7 @@ export default function CreatePostModal() {
     setParentId(found.parentPostId ? String(found.parentPostId) : replyParent);
     setQuoteId(found.quotedPostId ? String(found.quotedPostId) : q);
     // preserve original insertedAt for edits
-    setInsertedAt(found.insertedAt ?? found.createdAt ?? new Date().toISOString());
+    setInsertedAt((found as any).insertedAt ?? found.createdAt ?? new Date().toISOString());
 
     setHydrated(true);
   }, [
@@ -262,7 +286,6 @@ export default function CreatePostModal() {
     initialAuthorId,
   ]);
 
-  // ✅ apply picked author AFTER selectedId really changes (fixes “only updates on 2nd open”)
   useEffect(() => {
     if (!isReady) return;
     if (!pickAuthorArmed) return;
@@ -336,6 +359,11 @@ export default function CreatePostModal() {
   /* -------------------------------------------------------------------------- */
 
   const pickImages = async () => {
+    if (videoThumbUri) {
+      Alert.alert("Video thumbnail active", "Remove the video thumbnail to add multiple images.");
+      return;
+    }
+
     const remaining = Math.max(0, MAX_IMAGES - imageUrls.length);
     if (remaining <= 0) {
       Alert.alert("Limit reached", `You can add up to ${MAX_IMAGES} images.`);
@@ -351,6 +379,11 @@ export default function CreatePostModal() {
       });
 
       if (!picked.length) return;
+
+      // selecting images cancels fake video mode
+      setAddVideoIcon(false);
+      setVideoThumbUri(null);
+
       setImageUrls((prev) => [...prev, ...picked].slice(0, MAX_IMAGES));
     } finally {
       setpicking(false);
@@ -362,21 +395,52 @@ export default function CreatePostModal() {
   };
 
   const takePhoto = async () => {
-  const remaining = Math.max(0, MAX_IMAGES - imageUrls.length);
-  if (remaining <= 0) {
-    Alert.alert("Limit reached", `You can add up to ${MAX_IMAGES} images.`);
-    return;
-  }
+    if (videoThumbUri) {
+      Alert.alert("Video thumbnail active", "Remove the video thumbnail to add multiple images.");
+      return;
+    }
 
-  setpicking(true);
-  try {
-    const persistedUri = await takeAndPersistPhoto("img");
-    if (!persistedUri) return;
-    setImageUrls((prev) => [...prev, persistedUri].slice(0, MAX_IMAGES));
-  } finally {
-    setpicking(false);
-  }
-};
+    const remaining = Math.max(0, MAX_IMAGES - imageUrls.length);
+    if (remaining <= 0) {
+      Alert.alert("Limit reached", `You can add up to ${MAX_IMAGES} images.`);
+      return;
+    }
+
+    setpicking(true);
+    try {
+      const persistedUri = await takeAndPersistPhoto("img");
+      if (!persistedUri) return;
+
+      // taking a photo cancels fake video mode
+      setAddVideoIcon(false);
+      setVideoThumbUri(null);
+
+      setImageUrls((prev) => [...prev, persistedUri].slice(0, MAX_IMAGES));
+    } finally {
+      setpicking(false);
+    }
+  };
+
+  // "fake video": pick ONE image and overlay play icon for UI
+  const pickVideoThumb = async () => {
+    setpicking(true);
+    try {
+      const picked = await pickAndPersistManyImages({
+        remaining: 1,
+        persistAs: "img",
+        quality: 0.9,
+      });
+
+      const uri = picked?.[0];
+      if (!uri) return;
+
+      setImageUrls([]);
+      setVideoThumbUri(uri);
+      setAddVideoIcon(true);
+    } finally {
+      setpicking(false);
+    }
+  };
 
   /* -------------------------------------------------------------------------- */
   /* Submit                                                                      */
@@ -394,26 +458,33 @@ export default function CreatePostModal() {
       return;
     }
 
+    const mediaForPost = videoThumbUri
+      ? [videoThumbUri]
+      : imageUrls.slice(0, MAX_IMAGES);
+
+    const addVideoIconForPost = Boolean(videoThumbUri) && addVideoIcon;
+
     const isStandaloneCreate = !isEdit && !parentId && !quoteId;
 
     // EDIT: single post only (no threading)
     if (isEdit) {
-      const base: Post = {
+      const base: Post & { addVideoIcon?: boolean } = {
         id: editingPostId,
         scenarioId: sid,
         authorProfileId: String(authorProfileId),
         text: (threadTexts[0] ?? "").trim(),
         createdAt: date.toISOString(),
-        imageUrls: imageUrls.slice(0, MAX_IMAGES),
+        imageUrls: mediaForPost,
         replyCount: counts.reply,
         repostCount: counts.repost,
         likeCount: counts.like,
         parentPostId: parentId,
         quotedPostId: quoteId,
         insertedAt: insertedAt || new Date().toISOString(), // preserve when available
+        addVideoIcon: addVideoIconForPost,
       };
 
-      await upsertPost(base);
+      await upsertPost(base as any);
       router.back();
       return;
     }
@@ -421,22 +492,23 @@ export default function CreatePostModal() {
     // CREATE: if reply/quote, keep single post behavior
     if (!isStandaloneCreate) {
       const postedAtIso = new Date().toISOString();
-      const base: Post = {
+      const base: Post & { addVideoIcon?: boolean } = {
         id: makeId("po"),
         scenarioId: sid,
         authorProfileId: String(authorProfileId),
         text: (threadTexts[0] ?? "").trim(),
         createdAt: postedAtIso,
-        imageUrls: imageUrls.slice(0, MAX_IMAGES),
+        imageUrls: mediaForPost,
         replyCount: counts.reply,
         repostCount: counts.repost,
         likeCount: counts.like,
         parentPostId: parentId,
         quotedPostId: quoteId,
         insertedAt: postedAtIso,
+        addVideoIcon: addVideoIconForPost,
       };
 
-      await upsertPost(base);
+      await upsertPost(base as any);
       await setSelectedProfileId(sid, String(authorProfileId));
       router.back();
       return;
@@ -451,23 +523,24 @@ export default function CreatePostModal() {
       const id = makeId("po");
       const createdAt = new Date(baseTime.getTime() + i * 1000).toISOString(); // stable order
 
-      const post: Post = {
+      const post: Post & { addVideoIcon?: boolean } = {
         id,
         scenarioId: sid,
         authorProfileId: String(authorProfileId),
         text: threadTexts[i].trim(),
         createdAt,
         // keep media + engagement only on first post for now
-        imageUrls: i === 0 ? imageUrls.slice(0, MAX_IMAGES) : [],
+        imageUrls: i === 0 ? mediaForPost : [],
         replyCount: i === 0 ? counts.reply : 0,
         repostCount: i === 0 ? counts.repost : 0,
         likeCount: i === 0 ? counts.like : 0,
         parentPostId: i === 0 ? undefined : prevId,
         quotedPostId: undefined,
         insertedAt: insertedAtBaseIso,
+        addVideoIcon: i === 0 ? addVideoIconForPost : false,
       };
 
-      await upsertPost(post);
+      await upsertPost(post as any);
       prevId = id;
     }
 
@@ -493,7 +566,10 @@ export default function CreatePostModal() {
       <Pressable style={styles.pickerOverlay} onPress={closePicker}>
         <Pressable
           onPress={() => {}}
-          style={[styles.pickerCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+          style={[
+            styles.pickerCard,
+            { backgroundColor: colors.card, borderColor: colors.border },
+          ]}
         >
           <View style={styles.pickerHeader}>
             <ThemedText style={{ color: colors.text, fontWeight: "800" }}>
@@ -525,7 +601,10 @@ export default function CreatePostModal() {
   };
 
   return (
-    <SafeAreaView edges={["top"]} style={{ flex: 1, backgroundColor: colors.background }}>
+    <SafeAreaView
+      edges={["top"]}
+      style={{ flex: 1, backgroundColor: colors.background }}
+    >
       <ThemedView style={[styles.screen, { backgroundColor: colors.background }]}>
         {picking ? (
           <View style={styles.pickerOverlay} pointerEvents="auto">
@@ -545,7 +624,9 @@ export default function CreatePostModal() {
               hitSlop={12}
               style={({ pressed }) => [pressed && { opacity: 0.7 }]}
             >
-              <ThemedText style={{ color: colors.text, fontSize: 16 }}>Cancel</ThemedText>
+              <ThemedText style={{ color: colors.text, fontSize: 16 }}>
+                Cancel
+              </ThemedText>
             </Pressable>
 
             <Pressable
@@ -576,7 +657,7 @@ export default function CreatePostModal() {
             <View style={styles.composer}>
               <Pressable
                 onPress={() => {
-                  // ✅ arm selection and remember current selectedId so we can detect a real change
+                  // arm selection and remember current selectedId so we can detect a real change
                   setPickAuthorArmed(true);
                   setPickAuthorPrevSelectedId(selectedId ? String(selectedId) : "");
                   router.push({
@@ -615,7 +696,11 @@ export default function CreatePostModal() {
                             },
                           ]}
                         >
-                          <Ionicons name="close" size={14} color={colors.textSecondary} />
+                          <Ionicons
+                            name="close"
+                            size={14}
+                            color={colors.textSecondary}
+                          />
                         </Pressable>
                       ) : null}
 
@@ -650,7 +735,9 @@ export default function CreatePostModal() {
                         {!isEdit && !parentId && !quoteId && isLast ? (
                           <Pressable
                             onPress={addThreadItem}
-                            disabled={(threadTexts[threadTexts.length - 1] ?? "").trim().length === 0}
+                            disabled={
+                              (threadTexts[threadTexts.length - 1] ?? "").trim().length === 0
+                            }
                             hitSlop={10}
                             style={({ pressed }) => [
                               styles.threadPlusTiny,
@@ -671,15 +758,46 @@ export default function CreatePostModal() {
 
                       {/* full-width divider between thread items (spans under the avatar too) */}
                       {!isLast ? (
-                        <View style={[styles.threadDividerFull, { backgroundColor: colors.border }]} />
+                        <View
+                          style={[
+                            styles.threadDividerFull,
+                            { backgroundColor: colors.border },
+                          ]}
+                        />
                       ) : null}
                     </View>
                   );
                 })}
 
+                {/* media preview */}
+                {videoThumbUri ? (
+                  <View style={styles.mediaGrid}>
+                    <View style={[styles.mediaThumbWrap, styles.mediaThumbWrapSingle]}>
+                      <Image source={{ uri: videoThumbUri }} style={styles.mediaThumb} />
 
-                {/* image preview grid + remove */}
-                {imageUrls.length > 0 ? (
+                      {addVideoIcon ? (
+                        <View style={styles.playOverlay}>
+                          <Ionicons name="play-circle" size={56} color="#fff" />
+                        </View>
+                      ) : null}
+
+                      <Pressable
+                        onPress={clearMedia}
+                        hitSlop={10}
+                        style={({ pressed }) => [
+                          styles.mediaRemove,
+                          {
+                            opacity: pressed ? 0.85 : 1,
+                            backgroundColor: colors.background,
+                            borderColor: colors.border,
+                          },
+                        ]}
+                      >
+                        <Ionicons name="close" size={16} color={colors.text} />
+                      </Pressable>
+                    </View>
+                  </View>
+                ) : imageUrls.length > 0 ? (
                   <View style={styles.mediaGrid}>
                     {imageUrls.map((uri, idx) => (
                       <View
@@ -712,7 +830,9 @@ export default function CreatePostModal() {
                 {quotedPost ? (
                   <Pressable
                     onPress={() => {
-                      router.push(`/(scenario)/${sid}/(tabs)/post/${String(quotedPost.id)}` as any);
+                      router.push(
+                        `/(scenario)/${sid}/(tabs)/post/${String(quotedPost.id)}` as any
+                      );
                     }}
                     style={({ pressed }) => [
                       styles.quoteCard,
@@ -722,20 +842,27 @@ export default function CreatePostModal() {
                       },
                     ]}
                   >
-                    <QuotedPostCard quotedPost={quotedPost} colors={colors} getProfileById={getProfileById} />
+                    <QuotedPostCard
+                      quotedPost={quotedPost}
+                      colors={colors}
+                      getProfileById={getProfileById}
+                    />
                   </Pressable>
                 ) : null}
               </View>
             </View>
 
-
             <View style={[styles.softDivider, { backgroundColor: colors.border }]} />
 
             {/* TOOLBAR */}
             <View style={[styles.toolbar, { borderTopColor: colors.border }]}>
-            <Pressable onPress={takePhoto} hitSlop={10} style={({ pressed }) => [styles.toolBtn, pressed && { opacity: 0.7 }]}>
-              <Ionicons name="camera-outline" size={22} color={colors.tint} />
-            </Pressable>
+              <Pressable
+                onPress={takePhoto}
+                hitSlop={10}
+                style={({ pressed }) => [styles.toolBtn, pressed && { opacity: 0.7 }]}
+              >
+                <Ionicons name="camera-outline" size={22} color={colors.tint} />
+              </Pressable>
 
               <Pressable
                 onPress={pickImages}
@@ -745,8 +872,20 @@ export default function CreatePostModal() {
                 <Ionicons name="image-outline" size={22} color={colors.tint} />
               </Pressable>
 
-              <Pressable hitSlop={10} style={({ pressed }) => [styles.toolBtn, pressed && { opacity: 0.7 }]}>
+              <Pressable
+                hitSlop={10}
+                style={({ pressed }) => [styles.toolBtn, pressed && { opacity: 0.7 }]}
+              >
                 <MaterialIcons name="gif" size={22} color={colors.tint} />
+              </Pressable>
+
+              {/* fake video thumbnail picker */}
+              <Pressable
+                onPress={pickVideoThumb}
+                hitSlop={10}
+                style={({ pressed }) => [styles.toolBtn, pressed && { opacity: 0.7 }]}
+              >
+                <Ionicons name="videocam-outline" size={22} color={colors.tint} />
               </Pressable>
             </View>
 
@@ -757,16 +896,36 @@ export default function CreatePostModal() {
               </ThemedText>
 
               <RowCard label="Date" colors={colors}>
-                <View style={{ flexDirection: "row", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-                  <Pressable onPress={() => openPicker("date")} style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}>
+                <View
+                  style={{
+                    flexDirection: "row",
+                    gap: 12,
+                    alignItems: "center",
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <Pressable
+                    onPress={() => openPicker("date")}
+                    style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}
+                  >
                     <ThemedText style={{ color: colors.tint, fontWeight: "700" }}>
-                      {date.toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" })}
+                      {date.toLocaleDateString(undefined, {
+                        day: "2-digit",
+                        month: "short",
+                        year: "numeric",
+                      })}
                     </ThemedText>
                   </Pressable>
 
-                  <Pressable onPress={() => openPicker("time")} style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}>
+                  <Pressable
+                    onPress={() => openPicker("time")}
+                    style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}
+                  >
                     <ThemedText style={{ color: colors.tint, fontWeight: "700" }}>
-                      {date.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}
+                      {date.toLocaleTimeString(undefined, {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
                     </ThemedText>
                   </Pressable>
                 </View>
@@ -783,7 +942,9 @@ export default function CreatePostModal() {
                     ]}
                   >
                     <Ionicons name="person-outline" size={18} color={colors.text} />
-                    <ThemedText style={{ color: colors.text, fontWeight: "700" }}>few</ThemedText>
+                    <ThemedText style={{ color: colors.text, fontWeight: "700" }}>
+                      few
+                    </ThemedText>
                   </Pressable>
 
                   <Pressable
@@ -795,7 +956,9 @@ export default function CreatePostModal() {
                     ]}
                   >
                     <Ionicons name="people-outline" size={18} color={colors.text} />
-                    <ThemedText style={{ color: colors.text, fontWeight: "700" }}>mid</ThemedText>
+                    <ThemedText style={{ color: colors.text, fontWeight: "700" }}>
+                      mid
+                    </ThemedText>
                   </Pressable>
 
                   <Pressable
@@ -807,7 +970,9 @@ export default function CreatePostModal() {
                     ]}
                   >
                     <Ionicons name="rocket-outline" size={18} color={colors.text} />
-                    <ThemedText style={{ color: colors.text, fontWeight: "700" }}>lot</ThemedText>
+                    <ThemedText style={{ color: colors.text, fontWeight: "700" }}>
+                      lot
+                    </ThemedText>
                   </Pressable>
                 </View>
               </RowCard>
@@ -817,7 +982,11 @@ export default function CreatePostModal() {
                   <RowCard
                     label="Replies"
                     colors={colors}
-                    right={<ThemedText style={{ color: colors.textSecondary }}>{formatCount(counts.reply)}</ThemedText>}
+                    right={
+                      <ThemedText style={{ color: colors.textSecondary }}>
+                        {formatCount(counts.reply)}
+                      </ThemedText>
+                    }
                   >
                     <TextInput
                       value={replyCount}
@@ -835,7 +1004,11 @@ export default function CreatePostModal() {
                   <RowCard
                     label="Reposts"
                     colors={colors}
-                    right={<ThemedText style={{ color: colors.textSecondary }}>{formatCount(counts.repost)}</ThemedText>}
+                    right={
+                      <ThemedText style={{ color: colors.textSecondary }}>
+                        {formatCount(counts.repost)}
+                      </ThemedText>
+                    }
                   >
                     <TextInput
                       value={repostCount}
@@ -853,7 +1026,11 @@ export default function CreatePostModal() {
               <RowCard
                 label="Likes"
                 colors={colors}
-                right={<ThemedText style={{ color: colors.textSecondary }}>{formatCount(counts.like)}</ThemedText>}
+                right={
+                  <ThemedText style={{ color: colors.textSecondary }}>
+                    {formatCount(counts.like)}
+                  </ThemedText>
+                }
               >
                 <TextInput
                   value={likeCount}
@@ -966,6 +1143,13 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
   },
 
+  playOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(0,0,0,0.12)",
+  },
+
   quoteCard: {
     marginTop: 12,
     borderWidth: StyleSheet.hairlineWidth,
@@ -1065,7 +1249,6 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
   },
-  // threadDivider is kept but not used in the new UI; can be kept for legacy
 
   threadItemWrap: {
     width: "100%",
@@ -1102,7 +1285,6 @@ const styles = StyleSheet.create({
     marginTop: 12,
     width: "auto",
     alignSelf: "stretch",
-    // extend the divider to the left so it covers the avatar column too
     marginLeft: -(42 + 12),
   },
   threadPlusTiny: {
@@ -1113,5 +1295,3 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
 });
-
-  

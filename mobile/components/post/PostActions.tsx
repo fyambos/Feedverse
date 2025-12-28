@@ -26,11 +26,9 @@ type Props = {
   onReply: () => void;
   onQuote: () => void;
 
-  // ✅ likes
   onLike?: () => void;
   isLiked?: boolean;
 
-  // ✅ reposts
   onRepost?: () => void | Promise<void>;
   isReposted?: boolean;
 
@@ -71,14 +69,13 @@ export function PostActions({
 
   const likeBurst = React.useRef(new Animated.Value(0)).current;
 
-  // ✅ tint “state” for repost (0 => default, 1 => tinted)
   const repostTint = React.useRef(new Animated.Value(isReposted ? 1 : 0)).current;
 
   React.useEffect(() => {
     Animated.timing(repostTint, {
       toValue: isReposted ? 1 : 0,
       duration: 180,
-      useNativeDriver: true, // ✅ we only animate opacity now
+      useNativeDriver: true,
     }).start();
   }, [isReposted, repostTint]);
 
@@ -128,7 +125,6 @@ export function PostActions({
     outputRange: [0, 0.35, 0],
   });
 
-  // ✅ Crossfade values for repost tint (no animated color props)
   const repostOnOpacity = repostTint; // 0..1
   const repostOffOpacity = repostTint.interpolate({ inputRange: [0, 1], outputRange: [1, 0] });
 
@@ -205,7 +201,7 @@ export function PostActions({
             </Animated.View>
           </Pressable>
 
-          {/* ✅ only show count if > 0 */}
+          {/* only show count if > 0 */}
           {showRepostCount ? (
             <View style={styles.repostCountStack}>
               <Animated.Text
@@ -335,7 +331,6 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
 
-  // ✅ repost crossfade helpers
   repostIconStack: { width: 26, height: 26, alignItems: "center", justifyContent: "center" },
   repostIconOn: { position: "absolute" },
 

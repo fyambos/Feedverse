@@ -60,7 +60,6 @@ export default function SelectProfileModal() {
 
   const current = getSelectedProfileId(sid);
 
-  // ✅ limit: only owned + non-shared count
   const ownedNonSharedCount = React.useMemo(() => {
     return countOwnedProfilesForUser(allProfiles, userId ?? null);
   }, [allProfiles, userId]);

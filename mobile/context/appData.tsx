@@ -24,7 +24,7 @@ type PostsPageResult = {
   nextCursor: PostCursor | null;
 };
 
-// ✅ profile feed (posts + reposts ordered by activity time)
+// profile feed (posts + reposts ordered by activity time)
 export type ProfileFeedKind = "post" | "repost";
 
 export type ProfileFeedItem = {
@@ -67,7 +67,6 @@ type AppDataApi = {
 
   listPostsPage: (args: PostsPageArgs) => PostsPageResult;
 
-  // ✅ NEW: for profile page ordering
   listProfileFeedPage: (args: ProfileFeedPageArgs) => ProfileFeedPageResult;
 
   getSelectedProfileId: (scenarioId: string) => string | null;
@@ -208,7 +207,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         return { items: page, nextCursor: next };
       },
 
-      // ✅ profile feed page (posts tab shows authored posts + repost events, ordered by activityAt)
+      // profile feed page (posts tab shows authored posts + repost events, ordered by activityAt)
       listProfileFeedPage: ({ scenarioId, profileId, tab, limit = 15, cursor }) => {
         if (!db) return { items: [], nextCursor: null };
 

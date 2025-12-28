@@ -69,7 +69,6 @@ export default function ProfileScreen() {
     toggleRepost,
     isPostRepostedBySelectedProfile,
 
-    // ✅ new api (reposts are not stored on profile anymore)
     listProfileFeedPage,
     isPostRepostedByProfileId,
   } = useAppData() as any;
@@ -219,7 +218,6 @@ export default function ProfileScreen() {
     return null;
   }, [isBlockedBy, isBlocked, isSuspended, isPrivated, at]);
 
-  // ✅ repost label (no legacy repostedPostIds)
   // we show the banner only when the viewing profile reposted that post and the post is not authored by them
   const repostLabelForPost = useCallback(
     (postAuthorProfileId: string, postId: string) => {
