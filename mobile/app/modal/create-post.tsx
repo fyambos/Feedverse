@@ -1,177 +1,79 @@
 // mobile/app/modal/create-post.tsx
-import React, { useEffect, useMemo, useState, useCallback } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import {
-  View,
-  StyleSheet,
-  TextInput,
+  ActivityIndicator,
+  Alert,
   Image,
-  Pressable,
   KeyboardAvoidingView,
   Platform,
+  Pressable,
   ScrollView,
-  Alert,
-  ActivityIndicator,
+  StyleSheet,
+  TextInput,
+  View,
 } from "react-native";
-import { router, useLocalSearchParams } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
-
+import { router, useLocalSearchParams } from "expo-router";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
+
+import type { Post } from "@/data/db/schema";
+import { useAppData } from "@/context/appData";
+import { useAuth } from "@/context/auth";
 
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { Colors } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 
-import type { Post } from "@/data/db/schema";
-import { useAppData } from "@/context/appData";
-import { useAuth } from "@/context/auth";
-import { formatCount, makeId } from "@/lib/format";
-
+import { RowCard } from "@/components/ui/RowCard";
 import { pickAndPersistManyImages } from "@/components/ui/ImagePicker";
 import { takeAndPersistPhoto } from "@/lib/media/takePicture";
-import { RowCard } from "@/components/ui/RowCard";
+import { formatCount, makeId } from "@/lib/format";
 
-const MAX_IMAGES = 4;
+import {
+  clampCountFromText,
+  clampInt,
+  limitCountText,
+  makeEngagementPreset,
+  MAX_COUNT,
+  MAX_COUNT_DIGITS,
+  toCountStringOrEmpty,
+} from "@/lib/postComposer/counts";
 
-// counts
-const MAX_COUNT = 999_999_999_999;
-const MAX_COUNT_DIGITS = 12;
+import {
+  MAX_IMAGES,
+  mediaForPost,
+  remainingSlots,
+  uniqueLimit,
+} from "@/lib/postComposer/media";
 
-/* -------------------------------------------------------------------------- */
-/* Helpers                                                                     */
-/* -------------------------------------------------------------------------- */
+import { QuotedPostCard } from "@/components/postComposer/QuotedPostCard";
+import { DateTimePickerOverlay } from "@/components/postComposer/DateTimePickerOverlay";
 
-function clampInt(n: number, min = 0, max = MAX_COUNT) {
-  const x = Number.isFinite(n) ? Math.floor(n) : min;
-  return Math.max(min, Math.min(max, x));
+type Params = {
+  scenarioId: string;
+  postId?: string;
+  parentPostId?: string;
+  quotedPostId?: string;
+};
+
+function isTruthyText(s: string) {
+  return (s ?? "").trim().length > 0;
 }
-
-function randInt(min: number, max: number) {
-  const a = Math.ceil(min);
-  const b = Math.floor(max);
-  return Math.floor(Math.random() * (b - a + 1)) + a;
-}
-
-function toCountStringOrEmpty(n: number) {
-  return n > 0 ? String(n) : "";
-}
-
-function digitsOnly(s: string) {
-  return String(s ?? "").replace(/[^\d]/g, "");
-}
-
-// typing-safe: cannot type infinite digits, and never exceeds MAX_COUNT
-function limitCountText(s: string) {
-  const raw = digitsOnly(s).slice(0, MAX_COUNT_DIGITS);
-  if (!raw) return "";
-  const n = Number(raw) || 0;
-  const clamped = clampInt(n, 0, MAX_COUNT);
-  return clamped <= 0 ? "" : String(clamped);
-}
-
-// db-safe: always clamp when converting to number
-function clampCountFromText(text: string, min = 0, max = MAX_COUNT) {
-  const n = Number(digitsOnly(text || "0")) || 0;
-  return clampInt(n, min, max);
-}
-
-function uniqueLimit(arr: string[], limit: number) {
-  const out: string[] = [];
-  for (const x of arr) {
-    if (!x) continue;
-    if (out.includes(x)) continue;
-    out.push(x);
-    if (out.length >= limit) break;
-  }
-  return out;
-}
-
-/* -------------------------------------------------------------------------- */
-/* Quoted card (kept minimal)                                                  */
-/* -------------------------------------------------------------------------- */
-
-function QuotedPostCard({
-  quotedPost,
-  colors,
-  getProfileById,
-}: {
-  quotedPost: Post;
-  colors: any;
-  getProfileById: (id: string) => any;
-}) {
-  const qpAuthor = useMemo(
-    () => getProfileById(String(quotedPost.authorProfileId)),
-    [quotedPost.authorProfileId, getProfileById]
-  );
-
-  return (
-    <View style={styles.quoteInner}>
-      {qpAuthor?.avatarUrl ? (
-        <Image source={{ uri: qpAuthor.avatarUrl }} style={styles.quoteAvatar} />
-      ) : (
-        <View style={[styles.quoteAvatar, { backgroundColor: colors.border }]} />
-      )}
-
-      <View style={{ flex: 1 }}>
-        <View style={styles.quoteTopRow}>
-          <ThemedText
-            numberOfLines={1}
-            style={{ fontWeight: "800", color: colors.text, maxWidth: "70%" }}
-          >
-            {qpAuthor?.displayName ?? "Unknown"}
-          </ThemedText>
-
-          <ThemedText
-            numberOfLines={1}
-            style={{ color: colors.textSecondary, marginLeft: 8, flexShrink: 1 }}
-          >
-            @{qpAuthor?.handle ?? "unknown"}
-          </ThemedText>
-
-          <ThemedText style={{ color: colors.textSecondary }}> · </ThemedText>
-
-          <ThemedText style={{ color: colors.textSecondary }}>
-            {new Date(quotedPost.createdAt).toLocaleDateString(undefined, {
-              day: "2-digit",
-              month: "2-digit",
-              year: "numeric",
-            })}
-          </ThemedText>
-        </View>
-
-        <ThemedText
-          numberOfLines={3}
-          style={{ color: colors.text, marginTop: 6, lineHeight: 18 }}
-        >
-          {quotedPost.text}
-        </ThemedText>
-      </View>
-    </View>
-  );
-}
-
-/* -------------------------------------------------------------------------- */
-/* Screen                                                                      */
-/* -------------------------------------------------------------------------- */
 
 export default function CreatePostModal() {
-  const { scenarioId, postId, parentPostId, quotedPostId } = useLocalSearchParams<{
-    scenarioId: string;
-    postId?: string;
-    parentPostId?: string;
-    quotedPostId?: string;
-  }>();
+  const { scenarioId, postId, parentPostId, quotedPostId } =
+    useLocalSearchParams<Params>();
 
   const scheme = useColorScheme() ?? "light";
   const colors = Colors[scheme];
 
   const sid = String(scenarioId ?? "");
   const editingPostId = postId ? String(postId) : "";
-  const isEdit = !!editingPostId;
+  const isEdit = Boolean(editingPostId);
 
   const { userId } = useAuth();
-
   const {
     isReady,
     getPostById,
@@ -193,28 +95,25 @@ export default function CreatePostModal() {
 
   const initialAuthorId = selectedId ?? fallbackOwnedProfileId;
 
-  const [authorProfileId, setAuthorProfileId] = useState<string | null>(initialAuthorId);
+  const [authorProfileId, setAuthorProfileId] = useState<string | null>(
+    initialAuthorId
+  );
 
-  // picking author while editing: arm + remember previous selectedId to avoid race
+  // author picking coordination (avoid race while editing)
   const [pickAuthorArmed, setPickAuthorArmed] = useState(false);
-  const [pickAuthorPrevSelectedId, setPickAuthorPrevSelectedId] = useState<string | null>(null);
+  const [pickAuthorPrevSelectedId, setPickAuthorPrevSelectedId] = useState<
+    string | null
+  >(null);
 
   const profile = useMemo(() => {
     if (!authorProfileId) return null;
     return getProfileById(String(authorProfileId));
   }, [authorProfileId, getProfileById]);
 
+  // thread
   const [threadTexts, setThreadTexts] = useState<string[]>([""]);
-  const [focusedThreadIndex, setFocusedThreadIndex] = useState<number>(0);
+  const [focusedThreadIndex, setFocusedThreadIndex] = useState(0);
 
-  const [imageUrls, setImageUrls] = useState<string[]>([]);
-  const [videoThumbUri, setVideoThumbUri] = useState<string | null>(null);
-
-  const [addVideoIcon, setAddVideoIcon] = useState<boolean>(false);
-
-  const [picking, setpicking] = useState(false);
-
-  // Thread composer (old Twitter +)
   const setThreadTextAt = useCallback((idx: number, value: string) => {
     setThreadTexts((prev) => {
       const next = [...prev];
@@ -231,26 +130,11 @@ export default function CreatePostModal() {
     setThreadTexts((prev) => prev.filter((_, i) => i !== idx));
   }, []);
 
-  // Post settings
-  const [date, setDate] = useState<Date>(new Date());
-  const [showDatePicker, setShowDatePicker] = useState(false);
-  const [pickerMode, setPickerMode] = useState<"date" | "time">("date");
-
-  const [replyCount, setReplyCount] = useState("");
-  const [repostCount, setRepostCount] = useState("");
-  const [likeCount, setLikeCount] = useState("");
-
-  const [parentId, setParentId] = useState<string | undefined>(undefined);
-  const [quoteId, setQuoteId] = useState<string | undefined>(undefined);
-  // insertedAt should be preserved in edit mode; for create we set it at submit time
-  const [insertedAt, setInsertedAt] = useState<string>("");
-
-  const quotedPost = useMemo(() => {
-    if (!quoteId) return null;
-    return getPostById(String(quoteId));
-  }, [quoteId, getPostById]);
-
-  const [hydrated, setHydrated] = useState(false);
+  // media
+  const [imageUrls, setImageUrls] = useState<string[]>([]);
+  const [videoThumbUri, setVideoThumbUri] = useState<string | null>(null);
+  const [addVideoIcon, setAddVideoIcon] = useState(false);
+  const [picking, setPicking] = useState(false);
 
   const clearMedia = useCallback(() => {
     setImageUrls([]);
@@ -258,18 +142,150 @@ export default function CreatePostModal() {
     setAddVideoIcon(false);
   }, []);
 
+  const guardNoVideoThumb = useCallback(() => {
+    if (!videoThumbUri) return true;
+    Alert.alert(
+      "Video thumbnail active",
+      "Remove the video thumbnail to add multiple images."
+    );
+    return false;
+  }, [videoThumbUri]);
+
+  const pickImages = useCallback(async () => {
+    if (!guardNoVideoThumb()) return;
+
+    const remaining = remainingSlots(imageUrls.length, MAX_IMAGES);
+    if (remaining <= 0) {
+      Alert.alert("Limit reached", `You can add up to ${MAX_IMAGES} images.`);
+      return;
+    }
+
+    setPicking(true);
+    try {
+      const picked = await pickAndPersistManyImages({
+        remaining,
+        persistAs: "img",
+        quality: 0.9,
+      });
+
+      if (!picked.length) return;
+
+      // selecting images cancels fake video mode
+      setAddVideoIcon(false);
+      setVideoThumbUri(null);
+
+      setImageUrls((prev) => uniqueLimit([...prev, ...picked], MAX_IMAGES));
+    } finally {
+      setPicking(false);
+    }
+  }, [guardNoVideoThumb, imageUrls.length]);
+
+  const takePhoto = useCallback(async () => {
+    if (!guardNoVideoThumb()) return;
+
+    const remaining = remainingSlots(imageUrls.length, MAX_IMAGES);
+    if (remaining <= 0) {
+      Alert.alert("Limit reached", `You can add up to ${MAX_IMAGES} images.`);
+      return;
+    }
+
+    setPicking(true);
+    try {
+      const persistedUri = await takeAndPersistPhoto("img");
+      if (!persistedUri) return;
+
+      // taking a photo cancels fake video mode
+      setAddVideoIcon(false);
+      setVideoThumbUri(null);
+
+      setImageUrls((prev) => uniqueLimit([...prev, persistedUri], MAX_IMAGES));
+    } finally {
+      setPicking(false);
+    }
+  }, [guardNoVideoThumb, imageUrls.length]);
+
+  const pickVideoThumb = useCallback(async () => {
+    setPicking(true);
+    try {
+      const picked = await pickAndPersistManyImages({
+        remaining: 1,
+        persistAs: "img",
+        quality: 0.9,
+      });
+
+      const uri = picked?.[0];
+      if (!uri) return;
+
+      setImageUrls([]);
+      setVideoThumbUri(uri);
+      setAddVideoIcon(true);
+    } finally {
+      setPicking(false);
+    }
+  }, []);
+
+  const removeImageAt = useCallback((idx: number) => {
+    setImageUrls((prev) => prev.filter((_, i) => i !== idx));
+  }, []);
+
+  // date/time
+  const [date, setDate] = useState<Date>(new Date());
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [pickerMode, setPickerMode] = useState<"date" | "time">("date");
+
+  const openPicker = useCallback((mode: "date" | "time") => {
+    setPickerMode(mode);
+    setShowDatePicker(true);
+  }, []);
+
+  const closePicker = useCallback(() => setShowDatePicker(false), []);
+
+  // counts
+  const [replyCount, setReplyCount] = useState("");
+  const [repostCount, setRepostCount] = useState("");
+  const [likeCount, setLikeCount] = useState("");
+
+  const counts = useMemo(
+    () => ({
+      reply: clampCountFromText(replyCount),
+      repost: clampCountFromText(repostCount),
+      like: clampCountFromText(likeCount),
+    }),
+    [replyCount, repostCount, likeCount]
+  );
+
+  const setEngagementPreset = useCallback((preset: "few" | "mid" | "lot") => {
+    const { likes, reposts, replies } = makeEngagementPreset(preset);
+    setLikeCount(toCountStringOrEmpty(likes));
+    setRepostCount(toCountStringOrEmpty(reposts));
+    setReplyCount(toCountStringOrEmpty(replies));
+  }, []);
+
+  // relations
+  const [parentId, setParentId] = useState<string | undefined>(undefined);
+  const [quoteId, setQuoteId] = useState<string | undefined>(undefined);
+  const [insertedAt, setInsertedAt] = useState<string>(""); // preserve in edit
+
+  const quotedPost = useMemo(() => {
+    if (!quoteId) return null;
+    return getPostById(String(quoteId));
+  }, [quoteId, getPostById]);
+
   // SECURE: author must exist in this scenario (front-only guard)
   const scenarioProfileIds = useMemo(() => {
     return new Set(listProfilesForScenario(sid).map((p) => String(p.id)));
   }, [sid, listProfilesForScenario]);
 
-  // hydrate edit mode OR wire reply/quote in create mode
+  // hydration
+  const [hydrated, setHydrated] = useState(false);
+
   useEffect(() => {
     if (!isReady) return;
 
     const replyParent = parentPostId ? String(parentPostId) : undefined;
     const q = quotedPostId ? String(quotedPostId) : undefined;
 
+    // create-mode: wire parent/quote, pick author fallback, done
     if (!isEdit) {
       setAuthorProfileId((prev) => prev ?? initialAuthorId ?? null);
       setParentId(replyParent);
@@ -278,6 +294,7 @@ export default function CreatePostModal() {
       return;
     }
 
+    // edit-mode: hydrate once
     if (hydrated) return;
 
     const found = getPostById(editingPostId);
@@ -303,14 +320,13 @@ export default function CreatePostModal() {
       setImageUrls(uniqueLimit(raw, MAX_IMAGES));
     }
 
-    // keep placeholders for 0
-    setReplyCount(toCountStringOrEmpty(clampInt(found.replyCount ?? 0)));
-    setRepostCount(toCountStringOrEmpty(clampInt(found.repostCount ?? 0)));
-    setLikeCount(toCountStringOrEmpty(clampInt(found.likeCount ?? 0)));
+    setReplyCount(toCountStringOrEmpty(clampInt(found.replyCount ?? 0, 0, MAX_COUNT)));
+    setRepostCount(toCountStringOrEmpty(clampInt(found.repostCount ?? 0, 0, MAX_COUNT)));
+    setLikeCount(toCountStringOrEmpty(clampInt(found.likeCount ?? 0, 0, MAX_COUNT)));
 
     setParentId(found.parentPostId ? String(found.parentPostId) : replyParent);
     setQuoteId(found.quotedPostId ? String(found.quotedPostId) : q);
-    // preserve original insertedAt for edits
+
     setInsertedAt((found as any).insertedAt ?? found.createdAt ?? new Date().toISOString());
 
     setHydrated(true);
@@ -325,13 +341,16 @@ export default function CreatePostModal() {
     initialAuthorId,
   ]);
 
+  // author selection callback after coming back from select-profile
   useEffect(() => {
     if (!isReady) return;
     if (!pickAuthorArmed) return;
     if (!selectedId) return;
 
-    // wait until selectedId is different from the one we had when opening the modal
-    if (pickAuthorPrevSelectedId && String(selectedId) === String(pickAuthorPrevSelectedId)) {
+    if (
+      pickAuthorPrevSelectedId &&
+      String(selectedId) === String(pickAuthorPrevSelectedId)
+    ) {
       return;
     }
 
@@ -340,7 +359,7 @@ export default function CreatePostModal() {
     setPickAuthorPrevSelectedId(null);
   }, [isReady, pickAuthorArmed, selectedId, pickAuthorPrevSelectedId]);
 
-  // fallback: if author is missing, assign one
+  // fallback: if author missing, assign one
   useEffect(() => {
     if (!isReady) return;
     if (authorProfileId) return;
@@ -349,7 +368,7 @@ export default function CreatePostModal() {
     if (next) setAuthorProfileId(String(next));
   }, [isReady, authorProfileId, selectedId, fallbackOwnedProfileId]);
 
-  // keep create-mode behavior: sync selected profile to author (but DO NOT in edit)
+  // create-mode: keep selectedProfileId in sync with author (NOT in edit)
   useEffect(() => {
     if (!isReady) return;
     if (isEdit) return;
@@ -359,181 +378,63 @@ export default function CreatePostModal() {
     setSelectedProfileId(sid, String(authorProfileId)).catch(() => {});
   }, [isReady, isEdit, sid, authorProfileId, selectedId, setSelectedProfileId]);
 
-  /* -------------------------------------------------------------------------- */
-  /* Counts (SECURE)                                                            */
-  /* -------------------------------------------------------------------------- */
-
-  const counts = useMemo(() => {
-    return {
-      reply: clampCountFromText(replyCount),
-      repost: clampCountFromText(repostCount),
-      like: clampCountFromText(likeCount),
-    };
-  }, [replyCount, repostCount, likeCount]);
-
-  const setEngagementPreset = (preset: "few" | "mid" | "lot") => {
-    let likes = 0;
-
-    if (preset === "few") likes = randInt(0, 80);
-    if (preset === "mid") likes = randInt(120, 6_000);
-    if (preset === "lot") likes = randInt(30_000, 2_000_000);
-
-    const reposts = clampInt(
-      randInt(Math.floor(likes * 0.03), Math.max(0, Math.floor(likes * 0.22))),
-      0,
-      likes
-    );
-    const replies = clampInt(
-      randInt(Math.floor(reposts * 0.15), Math.max(0, Math.floor(reposts * 0.65))),
-      0,
-      reposts
-    );
-
-    setLikeCount(toCountStringOrEmpty(likes));
-    setRepostCount(toCountStringOrEmpty(reposts));
-    setReplyCount(toCountStringOrEmpty(replies));
-  };
-
-  /* -------------------------------------------------------------------------- */
-  /* Media                                                                       */
-  /* -------------------------------------------------------------------------- */
-
-  const pickImages = async () => {
-    if (videoThumbUri) {
-      Alert.alert("Video thumbnail active", "Remove the video thumbnail to add multiple images.");
-      return;
-    }
-
-    const remaining = Math.max(0, MAX_IMAGES - imageUrls.length);
-    if (remaining <= 0) {
-      Alert.alert("Limit reached", `You can add up to ${MAX_IMAGES} images.`);
-      return;
-    }
-
-    setpicking(true);
-    try {
-      const picked = await pickAndPersistManyImages({
-        remaining,
-        persistAs: "img",
-        quality: 0.9,
-      });
-
-      if (!picked.length) return;
-
-      // selecting images cancels fake video mode
-      setAddVideoIcon(false);
-      setVideoThumbUri(null);
-
-      setImageUrls((prev) => uniqueLimit([...prev, ...picked], MAX_IMAGES));
-    } finally {
-      setpicking(false);
-    }
-  };
-
-  const removeImageAt = (idx: number) => {
-    setImageUrls((prev) => prev.filter((_, i) => i !== idx));
-  };
-
-  const takePhoto = async () => {
-    if (videoThumbUri) {
-      Alert.alert("Video thumbnail active", "Remove the video thumbnail to add multiple images.");
-      return;
-    }
-
-    const remaining = Math.max(0, MAX_IMAGES - imageUrls.length);
-    if (remaining <= 0) {
-      Alert.alert("Limit reached", `You can add up to ${MAX_IMAGES} images.`);
-      return;
-    }
-
-    setpicking(true);
-    try {
-      const persistedUri = await takeAndPersistPhoto("img");
-      if (!persistedUri) return;
-
-      // taking a photo cancels fake video mode
-      setAddVideoIcon(false);
-      setVideoThumbUri(null);
-
-      setImageUrls((prev) => uniqueLimit([...prev, persistedUri], MAX_IMAGES));
-    } finally {
-      setpicking(false);
-    }
-  };
-
-  // "fake video": pick ONE image and overlay play icon for UI
-  const pickVideoThumb = async () => {
-    setpicking(true);
-    try {
-      const picked = await pickAndPersistManyImages({
-        remaining: 1,
-        persistAs: "img",
-        quality: 0.9,
-      });
-
-      const uri = picked?.[0];
-      if (!uri) return;
-
-      setImageUrls([]);
-      setVideoThumbUri(uri);
-      setAddVideoIcon(true);
-    } finally {
-      setpicking(false);
-    }
-  };
-
-  /* -------------------------------------------------------------------------- */
-  /* Submit                                                                      */
-  /* -------------------------------------------------------------------------- */
-
+  // submit
   const canPost =
-    !!authorProfileId &&
+    Boolean(authorProfileId) &&
     threadTexts.length > 0 &&
-    threadTexts.every((t) => t.trim().length > 0);
+    threadTexts.every((t) => isTruthyText(t));
 
-  const onPost = async () => {
-    if (!canPost) return;
-
-    if (!authorProfileId) {
-      router.back();
-      return;
-    }
-
-    const safeAuthorId = String(authorProfileId);
-
-    // SECURE: prevent injected author id
-    if (!scenarioProfileIds.has(safeAuthorId)) {
-      Alert.alert("Invalid author", "Pick a valid profile for this scenario.");
-      return;
-    }
-
-    // SECURE: only store clamped counts
-    const safeCounts = {
+  const buildSafeCounts = useCallback(() => {
+    return {
       reply: clampInt(counts.reply, 0, MAX_COUNT),
       repost: clampInt(counts.repost, 0, MAX_COUNT),
       like: clampInt(counts.like, 0, MAX_COUNT),
     };
+  }, [counts]);
 
-    const mediaForPost = videoThumbUri ? [videoThumbUri] : uniqueLimit(imageUrls, MAX_IMAGES);
-    const addVideoIconForPost = Boolean(videoThumbUri) && addVideoIcon;
+  const ensureAuthorValid = useCallback(() => {
+    const safeAuthorId = String(authorProfileId ?? "");
+    if (!safeAuthorId) return null;
+
+    if (!scenarioProfileIds.has(safeAuthorId)) {
+      Alert.alert("Invalid author", "Pick a valid profile for this scenario.");
+      return null;
+    }
+
+    return safeAuthorId;
+  }, [authorProfileId, scenarioProfileIds]);
+
+  const onPost = useCallback(async () => {
+    if (!canPost) return;
+
+    const safeAuthorId = ensureAuthorValid();
+    if (!safeAuthorId) return;
+
+    const safeCounts = buildSafeCounts();
+
+    const { imageUrls: postImageUrls, addVideoIconForPost } = mediaForPost({
+      imageUrls,
+      videoThumbUri,
+      addVideoIcon,
+    });
 
     const isStandaloneCreate = !isEdit && !parentId && !quoteId;
 
-    // EDIT: single post only (no threading)
+    // EDIT: single post only (no thread)
     if (isEdit) {
-      const base: Post & { addVideoIcon?: boolean } = {
+      const base: Post & { addVideoIcon?: boolean; insertedAt?: string } = {
         id: editingPostId,
         scenarioId: sid,
         authorProfileId: safeAuthorId,
         text: (threadTexts[0] ?? "").trim(),
         createdAt: date.toISOString(),
-        imageUrls: mediaForPost,
+        imageUrls: postImageUrls,
         replyCount: safeCounts.reply,
         repostCount: safeCounts.repost,
         likeCount: safeCounts.like,
         parentPostId: parentId,
         quotedPostId: quoteId,
-        insertedAt: insertedAt || new Date().toISOString(), // preserve when available
+        insertedAt: insertedAt || new Date().toISOString(),
         addVideoIcon: addVideoIconForPost,
       };
 
@@ -542,16 +443,17 @@ export default function CreatePostModal() {
       return;
     }
 
-    // CREATE: if reply/quote, keep single post behavior
+    // CREATE: reply/quote => single post
     if (!isStandaloneCreate) {
       const postedAtIso = new Date().toISOString();
-      const base: Post & { addVideoIcon?: boolean } = {
+
+      const base: Post & { addVideoIcon?: boolean; insertedAt?: string } = {
         id: makeId("po"),
         scenarioId: sid,
         authorProfileId: safeAuthorId,
         text: (threadTexts[0] ?? "").trim(),
         createdAt: postedAtIso,
-        imageUrls: mediaForPost,
+        imageUrls: postImageUrls,
         replyCount: safeCounts.reply,
         repostCount: safeCounts.repost,
         likeCount: safeCounts.like,
@@ -567,23 +469,22 @@ export default function CreatePostModal() {
       return;
     }
 
-    // CREATE: thread (chain items as replies to previous)
+    // CREATE: thread => chain as replies
     const baseTime = new Date();
     const insertedAtBaseIso = baseTime.toISOString();
-    let prevId: string | undefined = undefined;
+    let prevId: string | undefined;
 
     for (let i = 0; i < threadTexts.length; i++) {
       const id = makeId("po");
-      const createdAt = new Date(baseTime.getTime() + i * 1000).toISOString(); // stable order
+      const createdAt = new Date(baseTime.getTime() + i * 1000).toISOString();
 
-      const post: Post & { addVideoIcon?: boolean } = {
+      const post: Post & { addVideoIcon?: boolean; insertedAt?: string } = {
         id,
         scenarioId: sid,
         authorProfileId: safeAuthorId,
         text: threadTexts[i].trim(),
         createdAt,
-        // keep media + engagement only on first post for now
-        imageUrls: i === 0 ? mediaForPost : [],
+        imageUrls: i === 0 ? postImageUrls : [],
         replyCount: i === 0 ? safeCounts.reply : 0,
         repostCount: i === 0 ? safeCounts.repost : 0,
         likeCount: i === 0 ? safeCounts.like : 0,
@@ -599,65 +500,33 @@ export default function CreatePostModal() {
 
     await setSelectedProfileId(sid, safeAuthorId);
     router.back();
-  };
-
-  /* -------------------------------------------------------------------------- */
-  /* iOS Picker (stays open until Done / tap outside)                            */
-  /* -------------------------------------------------------------------------- */
-
-  const openPicker = (mode: "date" | "time") => {
-    setPickerMode(mode);
-    setShowDatePicker(true);
-  };
-
-  const closePicker = () => setShowDatePicker(false);
-
-  const PickerOverlayIOS = () => {
-    if (!showDatePicker || Platform.OS !== "ios") return null;
-
-    return (
-      <Pressable style={styles.pickerOverlay} onPress={closePicker}>
-        <Pressable
-          onPress={() => {}}
-          style={[
-            styles.pickerCard,
-            { backgroundColor: colors.card, borderColor: colors.border },
-          ]}
-        >
-          <View style={styles.pickerHeader}>
-            <ThemedText style={{ color: colors.text, fontWeight: "800" }}>
-              {pickerMode === "date" ? "Choose date" : "Choose time"}
-            </ThemedText>
-
-            <Pressable
-              onPress={closePicker}
-              hitSlop={10}
-              style={({ pressed }) => [pressed && { opacity: 0.7 }]}
-            >
-              <ThemedText style={{ color: colors.tint, fontWeight: "800" }}>
-                Done
-              </ThemedText>
-            </Pressable>
-          </View>
-
-          <DateTimePicker
-            value={date}
-            mode={pickerMode}
-            display="spinner"
-            onChange={(_, selected) => {
-              if (selected) setDate(selected);
-            }}
-          />
-        </Pressable>
-      </Pressable>
-    );
-  };
+  }, [
+    canPost,
+    ensureAuthorValid,
+    buildSafeCounts,
+    imageUrls,
+    videoThumbUri,
+    addVideoIcon,
+    isEdit,
+    editingPostId,
+    sid,
+    threadTexts,
+    date,
+    parentId,
+    quoteId,
+    insertedAt,
+    upsertPost,
+    setSelectedProfileId,
+  ]);
 
   return (
-    <SafeAreaView edges={["top"]} style={{ flex: 1, backgroundColor: colors.background }}>
+    <SafeAreaView
+      edges={["top"]}
+      style={{ flex: 1, backgroundColor: colors.background }}
+    >
       <ThemedView style={[styles.screen, { backgroundColor: colors.background }]}>
         {picking ? (
-          <View style={styles.pickerOverlay} pointerEvents="auto">
+          <View style={styles.overlay} pointerEvents="auto">
             <ActivityIndicator size="large" color="#fff" />
           </View>
         ) : null}
@@ -674,7 +543,9 @@ export default function CreatePostModal() {
               hitSlop={12}
               style={({ pressed }) => [pressed && { opacity: 0.7 }]}
             >
-              <ThemedText style={{ color: colors.text, fontSize: 16 }}>Cancel</ThemedText>
+              <ThemedText style={{ color: colors.text, fontSize: 16 }}>
+                Cancel
+              </ThemedText>
             </Pressable>
 
             <Pressable
@@ -689,7 +560,9 @@ export default function CreatePostModal() {
                 },
               ]}
             >
-              <ThemedText style={{ color: "#fff", fontWeight: "800", fontSize: 15 }}>
+              <ThemedText
+                style={{ color: "#fff", fontWeight: "800", fontSize: 15 }}
+              >
                 {isEdit ? "Save" : "Post"}
               </ThemedText>
             </Pressable>
@@ -725,7 +598,8 @@ export default function CreatePostModal() {
               <View style={{ flex: 1 }}>
                 {threadTexts.map((value, idx) => {
                   const isLast = idx === threadTexts.length - 1;
-                  const canRemove = !isEdit && !parentId && !quoteId && threadTexts.length > 1;
+                  const canRemove =
+                    !isEdit && !parentId && !quoteId && threadTexts.length > 1;
 
                   return (
                     <View key={`thread_${idx}`} style={styles.threadItemWrap}>
@@ -742,7 +616,11 @@ export default function CreatePostModal() {
                             },
                           ]}
                         >
-                          <Ionicons name="close" size={14} color={colors.textSecondary} />
+                          <Ionicons
+                            name="close"
+                            size={14}
+                            color={colors.textSecondary}
+                          />
                         </Pressable>
                       ) : null}
 
@@ -768,7 +646,9 @@ export default function CreatePostModal() {
                         <View style={{ flex: 1 }} />
 
                         {focusedThreadIndex === idx ? (
-                          <ThemedText style={{ color: colors.textSecondary, fontSize: 12 }}>
+                          <ThemedText
+                            style={{ color: colors.textSecondary, fontSize: 12 }}
+                          >
                             {value.length}/500
                           </ThemedText>
                         ) : null}
@@ -776,17 +656,16 @@ export default function CreatePostModal() {
                         {!isEdit && !parentId && !quoteId && isLast ? (
                           <Pressable
                             onPress={addThreadItem}
-                            disabled={(threadTexts[threadTexts.length - 1] ?? "").trim().length === 0}
+                            disabled={!isTruthyText(threadTexts[threadTexts.length - 1] ?? "")}
                             hitSlop={10}
                             style={({ pressed }) => [
                               styles.threadPlusTiny,
                               {
-                                opacity:
-                                  (threadTexts[threadTexts.length - 1] ?? "").trim().length === 0
-                                    ? 0.35
-                                    : pressed
-                                    ? 0.8
-                                    : 1,
+                                opacity: !isTruthyText(threadTexts[threadTexts.length - 1] ?? "")
+                                  ? 0.35
+                                  : pressed
+                                  ? 0.8
+                                  : 1,
                               },
                             ]}
                           >
@@ -796,18 +675,22 @@ export default function CreatePostModal() {
                       </View>
 
                       {!isLast ? (
-                        <View style={[styles.threadDividerFull, { backgroundColor: colors.border }]} />
+                        <View
+                          style={[
+                            styles.threadDividerFull,
+                            { backgroundColor: colors.border },
+                          ]}
+                        />
                       ) : null}
                     </View>
                   );
                 })}
 
-                {/* media preview */}
+                {/* MEDIA PREVIEW */}
                 {videoThumbUri ? (
                   <View style={styles.mediaGrid}>
                     <View style={[styles.mediaThumbWrap, styles.mediaThumbWrapSingle]}>
                       <Image source={{ uri: videoThumbUri }} style={styles.mediaThumb} />
-
                       {addVideoIcon ? (
                         <View style={styles.playOverlay}>
                           <Ionicons name="play-circle" size={56} color="#fff" />
@@ -860,20 +743,29 @@ export default function CreatePostModal() {
                   </View>
                 ) : null}
 
+                {/* QUOTE */}
                 {quotedPost ? (
                   <Pressable
                     onPress={() => {
-                      router.push(`/(scenario)/${sid}/(tabs)/post/${String(quotedPost.id)}` as any);
+                      router.push(
+                        `/(scenario)/${sid}/(tabs)/post/${String(quotedPost.id)}` as any
+                      );
                     }}
                     style={({ pressed }) => [
                       styles.quoteCard,
                       {
                         borderColor: colors.border,
-                        backgroundColor: pressed ? colors.pressed : colors.background,
+                        backgroundColor: pressed
+                          ? colors.pressed
+                          : colors.background,
                       },
                     ]}
                   >
-                    <QuotedPostCard quotedPost={quotedPost} colors={colors} getProfileById={getProfileById} />
+                    <QuotedPostCard
+                      quotedPost={quotedPost}
+                      colors={colors}
+                      getProfileById={getProfileById}
+                    />
                   </Pressable>
                 ) : null}
               </View>
@@ -886,7 +778,10 @@ export default function CreatePostModal() {
               <Pressable
                 onPress={takePhoto}
                 hitSlop={10}
-                style={({ pressed }) => [styles.toolBtn, pressed && { opacity: 0.7 }]}
+                style={({ pressed }) => [
+                  styles.toolBtn,
+                  pressed && { opacity: 0.7 },
+                ]}
               >
                 <Ionicons name="camera-outline" size={22} color={colors.tint} />
               </Pressable>
@@ -894,39 +789,75 @@ export default function CreatePostModal() {
               <Pressable
                 onPress={pickImages}
                 hitSlop={10}
-                style={({ pressed }) => [styles.toolBtn, pressed && { opacity: 0.7 }]}
+                style={({ pressed }) => [
+                  styles.toolBtn,
+                  pressed && { opacity: 0.7 },
+                ]}
               >
                 <Ionicons name="image-outline" size={22} color={colors.tint} />
               </Pressable>
 
-              <Pressable hitSlop={10} style={({ pressed }) => [styles.toolBtn, pressed && { opacity: 0.7 }]}>
+              <Pressable
+                hitSlop={10}
+                style={({ pressed }) => [
+                  styles.toolBtn,
+                  pressed && { opacity: 0.7 },
+                ]}
+              >
                 <MaterialIcons name="gif" size={22} color={colors.tint} />
               </Pressable>
 
               <Pressable
                 onPress={pickVideoThumb}
                 hitSlop={10}
-                style={({ pressed }) => [styles.toolBtn, pressed && { opacity: 0.7 }]}
+                style={({ pressed }) => [
+                  styles.toolBtn,
+                  pressed && { opacity: 0.7 },
+                ]}
               >
                 <Ionicons name="videocam-outline" size={22} color={colors.tint} />
               </Pressable>
             </View>
 
-            {/* META CONTROLS */}
+            {/* META */}
             <View style={styles.section}>
-              <ThemedText style={[styles.sectionTitle, { color: colors.textSecondary }]}>Post settings</ThemedText>
+              <ThemedText
+                style={[styles.sectionTitle, { color: colors.textSecondary }]}
+              >
+                Post settings
+              </ThemedText>
 
               <RowCard label="Date" colors={colors}>
-                <View style={{ flexDirection: "row", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-                  <Pressable onPress={() => openPicker("date")} style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}>
+                <View
+                  style={{
+                    flexDirection: "row",
+                    gap: 12,
+                    alignItems: "center",
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <Pressable
+                    onPress={() => openPicker("date")}
+                    style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}
+                  >
                     <ThemedText style={{ color: colors.tint, fontWeight: "700" }}>
-                      {date.toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" })}
+                      {date.toLocaleDateString(undefined, {
+                        day: "2-digit",
+                        month: "short",
+                        year: "numeric",
+                      })}
                     </ThemedText>
                   </Pressable>
 
-                  <Pressable onPress={() => openPicker("time")} style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}>
+                  <Pressable
+                    onPress={() => openPicker("time")}
+                    style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}
+                  >
                     <ThemedText style={{ color: colors.tint, fontWeight: "700" }}>
-                      {date.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}
+                      {date.toLocaleTimeString(undefined, {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
                     </ThemedText>
                   </Pressable>
                 </View>
@@ -943,7 +874,9 @@ export default function CreatePostModal() {
                     ]}
                   >
                     <Ionicons name="person-outline" size={18} color={colors.text} />
-                    <ThemedText style={{ color: colors.text, fontWeight: "700" }}>few</ThemedText>
+                    <ThemedText style={{ color: colors.text, fontWeight: "700" }}>
+                      few
+                    </ThemedText>
                   </Pressable>
 
                   <Pressable
@@ -955,7 +888,9 @@ export default function CreatePostModal() {
                     ]}
                   >
                     <Ionicons name="people-outline" size={18} color={colors.text} />
-                    <ThemedText style={{ color: colors.text, fontWeight: "700" }}>mid</ThemedText>
+                    <ThemedText style={{ color: colors.text, fontWeight: "700" }}>
+                      mid
+                    </ThemedText>
                   </Pressable>
 
                   <Pressable
@@ -967,7 +902,9 @@ export default function CreatePostModal() {
                     ]}
                   >
                     <Ionicons name="rocket-outline" size={18} color={colors.text} />
-                    <ThemedText style={{ color: colors.text, fontWeight: "700" }}>lot</ThemedText>
+                    <ThemedText style={{ color: colors.text, fontWeight: "700" }}>
+                      lot
+                    </ThemedText>
                   </Pressable>
                 </View>
               </RowCard>
@@ -977,7 +914,11 @@ export default function CreatePostModal() {
                   <RowCard
                     label="Replies"
                     colors={colors}
-                    right={<ThemedText style={{ color: colors.textSecondary }}>{formatCount(counts.reply)}</ThemedText>}
+                    right={
+                      <ThemedText style={{ color: colors.textSecondary }}>
+                        {formatCount(counts.reply)}
+                      </ThemedText>
+                    }
                   >
                     <TextInput
                       value={replyCount}
@@ -996,7 +937,11 @@ export default function CreatePostModal() {
                   <RowCard
                     label="Reposts"
                     colors={colors}
-                    right={<ThemedText style={{ color: colors.textSecondary }}>{formatCount(counts.repost)}</ThemedText>}
+                    right={
+                      <ThemedText style={{ color: colors.textSecondary }}>
+                        {formatCount(counts.repost)}
+                      </ThemedText>
+                    }
                   >
                     <TextInput
                       value={repostCount}
@@ -1015,7 +960,11 @@ export default function CreatePostModal() {
               <RowCard
                 label="Likes"
                 colors={colors}
-                right={<ThemedText style={{ color: colors.textSecondary }}>{formatCount(counts.like)}</ThemedText>}
+                right={
+                  <ThemedText style={{ color: colors.textSecondary }}>
+                    {formatCount(counts.like)}
+                  </ThemedText>
+                }
               >
                 <TextInput
                   value={likeCount}
@@ -1030,6 +979,7 @@ export default function CreatePostModal() {
               </RowCard>
             </View>
 
+            {/* ANDROID PICKER */}
             {showDatePicker && Platform.OS !== "ios" ? (
               <DateTimePicker
                 value={date}
@@ -1043,16 +993,20 @@ export default function CreatePostModal() {
             ) : null}
           </ScrollView>
 
-          <PickerOverlayIOS />
+          {/* iOS PICKER OVERLAY */}
+          <DateTimePickerOverlay
+            colors={colors}
+            visible={showDatePicker}
+            mode={pickerMode}
+            value={date}
+            onChange={setDate}
+            onClose={closePicker}
+          />
         </KeyboardAvoidingView>
       </ThemedView>
     </SafeAreaView>
   );
 }
-
-/* -------------------------------------------------------------------------- */
-/* Styles                                                                      */
-/* -------------------------------------------------------------------------- */
 
 const styles = StyleSheet.create({
   screen: { flex: 1 },
@@ -1113,10 +1067,8 @@ const styles = StyleSheet.create({
     width: "100%",
     aspectRatio: 16 / 9,
   },
-  mediaThumb: {
-    width: "100%",
-    height: "100%",
-  },
+  mediaThumb: { width: "100%", height: "100%" },
+
   mediaRemove: {
     position: "absolute",
     top: 8,
@@ -1142,27 +1094,8 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 12,
   },
-  quoteInner: {
-    flexDirection: "row",
-    gap: 10,
-    alignItems: "flex-start",
-  },
-  quoteAvatar: {
-    width: 22,
-    height: 22,
-    borderRadius: 999,
-    marginTop: 2,
-  },
-  quoteTopRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    flexWrap: "nowrap",
-  },
 
-  softDivider: {
-    height: StyleSheet.hairlineWidth,
-    opacity: 0.9,
-  },
+  softDivider: { height: StyleSheet.hairlineWidth, opacity: 0.9 },
 
   section: {
     paddingHorizontal: 16,
@@ -1178,15 +1111,9 @@ const styles = StyleSheet.create({
     letterSpacing: 0.4,
   },
 
-  rowGrid: {
-    flexDirection: "row",
-    gap: 10,
-  },
+  rowGrid: { flexDirection: "row", gap: 10 },
 
-  rowInput: {
-    fontSize: 16,
-    paddingVertical: 0,
-  },
+  rowInput: { fontSize: 16, paddingVertical: 0 },
 
   toolbar: {
     borderTopWidth: StyleSheet.hairlineWidth,
@@ -1197,11 +1124,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
 
-  toolBtn: {
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    borderRadius: 999,
-  },
+  toolBtn: { paddingHorizontal: 10, paddingVertical: 8, borderRadius: 999 },
 
   presetBtn: {
     flexDirection: "row",
@@ -1213,7 +1136,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
 
-  pickerOverlay: {
+  overlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: "rgba(0,0,0,0.35)",
     alignItems: "center",
@@ -1221,26 +1144,9 @@ const styles = StyleSheet.create({
     zIndex: 999,
     elevation: 999,
   },
-  pickerCard: {
-    width: "100%",
-    borderRadius: 18,
-    borderWidth: StyleSheet.hairlineWidth,
-    overflow: "hidden",
-    paddingBottom: 8,
-  },
-  pickerHeader: {
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
 
-  threadItemWrap: {
-    width: "100%",
-    alignSelf: "stretch",
-    position: "relative",
-  },
+  threadItemWrap: { width: "100%", alignSelf: "stretch", position: "relative" },
+
   threadRemoveFloat: {
     position: "absolute",
     top: 0,
@@ -1253,11 +1159,9 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     zIndex: 2,
   },
-  threadInput: {
-    width: "100%",
-    alignSelf: "stretch",
-    maxHeight: 260,
-  },
+
+  threadInput: { width: "100%", alignSelf: "stretch", maxHeight: 260 },
+
   threadFooterRow: {
     marginTop: 8,
     flexDirection: "row",
@@ -1265,6 +1169,7 @@ const styles = StyleSheet.create({
     justifyContent: "flex-end",
     gap: 10,
   },
+
   threadDividerFull: {
     height: StyleSheet.hairlineWidth,
     opacity: 0.9,
@@ -1273,6 +1178,7 @@ const styles = StyleSheet.create({
     alignSelf: "stretch",
     marginLeft: -(42 + 12),
   },
+
   threadPlusTiny: {
     width: 18,
     height: 18,
