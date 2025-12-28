@@ -62,7 +62,6 @@ export type Post = {
   updatedAt?: string;
 };
 
-// ✅ repost event (THIS is the source of truth)
 export type Repost = {
   id: string;
   scenarioId: string;

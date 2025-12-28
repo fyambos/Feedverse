@@ -94,7 +94,6 @@ export default function CreateProfileModal() {
 
   const [avatarUrl, setAvatarUrl] = useState<string | null>(existing?.avatarUrl ?? null);
 
-  // ✅ new: settings sliders
   // Shared means "other users can play/use this character"
   const [isPublic, setIsPublic] = useState<boolean>(existing?.isPublic ?? true);
 
@@ -190,11 +189,9 @@ export default function CreateProfileModal() {
 
         avatarUrl: avatarUrl ?? undefined,
 
-        // ✅ new: settings
         isPublic,
         isPrivate,
 
-        // existing settings
         followers,
         following,
         joinedDate: joinedDate.toISOString(), // default is today and is saved like this
@@ -303,7 +300,7 @@ export default function CreateProfileModal() {
                 Profile settings
               </ThemedText>
 
-              {/* ✅ Shared slider (isPublic) */}
+              {/*  Shared slider (isPublic) */}
               <RowCard
                 label="Shared"
                 colors={colors}
@@ -321,7 +318,7 @@ export default function CreateProfileModal() {
                 </ThemedText>
               </RowCard>
 
-              {/* ✅ Private Account slider (isPrivate) */}
+              {/* Private Account slider (isPrivate) */}
               <RowCard
                 label="Private account"
                 colors={colors}

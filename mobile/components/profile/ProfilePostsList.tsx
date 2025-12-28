@@ -44,15 +44,12 @@ type Props = {
   emptyText?: string;
   disableEngagement?: boolean;
 
-  // ✅ likes
   getIsLiked?: (postId: string) => boolean;
   onLikePost?: (postId: string) => void | Promise<void>;
 
-  // ✅ reposts
   getIsReposted?: (postId: string) => boolean;
   onRepostPost?: (postId: string) => void | Promise<void>;
 
-  // ✅ repost banner text
   repostLabelForPost?: (
     postAuthorProfileId: string,
     postId: string

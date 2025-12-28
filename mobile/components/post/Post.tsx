@@ -38,7 +38,6 @@ type Props = {
   isReposted?: boolean;
   onRepost?: () => void | Promise<void>;
 
-  // ✅ label shown above the post (ex: "retweeted by you")
   repostedByLabel?: string | null;
 };
 
@@ -98,6 +97,8 @@ export function Post({
 }: Props) {
   const scheme = useColorScheme() ?? "light";
   const colors = Colors[scheme];
+
+  const addVideoIcon = Boolean((item as any).addVideoIcon);
 
   const isDetail = variant === "detail";
   const isReply = variant === "reply" || (!!item.parentPostId && variant !== "detail");
@@ -207,8 +208,14 @@ export function Post({
 
         <MenuModal />
 
-        <PostBody sid={sid} variant="detail" colors={colors} item={item} />
-
+        <PostBody
+          sid={sid}
+          variant="detail"
+          colors={colors}
+          item={item}
+          addVideoIcon={Boolean((item as any).addVideoIcon)}
+        />
+        
         <ThemedText style={[styles.dateLine, { color: colors.textSecondary }]}>
           {formatDetailTimestamp(item.createdAt)}
         </ThemedText>
@@ -260,7 +267,7 @@ export function Post({
 
   return (
     <View style={styles.wrapReply}>
-      {/* ✅ repost banner */}
+      {/* repost banner */}
       {repostedByLabel ? (
         <View style={styles.repostBanner}>
           <AntDesign name="retweet" size={14} color={colors.tint} />
@@ -293,7 +300,14 @@ export function Post({
 
           <MenuModal />
 
-          <PostBody sid={sid} variant={isReply ? "reply" : "feed"} colors={colors} item={item} isReply={isReply} />
+          <PostBody
+            sid={sid}
+            variant={isReply ? "reply" : "feed"}
+            colors={colors}
+            item={item}
+            isReply={isReply}
+            addVideoIcon={Boolean((item as any).addVideoIcon)}
+          />
 
           {showActions && (
             <PostActions
