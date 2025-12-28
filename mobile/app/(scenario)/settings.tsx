@@ -1,0 +1,173 @@
+// mobile/app/(scenario)/settings.tsx
+import React, { useEffect, useMemo, useState } from "react";
+import { Alert, Pressable, StyleSheet, View } from "react-native";
+import { Stack, router } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
+import { SafeAreaView } from "react-native-safe-area-context";
+
+import { ThemedText } from "@/components/themed-text";
+import { ThemedView } from "@/components/themed-view";
+import { RowCard } from "@/components/ui/RowCard";
+
+import { Colors } from "@/constants/theme";
+import { useColorScheme } from "@/hooks/use-color-scheme";
+
+import { useAuth } from "@/context/auth";
+import { useAppData } from "@/context/appData";
+import type { UserSettings } from "@/data/db/schema";
+
+type DarkMode = "light" | "dark" | "system";
+
+const DARK_MODE_LABEL: Record<DarkMode, string> = {
+  system: "System",
+  light: "Light",
+  dark: "Dark",
+};
+
+function normalizeSettings(s?: UserSettings): Required<UserSettings> {
+  return {
+    showTimestamps: s?.showTimestamps ?? true,
+    darkMode: s?.darkMode ?? "system",
+  };
+}
+
+export default function UserSettingsScreen() {
+  const scheme = useColorScheme() ?? "light";
+  const colors = Colors[scheme];
+
+  const { userId } = useAuth();
+  const { getUserById, updateUserSettings } = useAppData();
+
+  const user = useMemo(
+    () => (userId ? getUserById(String(userId)) : null),
+    [userId, getUserById]
+  );
+
+  const [draft, setDraft] = useState<Required<UserSettings>>(
+    normalizeSettings(user?.settings)
+  );
+
+  useEffect(() => {
+    setDraft(normalizeSettings(user?.settings));
+  }, [user?.settings]);
+
+  const save = async () => {
+    if (!userId) return;
+    await updateUserSettings(String(userId), draft);
+    router.back();
+  };
+
+  const pickTheme = () => {
+    Alert.alert("Theme", "Choose appearance", [
+      { text: "System", onPress: () => setDraft(p => ({ ...p, darkMode: "system" })) },
+      { text: "Light", onPress: () => setDraft(p => ({ ...p, darkMode: "light" })) },
+      { text: "Dark", onPress: () => setDraft(p => ({ ...p, darkMode: "dark" })) },
+      { text: "Cancel", style: "cancel" },
+    ]);
+  };
+
+  return (
+    <>
+      <Stack.Screen options={{ headerShown: false }} />
+
+      <SafeAreaView edges={["top"]} style={{ flex: 1, backgroundColor: colors.background }}>
+        {/* top bar */}
+        <View style={[styles.topBar, { borderBottomColor: colors.border }]}>
+          <Pressable onPress={() => router.back()} hitSlop={10}>
+            <Ionicons name="chevron-back" size={22} color={colors.icon} />
+          </Pressable>
+
+          <ThemedText type="defaultSemiBold" style={{ fontSize: 18 }}>
+            Settings
+          </ThemedText>
+
+          <Pressable onPress={save} hitSlop={10}>
+            <ThemedText type="defaultSemiBold" style={{ color: colors.tint }}>
+              Save
+            </ThemedText>
+          </Pressable>
+        </View>
+
+        <ThemedView style={[styles.container, { backgroundColor: colors.background }]}>
+          {/* ACCOUNT */}
+          <RowCard label="Account" colors={colors}>
+            <ThemedText style={{ color: colors.text }}>
+              @{user?.username ?? "unknown"}
+            </ThemedText>
+          </RowCard>
+
+          {/* SHOW TIMESTAMPS */}
+          <RowCard
+            label="Timestamps"
+            colors={colors}
+            right={
+              <Pressable
+                onPress={() =>
+                  setDraft(p => ({ ...p, showTimestamps: !p.showTimestamps }))
+                }
+                hitSlop={8}
+              >
+                <Ionicons
+                  name={draft.showTimestamps ? "checkbox" : "square-outline"}
+                  size={22}
+                  color={draft.showTimestamps ? colors.tint : colors.icon}
+                />
+              </Pressable>
+            }
+          >
+            <ThemedText style={{ color: colors.text }}>
+              Show post timestamps
+            </ThemedText>
+            <ThemedText style={{ color: colors.textSecondary, marginTop: 4 }}>
+              Relative and detailed dates in feeds
+            </ThemedText>
+          </RowCard>
+
+          {/* THEME */}
+          <RowCard
+            label="Appearance"
+            colors={colors}
+            right={<Ionicons name="chevron-forward" size={18} color={colors.icon} />}
+          >
+            <Pressable onPress={pickTheme} hitSlop={8}>
+              <ThemedText style={{ color: colors.text }}>
+                Theme
+              </ThemedText>
+              <ThemedText style={{ color: colors.textSecondary, marginTop: 4 }}>
+                {DARK_MODE_LABEL[draft.darkMode]}
+              </ThemedText>
+            </Pressable>
+          </RowCard>
+
+          <ThemedText style={styles.footer}>
+            These settings apply to your user account, not individual profiles.
+          </ThemedText>
+        </ThemedView>
+      </SafeAreaView>
+    </>
+  );
+}
+
+const styles = StyleSheet.create({
+  topBar: {
+    height: 56,
+    paddingHorizontal: 16,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+
+  container: {
+    flex: 1,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    gap: 12,
+  },
+
+  footer: {
+    marginTop: 8,
+    fontSize: 12,
+    color: "#888",
+  },
+});

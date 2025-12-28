@@ -1,6 +1,6 @@
 // mobile/context/appData.tsx
 import React from "react";
-import type { DbV4, Post, Profile, Scenario, User, Repost } from "@/data/db/schema";
+import type { DbV4, Post, Profile, Scenario, User, Repost, UserSettings } from "@/data/db/schema";
 import { readDb, updateDb } from "@/data/db/storage";
 import { seedDbIfNeeded } from "@/data/db/seed";
 
@@ -359,6 +359,33 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                 id,
                 insertedAt,
                 createdAt,
+                updatedAt: now,
+              },
+            },
+          };
+        });
+
+        setState({ isReady: true, db: next as any });
+      },
+
+      updateUserSettings: async (userId: string, settings: UserSettings) => {
+        const id = String(userId);
+        const now = new Date().toISOString();
+
+        const next = await updateDb((prev) => {
+          const existing = prev.users[id];
+          if (!existing) return prev;
+
+          return {
+            ...prev,
+            users: {
+              ...prev.users,
+              [id]: {
+                ...existing,
+                settings: {
+                  ...(existing.settings ?? {}),
+                  ...(settings ?? {}),
+                },
                 updatedAt: now,
               },
             },

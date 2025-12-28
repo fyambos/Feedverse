@@ -100,7 +100,7 @@ export function PostQuoted({ sid, isDetail, quotedPostId, colors }: Props) {
           showActions={false}
           showThreadLine={false}
           showMenu={false}
-          showQuoted={false} // ✅ stops quote recursion (quote-of-quote)
+          showQuoted={false} // stops quote recursion (quote-of-quote)
         />
       </View>
     </Pressable>
