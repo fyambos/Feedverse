@@ -16,6 +16,8 @@ import { useAuth } from "@/context/auth";
 import { useAppData } from "@/context/appData";
 import type { UserSettings } from "@/data/db/schema";
 
+import { ProfileAvatarPicker } from "@/components/profile-edit/ProfileAvatarPicker";
+
 type DarkMode = "light" | "dark" | "system";
 
 const DARK_MODE_LABEL: Record<DarkMode, string> = {
@@ -36,32 +38,34 @@ export default function UserSettingsScreen() {
   const colors = Colors[scheme];
 
   const { userId } = useAuth();
-  const { getUserById, updateUserSettings } = useAppData();
+  const { getUserById, updateUserSettings, updateUserAvatar } = useAppData();
 
-  const user = useMemo(
-    () => (userId ? getUserById(String(userId)) : null),
-    [userId, getUserById]
-  );
+  const user = useMemo(() => (userId ? getUserById(String(userId)) : null), [userId, getUserById]);
 
-  const [draft, setDraft] = useState<Required<UserSettings>>(
-    normalizeSettings(user?.settings)
-  );
+  const [draft, setDraft] = useState<Required<UserSettings>>(normalizeSettings(user?.settings));
+
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(user?.avatarUrl ?? null);
 
   useEffect(() => {
     setDraft(normalizeSettings(user?.settings));
   }, [user?.settings]);
 
+  useEffect(() => {
+    setAvatarUrl(user?.avatarUrl ?? null);
+  }, [user?.avatarUrl]);
+
   const save = async () => {
     if (!userId) return;
     await updateUserSettings(String(userId), draft);
+    await updateUserAvatar(String(userId), avatarUrl);
     router.back();
   };
 
   const pickTheme = () => {
     Alert.alert("Theme", "Choose appearance", [
-      { text: "System", onPress: () => setDraft(p => ({ ...p, darkMode: "system" })) },
-      { text: "Light", onPress: () => setDraft(p => ({ ...p, darkMode: "light" })) },
-      { text: "Dark", onPress: () => setDraft(p => ({ ...p, darkMode: "dark" })) },
+      { text: "System", onPress: () => setDraft((p) => ({ ...p, darkMode: "system" })) },
+      { text: "Light", onPress: () => setDraft((p) => ({ ...p, darkMode: "light" })) },
+      { text: "Dark", onPress: () => setDraft((p) => ({ ...p, darkMode: "dark" })) },
       { text: "Cancel", style: "cancel" },
     ]);
   };
@@ -89,11 +93,12 @@ export default function UserSettingsScreen() {
         </View>
 
         <ThemedView style={[styles.container, { backgroundColor: colors.background }]}>
+          {/* USER AVATAR */}
+          <ProfileAvatarPicker avatarUrl={avatarUrl} setAvatarUrl={setAvatarUrl} colors={colors} />
+
           {/* ACCOUNT */}
           <RowCard label="Account" colors={colors}>
-            <ThemedText style={{ color: colors.text }}>
-              @{user?.username ?? "unknown"}
-            </ThemedText>
+            <ThemedText style={{ color: colors.text }}>@{user?.username ?? "unknown"}</ThemedText>
           </RowCard>
 
           {/* SHOW TIMESTAMPS */}
@@ -101,12 +106,7 @@ export default function UserSettingsScreen() {
             label="Timestamps"
             colors={colors}
             right={
-              <Pressable
-                onPress={() =>
-                  setDraft(p => ({ ...p, showTimestamps: !p.showTimestamps }))
-                }
-                hitSlop={8}
-              >
+              <Pressable onPress={() => setDraft((p) => ({ ...p, showTimestamps: !p.showTimestamps }))} hitSlop={8}>
                 <Ionicons
                   name={draft.showTimestamps ? "checkbox" : "square-outline"}
                   size={22}
@@ -115,9 +115,7 @@ export default function UserSettingsScreen() {
               </Pressable>
             }
           >
-            <ThemedText style={{ color: colors.text }}>
-              Show post timestamps
-            </ThemedText>
+            <ThemedText style={{ color: colors.text }}>Show post timestamps</ThemedText>
             <ThemedText style={{ color: colors.textSecondary, marginTop: 4 }}>
               Relative and detailed dates in feeds
             </ThemedText>
@@ -130,18 +128,14 @@ export default function UserSettingsScreen() {
             right={<Ionicons name="chevron-forward" size={18} color={colors.icon} />}
           >
             <Pressable onPress={pickTheme} hitSlop={8}>
-              <ThemedText style={{ color: colors.text }}>
-                Theme
-              </ThemedText>
+              <ThemedText style={{ color: colors.text }}>Theme</ThemedText>
               <ThemedText style={{ color: colors.textSecondary, marginTop: 4 }}>
                 {DARK_MODE_LABEL[draft.darkMode]}
               </ThemedText>
             </Pressable>
           </RowCard>
 
-          <ThemedText style={styles.footer}>
-            These settings apply to your user account, not individual profiles.
-          </ThemedText>
+          <ThemedText style={styles.footer}>These settings apply to your user account, not individual profiles.</ThemedText>
         </ThemedView>
       </SafeAreaView>
     </>
