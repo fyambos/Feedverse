@@ -22,6 +22,9 @@ export type Scenario = {
   name: string;
   cover: string;
   playerIds: string[];
+  createdAt: string;
+  updatedAt?: string;
+  inviteCode?: string;
 };
 
 export type Profile = {

@@ -10,7 +10,10 @@ export const MOCK_SCENARIOS: Scenario[] = [
       "u7",
       "u14",
       "u6"
-    ]
+    ],
+    "createdAt": "2024-06-01T00:00:00Z",
+    "updatedAt": "2024-06-01T00:00:00Z",
+    "inviteCode": "KPOP2024"
   },
   {
     "id": "demo-royalty",
@@ -20,7 +23,10 @@ export const MOCK_SCENARIOS: Scenario[] = [
       "u8",
       "u9",
       "u14"
-    ]
+    ],
+    "createdAt": "2024-06-01T00:00:00Z",
+    "updatedAt": "2024-06-01T00:00:00Z",
+    "inviteCode": "ROYAL2024"
   },
   {
     "id": "demo-mafia",
@@ -32,6 +38,9 @@ export const MOCK_SCENARIOS: Scenario[] = [
       "u10",
       "u11",
       "u14"
-    ]
+    ],
+    "createdAt": "2024-06-01T00:00:00Z",
+    "updatedAt": "2024-06-01T00:00:00Z",
+    "inviteCode": "MAFIA2024"
   }
 ]
