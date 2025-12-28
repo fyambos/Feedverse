@@ -1,62 +1,64 @@
 // mobile/components/postComposer/QuotedPostCard.tsx
 import React, { useMemo } from "react";
-import { View, Image, StyleSheet } from "react-native";
-import type { Post } from "@/data/db/schema";
-import { ThemedText } from "@/components/themed-text";
+import { StyleSheet, View } from "react-native";
+
+import type { Post as DbPost, Profile } from "@/data/db/schema";
+import { Post } from "@/components/post/Post";
+
+type ColorsLike = {
+  border: string;
+  background: string;
+  pressed: string;
+  text: string;
+  textSecondary: string;
+  tint?: string;
+};
 
 export function QuotedPostCard({
   quotedPost,
   colors,
   getProfileById,
+  scenarioId,
 }: {
-  quotedPost: Post;
-  colors: any;
-  getProfileById: (id: string) => any;
+  quotedPost: DbPost;
+  colors: ColorsLike;
+  getProfileById: (id: string) => Profile | null | undefined;
+  scenarioId: string;
 }) {
   const qpAuthor = useMemo(
     () => getProfileById(String(quotedPost.authorProfileId)),
     [quotedPost.authorProfileId, getProfileById]
   );
 
+  // if author is missing, don't crash composer
+  if (!qpAuthor) return null;
+
   return (
-    <View style={styles.quoteInner}>
-      {qpAuthor?.avatarUrl ? (
-        <Image source={{ uri: qpAuthor.avatarUrl }} style={styles.quoteAvatar} />
-      ) : (
-        <View style={[styles.quoteAvatar, { backgroundColor: colors.border }]} />
-      )}
-
-      <View style={{ flex: 1 }}>
-        <View style={styles.quoteTopRow}>
-          <ThemedText numberOfLines={1} style={{ fontWeight: "800", color: colors.text, maxWidth: "70%" }}>
-            {qpAuthor?.displayName ?? "Unknown"}
-          </ThemedText>
-
-          <ThemedText numberOfLines={1} style={{ color: colors.textSecondary, marginLeft: 8, flexShrink: 1 }}>
-            @{qpAuthor?.handle ?? "unknown"}
-          </ThemedText>
-
-          <ThemedText style={{ color: colors.textSecondary }}> · </ThemedText>
-
-          <ThemedText style={{ color: colors.textSecondary }}>
-            {new Date(quotedPost.createdAt).toLocaleDateString(undefined, {
-              day: "2-digit",
-              month: "2-digit",
-              year: "numeric",
-            })}
-          </ThemedText>
-        </View>
-
-        <ThemedText numberOfLines={3} style={{ color: colors.text, marginTop: 6, lineHeight: 18 }}>
-          {quotedPost.text}
-        </ThemedText>
-      </View>
+    <View
+      style={[
+        styles.card,
+        { borderColor: colors.border, backgroundColor: colors.background },
+      ]}
+    >
+      <Post
+        scenarioId={scenarioId}
+        profile={qpAuthor}
+        item={quotedPost}
+        variant="feed"
+        showActions={false}
+        showThreadLine={false}
+        showMenu={false}
+        isInteractive={false}
+        showQuoted={false}
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  quoteInner: { flexDirection: "row", gap: 10, alignItems: "flex-start" },
-  quoteAvatar: { width: 22, height: 22, borderRadius: 999, marginTop: 2 },
-  quoteTopRow: { flexDirection: "row", alignItems: "center", flexWrap: "nowrap" },
+  card: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 16,
+    overflow: "hidden",
+  },
 });

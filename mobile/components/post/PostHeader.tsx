@@ -1,6 +1,7 @@
 import React from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import Fontisto from "@expo/vector-icons/Fontisto";
 
 import { Avatar } from "@/components/ui/Avatar";
 import { ThemedText } from "@/components/themed-text";
@@ -11,6 +12,7 @@ type ColorsLike = {
   textSecondary: string;
   icon: string;
   border: string;
+  text?: string; // optional for lock color fallback
 };
 
 type Props = {
@@ -25,6 +27,9 @@ type Props = {
 
   onOpenProfile: () => void;
   onOpenMenu: () => void;
+
+  showMenu?: boolean;
+  isInteractive?: boolean;
 };
 
 export function PostHeader({
@@ -36,9 +41,22 @@ export function PostHeader({
   replyingToHandle,
   onOpenProfile,
   onOpenMenu,
+  showMenu = true,
+  isInteractive = true,
 }: Props) {
   const isDetail = variant === "detail";
   const showRelative = !isDetail;
+
+  const showLock = Boolean((profile as any)?.isPrivate);
+
+  const LockIcon = showLock ? (
+    <Fontisto
+      name="locked"
+      size={12}
+      color={(colors as any).text ?? colors.icon}
+      style={{ marginLeft: 6, marginTop: 2 }}
+    />
+  ) : null;
 
   if (isDetail) {
     return (
@@ -51,20 +69,20 @@ export function PostHeader({
           <View style={styles.detailHeaderText}>
             <View style={styles.detailNameRow}>
               <Pressable onPress={onOpenProfile} hitSlop={0} style={styles.inlinePress}>
-                <ThemedText
-                  type="defaultSemiBold"
-                  style={[styles.name, styles.nameDetail]}
-                  numberOfLines={1}
-                >
-                  {profile.displayName}
-                </ThemedText>
+                <View style={styles.nameWithLock}>
+                  <ThemedText
+                    type="defaultSemiBold"
+                    style={[styles.name, styles.nameDetail]}
+                    numberOfLines={1}
+                  >
+                    {profile.displayName}
+                  </ThemedText>
+                  {LockIcon}
+                </View>
               </Pressable>
 
               <Pressable onPress={onOpenProfile} hitSlop={0} style={styles.inlinePress}>
-                <ThemedText
-                  style={[styles.handleInline, { color: colors.textSecondary }]}
-                  numberOfLines={1}
-                >
+                <ThemedText style={[styles.handleInline, { color: colors.textSecondary }]} numberOfLines={1}>
                   @{profile.handle}
                 </ThemedText>
               </Pressable>
@@ -72,9 +90,11 @@ export function PostHeader({
           </View>
         </View>
 
-        <Pressable onPress={onOpenMenu} hitSlop={10} style={styles.menuBtn}>
-          <Ionicons name="chevron-down" size={18} color={colors.icon} />
-        </Pressable>
+        {showMenu ? (
+          <Pressable onPress={onOpenMenu} hitSlop={10} style={styles.menuBtn}>
+            <Ionicons name="chevron-down" size={18} color={colors.icon} />
+          </Pressable>
+        ) : null}
       </View>
     );
   }
@@ -85,16 +105,16 @@ export function PostHeader({
       <View style={styles.headerBlockLeft}>
         <View style={styles.headerNameRow}>
           <Pressable onPress={onOpenProfile} hitSlop={0} style={styles.inlinePress}>
-            <ThemedText type="defaultSemiBold" style={styles.name} numberOfLines={1}>
-              {profile.displayName}
-            </ThemedText>
+            <View style={styles.nameWithLock}>
+              <ThemedText type="defaultSemiBold" style={styles.name} numberOfLines={1}>
+                {profile.displayName}
+              </ThemedText>
+              {LockIcon}
+            </View>
           </Pressable>
 
           <Pressable onPress={onOpenProfile} hitSlop={0} style={styles.inlinePress}>
-            <ThemedText
-              style={[styles.handleInline, { color: colors.textSecondary }]}
-              numberOfLines={1}
-            >
+            <ThemedText style={[styles.handleInline, { color: colors.textSecondary }]} numberOfLines={1}>
               @{profile.handle}
               {showRelative ? ` · ${formatRelativeTime(createdAtIso)}` : ""}
             </ThemedText>
@@ -110,9 +130,11 @@ export function PostHeader({
         )}
       </View>
 
-      <Pressable onPress={onOpenMenu} hitSlop={10} style={styles.menuBtn}>
-        <Ionicons name="chevron-down" size={18} color={colors.icon} />
-      </Pressable>
+      {showMenu ? (
+        <Pressable onPress={onOpenMenu} hitSlop={10} style={styles.menuBtn}>
+          <Ionicons name="chevron-down" size={18} color={colors.icon} />
+        </Pressable>
+      ) : null}
     </View>
   );
 }
@@ -122,6 +144,12 @@ const styles = StyleSheet.create({
 
   name: { fontSize: 16, maxWidth: 160, lineHeight: 20 },
   nameDetail: { fontSize: 18 },
+
+  nameWithLock: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexShrink: 1,
+  },
 
   handleInline: {
     fontSize: 15,

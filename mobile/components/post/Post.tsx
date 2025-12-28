@@ -3,7 +3,6 @@
 import React from "react";
 import { Alert, Modal, Pressable, StyleSheet, View } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
-import { Ionicons } from "@expo/vector-icons";
 import AntDesign from "@expo/vector-icons/AntDesign";
 
 import { ThemedText } from "@/components/themed-text";
@@ -29,6 +28,11 @@ type Props = {
   replyingTo?: string;
   showActions?: boolean;
   showThreadLine?: boolean;
+
+  // NEW
+  showMenu?: boolean;
+  isInteractive?: boolean;
+  showQuoted?: boolean;
 
   // likes
   isLiked?: boolean;
@@ -87,6 +91,10 @@ export function Post({
   showActions = true,
   showThreadLine = false,
 
+  showMenu = true,
+  isInteractive = true,
+  showQuoted = true,
+
   isLiked = false,
   onLike,
 
@@ -106,7 +114,11 @@ export function Post({
   const { scenarioId: scenarioIdParam } = useLocalSearchParams<{ scenarioId: string }>();
   const sid = String(scenarioId ?? item.scenarioId ?? scenarioIdParam ?? "");
 
+  const canOpenMenu = Boolean(showMenu && isInteractive);
+  const canNavigate = Boolean(isInteractive);
+
   const openProfile = (view?: ProfileViewState) => {
+    if (!canNavigate) return;
     if (!sid || !profile.id) return;
 
     router.push({
@@ -122,6 +134,7 @@ export function Post({
   const hasDetailCounts = isDetail && (repostCount > 0 || likeCount > 0);
 
   const onReply = () => {
+    if (!canNavigate) return;
     if (!sid) return;
     router.push({
       pathname: "/modal/create-post",
@@ -130,6 +143,7 @@ export function Post({
   };
 
   const onQuote = () => {
+    if (!canNavigate) return;
     if (!sid) return;
     router.push({
       pathname: "/modal/create-post",
@@ -164,34 +178,59 @@ export function Post({
     if (view) openProfile(view);
   };
 
-  const MenuModal = () => (
-    <Modal transparent visible={menuOpen} animationType="fade" onRequestClose={() => setMenuOpen(false)}>
-      <Pressable style={styles.menuBackdrop} onPress={() => setMenuOpen(false)}>
-        <Pressable style={[styles.menuSheet, { backgroundColor: colors.background, borderColor: colors.border }]}>
+  const MenuModal = () => {
+    if (!canOpenMenu) return null;
+
+    return (
+      <Modal
+        transparent
+        visible={menuOpen}
+        animationType="fade"
+        onRequestClose={() => setMenuOpen(false)}
+      >
+        <Pressable style={styles.menuBackdrop} onPress={() => setMenuOpen(false)}>
           <Pressable
-            onPress={onReportPost}
-            style={({ pressed }) => [styles.menuItem, { backgroundColor: pressed ? colors.pressed : "transparent" }]}
+            style={[
+              styles.menuSheet,
+              { backgroundColor: colors.background, borderColor: colors.border },
+            ]}
           >
-            <ThemedText style={{ color: "#ff3b30", fontSize: 15, fontWeight: "600" }}>
-              {REPORT_LABEL}
-            </ThemedText>
-          </Pressable>
-
-          <View style={[styles.menuDivider, { backgroundColor: colors.border }]} />
-
-          {STATE_OPTIONS.map((label) => (
             <Pressable
-              key={label}
-              onPress={() => onStateOption(label)}
-              style={({ pressed }) => [styles.menuItem, { backgroundColor: pressed ? colors.pressed : "transparent" }]}
+              onPress={onReportPost}
+              style={({ pressed }) => [
+                styles.menuItem,
+                { backgroundColor: pressed ? colors.pressed : "transparent" },
+              ]}
             >
-              <ThemedText style={{ color: colors.text, fontSize: 15 }}>{label}</ThemedText>
+              <ThemedText style={{ color: "#ff3b30", fontSize: 15, fontWeight: "600" }}>
+                {REPORT_LABEL}
+              </ThemedText>
             </Pressable>
-          ))}
+
+            <View style={[styles.menuDivider, { backgroundColor: colors.border }]} />
+
+            {STATE_OPTIONS.map((label) => (
+              <Pressable
+                key={label}
+                onPress={() => onStateOption(label)}
+                style={({ pressed }) => [
+                  styles.menuItem,
+                  { backgroundColor: pressed ? colors.pressed : "transparent" },
+                ]}
+              >
+                <ThemedText style={{ color: colors.text, fontSize: 15 }}>{label}</ThemedText>
+              </Pressable>
+            ))}
+          </Pressable>
         </Pressable>
-      </Pressable>
-    </Modal>
-  );
+      </Modal>
+    );
+  };
+
+  const handleOpenMenu = () => {
+    if (!canOpenMenu) return;
+    setMenuOpen(true);
+  };
 
   // ===== DETAIL =====
   if (isDetail) {
@@ -203,7 +242,9 @@ export function Post({
           profile={profile}
           createdAtIso={item.createdAt}
           onOpenProfile={() => openProfile()}
-          onOpenMenu={() => setMenuOpen(true)}
+          onOpenMenu={handleOpenMenu}
+          showMenu={showMenu}
+          isInteractive={isInteractive}
         />
 
         <MenuModal />
@@ -213,9 +254,10 @@ export function Post({
           variant="detail"
           colors={colors}
           item={item}
-          addVideoIcon={Boolean((item as any).addVideoIcon)}
+          addVideoIcon={addVideoIcon}
+          showQuoted={showQuoted}
         />
-        
+
         <ThemedText style={[styles.dateLine, { color: colors.textSecondary }]}>
           {formatDetailTimestamp(item.createdAt)}
         </ThemedText>
@@ -281,7 +323,12 @@ export function Post({
         <View style={styles.avatarCol}>
           {showThreadLine ? <View style={[styles.threadLine, { backgroundColor: colors.border }]} /> : null}
 
-          <Pressable onPress={() => openProfile()} hitSlop={0} style={styles.avatarPress}>
+          <Pressable
+            onPress={() => openProfile()}
+            hitSlop={0}
+            style={styles.avatarPress}
+            disabled={!canNavigate}
+          >
             <Avatar uri={profile.avatarUrl} size={44} fallbackColor={colors.border} />
           </Pressable>
         </View>
@@ -295,7 +342,9 @@ export function Post({
             isReply={isReply}
             replyingToHandle={replyingToHandle}
             onOpenProfile={() => openProfile()}
-            onOpenMenu={() => setMenuOpen(true)}
+            onOpenMenu={handleOpenMenu}
+            showMenu={showMenu}
+            isInteractive={isInteractive}
           />
 
           <MenuModal />
@@ -306,7 +355,8 @@ export function Post({
             colors={colors}
             item={item}
             isReply={isReply}
-            addVideoIcon={Boolean((item as any).addVideoIcon)}
+            addVideoIcon={addVideoIcon}
+            showQuoted={showQuoted}
           />
 
           {showActions && (

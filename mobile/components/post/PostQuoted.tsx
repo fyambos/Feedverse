@@ -1,14 +1,14 @@
+// mobile/components/post/PostQuoted.tsx
 import React from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { router } from "expo-router";
 
-import { ThemedText } from "@/components/themed-text";
-import { Avatar } from "@/components/ui/Avatar";
 import { useAppData } from "@/context/appData";
-import { formatRelativeTime } from "@/lib/format";
-
 import type { Post as DbPost, Profile } from "@/data/db/schema";
 import type { StyleProp, ViewStyle } from "react-native";
+
+import { ThemedText } from "@/components/themed-text";
+import { Post } from "@/components/post/Post";
 
 type ColorsLike = {
   border: string;
@@ -29,7 +29,12 @@ export function PostQuoted({ sid, isDetail, quotedPostId, colors }: Props) {
   const { getPostById, getProfileById } = useAppData();
 
   const quoted = React.useMemo(() => {
-    if (!quotedPostId) return { missing: false, payload: null as null | { post: DbPost; profile: Profile } };
+    if (!quotedPostId) {
+      return {
+        missing: false,
+        payload: null as null | { post: DbPost; profile: Profile },
+      };
+    }
 
     const qPost = getPostById(String(quotedPostId));
     if (!qPost) return { missing: true, payload: null };
@@ -47,16 +52,19 @@ export function PostQuoted({ sid, isDetail, quotedPostId, colors }: Props) {
     { borderColor: colors.border, backgroundColor: colors.background },
   ];
 
+  // deleted / missing
   if (quoted.missing) {
     return (
       <View style={containerStyle}>
-        <View style={styles.quoteInner}>
-          <View style={[styles.quoteAvatarFallback, { backgroundColor: colors.border }]} />
+        <View style={styles.missingInner}>
+          <View style={[styles.missingDot, { backgroundColor: colors.border }]} />
           <View style={{ flex: 1 }}>
             <ThemedText style={{ fontWeight: "800", color: colors.text }}>
               Post unavailable
             </ThemedText>
-            <ThemedText style={{ color: colors.textSecondary, marginTop: 6, lineHeight: 18 }}>
+            <ThemedText
+              style={{ color: colors.textSecondary, marginTop: 6, lineHeight: 18 }}
+            >
               This post has been deleted.
             </ThemedText>
           </View>
@@ -67,7 +75,7 @@ export function PostQuoted({ sid, isDetail, quotedPostId, colors }: Props) {
 
   if (!quoted.payload) return null;
 
-  const { post, profile: qProfile } = quoted.payload;
+  const { post, profile } = quoted.payload;
 
   return (
     <Pressable
@@ -77,41 +85,23 @@ export function PostQuoted({ sid, isDetail, quotedPostId, colors }: Props) {
           `/(scenario)/${encodeURIComponent(sid)}/(tabs)/post/${String(post.id)}` as any
         );
       }}
-      style={({ pressed }) => [containerStyle, pressed && { backgroundColor: colors.pressed }]}
+      style={({ pressed }) => [
+        containerStyle,
+        pressed && { backgroundColor: colors.pressed },
+      ]}
     >
-      <View style={styles.quoteInner}>
-        <Avatar uri={qProfile.avatarUrl} size={22} fallbackColor={colors.border} />
-
-        <View style={{ flex: 1 }}>
-          <View style={styles.quoteTopRow}>
-            <ThemedText
-              numberOfLines={1}
-              style={{ fontWeight: "800", color: colors.text, maxWidth: "70%" }}
-            >
-              {qProfile.displayName}
-            </ThemedText>
-
-            <ThemedText
-              numberOfLines={1}
-              style={{ color: colors.textSecondary, marginLeft: 8, flexShrink: 1 }}
-            >
-              @{qProfile.handle}
-            </ThemedText>
-
-            {!isDetail && (
-              <>
-                <ThemedText style={{ color: colors.textSecondary }}> · </ThemedText>
-                <ThemedText style={{ color: colors.textSecondary }}>
-                  {formatRelativeTime(post.createdAt)}
-                </ThemedText>
-              </>
-            )}
-          </View>
-
-          <ThemedText numberOfLines={3} style={{ color: colors.text, marginTop: 6, lineHeight: 18 }}>
-            {post.text}
-          </ThemedText>
-        </View>
+      {/* Use the real Post component, but make it quote-safe (no nested quotes, no menu/actions). */}
+      <View style={styles.postWrap} pointerEvents="none">
+        <Post
+          scenarioId={sid}
+          profile={profile}
+          item={post}
+          variant="feed"
+          showActions={false}
+          showThreadLine={false}
+          showMenu={false}
+          showQuoted={false} // ✅ stops quote recursion (quote-of-quote)
+        />
       </View>
     </Pressable>
   );
@@ -122,22 +112,21 @@ const styles = StyleSheet.create({
     marginTop: 12,
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: 16,
-    padding: 12,
+    overflow: "hidden",
   },
-  quoteInner: {
+
+  postWrap: { paddingVertical: 6 },
+
+  missingInner: {
     flexDirection: "row",
     gap: 10,
     alignItems: "flex-start",
+    padding: 12,
   },
-  quoteAvatarFallback: {
+  missingDot: {
     width: 22,
     height: 22,
     borderRadius: 999,
     marginTop: 2,
-  },
-  quoteTopRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    flexWrap: "nowrap",
   },
 });
