@@ -13,6 +13,7 @@ import { useColorScheme } from "@/hooks/use-color-scheme";
 
 import { useAuth } from "@/context/auth";
 import { useAppData } from "@/context/appData";
+import { TagPill } from "@/components/ui/TagPill";
 
 const MAX_PLAYERS = 20;
 
@@ -28,7 +29,7 @@ export default function ScenarioListScreen() {
   const colors = Colors[colorScheme];
   const insets = useSafeAreaInsets();
 
-  const { signOut } = useAuth();
+  const { signOut, userId } = useAuth();
   const { isReady, listScenarios, db } = useAppData();
 
   const [menu, setMenu] = useState<ScenarioMenuState>({
@@ -45,6 +46,19 @@ export default function ScenarioListScreen() {
 
   const openSettings = () => {
     router.push("/(scenario)/settings" as any);
+  };
+
+  const openScenarioEdit = (scenarioId: string) => {
+    router.push({ pathname: "/modal/create-scenario", params: { scenarioId: scenarioId } } as any);
+  };
+
+  const openCreateScenario = () => {
+    router.push("/modal/create-scenario" as any);
+  };
+
+  const openJoinScenario = () => {
+    // adjust route if needed
+    router.push("/modal/join-scenario" as any);
   };
 
   const scenarios = useMemo(() => (isReady ? listScenarios() : []), [isReady, listScenarios]);
@@ -98,7 +112,6 @@ export default function ScenarioListScreen() {
           style={[styles.menuSheet, { backgroundColor: colors.background, borderColor: colors.border }]}
           onPress={(e) => e?.stopPropagation?.()}
         >
-          {/* invite code shown raw */}
           <View style={styles.menuInviteWrap}>
             <ThemedText style={{ color: colors.textSecondary, fontSize: 12 }}>Invite code</ThemedText>
             <ThemedText type="defaultSemiBold" style={{ color: colors.text, fontSize: 16, marginTop: 4 }}>
@@ -187,6 +200,40 @@ export default function ScenarioListScreen() {
       </View>
 
       <ThemedView style={[styles.container, { backgroundColor: colors.background }]}>
+        <View style={styles.ctaRow}>
+          <Pressable
+            onPress={openCreateScenario}
+            style={({ pressed }) => [
+              styles.ctaBtn,
+              { backgroundColor: colors.card, borderColor: colors.border },
+              pressed && { backgroundColor: colors.pressed },
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel="Create scenario"
+          >
+            <Ionicons name="add-circle-outline" size={18} color={colors.icon} />
+            <ThemedText type="defaultSemiBold" style={{ fontSize: 14 }}>
+              Create
+            </ThemedText>
+          </Pressable>
+
+          <Pressable
+            onPress={openJoinScenario}
+            style={({ pressed }) => [
+              styles.ctaBtn,
+              { backgroundColor: colors.card, borderColor: colors.border },
+              pressed && { backgroundColor: colors.pressed },
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel="Join scenario"
+          >
+            <Ionicons name="enter-outline" size={18} color={colors.icon} />
+            <ThemedText type="defaultSemiBold" style={{ fontSize: 14 }}>
+              Join
+            </ThemedText>
+          </Pressable>
+        </View>
+
         <FlatList
           data={scenarios}
           keyExtractor={(item) => String(item.id)}
@@ -198,6 +245,8 @@ export default function ScenarioListScreen() {
               .filter(Boolean);
 
             const inviteCode = item.inviteCode ? String(item.inviteCode) : null;
+            const tags = Array.isArray((item as any).tags) ? (item as any).tags : [];
+            const isOwner = !!userId && String((item as any).ownerUserId) === String(userId);
 
             return (
               <Pressable
@@ -215,6 +264,21 @@ export default function ScenarioListScreen() {
                     <ThemedText type="defaultSemiBold" numberOfLines={1} style={{ flex: 1 }}>
                       {item.name}
                     </ThemedText>
+
+                    {isOwner ? (
+                      <Pressable
+                        onPress={(e) => {
+                          e?.stopPropagation?.();
+                          openScenarioEdit(String(item.id));
+                        }}
+                        hitSlop={10}
+                        style={({ pressed }) => [styles.iconBtn, pressed && { opacity: 0.6 }]}
+                        accessibilityRole="button"
+                        accessibilityLabel="Edit scenario"
+                      >
+                        <Ionicons name="create-outline" size={18} color={colors.icon} />
+                      </Pressable>
+                    ) : null}
 
                     <Pressable
                       onPress={(e) => {
@@ -252,7 +316,6 @@ export default function ScenarioListScreen() {
                     </ThemedText>
                   </View>
 
-                  {/* invite code shown raw on card (tap to copy) */}
                   {inviteCode ? (
                     <Pressable
                       onPress={async () => {
@@ -266,6 +329,20 @@ export default function ScenarioListScreen() {
                         Invite: {inviteCode}
                       </ThemedText>
                     </Pressable>
+                  ) : null}
+
+                  {tags.length ? (
+                    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 6 }}>
+                      {tags.slice(0, 4).map((t: any) => (
+                        <TagPill
+                          key={String(t.id ?? t.key ?? t.name)}
+                          label={String(t.name ?? t.key)}
+                          color={typeof t.color === "string" ? t.color : undefined}
+                          colors={colors as any}
+                        />
+                      ))}
+                      {tags.length > 4 ? <TagPill label={`+${tags.length - 4}`} colors={colors as any} /> : null}
+                    </View>
                   ) : null}
                 </View>
               </Pressable>
@@ -288,8 +365,25 @@ export default function ScenarioListScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, paddingHorizontal: 16, paddingTop: 16 },
-  subtitle: { marginTop: 4, marginBottom: 16 },
   headerIconBtn: { padding: 6, backgroundColor: "transparent" },
+
+  // ✅ CTA row
+  ctaRow: {
+    flexDirection: "row",
+    gap: 10,
+    marginBottom: 12,
+  },
+  ctaBtn: {
+    flex: 1,
+    height: 44,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
+
   list: { paddingVertical: 8, gap: 12 },
 
   card: { borderRadius: 14, borderWidth: 1, overflow: "hidden" },
@@ -299,13 +393,13 @@ const styles = StyleSheet.create({
 
   titleRow: { flexDirection: "row", alignItems: "center", gap: 8 },
 
+  iconBtn: { padding: 6, borderRadius: 999, alignSelf: "flex-start" },
   dotsBtn: { padding: 6, borderRadius: 999, alignSelf: "flex-start" },
 
   playersRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   avatars: { flexDirection: "row", alignItems: "center" },
 
   avatar: { width: 28, height: 28, borderRadius: 14, borderWidth: 1 },
-
   playerCount: { fontSize: 12 },
 
   topBar: { borderBottomWidth: StyleSheet.hairlineWidth },
@@ -325,7 +419,6 @@ const styles = StyleSheet.create({
   topBarActions: { gap: 14 },
   topBarTitle: { fontSize: 18 },
 
-  // menu sheet
   menuBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.35)", justifyContent: "flex-end" },
   menuSheet: {
     borderTopLeftRadius: 18,

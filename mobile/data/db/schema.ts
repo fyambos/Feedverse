@@ -17,6 +17,13 @@ export type User = {
   settings?: UserSettings;
 };
 
+export type ScenarioTag = {
+  id: string;
+  key: string;
+  name: string;
+  color: string;
+};
+
 export type Scenario = {
   id: string;
   name: string;
@@ -25,6 +32,9 @@ export type Scenario = {
   createdAt: string;
   updatedAt?: string;
   inviteCode: string;
+  ownerUserId: string;
+  description?: string;
+  tags?: ScenarioTag[];
 };
 
 export type Profile = {
@@ -45,7 +55,6 @@ export type Profile = {
   createdAt: string;
   updatedAt?: string;
   isPrivate?: boolean;
-
   likedPostIds?: string[];
 };
 
@@ -70,17 +79,23 @@ export type Repost = {
   scenarioId: string;
   profileId: string;
   postId: string;
-  createdAt: string; 
+  createdAt: string;
+};
+
+export type GlobalTag = {
+  key: string;     // canonical key (lowercase, dash-separated)
+  name: string;    // display label (generated from key)
+  color: string;   // deterministic + locked
 };
 
 export type DbV5 = {
-  version: 4;
+  version: 5;
   seededAt: string;
   users: Record<string, User>;
   scenarios: Record<string, Scenario>;
   profiles: Record<string, Profile>;
   posts: Record<string, Post>;
   reposts: Record<string, Repost>;
-
   selectedProfileByScenario: Record<string, string>;
+  tags: Record<string, GlobalTag>; // key -> tag
 };

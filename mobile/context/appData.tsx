@@ -1,12 +1,15 @@
 // mobile/context/appData.tsx
 import React from "react";
-import type { DbV4, Post, Profile, Scenario, Repost } from "@/data/db/schema";
+import type { DbV5, Post, Profile, Scenario, Repost, ScenarioTag } from "@/data/db/schema";
 import { readDb, updateDb } from "@/data/db/storage";
 import { seedDbIfNeeded } from "@/data/db/seed";
+import {
+  buildGlobalTagFromKey,
+} from "@/lib/tags";
 
 type AppDataState = {
   isReady: boolean;
-  db: DbV4 | null;
+  db: DbV5 | null;
 };
 
 type PostCursor = string; // `${insertedAt}|${id}`
@@ -88,6 +91,9 @@ type AppDataApi = {
   // helpers
   isPostRepostedByProfileId: (profileId: string, postId: string) => boolean;
   getRepostEventForProfile: (profileId: string, postId: string) => Repost | null;
+  
+  // scenarios
+  upsertScenario: (s: Scenario) => Promise<void>;
 };
 
 const Ctx = React.createContext<(AppDataState & AppDataApi) | null>(null);
@@ -490,6 +496,63 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
           }
 
           return { ...prev, posts, reposts };
+        });
+
+        setState({ isReady: true, db: next as any });
+      },
+
+      upsertScenario: async (s) => {
+        const id = String(s.id);
+        const now = new Date().toISOString();
+
+        const next = await updateDb((prev) => {
+          const existing = prev.scenarios[id];
+
+          // --- GLOBAL TAG REGISTRY ---
+          const prevTags = (prev as any).tags ?? {};
+          const nextTags: Record<string, ScenarioTag> = { ...prevTags };
+
+          const scenarioTags: ScenarioTag[] = [];
+
+          for (const raw of s.tags ?? []) {
+            const key = String((raw as any).key ?? raw.id ?? "").toLowerCase();
+            if (!key) continue;
+
+            // already registered globally?
+            let tag = nextTags[key];
+
+            if (!tag) {
+              const built = buildGlobalTagFromKey(key);
+              if (!built) continue;
+
+              tag = {
+                id: `t_${built.key}`,
+                key: built.key,
+                name: built.name,
+                color: built.color,
+              };
+
+              nextTags[key] = tag;
+            }
+
+            scenarioTags.push(tag);
+          }
+
+          return {
+            ...prev,
+            tags: nextTags, // ✅ GLOBAL REGISTRY UPDATED
+            scenarios: {
+              ...prev.scenarios,
+              [id]: {
+                ...(existing ?? {}),
+                ...s,
+                id,
+                tags: scenarioTags,
+                createdAt: existing?.createdAt ?? s.createdAt ?? now,
+                updatedAt: now,
+              },
+            },
+          };
         });
 
         setState({ isReady: true, db: next as any });
