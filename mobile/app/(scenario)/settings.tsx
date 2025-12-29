@@ -1,5 +1,5 @@
 // mobile/app/(scenario)/settings.tsx
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Alert, Pressable, StyleSheet, View } from "react-native";
 import { Stack, router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -13,7 +13,6 @@ import { Colors } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 
 import { useAuth } from "@/context/auth";
-import { useAppData } from "@/context/appData";
 import type { UserSettings } from "@/data/db/schema";
 
 import { ProfileAvatarPicker } from "@/components/profile-edit/ProfileAvatarPicker";
@@ -37,15 +36,14 @@ export default function UserSettingsScreen() {
   const scheme = useColorScheme() ?? "light";
   const colors = Colors[scheme];
 
-  const { userId } = useAuth();
-  const { getUserById, updateUserSettings, updateUserAvatar } = useAppData();
+  const { userId, currentUser, updateUserSettings, updateUserAvatar } = useAuth();
 
-  const user = useMemo(() => (userId ? getUserById(String(userId)) : null), [userId, getUserById]);
+  const user = currentUser ?? null;
 
   const [draft, setDraft] = useState<Required<UserSettings>>(normalizeSettings(user?.settings));
-
   const [avatarUrl, setAvatarUrl] = useState<string | null>(user?.avatarUrl ?? null);
 
+  // keep draft in sync when user loads / changes
   useEffect(() => {
     setDraft(normalizeSettings(user?.settings));
   }, [user?.settings]);
@@ -56,8 +54,8 @@ export default function UserSettingsScreen() {
 
   const save = async () => {
     if (!userId) return;
-    await updateUserSettings(String(userId), draft);
-    await updateUserAvatar(String(userId), avatarUrl);
+    await updateUserSettings(draft);
+    await updateUserAvatar(avatarUrl);
     router.back();
   };
 
@@ -106,7 +104,10 @@ export default function UserSettingsScreen() {
             label="Timestamps"
             colors={colors}
             right={
-              <Pressable onPress={() => setDraft((p) => ({ ...p, showTimestamps: !p.showTimestamps }))} hitSlop={8}>
+              <Pressable
+                onPress={() => setDraft((p) => ({ ...p, showTimestamps: !p.showTimestamps }))}
+                hitSlop={8}
+              >
                 <Ionicons
                   name={draft.showTimestamps ? "checkbox" : "square-outline"}
                   size={22}
@@ -135,7 +136,9 @@ export default function UserSettingsScreen() {
             </Pressable>
           </RowCard>
 
-          <ThemedText style={styles.footer}>These settings apply to your user account, not individual profiles.</ThemedText>
+          <ThemedText style={styles.footer}>
+            These settings apply to your user account, not individual profiles.
+          </ThemedText>
         </ThemedView>
       </SafeAreaView>
     </>

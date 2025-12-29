@@ -1,3 +1,5 @@
+
+// mobile/app/modal/select-profile.tsx
 import React from "react";
 import { FlatList, Image, Pressable, StyleSheet, View } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
@@ -30,13 +32,9 @@ export default function SelectProfileModal() {
   const sid = String(scenarioId ?? "");
   const { userId } = useAuth();
 
-  const {
-    isReady,
-    listProfilesForScenario,
-    getSelectedProfileId,
-    setSelectedProfileId,
-    getUserById,
-  } = useAppData();
+  const { isReady, listProfilesForScenario, getSelectedProfileId, setSelectedProfileId, db } = useAppData();
+
+  const usersMap = (db as any)?.users ?? {};
 
   const [tab, setTab] = React.useState<TabKey>("mine");
   const [mode, setMode] = React.useState<ViewMode>("tabs");
@@ -69,10 +67,10 @@ export default function SelectProfileModal() {
   }, [allProfiles, userId]);
 
   const Row = ({ item }: { item: Profile }) => {
-    const selectEnabled = mode !== "all"; //
-
+    const selectEnabled = mode !== "all";
     const active = String(item.id) === String(current);
-    const owner = getUserById?.(String(item.ownerUserId));
+
+    const owner = usersMap[String(item.ownerUserId)] ?? null;
 
     const canEditThis = canEditProfile({
       profile: item,
@@ -92,11 +90,10 @@ export default function SelectProfileModal() {
           styles.row,
           {
             backgroundColor: pressed && selectEnabled ? colors.pressed : colors.background,
-            opacity: selectEnabled ? 1 : 0.88, // subtle “read-only” feel
+            opacity: selectEnabled ? 1 : 0.88,
           },
         ]}
       >
-        {/* LEFT: profile */}
         <View style={styles.left}>
           {item.avatarUrl ? (
             <Image source={{ uri: item.avatarUrl }} style={styles.profileAvatar} />
@@ -105,7 +102,6 @@ export default function SelectProfileModal() {
           )}
 
           <View style={{ flex: 1, minWidth: 0 }}>
-            {/* name row + edit icon */}
             <View style={styles.nameRow}>
               <ThemedText type="defaultSemiBold" numberOfLines={1} style={{ flexShrink: 1 }}>
                 {item.displayName}
@@ -139,16 +135,12 @@ export default function SelectProfileModal() {
               </ThemedText>
 
               {item.isPublic ? (
-                <ThemedText style={[styles.publicBadge, { color: colors.textSecondary }]}>
-                  {" "}
-                  • Shared
-                </ThemedText>
+                <ThemedText style={[styles.publicBadge, { color: colors.textSecondary }]}> • Shared</ThemedText>
               ) : null}
             </View>
           </View>
         </View>
 
-        {/* RIGHT: owner (+ check only when selectable) */}
         <View style={styles.right}>
           {owner?.avatarUrl ? (
             <Image source={{ uri: owner.avatarUrl }} style={styles.ownerAvatar} />
@@ -169,7 +161,6 @@ export default function SelectProfileModal() {
   };
 
   const CreateProfileHeader = () => {
-    // show only when user is in Mine tab mode (not All, not Public)
     if (!(mode === "tabs" && tab === "mine")) return null;
 
     const disabled = !canCreate;
@@ -207,16 +198,13 @@ export default function SelectProfileModal() {
                 Limit reached ({MAX_OWNED_PROFILES_PER_USER} owned profiles).
               </ThemedText>
             ) : (
-              <ThemedText style={{ color: colors.textSecondary }}>
-                Add a character for this scenario
-              </ThemedText>
+              <ThemedText style={{ color: colors.textSecondary }}>Add a character for this scenario</ThemedText>
             )}
           </View>
 
           <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
         </Pressable>
 
-        {/* little counter line (optional but helpful) */}
         <View style={{ paddingHorizontal: 16, paddingBottom: 10 }}>
           <ThemedText style={{ color: colors.textSecondary, fontSize: 12 }}>
             Owned profiles: {ownedNonSharedCount}/{MAX_OWNED_PROFILES_PER_USER} (shared profiles don’t count)
@@ -230,17 +218,13 @@ export default function SelectProfileModal() {
 
   return (
     <SafeAreaView edges={["top"]} style={[styles.screen, { backgroundColor: colors.background }]}>
-      {/* Header */}
       <View style={[styles.header, { borderBottomColor: colors.border }]}>
         <ThemedText type="defaultSemiBold" style={{ fontSize: 18 }}>
           {mode === "all" ? "All profiles" : "Choose profile"}
         </ThemedText>
 
-        {/* RIGHT ICON: toggle ALL vs tabs */}
         <Pressable
-          onPress={() => {
-            setMode((m) => (m === "all" ? "tabs" : "all"));
-          }}
+          onPress={() => setMode((m) => (m === "all" ? "tabs" : "all"))}
           hitSlop={12}
           style={({ pressed }) => [{ padding: 6, opacity: pressed ? 0.6 : 1 }]}
           accessibilityRole="button"
@@ -254,7 +238,6 @@ export default function SelectProfileModal() {
         </Pressable>
       </View>
 
-      {/* Tabs (only when mode === tabs) */}
       {mode === "tabs" ? (
         <View style={[styles.tabs, { borderBottomColor: colors.border }]}>
           <TabButton label="Mine" active={tab === "mine"} onPress={() => setTab("mine")} colors={colors} />
@@ -262,14 +245,11 @@ export default function SelectProfileModal() {
         </View>
       ) : null}
 
-      {/* List */}
       <FlatList
         data={data}
         keyExtractor={(p) => String(p.id)}
         ListHeaderComponent={CreateProfileHeader}
-        ItemSeparatorComponent={() => (
-          <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: colors.border }} />
-        )}
+        ItemSeparatorComponent={() => <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: colors.border }} />}
         renderItem={({ item }) => <Row item={item as Profile} />}
         ListEmptyComponent={() => (
           <View style={{ padding: 24 }}>
@@ -326,24 +306,11 @@ const styles = StyleSheet.create({
     gap: 10,
   },
 
-  tabs: {
-    flexDirection: "row",
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
+  tabs: { flexDirection: "row", borderBottomWidth: StyleSheet.hairlineWidth },
 
-  tabBtn: {
-    flex: 1,
-    alignItems: "center",
-    paddingVertical: 12,
-  },
+  tabBtn: { flex: 1, alignItems: "center", paddingVertical: 12 },
 
-  tabIndicator: {
-    position: "absolute",
-    bottom: 0,
-    height: 2,
-    width: "60%",
-    borderRadius: 2,
-  },
+  tabIndicator: { position: "absolute", bottom: 0, height: 2, width: "60%", borderRadius: 2 },
 
   row: {
     flexDirection: "row",
@@ -353,45 +320,17 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
 
-  left: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    flex: 1,
-    minWidth: 0,
-  },
+  left: { flexDirection: "row", alignItems: "center", gap: 12, flex: 1, minWidth: 0 },
 
-  nameRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
+  nameRow: { flexDirection: "row", alignItems: "center", gap: 8 },
 
-  editIconBtn: {
-    paddingHorizontal: 6,
-    paddingVertical: 4,
-    borderRadius: 999,
-    marginLeft: 2,
-  },
+  editIconBtn: { paddingHorizontal: 6, paddingVertical: 4, borderRadius: 999, marginLeft: 2 },
 
-  right: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    marginLeft: 12,
-  },
+  right: { flexDirection: "row", alignItems: "center", gap: 6, marginLeft: 12 },
 
-  profileAvatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 999,
-  },
+  profileAvatar: { width: 44, height: 44, borderRadius: 999 },
 
-  ownerAvatar: {
-    width: 22,
-    height: 22,
-    borderRadius: 999,
-  },
+  ownerAvatar: { width: 22, height: 22, borderRadius: 999 },
 
   createAvatar: {
     backgroundColor: "transparent",
@@ -400,14 +339,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
 
-  handleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    flexWrap: "wrap",
-  },
+  handleRow: { flexDirection: "row", alignItems: "center", flexWrap: "wrap" },
 
-  publicBadge: {
-    fontSize: 13,
-    opacity: 0.9,
-  },
+  publicBadge: { fontSize: 13, opacity: 0.9 },
 });

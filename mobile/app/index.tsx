@@ -1,3 +1,4 @@
+// mobile/app/index.tsx
 import React, { useMemo, useState } from "react";
 import { StyleSheet, FlatList, Pressable, Image, View, Modal, Alert } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -28,7 +29,7 @@ export default function ScenarioListScreen() {
   const insets = useSafeAreaInsets();
 
   const { signOut } = useAuth();
-  const { isReady, listScenarios, getUserById } = useAppData();
+  const { isReady, listScenarios, db } = useAppData();
 
   const [menu, setMenu] = useState<ScenarioMenuState>({
     open: false,
@@ -41,7 +42,7 @@ export default function ScenarioListScreen() {
     await signOut();
     router.replace("/(auth)/login");
   };
-  
+
   const openSettings = () => {
     router.push("/(scenario)/settings" as any);
   };
@@ -77,21 +78,17 @@ export default function ScenarioListScreen() {
 
   const leaveScenario = () => {
     const name = menu.scenarioName ?? "this scenario";
-    Alert.alert(
-      "Leave scenario?",
-      `Are you sure you want to leave ${name}?`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Leave",
-          style: "destructive",
-          onPress: () => {
-            closeScenarioMenu();
-            Alert.alert("Leaving", "Hook this up to your leaveScenario() logic.");
-          },
+    Alert.alert("Leave scenario?", `Are you sure you want to leave ${name}?`, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Leave",
+        style: "destructive",
+        onPress: () => {
+          closeScenarioMenu();
+          Alert.alert("Leaving", "Hook this up to your leaveScenario() logic.");
         },
-      ]
-    );
+      },
+    ]);
   };
 
   const ScenarioMenuSheet = () => (
@@ -170,14 +167,14 @@ export default function ScenarioListScreen() {
       </View>
 
       <ThemedView style={[styles.container, { backgroundColor: colors.background }]}>
-
         <FlatList
           data={scenarios}
           keyExtractor={(item) => String(item.id)}
           contentContainerStyle={styles.list}
           renderItem={({ item }) => {
+            const usersMap = (db as any)?.users ?? {};
             const players = (item.playerIds ?? [])
-              .map((id: string) => getUserById(String(id)))
+              .map((id: string) => usersMap[String(id)] ?? null)
               .filter(Boolean);
 
             return (
@@ -199,7 +196,7 @@ export default function ScenarioListScreen() {
 
                     <Pressable
                       onPress={(e) => {
-                        if (e?.stopPropagation) e.stopPropagation();
+                        e?.stopPropagation?.();
                         openScenarioMenu(item);
                       }}
                       hitSlop={10}
@@ -254,10 +251,7 @@ export default function ScenarioListScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, paddingHorizontal: 16, paddingTop: 16 },
   subtitle: { marginTop: 4, marginBottom: 16 },
-  headerIconBtn: {
-    padding: 6,
-    backgroundColor: "transparent",
-  },
+  headerIconBtn: { padding: 6, backgroundColor: "transparent" },
   list: { paddingVertical: 8, gap: 12 },
 
   card: { borderRadius: 14, borderWidth: 1, overflow: "hidden" },
@@ -265,33 +259,18 @@ const styles = StyleSheet.create({
 
   cardContent: { padding: 12, gap: 8 },
 
-  titleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
+  titleRow: { flexDirection: "row", alignItems: "center", gap: 8 },
 
-  dotsBtn: {
-    padding: 6,
-    borderRadius: 999,
-    alignSelf: "flex-start",
-  },
+  dotsBtn: { padding: 6, borderRadius: 999, alignSelf: "flex-start" },
 
   playersRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   avatars: { flexDirection: "row", alignItems: "center" },
 
-  avatar: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    borderWidth: 1,
-  },
+  avatar: { width: 28, height: 28, borderRadius: 14, borderWidth: 1 },
 
   playerCount: { fontSize: 12 },
 
-  topBar: {
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
+  topBar: { borderBottomWidth: StyleSheet.hairlineWidth },
   topBarRow: {
     height: 56,
     paddingHorizontal: 16,
@@ -305,14 +284,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "flex-end",
   },
-  topBarActions: {
-    gap: 14,
-  },
-  topBarTitle: {
-    fontSize: 18,
-  },
+  topBarActions: { gap: 14 },
+  topBarTitle: { fontSize: 18 },
 
-  // menu sheet
   menuBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.35)", justifyContent: "flex-end" },
   menuSheet: {
     borderTopLeftRadius: 18,
