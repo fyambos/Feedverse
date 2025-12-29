@@ -11,9 +11,8 @@ import { tagKeyFromInput, buildGlobalTagFromKey } from "@/lib/tags";
 /**
  * ✅ FORCE RESEED MODE
  * Overwrites the entire local DB from mocks.
- * Flip back later.
  */
-const FORCE_RESEED = true;
+const FORCE_RESEED = false;
 
 function toRecord<T extends { id: string }>(list: T[]): Record<string, T> {
   const r: Record<string, T> = {};
