@@ -24,13 +24,25 @@ type ScenarioMenuState = {
   scenarioName: string | null;
 };
 
+type TransferSheetState = {
+  open: boolean;
+  scenarioId: string | null;
+};
+
 export default function ScenarioListScreen() {
   const colorScheme = useColorScheme() ?? "light";
   const colors = Colors[colorScheme];
   const insets = useSafeAreaInsets();
 
   const { signOut, userId } = useAuth();
-  const { isReady, listScenarios, db } = useAppData();
+  const {
+    isReady,
+    listScenarios,
+    db,
+    transferScenarioOwnership,
+    leaveScenario: leaveScenarioApi,
+    deleteScenario: deleteScenarioApi,
+  } = useAppData() as any;
 
   const [menu, setMenu] = useState<ScenarioMenuState>({
     open: false,
@@ -38,6 +50,21 @@ export default function ScenarioListScreen() {
     inviteCode: null,
     scenarioName: null,
   });
+
+  const [transfer, setTransfer] = useState<TransferSheetState>({
+    open: false,
+    scenarioId: null,
+  });
+
+  // optional: confirmation step (so you don’t “accidentally” transfer)
+  const [confirm, setConfirm] = useState<{
+    open: boolean;
+    scenarioId: string | null;
+    toUserId: string | null;
+  }>({ open: false, scenarioId: null, toUserId: null });
+
+  const closeTransfer = () => setTransfer({ open: false, scenarioId: null });
+  const closeConfirm = () => setConfirm({ open: false, scenarioId: null, toUserId: null });
 
   const onLogout = async () => {
     await signOut();
@@ -49,7 +76,7 @@ export default function ScenarioListScreen() {
   };
 
   const openScenarioEdit = (scenarioId: string) => {
-    router.push({ pathname: "/modal/create-scenario", params: { scenarioId: scenarioId } } as any);
+    router.push({ pathname: "/modal/create-scenario", params: { scenarioId } } as any);
   };
 
   const openCreateScenario = () => {
@@ -57,11 +84,19 @@ export default function ScenarioListScreen() {
   };
 
   const openJoinScenario = () => {
-    // adjust route if needed
     router.push("/modal/join-scenario" as any);
   };
 
-  const scenarios = useMemo(() => (isReady ? listScenarios() : []), [isReady, listScenarios]);
+  // ✅ IMPORTANT FIX:
+  // Only show scenarios where the signed-in user is a player.
+  // Otherwise "leave" works but the scenario still shows in the list (looks like nothing happened).
+  const scenarios = useMemo(() => {
+    if (!isReady) return [];
+    const all = listScenarios?.() ?? [];
+    const uid = String(userId ?? "").trim();
+    if (!uid) return all; // fallback
+    return all.filter((s: any) => (s?.playerIds ?? []).map(String).includes(uid));
+  }, [isReady, listScenarios, userId]);
 
   const openScenario = (scenarioId: string) => {
     router.push(`/(scenario)/${scenarioId}` as any);
@@ -85,24 +120,118 @@ export default function ScenarioListScreen() {
       Alert.alert("No invite code", "This scenario has no invite code.");
       return;
     }
-    await Clipboard.setStringAsync(menu.inviteCode); // raw
+    await Clipboard.setStringAsync(menu.inviteCode);
     closeScenarioMenu();
     Alert.alert("Copied", "Invite code copied to clipboard.");
   };
 
   const leaveScenario = () => {
+    if (!isReady) return;
+
+    const sid = String(menu.scenarioId ?? "").trim();
+    if (!sid) return;
+
+    const scenario = (db as any)?.scenarios?.[sid];
+    if (!scenario) return;
+
+    const uid = String(userId ?? "").trim();
+    if (!uid) return;
+
+    const ownerId = String((scenario as any)?.ownerUserId ?? "");
+    const players: string[] = Array.isArray(scenario.playerIds) ? scenario.playerIds.map(String) : [];
+
+    const isOwner = uid === ownerId;
+    const otherPlayersCount = players.filter((p) => p !== uid).length;
+
+    // owner + others => must transfer ownership first
+    if (isOwner && otherPlayersCount > 0) {
+      Alert.alert("You’re the owner", "Transfer ownership before leaving this scenario.");
+      return;
+    }
+
+    // owner alone => leave silently (no alert) per your rule
+    if (isOwner && otherPlayersCount === 0) {
+      closeScenarioMenu();
+      Promise.resolve(leaveScenarioApi?.(sid, uid)).catch(() => {});
+      return;
+    }
+
     const name = menu.scenarioName ?? "this scenario";
     Alert.alert("Leave scenario?", `Are you sure you want to leave ${name}?`, [
       { text: "Cancel", style: "cancel" },
       {
         text: "Leave",
         style: "destructive",
-        onPress: () => {
+        onPress: async () => {
           closeScenarioMenu();
-          Alert.alert("Leaving", "Hook this up to your leaveScenario() logic.");
+          try {
+            await leaveScenarioApi?.(sid, uid);
+          } catch (e: any) {
+            Alert.alert("Leave failed", e?.message ?? "Could not leave scenario.");
+          }
         },
       },
     ]);
+  };
+
+  const transferOwnership = () => {
+    if (!isReady) return;
+
+    const sid = String(menu.scenarioId ?? "").trim();
+    if (!sid) return;
+
+    const scenario = (db as any)?.scenarios?.[sid];
+    if (!scenario) return;
+
+    const ownerId = String((scenario as any)?.ownerUserId ?? "");
+    if (!userId || String(userId) !== ownerId) {
+      Alert.alert("Not allowed", "Only the owner can transfer ownership.");
+      return;
+    }
+
+    closeScenarioMenu();
+    setTransfer({ open: true, scenarioId: sid });
+  };
+
+  const deleteScenario = () => {
+    if (!isReady) return;
+
+    const sid = String(menu.scenarioId ?? "").trim();
+    if (!sid) return;
+
+    const scenario = (db as any)?.scenarios?.[sid];
+    if (!scenario) return;
+
+    const uid = String(userId ?? "").trim();
+    if (!uid) return;
+
+    const ownerId = String((scenario as any)?.ownerUserId ?? "");
+    if (uid !== ownerId) {
+      Alert.alert("Not allowed", "Only the owner can delete this scenario.");
+      return;
+    }
+
+    const name = menu.scenarioName ?? "this scenario";
+    Alert.alert(
+      "Delete scenario?",
+      `This will permanently delete ${name} for everyone. This cannot be recovered.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            closeScenarioMenu();
+            try {
+              const ok = await deleteScenarioApi?.(sid, uid);
+              if (!ok) Alert.alert("Delete failed", "Could not delete this scenario.");
+            } catch (e: any) {
+              Alert.alert("Delete failed", e?.message ?? "Could not delete this scenario.");
+            }
+          },
+        },
+      ]
+    );
   };
 
   const ScenarioMenuSheet = () => (
@@ -140,6 +269,26 @@ export default function ScenarioListScreen() {
 
           <View style={[styles.menuDivider, { backgroundColor: colors.border }]} />
 
+          {/* Transfer ownership (owner-only) */}
+          {!!userId &&
+          !!menu.scenarioId &&
+          String((db as any)?.scenarios?.[String(menu.scenarioId)]?.ownerUserId ?? "") === String(userId) ? (
+            <>
+              <Pressable
+                onPress={transferOwnership}
+                style={({ pressed }) => [styles.menuItem, { backgroundColor: pressed ? colors.pressed : "transparent" }]}
+              >
+                <Ionicons name="swap-horizontal-outline" size={18} color="#ff3b30" />
+                <ThemedText style={{ color: "#ff3b30", fontSize: 15, fontWeight: "700" }}>
+                  Transfer ownership
+                </ThemedText>
+              </Pressable>
+
+              <View style={[styles.menuDivider, { backgroundColor: colors.border }]} />
+            </>
+          ) : null}
+
+          {/* Leave scenario */}
           <Pressable
             onPress={leaveScenario}
             style={({ pressed }) => [styles.menuItem, { backgroundColor: pressed ? colors.pressed : "transparent" }]}
@@ -149,10 +298,186 @@ export default function ScenarioListScreen() {
               Leave Scenario
             </ThemedText>
           </Pressable>
+
+          <View style={[styles.menuDivider, { backgroundColor: colors.border }]} />
+
+          {/* Delete scenario (owner-only) */}
+          {!!userId &&
+          !!menu.scenarioId &&
+          String((db as any)?.scenarios?.[String(menu.scenarioId)]?.ownerUserId ?? "") === String(userId) ? (
+            <Pressable
+              onPress={deleteScenario}
+              style={({ pressed }) => [styles.menuItem, { backgroundColor: pressed ? colors.pressed : "transparent" }]}
+            >
+              <Ionicons name="trash-outline" size={18} color="#ff3b30" />
+              <ThemedText style={{ color: "#ff3b30", fontSize: 15, fontWeight: "700" }}>
+                Delete Scenario
+              </ThemedText>
+            </Pressable>
+          ) : null}
         </Pressable>
       </Pressable>
     </Modal>
   );
+
+  const TransferOwnershipSheet = () => {
+    if (!transfer.open) return null;
+
+    const sid = String(transfer.scenarioId ?? "");
+    const scenario = sid ? (db as any)?.scenarios?.[sid] : null;
+
+    const ownerId = String((scenario as any)?.ownerUserId ?? "");
+    const players: string[] = Array.isArray(scenario?.playerIds) ? scenario.playerIds.map(String) : [];
+
+    const usersMap = (db as any)?.users ?? {};
+    const candidates = players
+      .filter((pid) => pid && pid !== ownerId)
+      .map((pid) => usersMap[pid] ?? { id: pid, username: pid, avatarUrl: "" });
+
+    return (
+      <Modal transparent visible={transfer.open} animationType="fade" onRequestClose={closeTransfer}>
+        <Pressable style={styles.menuBackdrop} onPress={closeTransfer}>
+          <Pressable
+            style={[styles.menuSheet, { backgroundColor: colors.background, borderColor: colors.border }]}
+            onPress={(e) => e?.stopPropagation?.()}
+          >
+            <View style={{ paddingHorizontal: 12, paddingTop: 10, paddingBottom: 6 }}>
+              <ThemedText style={{ color: colors.textSecondary, fontSize: 12 }}>Transfer ownership</ThemedText>
+              <ThemedText type="defaultSemiBold" style={{ color: colors.text, fontSize: 16, marginTop: 4 }}>
+                Choose the new owner
+              </ThemedText>
+            </View>
+
+            <View style={[styles.menuDivider, { backgroundColor: colors.border }]} />
+
+            <View style={{ maxHeight: 340 }}>
+              <FlatList
+                data={candidates}
+                keyExtractor={(u: any) => String(u.id)}
+                contentContainerStyle={{ paddingHorizontal: 8, paddingBottom: 8 }}
+                renderItem={({ item }: any) => {
+                  const label = item?.username ? `@${String(item.username)}` : String(item.id);
+
+                  return (
+                    <Pressable
+                      onPress={() => setConfirm({ open: true, scenarioId: sid, toUserId: String(item.id) })}
+                      style={({ pressed }) => [
+                        styles.transferRow,
+                        { backgroundColor: pressed ? colors.pressed : "transparent", borderColor: colors.border },
+                      ]}
+                    >
+                      <Image
+                        source={{ uri: String(item.avatarUrl ?? "") }}
+                        style={[styles.transferAvatar, { borderColor: colors.border }]}
+                      />
+
+                      <View style={{ flex: 1, gap: 2 }}>
+                        <ThemedText style={{ color: colors.text, fontWeight: "800", fontSize: 14 }} numberOfLines={1}>
+                          {label}
+                        </ThemedText>
+                      </View>
+
+                      <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
+                    </Pressable>
+                  );
+                }}
+              />
+            </View>
+
+            <View style={[styles.menuDivider, { backgroundColor: colors.border }]} />
+
+            <Pressable
+              onPress={closeTransfer}
+              style={({ pressed }) => [styles.menuItem, { backgroundColor: pressed ? colors.pressed : "transparent" }]}
+            >
+              <Ionicons name="close-outline" size={18} color={colors.text} />
+              <ThemedText style={{ color: colors.text, fontSize: 15, fontWeight: "700" }}>Cancel</ThemedText>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
+    );
+  };
+
+  const TransferConfirmSheet = () => {
+    if (!confirm.open) return null;
+
+    const sid = String(confirm.scenarioId ?? "");
+    const toId = String(confirm.toUserId ?? "");
+    const usersMap = (db as any)?.users ?? {};
+    const target = usersMap[toId];
+
+    const label = target?.username ? `@${String(target.username)}` : toId;
+
+    const onConfirm = async () => {
+      if (!sid || !toId || !userId) return;
+
+      try {
+        const updated = await transferScenarioOwnership(sid, String(userId), toId);
+        closeConfirm();
+        closeTransfer();
+
+        if (!updated) {
+          Alert.alert("Transfer failed", "Could not transfer ownership.");
+          return;
+        }
+
+        Alert.alert("Done", "Ownership transferred.");
+      } catch (e: any) {
+        Alert.alert("Transfer failed", e?.message ?? "Could not transfer ownership.");
+      }
+    };
+
+    return (
+      <Modal transparent visible={confirm.open} animationType="fade" onRequestClose={closeConfirm}>
+        <Pressable style={styles.menuBackdrop} onPress={closeConfirm}>
+          <Pressable
+            style={[styles.confirmCard, { backgroundColor: colors.background, borderColor: colors.border }]}
+            onPress={(e) => e?.stopPropagation?.()}
+          >
+            <ThemedText type="defaultSemiBold" style={{ color: colors.text, fontSize: 16 }}>
+              Confirm transfer
+            </ThemedText>
+
+            <ThemedText style={{ color: colors.textSecondary, marginTop: 8 }}>
+              Transfer ownership to <ThemedText style={{ color: colors.text, fontWeight: "800" }}>{label}</ThemedText>?
+            </ThemedText>
+
+            {target?.avatarUrl ? (
+              <View style={{ alignItems: "center", marginTop: 14 }}>
+                <Image
+                  source={{ uri: String(target.avatarUrl) }}
+                  style={[styles.confirmAvatar, { borderColor: colors.border }]}
+                />
+              </View>
+            ) : null}
+
+            <View style={{ flexDirection: "row", gap: 10, marginTop: 16 }}>
+              <Pressable
+                onPress={closeConfirm}
+                style={({ pressed }) => [
+                  styles.confirmBtn,
+                  { borderColor: colors.border, backgroundColor: pressed ? colors.pressed : colors.card },
+                ]}
+              >
+                <ThemedText style={{ color: colors.text, fontWeight: "800" }}>Cancel</ThemedText>
+              </Pressable>
+
+              <Pressable
+                onPress={onConfirm}
+                style={({ pressed }) => [
+                  styles.confirmBtn,
+                  { borderColor: "#ff3b30", backgroundColor: pressed ? "rgba(255,59,48,0.12)" : "transparent" },
+                ]}
+              >
+                <ThemedText style={{ color: "#ff3b30", fontWeight: "900" }}>Transfer</ThemedText>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+    );
+  };
 
   return (
     <>
@@ -359,6 +684,8 @@ export default function ScenarioListScreen() {
       </ThemedView>
 
       <ScenarioMenuSheet />
+      <TransferOwnershipSheet />
+      <TransferConfirmSheet />
     </>
   );
 }
@@ -367,7 +694,6 @@ const styles = StyleSheet.create({
   container: { flex: 1, paddingHorizontal: 16, paddingTop: 16 },
   headerIconBtn: { padding: 6, backgroundColor: "transparent" },
 
-  // ✅ CTA row
   ctaRow: {
     flexDirection: "row",
     gap: 10,
@@ -445,5 +771,46 @@ const styles = StyleSheet.create({
     opacity: 0.9,
     marginVertical: 6,
     marginHorizontal: 8,
+  },
+
+  transferRow: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginBottom: 8,
+  },
+  transferAvatar: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    borderWidth: StyleSheet.hairlineWidth,
+    backgroundColor: "rgba(127,127,127,0.15)",
+  },
+
+  confirmCard: {
+    marginHorizontal: 16,
+    borderRadius: 18,
+    borderWidth: StyleSheet.hairlineWidth,
+    padding: 14,
+    justifyContent: "center",
+  },
+  confirmAvatar: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    borderWidth: StyleSheet.hairlineWidth,
+    backgroundColor: "rgba(127,127,127,0.15)",
+  },
+  confirmBtn: {
+    flex: 1,
+    height: 44,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    alignItems: "center",
+    justifyContent: "center",
   },
 });

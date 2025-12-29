@@ -97,8 +97,11 @@ type AppDataApi = {
   // scenarios
   upsertScenario: (s: Scenario) => Promise<void>;
   joinScenarioByInviteCode: ( inviteCode: string, userId: string ) => Promise<{ scenario: Scenario; alreadyIn: boolean } | null>;};
-
-const Ctx = React.createContext<(AppDataState & AppDataApi) | null>(null);
+  transferScenarioOwnership: (scenarioId: string,fromUserId: string,toUserId: string ) => Promise<Scenario | null>;
+  leaveScenario: (scenarioId: string, userId: string) => Promise<{ deleted: boolean } | null>;
+  deleteScenario: (scenarioId: string, ownerUserId: string) => Promise<boolean>;
+  
+  const Ctx = React.createContext<(AppDataState & AppDataApi) | null>(null);
 
 function normalizeHandle(input: string) {
   return String(input).trim().replace(/^@+/, "").toLowerCase();
@@ -565,23 +568,28 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         const uid = String(userId ?? "").trim();
         if (!code || !uid) return null;
 
+        let alreadyIn = false;
+        let foundScenarioId: string | null = null;
+
         const nextDb = await updateDb((prev) => {
-          // find scenario by code
           const scenarios = Object.values(prev.scenarios ?? {});
           const found = scenarios.find((s) => String((s as any).inviteCode ?? "").toUpperCase() === code);
           if (!found) return prev;
 
-          const sid = String(found.id);
+          const sid = String((found as any).id);
+          foundScenarioId = sid;
+
           const current = prev.scenarios[sid];
           if (!current) return prev;
 
-          const players = Array.isArray((current as any).playerIds) ? (current as any).playerIds.map(String) : [];
-          const alreadyIn = players.includes(uid);
+          const players = Array.isArray((current as any).playerIds)
+            ? (current as any).playerIds.map(String)
+            : [];
 
-          if (alreadyIn) {
-            // no change
-            return prev;
-          }
+          alreadyIn = players.includes(uid);
+
+          // if already in, don't modify
+          if (alreadyIn) return prev;
 
           const now = new Date().toISOString();
 
@@ -598,18 +606,182 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
           };
         });
 
-        // refresh app state
         setState({ isReady: true, db: nextDb as any });
 
-        // return result for UI
-        const scenario = Object.values((nextDb as any).scenarios ?? {}).find(
-          (s: any) => String((s as any).inviteCode ?? "").toUpperCase() === code
-        ) as Scenario | undefined;
+        if (!foundScenarioId) return null;
 
+        const scenario = (nextDb as any)?.scenarios?.[foundScenarioId] as Scenario | undefined;
         if (!scenario) return null;
 
-        const players = (scenario.playerIds ?? []).map(String);
-        return { scenario, alreadyIn: players.includes(uid) };
+        return { scenario, alreadyIn };
+      },
+
+      transferScenarioOwnership: async (scenarioId: string, fromUserId: string, toUserId: string) => {
+        const sid = String(scenarioId ?? "").trim();
+        const from = String(fromUserId ?? "").trim();
+        const to = String(toUserId ?? "").trim();
+
+        if (!sid || !from || !to) return null;
+        if (from === to) return null;
+
+        const nextDb = await updateDb((prev) => {
+          const current = prev.scenarios?.[sid];
+          if (!current) return prev;
+
+          // only current owner can transfer
+          const owner = String((current as any).ownerUserId ?? "");
+          if (owner !== from) return prev;
+
+          // target must be a player in the scenario
+          const players = Array.isArray((current as any).playerIds)
+            ? (current as any).playerIds.map(String)
+            : [];
+
+          if (!players.includes(to)) return prev;
+
+          const now = new Date().toISOString();
+
+          return {
+            ...prev,
+            scenarios: {
+              ...prev.scenarios,
+              [sid]: {
+                ...current,
+                ownerUserId: to,
+                updatedAt: now,
+              },
+            },
+          };
+        });
+
+        setState({ isReady: true, db: nextDb as any });
+
+        const updated = (nextDb as any)?.scenarios?.[sid] as Scenario | undefined;
+        return updated ?? null;
+      },
+
+      leaveScenario: async (scenarioId: string, userId: string) => {
+        const sid = String(scenarioId ?? "").trim();
+        const uid = String(userId ?? "").trim();
+        console.log("[leaveScenario] called", { scenarioId, userId });
+        if (!sid || !uid) return null;
+
+        let deleted = false;
+
+        const nextDb = await updateDb((prev) => {
+          
+          const current = prev.scenarios?.[sid];
+          if (!current) return prev;
+
+          const ownerId = String((current as any).ownerUserId ?? "");
+          const players = Array.isArray((current as any).playerIds)
+          
+            ? (current as any).playerIds.map(String)
+            : [];
+
+          if (!players.includes(uid)) return prev;
+
+            const remaining: string[] = players.filter((p: string) => p !== uid);
+          const now = new Date().toISOString();
+
+
+          console.log("[leaveScenario] players before", players);
+          console.log("[leaveScenario] ownerId", ownerId);
+
+          // ✅ owner leaving
+          if (uid === ownerId) {
+            // allowed ONLY if they are alone (no other users)
+            if (remaining.length > 0) {
+              return prev; // UI should block and show "transfer ownership"
+            }
+
+            // alone -> deleting scenario silently
+            deleted = true;
+
+            const scenarios = { ...prev.scenarios };
+            delete scenarios[sid];
+
+            // optional cleanup: selected profile + profiles + posts + reposts
+            const selectedProfileByScenario = { ...(prev as any).selectedProfileByScenario };
+            delete selectedProfileByScenario[sid];
+
+            const profiles = { ...prev.profiles };
+            for (const k of Object.keys(profiles)) {
+              if (String((profiles as any)[k]?.scenarioId) === sid) delete profiles[k];
+            }
+
+            const posts = { ...prev.posts };
+            for (const k of Object.keys(posts)) {
+              if (String((posts as any)[k]?.scenarioId) === sid) delete posts[k];
+            }
+
+            const reposts = { ...(prev as any).reposts };
+            for (const k of Object.keys(reposts ?? {})) {
+              if (String((reposts as any)[k]?.scenarioId) === sid) delete reposts[k];
+            }
+
+            return { ...prev, scenarios, profiles, posts, reposts, selectedProfileByScenario };
+          }
+
+          // ✅ normal user leaving
+          return {
+            ...prev,
+            scenarios: {
+              ...prev.scenarios,
+              [sid]: {
+                ...current,
+                playerIds: remaining,
+                updatedAt: now,
+              },
+            },
+          };
+        });
+
+        setState({ isReady: true, db: nextDb as any });
+        return { deleted };
+      },
+
+      deleteScenario: async (scenarioId: string, ownerUserId: string) => {
+        const sid = String(scenarioId ?? "").trim();
+        const uid = String(ownerUserId ?? "").trim();
+        if (!sid || !uid) return false;
+
+        const nextDb = await updateDb((prev) => {
+          const current = prev.scenarios?.[sid];
+          if (!current) return prev;
+
+          const ownerId = String((current as any).ownerUserId ?? "");
+          if (ownerId !== uid) return prev; // only owner can delete
+
+          const scenarios = { ...prev.scenarios };
+          delete scenarios[sid];
+
+          // optional cleanup: selected profile + profiles + posts + reposts
+          const selectedProfileByScenario = { ...(prev as any).selectedProfileByScenario };
+          delete selectedProfileByScenario[sid];
+
+          const profiles = { ...prev.profiles };
+          for (const k of Object.keys(profiles)) {
+            if (String((profiles as any)[k]?.scenarioId) === sid) delete profiles[k];
+          }
+
+          const posts = { ...prev.posts };
+          for (const k of Object.keys(posts)) {
+            if (String((posts as any)[k]?.scenarioId) === sid) delete posts[k];
+          }
+
+          const reposts = { ...(prev as any).reposts };
+          for (const k of Object.keys(reposts ?? {})) {
+            if (String((reposts as any)[k]?.scenarioId) === sid) delete reposts[k];
+          }
+
+          return { ...prev, scenarios, profiles, posts, reposts, selectedProfileByScenario };
+        });
+
+        setState({ isReady: true, db: nextDb as any });
+
+        // confirm it actually got deleted
+        return !(nextDb as any)?.scenarios?.[sid];
       },
     };
   }, [db]);

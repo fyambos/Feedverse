@@ -22,7 +22,7 @@ import { useAuth } from "@/context/auth";
 import { useAppData } from "@/context/appData";
 
 const INVITE_LIMITS = {
-  MAX_CODE: 8,
+  MAX_CODE: 9,
 };
 
 function normalizeInviteCode(input: string) {
