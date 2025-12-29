@@ -71,7 +71,7 @@ export default function ScenarioListScreen() {
       Alert.alert("No invite code", "This scenario has no invite code.");
       return;
     }
-    await Clipboard.setStringAsync(menu.inviteCode);
+    await Clipboard.setStringAsync(menu.inviteCode); // raw
     closeScenarioMenu();
     Alert.alert("Copied", "Invite code copied to clipboard.");
   };
@@ -94,10 +94,30 @@ export default function ScenarioListScreen() {
   const ScenarioMenuSheet = () => (
     <Modal transparent visible={menu.open} animationType="fade" onRequestClose={closeScenarioMenu}>
       <Pressable style={styles.menuBackdrop} onPress={closeScenarioMenu}>
-        <Pressable style={[styles.menuSheet, { backgroundColor: colors.background, borderColor: colors.border }]}>
+        <Pressable
+          style={[styles.menuSheet, { backgroundColor: colors.background, borderColor: colors.border }]}
+          onPress={(e) => e?.stopPropagation?.()}
+        >
+          {/* invite code shown raw */}
+          <View style={styles.menuInviteWrap}>
+            <ThemedText style={{ color: colors.textSecondary, fontSize: 12 }}>Invite code</ThemedText>
+            <ThemedText type="defaultSemiBold" style={{ color: colors.text, fontSize: 16, marginTop: 4 }}>
+              {menu.inviteCode ?? "None"}
+            </ThemedText>
+          </View>
+
+          <View style={[styles.menuDivider, { backgroundColor: colors.border }]} />
+
           <Pressable
             onPress={copyInviteCode}
-            style={({ pressed }) => [styles.menuItem, { backgroundColor: pressed ? colors.pressed : "transparent" }]}
+            disabled={!menu.inviteCode}
+            style={({ pressed }) => [
+              styles.menuItem,
+              {
+                backgroundColor: pressed ? colors.pressed : "transparent",
+                opacity: menu.inviteCode ? 1 : 0.55,
+              },
+            ]}
           >
             <Ionicons name="copy-outline" size={18} color={colors.text} />
             <ThemedText style={{ color: colors.text, fontSize: 15, fontWeight: "600" }}>
@@ -177,6 +197,8 @@ export default function ScenarioListScreen() {
               .map((id: string) => usersMap[String(id)] ?? null)
               .filter(Boolean);
 
+            const inviteCode = item.inviteCode ? String(item.inviteCode) : null;
+
             return (
               <Pressable
                 onPress={() => openScenario(String(item.id))}
@@ -229,6 +251,22 @@ export default function ScenarioListScreen() {
                       {players.length}/{MAX_PLAYERS} Players
                     </ThemedText>
                   </View>
+
+                  {/* invite code shown raw on card (tap to copy) */}
+                  {inviteCode ? (
+                    <Pressable
+                      onPress={async () => {
+                        await Clipboard.setStringAsync(inviteCode);
+                        Alert.alert("Copied", "Invite code copied to clipboard.");
+                      }}
+                      hitSlop={8}
+                      style={({ pressed }) => [{ opacity: pressed ? 0.65 : 1 }]}
+                    >
+                      <ThemedText style={{ color: colors.textSecondary, fontSize: 13, marginTop: 2 }}>
+                        Invite: {inviteCode}
+                      </ThemedText>
+                    </Pressable>
+                  ) : null}
                 </View>
               </Pressable>
             );
@@ -287,6 +325,7 @@ const styles = StyleSheet.create({
   topBarActions: { gap: 14 },
   topBarTitle: { fontSize: 18 },
 
+  // menu sheet
   menuBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.35)", justifyContent: "flex-end" },
   menuSheet: {
     borderTopLeftRadius: 18,
@@ -294,6 +333,11 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     paddingVertical: 8,
     paddingHorizontal: 8,
+  },
+  menuInviteWrap: {
+    paddingHorizontal: 12,
+    paddingTop: 10,
+    paddingBottom: 6,
   },
   menuItem: {
     flexDirection: "row",
