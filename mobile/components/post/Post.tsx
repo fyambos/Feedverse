@@ -1,3 +1,4 @@
+// mobile/components/post/Post.tsx
 import React from "react";
 import { Alert, Modal, Pressable, StyleSheet, View } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
@@ -16,8 +17,7 @@ import { PostActions } from "@/components/post/PostActions";
 import { PostHeader } from "@/components/post/PostHeader";
 import { PostBody } from "@/components/post/PostBody";
 
-import { useAuth } from "@/context/auth";
-import { useAppData } from "@/context/appData";
+import { useUserSettings } from "@/hooks/useUserSettings";
 
 export type PostVariant = "feed" | "detail" | "reply";
 
@@ -106,12 +106,8 @@ export function Post({
   const scheme = useColorScheme() ?? "light";
   const colors = Colors[scheme];
 
-  const { userId } = useAuth();
-  const { getUserById } = useAppData();
-
-  const currentUser = userId ? getUserById(String(userId)) : null;
-  // default true unless explicitly false
-  const showTimestampsPref = currentUser?.settings?.showTimestamps !== false;
+  const { showTimestamps } = useUserSettings();
+  const showTimestampsPref = showTimestamps;
 
   const addVideoIcon = Boolean((item as any).addVideoIcon);
 

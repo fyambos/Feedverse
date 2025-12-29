@@ -1,6 +1,6 @@
 // mobile/context/appData.tsx
 import React from "react";
-import type { DbV4, Post, Profile, Scenario, User, Repost, UserSettings } from "@/data/db/schema";
+import type { DbV4, Post, Profile, Scenario, Repost } from "@/data/db/schema";
 import { readDb, updateDb } from "@/data/db/storage";
 import { seedDbIfNeeded } from "@/data/db/seed";
 
@@ -50,25 +50,25 @@ type ProfileFeedPageResult = {
 };
 
 type AppDataApi = {
-  // selectors
-  getUserById: (id: string) => User | null;
-  listUsers: () => User[];
-
+  // scenarios
   getScenarioById: (id: string) => Scenario | null;
   listScenarios: () => Scenario[];
 
+  // profiles
   getProfileById: (id: string) => Profile | null;
   getProfileByHandle: (scenarioId: string, handle: string) => Profile | null;
   listProfilesForScenario: (scenarioId: string) => Profile[];
 
+  // posts
   getPostById: (id: string) => Post | null;
   listPostsForScenario: (scenarioId: string) => Post[];
   listRepliesForPost: (postId: string) => Post[];
 
+  // paging
   listPostsPage: (args: PostsPageArgs) => PostsPageResult;
-
   listProfileFeedPage: (args: ProfileFeedPageArgs) => ProfileFeedPageResult;
 
+  // selection
   getSelectedProfileId: (scenarioId: string) => string | null;
 
   // actions
@@ -77,19 +77,15 @@ type AppDataApi = {
   upsertPost: (p: Post) => Promise<void>;
   deletePost: (postId: string) => Promise<void>;
 
-  updateUserSettings: (userId: string, settings: UserSettings) => Promise<void>;
-
-  // ✅ NEW
-  updateUserAvatar: (userId: string, avatarUrl?: string | null) => Promise<void>;
-
+  // likes
   toggleLike: (scenarioId: string, postId: string) => Promise<void>;
   isPostLikedBySelectedProfile: (scenarioId: string, postId: string) => boolean;
 
-  // repost
+  // reposts
   toggleRepost: (scenarioId: string, postId: string) => Promise<void>;
   isPostRepostedBySelectedProfile: (scenarioId: string, postId: string) => boolean;
 
-  // (optional) helper: did THIS profile repost this post?
+  // helpers
   isPostRepostedByProfileId: (profileId: string, postId: string) => boolean;
   getRepostEventForProfile: (profileId: string, postId: string) => Repost | null;
 };
@@ -149,10 +145,6 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
 
   const api = React.useMemo<AppDataApi>(() => {
     return {
-      // --- users
-      getUserById: (id) => (db ? db.users[String(id)] ?? null : null),
-      listUsers: () => (db ? Object.values(db.users) : []),
-
       // --- scenarios
       getScenarioById: (id) => (db ? db.scenarios[String(id)] ?? null : null),
       listScenarios: () => (db ? Object.values(db.scenarios) : []),
@@ -324,7 +316,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                 ...p,
                 id,
                 createdAt,
-                joinedDate: p.joinedDate ?? existing?.joinedDate ?? createdAt,
+                joinedDate: (p as any).joinedDate ?? (existing as any)?.joinedDate ?? createdAt,
                 updatedAt: now,
               },
             },
@@ -341,8 +333,8 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         const next = await updateDb((prev) => {
           const existing = prev.posts[id];
 
-          const insertedAt = existing?.insertedAt ?? p.insertedAt ?? now;
-          const createdAt = p.createdAt ?? existing?.createdAt ?? now;
+          const insertedAt = (existing as any)?.insertedAt ?? (p as any).insertedAt ?? now;
+          const createdAt = (p as any).createdAt ?? existing?.createdAt ?? now;
 
           return {
             ...prev,
@@ -363,57 +355,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         setState({ isReady: true, db: next as any });
       },
 
-      updateUserSettings: async (userId: string, settings: UserSettings) => {
-        const id = String(userId);
-        const now = new Date().toISOString();
-
-        const next = await updateDb((prev) => {
-          const existing = prev.users[id];
-          if (!existing) return prev;
-
-          return {
-            ...prev,
-            users: {
-              ...prev.users,
-              [id]: {
-                ...existing,
-                settings: {
-                  ...(existing.settings ?? {}),
-                  ...(settings ?? {}),
-                },
-                updatedAt: now,
-              },
-            },
-          };
-        });
-
-        setState({ isReady: true, db: next as any });
-      },
-
-      updateUserAvatar: async (userId: string, avatarUrl?: string | null) => {
-        const id = String(userId);
-        const now = new Date().toISOString();
-
-        const next = await updateDb((prev) => {
-          const existing = prev.users[id];
-          if (!existing) return prev;
-
-          return {
-            ...prev,
-            users: {
-              ...prev.users,
-              [id]: {
-                ...existing,
-                avatarUrl: avatarUrl || existing.avatarUrl,
-                updatedAt: now,
-              },
-            },
-          };
-        });
-
-        setState({ isReady: true, db: next as any });
-      },
-
+      // likes
       isPostLikedBySelectedProfile: (scenarioId, postId) => {
         if (!db) return false;
         const sel = db.selectedProfileByScenario[String(scenarioId)];
@@ -440,6 +382,8 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
 
           const nextLiked = already ? liked.filter((x) => x !== pid) : [...liked, pid];
 
+          const now = new Date().toISOString();
+
           return {
             ...prev,
             profiles: {
@@ -447,7 +391,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
               [String(liker.id)]: {
                 ...liker,
                 likedPostIds: nextLiked,
-                updatedAt: new Date().toISOString(),
+                updatedAt: now,
               },
             },
             posts: {
@@ -455,7 +399,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
               [pid]: {
                 ...post,
                 likeCount: Math.max(0, (post.likeCount ?? 0) + (already ? -1 : 1)),
-                updatedAt: new Date().toISOString(),
+                updatedAt: now,
               },
             },
           };
@@ -464,17 +408,17 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         setState({ isReady: true, db: next as any });
       },
 
-      // ===== REPOSTS (events) =====
+      // reposts
       getRepostEventForProfile: (profileId: string, postId: string) => {
         if (!db) return null;
         const id = `${String(profileId)}|${String(postId)}`;
-        return db.reposts?.[id] ?? null;
+        return (db as any).reposts?.[id] ?? null;
       },
 
       isPostRepostedByProfileId: (profileId: string, postId: string) => {
         if (!db) return false;
         const id = `${String(profileId)}|${String(postId)}`;
-        return !!db.reposts?.[id];
+        return !!(db as any).reposts?.[id];
       },
 
       isPostRepostedBySelectedProfile: (scenarioId: string, postId: string) => {
@@ -482,7 +426,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         const sel = db.selectedProfileByScenario[String(scenarioId)];
         if (!sel) return false;
         const id = `${String(sel)}|${String(postId)}`;
-        return !!db.reposts?.[id];
+        return !!(db as any).reposts?.[id];
       },
 
       toggleRepost: async (scenarioId: string, postId: string) => {
