@@ -73,7 +73,7 @@ export type Repost = {
   createdAt: string; 
 };
 
-export type DbV4 = {
+export type DbV5 = {
   version: 4;
   seededAt: string;
   users: Record<string, User>;
