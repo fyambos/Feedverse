@@ -5,7 +5,7 @@ export const MOCK_SCENARIOS: Scenario[] = [
   {
     id: "demo-kpop",
     name: "K-pop College AU",
-    cover: "https://picsum.photos/600/400?random=1",
+    cover: "https://loremflickr.com/800/400/university",
     playerIds: ["u5", "u7", "u14", "u6"],
     createdAt: "2024-06-01T00:00:00Z",
     updatedAt: "2024-06-01T00:00:00Z",
@@ -24,7 +24,7 @@ export const MOCK_SCENARIOS: Scenario[] = [
   {
     id: "demo-royalty",
     name: "Modern Royalty AU",
-    cover: "https://picsum.photos/600/400?random=2",
+    cover: "https://loremflickr.com/800/400/royalty",
     playerIds: ["u8", "u9", "u14"],
     createdAt: "2024-06-01T00:00:00Z",
     updatedAt: "2024-06-01T00:00:00Z",
@@ -43,7 +43,7 @@ export const MOCK_SCENARIOS: Scenario[] = [
   {
     id: "demo-mafia",
     name: "Mafia Heist AU",
-    cover: "https://loremflickr.com/800/400/castle",
+    cover: "https://loremflickr.com/800/400/mafia",
     playerIds: ["u12", "u13", "u10", "u11", "u14"],
     createdAt: "2024-06-01T00:00:00Z",
     updatedAt: "2024-06-01T00:00:00Z",

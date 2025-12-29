@@ -10,7 +10,8 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { Stack, router, useLocalSearchParams } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 
 import { ThemedText } from "@/components/themed-text";
@@ -31,53 +32,80 @@ import {
   colorForTagKey,
 } from "@/lib/tags";
 
+/* -------------------------------------------------------------------------- */
+/* Limits                                                                      */
+/* -------------------------------------------------------------------------- */
+
+const SCENARIO_LIMITS = {
+  MAX_NAME: 60,
+  MAX_DESCRIPTION: 220,
+};
+
+/* -------------------------------------------------------------------------- */
+/* Helpers                                                                     */
+/* -------------------------------------------------------------------------- */
+
+type Params = { scenarioId?: string };
+
 function makeId(prefix: string) {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
+// 8 chars, uppercase
+function generateInviteCode() {
+  const raw = Math.random().toString(36).slice(2, 10).toUpperCase();
+  return raw.replace(/[^A-Z0-9]/g, "A").slice(0, 8);
+}
+
 type ScenarioTagUI = {
-  key: string;   // canonical
-  name: string;  // generated
-  color: string; // deterministic, locked
+  key: string;
+  name: string;
+  color: string;
 };
 
 export default function CreateScenarioModal() {
+  const { scenarioId } = useLocalSearchParams<Params>();
+  const isEdit = Boolean(scenarioId);
+
   const scheme = useColorScheme() ?? "light";
   const colors = Colors[scheme];
 
-  const { scenarioId } = useLocalSearchParams<{ scenarioId?: string }>();
-  const isEdit = !!scenarioId;
-
   const { userId } = useAuth();
-  const { getScenarioById, upsertScenario } = useAppData() as any;
+  const { isReady, getScenarioById, upsertScenario } = useAppData() as any;
 
   const existing: Scenario | null = useMemo(() => {
     if (!isEdit) return null;
-    const s = getScenarioById?.(String(scenarioId));
-    return s ? (s as Scenario) : null;
-  }, [getScenarioById, isEdit, scenarioId]);
+    return getScenarioById?.(String(scenarioId)) ?? null;
+  }, [isEdit, scenarioId, getScenarioById]);
 
   const isOwner = useMemo(() => {
-    if (!existing) return true; // creating => current user is owner
-    return String(existing.ownerUserId) === String(userId);
+    if (!existing) return true;
+    return String(existing.ownerUserId) === String(userId ?? "");
   }, [existing, userId]);
 
-  const [name, setName] = useState<string>(existing?.name ?? "");
-  const [description, setDescription] = useState<string>(existing?.description ?? "");
-  const [cover, setCover] = useState<string>(existing?.cover ?? "");
-  const [inviteCode, setInviteCode] = useState<string>(existing?.inviteCode ?? "");
+  const canEdit = !isEdit || isOwner;
 
-  // hydrate tags from existing (supports older shapes)
+  // form state
+  const [name, setName] = useState(existing?.name ?? "");
+  const [description, setDescription] = useState(existing?.description ?? "");
+  const [cover, setCover] = useState(existing?.cover ?? "");
+
+  // inviteCode: read-only, but can regenerate via button (create-mode)
+  const [inviteCode, setInviteCode] = useState<string>(() => {
+    const existingCode = String(existing?.inviteCode ?? "").trim();
+    if (existingCode) return existingCode;
+    return generateInviteCode();
+  });
+
   const [tags, setTags] = useState<ScenarioTagUI[]>(() => {
     const raw = (existing as any)?.tags;
     if (!Array.isArray(raw)) return [];
 
-    const list: ScenarioTagUI[] = raw
+    const list = raw
       .map((t: any) => {
         const rawInput = String(t?.key ?? t?.name ?? t?.id ?? "");
         const key = tagKeyFromInput(rawInput);
         if (!key) return null;
-
         return {
           key,
           name: tagNameFromKey(key),
@@ -86,7 +114,6 @@ export default function CreateScenarioModal() {
       })
       .filter(Boolean) as ScenarioTagUI[];
 
-    // dedupe by key
     const seen = new Set<string>();
     return list.filter((t) => {
       if (seen.has(t.key)) return false;
@@ -99,9 +126,9 @@ export default function CreateScenarioModal() {
   const [tagInput, setTagInput] = useState("");
   const tagInputRef = useRef<TextInput>(null);
 
-  const onClose = () => router.back();
-
   const addTag = useCallback(() => {
+    if (!canEdit) return;
+
     const cleaned = sanitizeTagInput(tagInput);
     if (!cleaned) return;
 
@@ -110,25 +137,32 @@ export default function CreateScenarioModal() {
 
     const nextTag: ScenarioTagUI = {
       key,
-      name: tagNameFromKey(key),  // always generated
-      color: colorForTagKey(key), // always locked
+      name: tagNameFromKey(key),
+      color: colorForTagKey(key),
     };
 
     setTags((prev) => {
-      const exists = prev.some((t) => t.key === key);
-      if (exists) return prev;
+      if (prev.some((t) => t.key === key)) return prev;
       return [...prev, nextTag];
     });
 
     setTagInput("");
-
-    // keep focus to avoid "submit" side effects / keyboard flicker
     requestAnimationFrame(() => tagInputRef.current?.focus());
-  }, [tagInput]);
+  }, [canEdit, tagInput]);
 
-  const removeTag = useCallback((key: string) => {
-    setTags((prev) => prev.filter((t) => t.key !== key));
-  }, []);
+  const removeTag = useCallback(
+    (key: string) => {
+      if (!canEdit) return;
+      setTags((prev) => prev.filter((t) => t.key !== key));
+    },
+    [canEdit]
+  );
+
+  // regenerate invite code (button-only mutation)
+  const regenerateInviteCode = useCallback(() => {
+    if (!canEdit) return;
+    setInviteCode(generateInviteCode());
+  }, [canEdit, isEdit]);
 
   const validate = useCallback(() => {
     if (!userId) {
@@ -139,22 +173,30 @@ export default function CreateScenarioModal() {
       Alert.alert("Not allowed", "Only the scenario owner can edit this scenario.");
       return false;
     }
-    if (!String(name).trim()) {
+
+    const safeName = String(name).trim();
+    if (!safeName) {
       Alert.alert("Missing name", "Scenario name is required.");
       return false;
     }
-    if (!String(cover).trim()) {
+
+    const safeCover = String(cover).trim();
+    if (!safeCover) {
       Alert.alert("Missing cover", "Cover URL is required for now.");
       return false;
     }
-    if (!String(inviteCode).trim()) {
-      Alert.alert("Missing invite code", "Invite code is required.");
+
+    const code = String(inviteCode).trim();
+    if (!code) {
+      Alert.alert("Missing invite code", "Invite code is missing (unexpected).");
       return false;
     }
+
     return true;
   }, [userId, isEdit, isOwner, name, cover, inviteCode]);
 
   const onSave = useCallback(async () => {
+    if (!isReady) return;
     if (!validate()) return;
 
     const now = new Date().toISOString();
@@ -170,15 +212,14 @@ export default function CreateScenarioModal() {
 
     const next: Scenario = {
       ...base,
-      name: String(name).trim(),
-      description: String(description).trim() || undefined,
+      name: String(name).trim().slice(0, SCENARIO_LIMITS.MAX_NAME),
+      description:
+        String(description).trim().slice(0, SCENARIO_LIMITS.MAX_DESCRIPTION) || undefined,
       cover: String(cover).trim(),
-      inviteCode: String(inviteCode).trim(),
+      inviteCode: String(inviteCode).trim(), // set only by generator
       updatedAt: now,
-
-      // store tags as key+name+color (id stable from key)
       tags: tags.map((t) => ({
-        id: `t_${t.key}`, // stable id
+        id: `t_${t.key}`,
         key: t.key,
         name: t.name,
         color: t.color,
@@ -191,57 +232,75 @@ export default function CreateScenarioModal() {
     } catch (e: any) {
       Alert.alert("Save failed", e?.message ?? "Could not save scenario.");
     }
-  }, [validate, existing, userId, name, description, cover, inviteCode, tags, upsertScenario]);
+  }, [
+    isReady,
+    validate,
+    existing,
+    userId,
+    name,
+    description,
+    cover,
+    inviteCode,
+    tags,
+    upsertScenario,
+  ]);
 
   const headerTitle = isEdit ? "Edit scenario" : "Create scenario";
 
   return (
-    <>
-      <Stack.Screen
-        options={{
-          presentation: "modal",
-          headerTitle,
-          headerLeft: () => (
-            <Pressable onPress={onClose} hitSlop={10} style={{ paddingHorizontal: 10, paddingVertical: 6 }}>
-              <ThemedText style={{ color: colors.textSecondary, fontWeight: "700" }}>Cancel</ThemedText>
+    <SafeAreaView edges={["top"]} style={{ flex: 1, backgroundColor: colors.background }}>
+      <ThemedView style={[styles.container, { backgroundColor: colors.background }]}>
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          keyboardVerticalOffset={Platform.OS === "ios" ? 6 : 0}
+        >
+          {/* Header */}
+          <View style={[styles.header, { borderBottomColor: colors.border }]}>
+            <Pressable onPress={() => router.back()} hitSlop={12}>
+              <Ionicons name="close" size={24} color={colors.text} />
             </Pressable>
-          ),
-          headerRight: () => (
-            <Pressable onPress={onSave} hitSlop={10} style={{ paddingHorizontal: 10, paddingVertical: 6 }}>
-              <ThemedText style={{ color: colors.text, fontWeight: "800" }}>
+
+            <ThemedText type="defaultSemiBold">{headerTitle}</ThemedText>
+
+            <Pressable
+              onPress={onSave}
+              disabled={!canEdit}
+              hitSlop={12}
+              style={({ pressed }) => [{ opacity: !canEdit ? 0.4 : pressed ? 0.7 : 1 }]}
+            >
+              <ThemedText style={{ color: canEdit ? colors.tint : colors.textMuted, fontWeight: "800" }}>
                 {isEdit ? "Save" : "Create"}
               </ThemedText>
             </Pressable>
-          ),
-        }}
-      />
+          </View>
 
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-        style={{ flex: 1, backgroundColor: colors.background }}
-      >
-        <ThemedView style={[styles.screen, { backgroundColor: colors.background }]}>
-          <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-            <RowCard label="Name" colors={colors}>
+          <ScrollView
+            style={{ flex: 1 }}
+            contentContainerStyle={styles.content}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
+          >
+            <RowCard label={`Name (${name.length}/${SCENARIO_LIMITS.MAX_NAME})`} colors={colors}>
               <TextInput
                 value={name}
-                onChangeText={setName}
+                onChangeText={(v) => setName(v.slice(0, SCENARIO_LIMITS.MAX_NAME))}
                 placeholder="Scenario name"
                 placeholderTextColor={colors.textMuted}
                 style={[styles.input, { color: colors.text }]}
-                editable={!isEdit || isOwner}
+                editable={canEdit}
               />
             </RowCard>
 
-            <RowCard label="Description" colors={colors}>
+            <RowCard label={`Description (${description.length}/${SCENARIO_LIMITS.MAX_DESCRIPTION})`} colors={colors}>
               <TextInput
                 value={description}
-                onChangeText={setDescription}
+                onChangeText={(v) => setDescription(v.slice(0, SCENARIO_LIMITS.MAX_DESCRIPTION))}
                 placeholder="Short pitch / vibe"
                 placeholderTextColor={colors.textMuted}
                 multiline
                 style={[styles.input, styles.inputMultiline, { color: colors.text }]}
-                editable={!isEdit || isOwner}
+                editable={canEdit}
               />
             </RowCard>
 
@@ -253,37 +312,39 @@ export default function CreateScenarioModal() {
                 placeholderTextColor={colors.textMuted}
                 autoCapitalize="none"
                 style={[styles.input, { color: colors.text }]}
-                editable={!isEdit || isOwner}
+                editable={canEdit}
               />
             </RowCard>
 
+            {/* Invite code (read-only, regen by button) */}
             <RowCard
               label="Invite code"
               colors={colors}
               right={
                 <Pressable
-                  onPress={() => {
-                    if (!isOwner && isEdit) return;
-                    if (inviteCode.trim()) return;
-                    setInviteCode(Math.random().toString(36).slice(2, 10).toUpperCase());
-                  }}
+                  onPress={regenerateInviteCode}
                   hitSlop={8}
-                  style={({ pressed }) => [{ opacity: pressed ? 0.65 : 1 }]}
+                  disabled={!canEdit}
+                  style={({ pressed }) => [{ opacity: !canEdit ? 0.4 : pressed ? 0.65 : 1 }]}
                 >
                   <ThemedText style={{ color: colors.textSecondary, fontWeight: "800", fontSize: 12 }}>
-                    RANDOM
+                    GENERATE
                   </ThemedText>
                 </Pressable>
               }
             >
               <TextInput
                 value={inviteCode}
-                onChangeText={setInviteCode}
-                placeholder="e.g. ROYAL2024"
-                placeholderTextColor={colors.textMuted}
-                autoCapitalize="characters"
-                style={[styles.input, { color: colors.text, letterSpacing: 0.6 }]}
-                editable={!isEdit || isOwner}
+                editable={false}
+                selectTextOnFocus
+                style={[
+                  styles.input,
+                  {
+                    color: colors.textMuted,
+                    letterSpacing: 0.8,
+                    opacity: 0.85,
+                  },
+                ]}
               />
             </RowCard>
 
@@ -299,29 +360,23 @@ export default function CreateScenarioModal() {
                       placeholderTextColor={colors.textMuted}
                       style={[styles.input, { color: colors.text }]}
                       autoCapitalize="none"
-                      editable={!isEdit || isOwner}
-
-                      // ✅ avoids weird navigation/remount behaviors
+                      editable={canEdit}
                       blurOnSubmit={false}
                       returnKeyType="done"
-                      onSubmitEditing={() => {
-                        if (isEdit && !isOwner) return;
-                        addTag();
-                        requestAnimationFrame(() => tagInputRef.current?.focus());
-                      }}
+                      onSubmitEditing={addTag}
                     />
                   </View>
 
                   <Pressable
                     onPress={addTag}
-                    disabled={isEdit && !isOwner}
+                    disabled={!canEdit}
                     hitSlop={10}
                     style={({ pressed }) => [
                       styles.addTagBtn,
                       {
                         borderColor: colors.border,
                         backgroundColor: pressed ? colors.pressed : colors.card,
-                        opacity: isEdit && !isOwner ? 0.5 : 1,
+                        opacity: canEdit ? 1 : 0.5,
                       },
                     ]}
                   >
@@ -334,10 +389,7 @@ export default function CreateScenarioModal() {
                     {tags.map((t) => (
                       <View
                         key={t.key}
-                        style={[
-                          styles.tagChip,
-                          { borderColor: colors.border, backgroundColor: colors.card },
-                        ]}
+                        style={[styles.tagChip, { borderColor: colors.border, backgroundColor: colors.card }]}
                       >
                         <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
                           <View style={[styles.colorDot, { backgroundColor: t.color }]} />
@@ -346,7 +398,7 @@ export default function CreateScenarioModal() {
                           </ThemedText>
                         </View>
 
-                        {(!isEdit || isOwner) && (
+                        {canEdit ? (
                           <Pressable
                             onPress={() => removeTag(t.key)}
                             hitSlop={8}
@@ -354,41 +406,45 @@ export default function CreateScenarioModal() {
                           >
                             <Ionicons name="close" size={16} color={colors.textSecondary} />
                           </Pressable>
-                        )}
+                        ) : null}
                       </View>
                     ))}
                   </View>
                 ) : (
                   <ThemedText style={{ color: colors.textSecondary, fontSize: 13 }}>
-                    Add tags like Notion. Casing doesn’t matter (ROMCOM → Romcom). Colors are locked.
+                    Add tags to the scenario.
                   </ThemedText>
                 )}
               </View>
             </RowCard>
 
-            <View style={{ paddingHorizontal: 2, paddingTop: 4 }}>
-              <ThemedText style={{ color: colors.textSecondary, fontSize: 12 }}>
-                owner: {existing?.ownerUserId ?? userId ?? "—"}
-              </ThemedText>
-            </View>
-
-            {isEdit && !isOwner ? (
-              <View style={{ paddingHorizontal: 2, paddingTop: 2 }}>
-                <ThemedText style={{ color: colors.textMuted, fontSize: 12 }}>
+            <View style={{ paddingHorizontal: 2, paddingTop: 2 }}>
+              {isEdit && !isOwner ? (
+                <ThemedText style={{ color: colors.textMuted, fontSize: 12, marginTop: 4 }}>
                   You can view details, but only the owner can edit.
                 </ThemedText>
-              </View>
-            ) : null}
+              ) : null}
+            </View>
           </ScrollView>
-        </ThemedView>
-      </KeyboardAvoidingView>
-    </>
+        </KeyboardAvoidingView>
+      </ThemedView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1 },
-  content: { padding: 16, gap: 12, paddingBottom: 30 },
+  container: { flex: 1 },
+
+  header: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+
+  content: { padding: 16, gap: 12, paddingBottom: 28 },
 
   input: {
     fontSize: 15,
