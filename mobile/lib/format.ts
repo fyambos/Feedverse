@@ -2,6 +2,19 @@ export function normalizeHandle(input: string) {
   return String(input).trim().replace(/^@+/, "").toLowerCase();
 }
 
+export function normalizeUrl(input: string) {
+  const raw = String(input ?? "").trim();
+  if (!raw) return "";
+  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(raw)) return raw; // has scheme
+  return `https://${raw}`;
+}
+
+export function displayUrl(input: string) {
+  const raw = String(input ?? "").trim();
+  if (!raw) return "";
+  return raw.replace(/^https?:\/\//i, "").replace(/\/$/, "");
+}
+
 export function formatRelativeTime(iso: string) {
   const diff = Date.now() - new Date(iso).getTime();
   const sec = Math.floor(diff / 1000);
@@ -25,10 +38,12 @@ export function formatDetailTimestamp(iso: string) {
 
 export function formatJoined(iso: string) {
   const d = new Date(iso);
-  if (isNaN(d.getTime())) return "Joined";
-  const month = d.toLocaleString(undefined, { month: "long" });
-  const year = d.getFullYear();
-  return `Joined ${month} ${year}`;
+  if (Number.isNaN(d.getTime())) return null;
+  try {
+    return d.toLocaleDateString(undefined, { month: "short", year: "numeric" });
+  } catch {
+    return null;
+  }
 }
 
 export function formatCount(n: number) {
