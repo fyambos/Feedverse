@@ -52,6 +52,8 @@ type ProfileFeedPageResult = {
   nextCursor: FeedCursor | null;
 };
 
+
+
 type AppDataApi = {
   // scenarios
   getScenarioById: (id: string) => Scenario | null;
@@ -94,7 +96,7 @@ type AppDataApi = {
   
   // scenarios
   upsertScenario: (s: Scenario) => Promise<void>;
-};
+  joinScenarioByInviteCode: ( inviteCode: string, userId: string ) => Promise<{ scenario: Scenario; alreadyIn: boolean } | null>;};
 
 const Ctx = React.createContext<(AppDataState & AppDataApi) | null>(null);
 
@@ -556,6 +558,58 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         });
 
         setState({ isReady: true, db: next as any });
+      },
+
+      joinScenarioByInviteCode: async (inviteCode, userId) => {
+        const code = String(inviteCode ?? "").trim().toUpperCase();
+        const uid = String(userId ?? "").trim();
+        if (!code || !uid) return null;
+
+        const nextDb = await updateDb((prev) => {
+          // find scenario by code
+          const scenarios = Object.values(prev.scenarios ?? {});
+          const found = scenarios.find((s) => String((s as any).inviteCode ?? "").toUpperCase() === code);
+          if (!found) return prev;
+
+          const sid = String(found.id);
+          const current = prev.scenarios[sid];
+          if (!current) return prev;
+
+          const players = Array.isArray((current as any).playerIds) ? (current as any).playerIds.map(String) : [];
+          const alreadyIn = players.includes(uid);
+
+          if (alreadyIn) {
+            // no change
+            return prev;
+          }
+
+          const now = new Date().toISOString();
+
+          return {
+            ...prev,
+            scenarios: {
+              ...prev.scenarios,
+              [sid]: {
+                ...current,
+                playerIds: Array.from(new Set([...players, uid])),
+                updatedAt: now,
+              },
+            },
+          };
+        });
+
+        // refresh app state
+        setState({ isReady: true, db: nextDb as any });
+
+        // return result for UI
+        const scenario = Object.values((nextDb as any).scenarios ?? {}).find(
+          (s: any) => String((s as any).inviteCode ?? "").toUpperCase() === code
+        ) as Scenario | undefined;
+
+        if (!scenario) return null;
+
+        const players = (scenario.playerIds ?? []).map(String);
+        return { scenario, alreadyIn: players.includes(uid) };
       },
     };
   }, [db]);

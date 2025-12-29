@@ -9,10 +9,12 @@ import {
   StyleSheet,
   TextInput,
   View,
+  ActivityIndicator,
 } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import { Image } from "expo-image";
 
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
@@ -31,6 +33,8 @@ import {
   tagNameFromKey,
   colorForTagKey,
 } from "@/lib/tags";
+
+import { pickAndPersistOneImage } from "@/components/ui/ImagePicker";
 
 /* -------------------------------------------------------------------------- */
 /* Limits                                                                      */
@@ -55,6 +59,13 @@ function makeId(prefix: string) {
 function generateInviteCode() {
   const raw = Math.random().toString(36).slice(2, 10).toUpperCase();
   return raw.replace(/[^A-Z0-9]/g, "A").slice(0, 8);
+}
+
+// tags: letters/numbers/spaces only (no special chars)
+function isValidTagInput(raw: string) {
+  const s = String(raw ?? "").trim();
+  if (!s) return false;
+  return /^[a-zA-Z0-9 ]+$/.test(s);
 }
 
 type ScenarioTagUI = {
@@ -88,9 +99,30 @@ export default function CreateScenarioModal() {
   // form state
   const [name, setName] = useState(existing?.name ?? "");
   const [description, setDescription] = useState(existing?.description ?? "");
-  const [cover, setCover] = useState(existing?.cover ?? "");
 
-  // inviteCode: read-only, but can regenerate via button (create-mode)
+  // cover: picked image uri
+  const [cover, setCover] = useState<string>(String(existing?.cover ?? "").trim());
+  const [pickingCover, setPickingCover] = useState(false);
+
+  const pickCover = useCallback(async () => {
+    if (!canEdit) return;
+
+    setPickingCover(true);
+    try {
+      const uri = await pickAndPersistOneImage({
+        persistAs: "header",
+        allowsEditing: true,
+        aspect: [16, 9],
+        quality: 0.9,
+      });
+
+      if (uri) setCover(uri);
+    } finally {
+      setPickingCover(false);
+    }
+  }, [canEdit]);
+
+  // inviteCode: read-only, but can regenerate via button
   const [inviteCode, setInviteCode] = useState<string>(() => {
     const existingCode = String(existing?.inviteCode ?? "").trim();
     if (existingCode) return existingCode;
@@ -132,6 +164,11 @@ export default function CreateScenarioModal() {
     const cleaned = sanitizeTagInput(tagInput);
     if (!cleaned) return;
 
+    if (!isValidTagInput(cleaned)) {
+      Alert.alert("Invalid tag", "Tags can only contain letters, numbers and spaces.");
+      return;
+    }
+
     const key = tagKeyFromInput(cleaned);
     if (!key) return;
 
@@ -162,7 +199,7 @@ export default function CreateScenarioModal() {
   const regenerateInviteCode = useCallback(() => {
     if (!canEdit) return;
     setInviteCode(generateInviteCode());
-  }, [canEdit, isEdit]);
+  }, [canEdit]);
 
   const validate = useCallback(() => {
     if (!userId) {
@@ -182,7 +219,7 @@ export default function CreateScenarioModal() {
 
     const safeCover = String(cover).trim();
     if (!safeCover) {
-      Alert.alert("Missing cover", "Cover URL is required for now.");
+      Alert.alert("Missing cover", "Pick a cover image.");
       return false;
     }
 
@@ -192,8 +229,15 @@ export default function CreateScenarioModal() {
       return false;
     }
 
+    for (const t of tags) {
+      if (!isValidTagInput(t.name)) {
+        Alert.alert("Invalid tags", "One of the tags contains invalid characters.");
+        return false;
+      }
+    }
+
     return true;
-  }, [userId, isEdit, isOwner, name, cover, inviteCode]);
+  }, [userId, isEdit, isOwner, name, cover, inviteCode, tags]);
 
   const onSave = useCallback(async () => {
     if (!isReady) return;
@@ -213,10 +257,9 @@ export default function CreateScenarioModal() {
     const next: Scenario = {
       ...base,
       name: String(name).trim().slice(0, SCENARIO_LIMITS.MAX_NAME),
-      description:
-        String(description).trim().slice(0, SCENARIO_LIMITS.MAX_DESCRIPTION) || undefined,
+      description: String(description).trim().slice(0, SCENARIO_LIMITS.MAX_DESCRIPTION) || undefined,
       cover: String(cover).trim(),
-      inviteCode: String(inviteCode).trim(), // set only by generator
+      inviteCode: String(inviteCode).trim(),
       updatedAt: now,
       tags: tags.map((t) => ({
         id: `t_${t.key}`,
@@ -232,24 +275,19 @@ export default function CreateScenarioModal() {
     } catch (e: any) {
       Alert.alert("Save failed", e?.message ?? "Could not save scenario.");
     }
-  }, [
-    isReady,
-    validate,
-    existing,
-    userId,
-    name,
-    description,
-    cover,
-    inviteCode,
-    tags,
-    upsertScenario,
-  ]);
+  }, [isReady, validate, existing, userId, name, description, cover, inviteCode, tags, upsertScenario]);
 
   const headerTitle = isEdit ? "Edit scenario" : "Create scenario";
 
   return (
     <SafeAreaView edges={["top"]} style={{ flex: 1, backgroundColor: colors.background }}>
       <ThemedView style={[styles.container, { backgroundColor: colors.background }]}>
+        {pickingCover ? (
+          <View style={styles.overlay} pointerEvents="auto">
+            <ActivityIndicator size="large" color="#fff" />
+          </View>
+        ) : null}
+
         <KeyboardAvoidingView
           style={{ flex: 1 }}
           behavior={Platform.OS === "ios" ? "padding" : undefined}
@@ -304,16 +342,63 @@ export default function CreateScenarioModal() {
               />
             </RowCard>
 
-            <RowCard label="Cover URL" colors={colors}>
-              <TextInput
-                value={cover}
-                onChangeText={setCover}
-                placeholder="https://..."
-                placeholderTextColor={colors.textMuted}
-                autoCapitalize="none"
-                style={[styles.input, { color: colors.text }]}
-                editable={canEdit}
-              />
+            {/* Cover (image picker + preview) */}
+            <RowCard
+              label="Cover"
+              colors={colors}
+              right={
+                canEdit ? (
+                  <Pressable
+                    onPress={pickCover}
+                    hitSlop={10}
+                    style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}
+                  >
+                    <ThemedText style={{ color: colors.tint, fontWeight: "800", fontSize: 12 }}>
+                      {cover ? "CHANGE" : "PICK"}
+                    </ThemedText>
+                  </Pressable>
+                ) : null
+              }
+            >
+              <Pressable
+                onPress={pickCover}
+                disabled={!canEdit}
+                hitSlop={12}
+                style={({ pressed }) => [
+                  styles.coverPressable,
+                  {
+                    borderColor: colors.border,
+                    backgroundColor: colors.card,
+                    opacity: !canEdit ? 0.6 : pressed ? 0.9 : 1,
+                  },
+                ]}
+              >
+                {cover ? (
+                  <>
+                    <Image
+                      source={{ uri: cover }}
+                      style={styles.coverImage}
+                      contentFit="cover"
+                      transition={150}
+                    />
+                    <View style={styles.coverOverlay}>
+                      <View style={[styles.coverBadge, { backgroundColor: "rgba(0,0,0,0.45)" }]}>
+                        <Ionicons name="image-outline" size={16} color="#fff" />
+                        <ThemedText style={{ color: "#fff", fontSize: 12, fontWeight: "800" }}>
+                          tap to change
+                        </ThemedText>
+                      </View>
+                    </View>
+                  </>
+                ) : (
+                  <View style={styles.coverEmpty}>
+                    <Ionicons name="image-outline" size={20} color={colors.textSecondary} />
+                    <ThemedText style={{ color: colors.textSecondary, fontWeight: "700" }}>
+                      Pick a cover image (16:9)
+                    </ThemedText>
+                  </View>
+                )}
+              </Pressable>
             </RowCard>
 
             {/* Invite code (read-only, regen by button) */}
@@ -355,8 +440,11 @@ export default function CreateScenarioModal() {
                     <TextInput
                       ref={tagInputRef}
                       value={tagInput}
-                      onChangeText={setTagInput}
-                      placeholder="letters / numbers / spaces (e.g. romcom)"
+                      onChangeText={(v) => {
+                        const next = v.replace(/[^a-zA-Z0-9 ]+/g, "");
+                        setTagInput(next);
+                      }}
+                      placeholder="(e.g. adventure)"
                       placeholderTextColor={colors.textMuted}
                       style={[styles.input, { color: colors.text }]}
                       autoCapitalize="none"
@@ -412,7 +500,7 @@ export default function CreateScenarioModal() {
                   </View>
                 ) : (
                   <ThemedText style={{ color: colors.textSecondary, fontSize: 13 }}>
-                    Add tags to the scenario.
+                    Add tags to the scenario (letters/numbers/spaces only).
                   </ThemedText>
                 )}
               </View>
@@ -456,6 +544,37 @@ const styles = StyleSheet.create({
     textAlignVertical: "top",
   },
 
+  coverPressable: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 14,
+    overflow: "hidden",
+    height: 140, // preview height
+  },
+  coverImage: {
+    width: "100%",
+    height: "100%",
+  },
+  coverOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: "flex-end",
+    padding: 10,
+  },
+  coverBadge: {
+    alignSelf: "flex-start",
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  coverEmpty: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
+
   addTagBtn: {
     width: 44,
     height: 44,
@@ -479,5 +598,14 @@ const styles = StyleSheet.create({
     width: 10,
     height: 10,
     borderRadius: 999,
+  },
+
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.35)",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 999,
+    elevation: 999,
   },
 });
