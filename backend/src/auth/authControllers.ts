@@ -1,6 +1,5 @@
 import { Request, Response } from "express";
 import jwt from "jsonwebtoken";
-import { SECRET_KEY } from "../config/constants";
 import {
   AUTH,
   ERROR_MESSAGES,
@@ -18,12 +17,14 @@ export const RegisterController = async (req: Request, res: Response) => {
   }
 
   try {
-    const { username, email, password } = req.body;
+    const { username, name, email, password_hash, avatar_url } = req.body;
 
     const result = await RegisterUserService({
       username,
+      name,
       email,
-      password,
+      password_hash,
+      avatar_url,
     });
 
     if (result.errors) {
@@ -52,11 +53,11 @@ export const LoginController = async (req: Request, res: Response) => {
   }
 
   try {
-    const { email, password } = req.body;
+    const { email, password_hash } = req.body;
 
-    const result = await LoginUserService({ email, password });
+    const result = await LoginUserService({ email, password_hash });
 
-    if (result.error) {
+    if (result?.error) {
       return res.status(HTTP_STATUS.UNAUTHORIZED).json({
         status: ERROR_MESSAGES.INVALID_REQUEST,
         message: result.error,
@@ -64,14 +65,14 @@ export const LoginController = async (req: Request, res: Response) => {
       });
     }
 
-    const token = jwt.sign({ user: result.user }, SECRET_KEY, {
+    const token = jwt.sign({ user: result?.user }, AUTH.SECRET_KEY, {
       expiresIn: AUTH.EXPIRATION_TIME,
     });
 
     res.status(HTTP_STATUS.OK).json({
       message: USER_MESSAGES.LOGIN_SUCCESS,
       token: token,
-      user: result.user,
+      user: result?.user,
     });
   } catch (error: unknown) {
     console.error("Erreur lors de la connexion:", error);

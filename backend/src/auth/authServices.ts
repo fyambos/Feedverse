@@ -7,7 +7,11 @@ import {
   RegisterResponse,
   ValidationError,
 } from "./authModels";
-import { validateEmail, validatePassword } from "./authValidators";
+import {
+  nameFormatting,
+  validateEmail,
+  validatePassword,
+} from "./authValidators";
 import { ERROR_MESSAGES, USER_MESSAGES, VALIDATION } from "../config/constants";
 import { UserRepository } from "../users/userRepositories";
 
@@ -16,14 +20,14 @@ const userRepository = new UserRepository();
 export const RegisterUserService = async (
   input: RegisterRequest,
 ): Promise<{ user?: RegisterResponse; errors?: ValidationError[] }> => {
-  const { username, email, password } = input;
+  const { username, email, password_hash, avatar_url } = input;
 
   const errors: ValidationError[] = [];
 
   const emailError = validateEmail(email);
   if (emailError) errors.push(emailError);
 
-  const passwordError = validatePassword(password);
+  const passwordError = validatePassword(password_hash);
   if (passwordError) errors.push(passwordError);
 
   if (errors.length > 0) {
@@ -45,13 +49,16 @@ export const RegisterUserService = async (
 
   const uuid = uuidv4();
   const date = new Date();
-  const hashedPassword = await bcrypt.hash(password, 10);
+  const hashedPassword = await bcrypt.hash(password_hash, 10);
+  const nameFormatted = nameFormatting(username);
 
   const userCreated = await userRepository.create({
     id: uuid,
     username: username,
+    name: nameFormatted,
     email: email,
-    password: hashedPassword,
+    password_hash: hashedPassword,
+    avatar_url: avatar_url,
     created_at: date,
     updated_at: date,
   });
@@ -60,9 +67,12 @@ export const RegisterUserService = async (
     message: USER_MESSAGES.CREATION_SUCCESS,
     User: {
       id: userCreated.id,
+      username: userCreated.username,
+      name: userCreated.name,
       email: userCreated.email,
-      createdAt: userCreated.createdAt,
-      updatedAt: userCreated.updatedAt,
+      avatar_url: userCreated.avatar_url,
+      created_at: userCreated.created_at,
+      updated_at: userCreated.updated_at,
     },
   };
 
@@ -71,11 +81,11 @@ export const RegisterUserService = async (
 
 export const LoginUserService = async (
   input: LoginRequest,
-): Promise<{ user?: LoginResponse; error?: string }> => {
-  const { email, password } = input;
+): Promise<{ user?: LoginResponse; error?: unknown }> => {
+  const { email, password_hash } = input;
 
   const emailError = validateEmail(email);
-  const passwordError = validatePassword(password);
+  const passwordError = validatePassword(password_hash);
 
   if (emailError || passwordError) {
     return { error: ERROR_MESSAGES.INVALID_EMAIL_OR_PASSWORD };
@@ -87,19 +97,18 @@ export const LoginUserService = async (
     return { error: USER_MESSAGES.DOES_NOT_EXISTS };
   }
 
-  const hashedPassword: string = userFetched.password;
+  const hashedPassword: string = userFetched.password_hash;
 
-  const isPasswordValid = await bcrypt.compare(password, hashedPassword);
+  const isPasswordValid = await bcrypt.compare(password_hash, hashedPassword);
 
   if (!isPasswordValid) {
     return { error: VALIDATION.INVALID_PASSWORD };
   }
 
-  const loginDate = new Date();
-
-  await userRepository.updateLastLogin(email, loginDate);
   /*
-  const { password: _pwd, ...userWithoutPassword } = userFetched;
+  const loginDate = new Date();
+  await userRepository.updateLastLogin(email, loginDate);
+  const { password_hash: _pwd, ...userWithoutPassword } = userFetched;
 
   return { user: userWithoutPassword as LoginResponse };
   */

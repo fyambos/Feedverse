@@ -15,12 +15,6 @@ export const DATABASE_NAME = process.env.DB_NAME;
 export const DATABASE_SSL_MODE = Boolean(process.env.DB_SSLMODE);
 
 // ============================================================================
-// JWT
-// ============================================================================
-
-export const SECRET_KEY = process.env.JWT_SECRET;
-
-// ============================================================================
 // CODES DE STATUT HTTP
 // ============================================================================
 
@@ -60,6 +54,7 @@ export const AUTH = {
   MISSING_TOKEN: "Token d'authentification manquant",
   INVALID_CREDENTIALS: "Email ou mot de passe incorrect",
   EXPIRATION_TIME: "1h",
+  SECRET_KEY: process.env.JWT_SECRET,
 } as const;
 
 // ============================================================================
@@ -165,6 +160,8 @@ export const TEST_DATA = {
   // Utilisateur de test
   TEST_USER_EMAIL: "usertest@yopmail.com",
   TEST_USER_PASSWORD: "@Password1",
+  AVATAR_URL:
+    "https://i.scdn.co/image/ab6761610000e5eb7d4e246f8c54be347e06bffe",
 
   // Messages de test
   TEST_LOGIN_SHOULD_SUCCEED:
