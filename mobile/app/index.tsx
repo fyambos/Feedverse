@@ -94,8 +94,18 @@ export default function ScenarioListScreen() {
     if (!isReady) return [];
     const all = listScenarios?.() ?? [];
     const uid = String(userId ?? "").trim();
-    if (!uid) return all; // fallback
-    return all.filter((s: any) => (s?.playerIds ?? []).map(String).includes(uid));
+    if (!uid) return all.sort((a: any, b: any) => {
+      const aTime = new Date(a.createdAt ?? 0).getTime();
+      const bTime = new Date(b.createdAt ?? 0).getTime();
+      return bTime - aTime;
+    });
+    return all
+      .filter((s: any) => (s?.playerIds ?? []).map(String).includes(uid))
+      .sort((a: any, b: any) => {
+        const aTime = new Date(a.createdAt ?? 0).getTime();
+        const bTime = new Date(b.createdAt ?? 0).getTime();
+        return bTime - aTime;
+      });
   }, [isReady, listScenarios, userId]);
 
   const openScenario = (scenarioId: string) => {
