@@ -1,6 +1,6 @@
 // mobile/context/appData.tsx
 import React from "react";
-import type { DbV5, Post, Profile, Scenario, Repost, ScenarioTag } from "@/data/db/schema";
+import type { DbV5, Post, Profile, Scenario, Repost, ScenarioTag, CharacterSheet } from "@/data/db/schema";
 import { readDb, updateDb } from "@/data/db/storage";
 import { seedDbIfNeeded } from "@/data/db/seed";
 import {
@@ -58,6 +58,12 @@ type AppDataApi = {
   // scenarios
   getScenarioById: (id: string) => Scenario | null;
   listScenarios: () => Scenario[];
+  upsertScenario: (s: Scenario) => Promise<void>;
+  joinScenarioByInviteCode: ( inviteCode: string, userId: string ) => Promise<{ scenario: Scenario; alreadyIn: boolean } | null>;
+  transferScenarioOwnership: (scenarioId: string,fromUserId: string,toUserId: string ) => Promise<Scenario | null>;
+  leaveScenario: (scenarioId: string, userId: string) => Promise<{ deleted: boolean } | null>;
+  deleteScenario: (scenarioId: string, ownerUserId: string) => Promise<boolean>;
+  setScenarioMode: (scenarioId: string, mode: "story" | "campaign") => Promise<Scenario | null>;
 
   // profiles
   getProfileById: (id: string) => Profile | null;
@@ -94,16 +100,12 @@ type AppDataApi = {
   isPostRepostedByProfileId: (profileId: string, postId: string) => boolean;
   getRepostEventForProfile: (profileId: string, postId: string) => Repost | null;
   
-  // scenarios
-  upsertScenario: (s: Scenario) => Promise<void>;
-  joinScenarioByInviteCode: ( inviteCode: string, userId: string ) => Promise<{ scenario: Scenario; alreadyIn: boolean } | null>;
-  transferScenarioOwnership: (scenarioId: string,fromUserId: string,toUserId: string ) => Promise<Scenario | null>;
-  leaveScenario: (scenarioId: string, userId: string) => Promise<{ deleted: boolean } | null>;
-  deleteScenario: (scenarioId: string, ownerUserId: string) => Promise<boolean>;
-  setScenarioMode: (scenarioId: string, mode: "story" | "campaign") => Promise<Scenario | null>;
+  // sheets
+  getCharacterSheetByProfileId: (profileId: string) => CharacterSheet | null;
+  
   };
   
-  const Ctx = React.createContext<(AppDataState & AppDataApi) | null>(null);
+const Ctx = React.createContext<(AppDataState & AppDataApi) | null>(null);
 
 function normalizeHandle(input: string) {
   return String(input).trim().replace(/^@+/, "").toLowerCase();
@@ -158,9 +160,6 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
 
   const api = React.useMemo<AppDataApi>(() => {
     return {
-      // --- scenarios
-      getScenarioById: (id) => (db ? db.scenarios[String(id)] ?? null : null),
-      listScenarios: () => (db ? Object.values(db.scenarios) : []),
 
       // --- profiles
       getProfileById: (id) => (db ? db.profiles[String(id)] ?? null : null),
@@ -176,7 +175,9 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
 
       listProfilesForScenario: (scenarioId) =>
         db ? Object.values(db.profiles).filter((p) => p.scenarioId === String(scenarioId)) : [],
-
+      getCharacterSheetByProfileId: (profileId: string) =>
+        db ? (db as any).sheets?.[String(profileId)] ?? null : null,
+      
       // --- posts
       getPostById: (id) => (db ? db.posts[String(id)] ?? null : null),
 
@@ -368,7 +369,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         setState({ isReady: true, db: next as any });
       },
 
-      // likes
+      // --- likes
       isPostLikedBySelectedProfile: (scenarioId, postId) => {
         if (!db) return false;
         const sel = db.selectedProfileByScenario[String(scenarioId)];
@@ -421,7 +422,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         setState({ isReady: true, db: next as any });
       },
 
-      // reposts
+      // ---reposts
       getRepostEventForProfile: (profileId: string, postId: string) => {
         if (!db) return null;
         const id = `${String(profileId)}|${String(postId)}`;
@@ -508,6 +509,10 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         setState({ isReady: true, db: next as any });
       },
 
+      // --- scenarios
+      getScenarioById: (id) => (db ? db.scenarios[String(id)] ?? null : null),
+      listScenarios: () => (db ? Object.values(db.scenarios) : []),
+
       upsertScenario: async (s) => {
         const id = String(s.id);
         const now = new Date().toISOString();
@@ -547,7 +552,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
 
           return {
             ...prev,
-            tags: nextTags, // ✅ GLOBAL REGISTRY UPDATED
+            tags: nextTags,
             scenarios: {
               ...prev.scenarios,
               [id]: {
