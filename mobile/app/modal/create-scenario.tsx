@@ -1,6 +1,5 @@
-// mobile/app/modal/edit-sheet.tsx
-
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+// mobile/app/modal/create-scenario.tsx
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
   Alert,
   KeyboardAvoidingView,
@@ -8,357 +7,299 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   TextInput,
   View,
+  ActivityIndicator,
 } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import { Image } from "expo-image";
 
-import { Colors } from "@/constants/theme";
-import { useColorScheme } from "@/hooks/use-color-scheme";
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
+import { Colors } from "@/constants/theme";
+import { useColorScheme } from "@/hooks/use-color-scheme";
 
 import { useAuth } from "@/context/auth";
 import { useAppData } from "@/context/appData";
 
-import type { CharacterSheet } from "@/data/db/schema";
+import type { Scenario } from "@/data/db/schema";
 import { RowCard } from "@/components/ui/RowCard";
 
-type Params = { scenarioId: string; profileId: string; mode?: "edit" | "create" };
+import {
+  sanitizeTagInput,
+  tagKeyFromInput,
+  tagNameFromKey,
+  colorForTagKey,
+} from "@/lib/tags";
 
-type FieldKey =
-  | "identity"
-  | "background"
-  | "publicNotes"
-  | "privateNotes"
-  | "abilities"
-  | "spells"
-  | "stats"
-  | "hp"
-  | "status"
-  | "inventory"
-  | "equipment";
+import { pickAndPersistOneImage } from "@/components/ui/ImagePicker";
 
-function clampInt(raw: string, fallback: number) {
-  const n = parseInt(String(raw ?? "").trim(), 10);
-  return Number.isFinite(n) ? n : fallback;
+/* -------------------------------------------------------------------------- */
+/* Limits                                                                      */
+/* -------------------------------------------------------------------------- */
+
+const SCENARIO_LIMITS = {
+  MAX_NAME: 60,
+  MAX_DESCRIPTION: 220,
+};
+
+/* -------------------------------------------------------------------------- */
+/* Helpers                                                                     */
+/* -------------------------------------------------------------------------- */
+
+type Params = { scenarioId?: string };
+
+function makeId(prefix: string) {
+  return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function readonlyHint(label: string) {
-  return `${label} is auto-updated by turns. Only the GM can edit it manually.`;
+// 8 chars, uppercase
+function generateInviteCode() {
+  const raw = Math.random().toString(36).slice(2, 10).toUpperCase();
+  return raw.replace(/[^A-Z0-9]/g, "A").slice(0, 8);
 }
 
-export default function EditSheetModal() {
-  const { scenarioId, profileId, mode } = useLocalSearchParams<Params>();
+// tags: letters/numbers/spaces only (no special chars)
+function isValidTagInput(raw: string) {
+  const s = String(raw ?? "").trim();
+  if (!s) return false;
+  return /^[a-zA-Z0-9 ]+$/.test(s);
+}
+
+type ScenarioTagUI = {
+  key: string;
+  name: string;
+  color: string;
+};
+
+export default function CreateScenarioModal() {
+  const { scenarioId } = useLocalSearchParams<Params>();
+  const isEdit = Boolean(scenarioId);
 
   const scheme = useColorScheme() ?? "light";
   const colors = Colors[scheme];
 
-  const sid = decodeURIComponent(String(scenarioId ?? ""));
-  const pid = decodeURIComponent(String(profileId ?? ""));
-  const screenMode: "edit" | "create" = (mode === "create" ? "create" : "edit") as any;
-
   const { userId } = useAuth();
-  const {
-    isReady,
-    getScenarioById,
-    getProfileById,
-    getCharacterSheetByProfileId,
-    upsertCharacterSheet,
-  } = useAppData() as any;
-
-  const scenario = useMemo(() => getScenarioById?.(sid) ?? null, [sid, getScenarioById]);
-  const profile = useMemo(() => getProfileById?.(pid) ?? null, [pid, getProfileById]);
-  const sheet: CharacterSheet | null = useMemo(
-    () => getCharacterSheetByProfileId?.(pid) ?? null,
-    [pid, getCharacterSheetByProfileId]
-  );
+  const { isReady, getScenarioById, upsertScenario, setScenarioMode } = useAppData() as any;
+  
+  const existing: Scenario | null = useMemo(() => {
+    if (!isEdit) return null;
+    return getScenarioById?.(String(scenarioId)) ?? null;
+  }, [isEdit, scenarioId, getScenarioById]);
 
   const isOwner = useMemo(() => {
-    if (!profile || !userId) return false;
-    return String((profile as any).ownerUserId ?? "") === String(userId);
-  }, [profile, userId]);
+    if (!existing) return true;
+    return String(existing.ownerUserId) === String(userId ?? "");
+  }, [existing, userId]);
 
-  const isGm = useMemo(() => {
-    if (!scenario || !userId) return false;
-    const gmIds: string[] = Array.isArray((scenario as any).gmUserIds)
-      ? (scenario as any).gmUserIds.map(String)
-      : [];
-    return gmIds.includes(String(userId));
-  }, [scenario, userId]);
+  const canEdit = !isEdit || isOwner;
 
-  const isCreate = screenMode === "create";
+  // form state
+  const [name, setName] = useState(existing?.name ?? "");
+  const [description, setDescription] = useState(existing?.description ?? "");
+  const [mode, setMode] = useState<"story" | "campaign">(
+    (existing as any)?.mode === "campaign" ? "campaign" : "story"
+    );
 
-  // Owner can edit some fields in EDIT mode.
-  // In CREATE mode: everything editable (but warn it won't be later).
-  const canEdit = useCallback(
-    (field: FieldKey) => {
-      if (isCreate) return true;
-      if (isGm) return true;
-      if (!isOwner) return false;
+  // cover: picked image uri
+  const [cover, setCover] = useState<string>(String(existing?.cover ?? "").trim());
+  const [pickingCover, setPickingCover] = useState(false);
 
-      // owner-editable fields in EDIT mode
-      if (field === "identity") return true; // name/race/class/alignment (NOT level)
-      if (field === "background") return true;
-      if (field === "publicNotes") return true;
-      if (field === "privateNotes") return true;
-      if (field === "abilities") return true;
-      if (field === "spells") return true;
+  const pickCover = useCallback(async () => {
+    if (!canEdit) return;
 
-      // inventory/equipment editable by owner
-      if (field === "inventory") return true;
-      if (field === "equipment") return true;
+    setPickingCover(true);
+    try {
+      const uri = await pickAndPersistOneImage({
+        persistAs: "header",
+        allowsEditing: true,
+        aspect: [16, 9],
+        quality: 0.9,
+      });
 
-      // gm-only / turns-only
-      return false;
+      if (uri) setCover(uri);
+    } finally {
+      setPickingCover(false);
+    }
+  }, [canEdit]);
+
+  // inviteCode: read-only, but can regenerate via button
+  const [inviteCode, setInviteCode] = useState<string>(() => {
+    const existingCode = String(existing?.inviteCode ?? "").trim();
+    if (existingCode) return existingCode;
+    return generateInviteCode();
+  });
+
+  const [tags, setTags] = useState<ScenarioTagUI[]>(() => {
+    const raw = (existing as any)?.tags;
+    if (!Array.isArray(raw)) return [];
+
+    const list = raw
+      .map((t: any) => {
+        const rawInput = String(t?.key ?? t?.name ?? t?.id ?? "");
+        const key = tagKeyFromInput(rawInput);
+        if (!key) return null;
+        return {
+          key,
+          name: tagNameFromKey(key),
+          color: colorForTagKey(key),
+        };
+      })
+      .filter(Boolean) as ScenarioTagUI[];
+
+    const seen = new Set<string>();
+    return list.filter((t) => {
+      if (seen.has(t.key)) return false;
+      seen.add(t.key);
+      return true;
+    });
+  });
+
+  // tag input
+  const [tagInput, setTagInput] = useState("");
+  const tagInputRef = useRef<TextInput>(null);
+
+  const addTag = useCallback(() => {
+    if (!canEdit) return;
+
+    const cleaned = sanitizeTagInput(tagInput);
+    if (!cleaned) return;
+
+    if (!isValidTagInput(cleaned)) {
+      Alert.alert("Invalid tag", "Tags can only contain letters, numbers and spaces.");
+      return;
+    }
+
+    const key = tagKeyFromInput(cleaned);
+    if (!key) return;
+
+    const nextTag: ScenarioTagUI = {
+      key,
+      name: tagNameFromKey(key),
+      color: colorForTagKey(key),
+    };
+
+    setTags((prev) => {
+      if (prev.some((t) => t.key === key)) return prev;
+      return [...prev, nextTag];
+    });
+
+    setTagInput("");
+    requestAnimationFrame(() => tagInputRef.current?.focus());
+  }, [canEdit, tagInput]);
+
+  const removeTag = useCallback(
+    (key: string) => {
+      if (!canEdit) return;
+      setTags((prev) => prev.filter((t) => t.key !== key));
     },
-    [isCreate, isGm, isOwner]
+    [canEdit]
   );
 
-  // Level: editable only by GM (or turns). In CREATE mode, allow editing.
-  const canEditLevel = useMemo(() => (isCreate ? true : isGm), [isCreate, isGm]);
-  const canSave = useMemo(() => {
-    if (isCreate) return isGm || isOwner;
-    return isGm || isOwner;
-  }, [isCreate, isGm, isOwner]);
+  // regenerate invite code (button-only mutation)
+  const regenerateInviteCode = useCallback(() => {
+    if (!canEdit) return;
+    setInviteCode(generateInviteCode());
+  }, [canEdit]);
 
-  // ------------------------------
-  // form state
-  // ------------------------------
-  const [name, setName] = useState(sheet?.name ?? "");
-  const [race, setRace] = useState(sheet?.race ?? "");
-  const [klass, setKlass] = useState((sheet as any)?.class ?? "");
-  const [level, setLevel] = useState(String((sheet as any)?.level ?? ""));
-  const [alignment, setAlignment] = useState(sheet?.alignment ?? "");
-
-  const [background, setBackground] = useState(sheet?.background ?? "");
-  const [publicNotes, setPublicNotes] = useState(sheet?.publicNotes ?? "");
-  const [privateNotes, setPrivateNotes] = useState(sheet?.privateNotes ?? "");
-
-  const abilitiesText = useMemo(() => {
-    const list = (sheet as any)?.abilities ?? [];
-    if (!Array.isArray(list)) return "";
-    return list.map((a: any) => (a?.notes ? `${a.name} — ${a.notes}` : `${a.name}`)).join("\n");
-  }, [sheet]);
-
-  const spellsText = useMemo(() => {
-    const list = (sheet as any)?.spells ?? [];
-    if (!Array.isArray(list)) return "";
-    return list.map((s: any) => (s?.notes ? `${s.name} — ${s.notes}` : `${s.name}`)).join("\n");
-  }, [sheet]);
-
-  const [abilitiesRaw, setAbilitiesRaw] = useState(abilitiesText);
-  const [spellsRaw, setSpellsRaw] = useState(spellsText);
-
-  // GM-only fields (still visible read-only to owner in EDIT mode)
-  const [str, setStr] = useState(String(sheet?.stats?.strength ?? ""));
-  const [dex, setDex] = useState(String(sheet?.stats?.dexterity ?? ""));
-  const [con, setCon] = useState(String(sheet?.stats?.constitution ?? ""));
-  const [intell, setIntell] = useState(String(sheet?.stats?.intelligence ?? ""));
-  const [wis, setWis] = useState(String(sheet?.stats?.wisdom ?? ""));
-  const [cha, setCha] = useState(String(sheet?.stats?.charisma ?? ""));
-
-  const [hpCur, setHpCur] = useState(String(sheet?.hp?.current ?? ""));
-  const [hpMax, setHpMax] = useState(String(sheet?.hp?.max ?? ""));
-  const [status, setStatus] = useState(String((sheet as any)?.status ?? ""));
-
-  const inventoryText = useMemo(() => {
-    const list = (sheet as any)?.inventory ?? [];
-    if (!Array.isArray(list)) return "";
-    return list
-      .map((it: any) => {
-        const qty = it?.qty ? `x${it.qty}` : "";
-        const notes = it?.notes ? `(${it.notes})` : "";
-        return [it?.name, qty, notes].filter(Boolean).join(" ").trim();
-      })
-      .filter(Boolean)
-      .join("\n");
-  }, [sheet]);
-
-  const equipmentText = useMemo(() => {
-    const list = (sheet as any)?.equipment ?? [];
-    if (!Array.isArray(list)) return "";
-    return list
-      .map((it: any) => (it?.notes ? `${it.name} (${it.notes})` : `${it.name}`))
-      .filter(Boolean)
-      .join("\n");
-  }, [sheet]);
-
-  const [inventoryRaw, setInventoryRaw] = useState(inventoryText);
-  const [equipmentRaw, setEquipmentRaw] = useState(equipmentText);
-
-  // CREATE mode warning (show once when the modal opens)
-  const [warnedCreate, setWarnedCreate] = useState(false);
-  useEffect(() => {
-    if (isCreate && !warnedCreate) {
-      setWarnedCreate(true);
-      Alert.alert(
-        "Creating a Character Sheet",
-        "Everything is editable right now. After creation, some fields will be auto-updated by turns and won’t be editable by the owner.",
-        [{ text: "OK" }]
-      );
+  const validate = useCallback(() => {
+    if (!userId) {
+      Alert.alert("Not signed in", "You need to be signed in to create a scenario.");
+      return false;
     }
-  }, [isCreate, warnedCreate]);
+    if (isEdit && !isOwner) {
+      Alert.alert("Not allowed", "Only the scenario owner can edit this scenario.");
+      return false;
+    }
 
-  const parseNamedLines = (raw: string, prefix: string) => {
-    const lines = String(raw ?? "")
-      .split("\n")
-      .map((l) => l.trim())
-      .filter(Boolean);
+    const safeName = String(name).trim();
+    if (!safeName) {
+      Alert.alert("Missing name", "Scenario name is required.");
+      return false;
+    }
 
-    return lines.map((line, idx) => {
-      // allow "Name — notes" OR "Name - notes"
-      const sep = line.includes("—") ? "—" : line.includes(" - ") ? " - " : null;
-      if (sep) {
-        const [a, ...rest] = line.split(sep);
-        return { id: `${prefix}_${idx}`, name: a.trim(), notes: rest.join(sep).trim() || undefined };
+    const safeCover = String(cover).trim();
+    if (!safeCover) {
+      Alert.alert("Missing cover", "Pick a cover image.");
+      return false;
+    }
+
+    const code = String(inviteCode).trim();
+    if (!code) {
+      Alert.alert("Missing invite code", "Invite code is missing (unexpected).");
+      return false;
+    }
+
+    for (const t of tags) {
+      if (!isValidTagInput(t.name)) {
+        Alert.alert("Invalid tags", "One of the tags contains invalid characters.");
+        return false;
       }
-      return { id: `${prefix}_${idx}`, name: line, notes: undefined };
-    });
-  };
+    }
+
+    return true;
+  }, [userId, isEdit, isOwner, name, cover, inviteCode, tags]);
 
   const onSave = useCallback(async () => {
     if (!isReady) return;
-
-    if (!sheet && !isCreate) {
-      Alert.alert("No sheet", "This profile has no character sheet to edit.");
-      return;
-    }
-    if (!canSave) {
-      Alert.alert("Not allowed", "You can’t edit this character sheet.");
-      return;
-    }
+    if (!validate()) return;
 
     const now = new Date().toISOString();
 
-    // In CREATE mode, allow creating a sheet when missing
-    const base: CharacterSheet =
-      sheet ??
-      ({
-        id: `cs_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-        profileId: pid,
-        createdAt: now,
-        name: String(name).trim() || "Unnamed",
-      } as any);
+    const base: Scenario = existing
+      ? existing
+      : ({
+          id: makeId("sc"),
+          createdAt: now,
+          playerIds: [String(userId)],
+          ownerUserId: String(userId),
+        } as any);
 
-    const next: CharacterSheet = {
+    const next: Scenario = {
       ...base,
-
-      ...(canEdit("identity")
-        ? {
-            name: String(name).trim() || base.name,
-            race: String(race).trim() || undefined,
-            class: String(klass).trim() || undefined,
-            alignment: String(alignment).trim() || undefined,
-          }
-        : {}),
-
-      ...(canEditLevel
-        ? {
-            level: clampInt(level, (base as any)?.level ?? 1),
-          }
-        : {}),
-
-      ...(canEdit("background") ? { background: String(background).trim() || undefined } : {}),
-
-      ...(canEdit("publicNotes") ? { publicNotes: String(publicNotes).trim() || undefined } : {}),
-      ...(canEdit("privateNotes") ? { privateNotes: String(privateNotes).trim() || undefined } : {}),
-
-      ...(canEdit("abilities") ? { abilities: parseNamedLines(abilitiesRaw, "a") as any } : {}),
-      ...(canEdit("spells") ? { spells: parseNamedLines(spellsRaw, "s") as any } : {}),
-
-      ...(canEdit("stats")
-        ? {
-            stats: {
-              strength: clampInt(str, base.stats?.strength ?? 0),
-              dexterity: clampInt(dex, base.stats?.dexterity ?? 0),
-              constitution: clampInt(con, base.stats?.constitution ?? 0),
-              intelligence: clampInt(intell, base.stats?.intelligence ?? 0),
-              wisdom: clampInt(wis, base.stats?.wisdom ?? 0),
-              charisma: clampInt(cha, base.stats?.charisma ?? 0),
-            },
-          }
-        : {}),
-
-      ...(canEdit("hp")
-        ? {
-            hp: {
-              current: clampInt(hpCur, base.hp?.current ?? 0),
-              max: clampInt(hpMax, base.hp?.max ?? 0),
-            },
-          }
-        : {}),
-
-      ...(canEdit("status") ? { status: String(status).trim() || undefined } : {}),
-
-      ...(canEdit("inventory")
-        ? {
-            inventory: parseNamedLines(inventoryRaw, "i").map((it: any) => ({
-              id: it.id,
-              name: it.name,
-              notes: it.notes,
-            })) as any,
-          }
-        : {}),
-
-      ...(canEdit("equipment")
-        ? {
-            equipment: parseNamedLines(equipmentRaw, "e").map((it: any) => ({
-              id: it.id,
-              name: it.name,
-              notes: it.notes,
-            })) as any,
-          }
-        : {}),
-
+      name: String(name).trim().slice(0, SCENARIO_LIMITS.MAX_NAME),
+      description: String(description).trim().slice(0, SCENARIO_LIMITS.MAX_DESCRIPTION) || undefined,
+      cover: String(cover).trim(),
+      inviteCode: String(inviteCode).trim(),
       updatedAt: now,
+      tags: tags.map((t) => ({
+        id: `t_${t.key}`,
+        key: t.key,
+        name: t.name,
+        color: t.color,
+      })) as any,
+      mode,
+      // preserves existing list when editing
+      gmUserIds: Array.from(
+        new Set([
+          String(userId),
+          ...((existing as any)?.dmUserIds ? (existing as any).dmUserIds.map(String) : []),
+        ])
+      ),
     };
 
     try {
-      await upsertCharacterSheet(next);
+      await upsertScenario(next);
       router.back();
     } catch (e: any) {
-      Alert.alert("Save failed", e?.message ?? "Could not save character sheet.");
+      Alert.alert("Save failed", e?.message ?? "Could not save scenario.");
     }
-  }, [
-    isReady,
-    sheet,
-    isCreate,
-    canSave,
-    canEdit,
-    canEditLevel,
-    pid,
-    name,
-    race,
-    klass,
-    level,
-    alignment,
-    background,
-    publicNotes,
-    privateNotes,
-    abilitiesRaw,
-    spellsRaw,
-    str,
-    dex,
-    con,
-    intell,
-    wis,
-    cha,
-    hpCur,
-    hpMax,
-    status,
-    inventoryRaw,
-    equipmentRaw,
-    upsertCharacterSheet,
-  ]);
+  }, [isReady, validate, existing, userId, name, description, cover, inviteCode, tags, upsertScenario, mode]);
 
-  const headerTitle = isCreate ? "Create Character Sheet" : "Edit Character Sheet";
+  const headerTitle = isEdit ? "Edit scenario" : "Create scenario";
 
   return (
     <SafeAreaView edges={["top"]} style={{ flex: 1, backgroundColor: colors.background }}>
       <ThemedView style={[styles.container, { backgroundColor: colors.background }]}>
+        {pickingCover ? (
+          <View style={styles.overlay} pointerEvents="auto">
+            <ActivityIndicator size="large" color="#fff" />
+          </View>
+        ) : null}
+
         <KeyboardAvoidingView
           style={{ flex: 1 }}
           behavior={Platform.OS === "ios" ? "padding" : undefined}
@@ -370,24 +311,16 @@ export default function EditSheetModal() {
               <Ionicons name="close" size={24} color={colors.text} />
             </Pressable>
 
-            <View style={{ flex: 1, alignItems: "center" }}>
-              <ThemedText type="defaultSemiBold" style={{ color: colors.text }}>
-                {headerTitle}
-              </ThemedText>
-              <ThemedText style={{ color: colors.textSecondary, fontSize: 12, marginTop: 2 }} numberOfLines={1}>
-                {(profile as any)?.displayName ?? pid}
-                {isGm ? " · GM" : isOwner ? " · Owner" : ""}
-              </ThemedText>
-            </View>
+            <ThemedText type="defaultSemiBold">{headerTitle}</ThemedText>
 
             <Pressable
               onPress={onSave}
-              disabled={!canSave}
+              disabled={!canEdit}
               hitSlop={12}
-              style={({ pressed }) => [{ opacity: !canSave ? 0.4 : pressed ? 0.7 : 1 }]}
+              style={({ pressed }) => [{ opacity: !canEdit ? 0.4 : pressed ? 0.7 : 1 }]}
             >
-              <ThemedText style={{ color: canSave ? colors.tint : colors.textMuted, fontWeight: "900" }}>
-                {isCreate ? "Create" : "Save"}
+              <ThemedText style={{ color: canEdit ? colors.tint : colors.textMuted, fontWeight: "800" }}>
+                {isEdit ? "Save" : "Create"}
               </ThemedText>
             </Pressable>
           </View>
@@ -398,301 +331,242 @@ export default function EditSheetModal() {
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
           >
-            {!sheet && !isCreate ? (
-              <View style={[styles.emptyCard, { borderColor: colors.border, backgroundColor: colors.card }]}>
-                <Ionicons name="document-text-outline" size={20} color={colors.textSecondary} />
-                <ThemedText style={{ color: colors.textSecondary, fontWeight: "800" }}>
-                  No character sheet for this profile.
-                </ThemedText>
-              </View>
-            ) : (
-              <>
-                {/* Identity */}
-                <RowCard label="Identity" colors={colors}>
-                  <InputRow label="Name" value={name} onChangeText={setName} editable={canEdit("identity")} colors={colors} />
-                  <InputRow label="Race" value={race} onChangeText={setRace} editable={canEdit("identity")} colors={colors} />
-                  <InputRow label="Class" value={klass} onChangeText={setKlass} editable={canEdit("identity")} colors={colors} />
+            <RowCard label={`Name (${name.length}/${SCENARIO_LIMITS.MAX_NAME})`} colors={colors}>
+              <TextInput
+                value={name}
+                onChangeText={(v) => setName(v.slice(0, SCENARIO_LIMITS.MAX_NAME))}
+                placeholder="Scenario name"
+                placeholderTextColor={colors.textMuted}
+                style={[styles.input, { color: colors.text }]}
+                editable={canEdit}
+              />
+            </RowCard>
 
-                  <InputRow
-                    label="Level"
-                    value={level}
-                    onChangeText={setLevel}
-                    editable={canEditLevel}
-                    keyboardType="number-pad"
-                    colors={colors}
-                    helperText={!isCreate && !canEditLevel ? readonlyHint("Level") : undefined}
-                  />
+            <RowCard label={`Description (${description.length}/${SCENARIO_LIMITS.MAX_DESCRIPTION})`} colors={colors}>
+              <TextInput
+                value={description}
+                onChangeText={(v) => setDescription(v.slice(0, SCENARIO_LIMITS.MAX_DESCRIPTION))}
+                placeholder="Short pitch / vibe"
+                placeholderTextColor={colors.textMuted}
+                multiline
+                style={[styles.input, styles.inputMultiline, { color: colors.text }]}
+                editable={canEdit}
+              />
+            </RowCard>
 
-                  <InputRow
-                    label="Alignment"
-                    value={alignment}
-                    onChangeText={setAlignment}
-                    editable={canEdit("identity")}
-                    colors={colors}
-                  />
-                </RowCard>
+            {/* Mode (story vs. campaign) */}
+            <RowCard label="Mode" colors={colors} right={null}>
+                <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                    <View style={{ flex: 1, paddingRight: 12 }}>
+                    <ThemedText style={{ color: colors.text, fontWeight: "800" }}>
+                        {mode === "campaign" ? "Campaign" : "Story"}
+                    </ThemedText>
+                    <ThemedText style={{ color: colors.textSecondary, fontSize: 12, marginTop: 4 }}>
+                        {mode === "campaign"
+                        ? "Enables character sheets, rolls, pinned posts, logs, quests, combat."
+                        : "Freeform narration (classic posts)."}
+                    </ThemedText>
+                    </View>
 
-                {/* Background (private) */}
-                <RowCard label="Background (Private)" colors={colors}>
-                  <TextInput
-                    value={background}
-                    onChangeText={setBackground}
-                    editable={canEdit("background")}
-                    placeholder={canEdit("background") ? "Background..." : ""}
-                    placeholderTextColor={colors.textMuted}
-                    multiline
-                    style={[
-                      styles.textarea,
-                      {
-                        color: canEdit("background") ? colors.text : colors.textSecondary,
-                        backgroundColor: colors.card,
-                        borderColor: colors.border,
-                        opacity: canEdit("background") ? 1 : 0.75,
-                      },
-                    ]}
-                  />
-                </RowCard>
+                    <Switch
+                    value={mode === "campaign"}
+                    onValueChange={async (v) => {
+                        if (!canEdit) return;
 
-                {/* Notes */}
-                <RowCard label="Notes" colors={colors}>
-                  <ThemedText style={[styles.subLabel, { color: colors.textSecondary }]}>Public</ThemedText>
-                  <TextInput
-                    value={publicNotes}
-                    onChangeText={setPublicNotes}
-                    editable={canEdit("publicNotes")}
-                    placeholder={canEdit("publicNotes") ? "Public notes..." : ""}
-                    placeholderTextColor={colors.textMuted}
-                    multiline
-                    style={[
-                      styles.textarea,
-                      {
-                        color: canEdit("publicNotes") ? colors.text : colors.textSecondary,
-                        backgroundColor: colors.card,
-                        borderColor: colors.border,
-                        opacity: canEdit("publicNotes") ? 1 : 0.75,
-                      },
-                    ]}
-                  />
+                        const nextMode: "story" | "campaign" = v ? "campaign" : "story";
+                        setMode(nextMode);
 
-                  <ThemedText style={[styles.subLabel, { color: colors.textSecondary, marginTop: 10 }]}>Private</ThemedText>
-                  <TextInput
-                    value={privateNotes}
-                    onChangeText={setPrivateNotes}
-                    editable={canEdit("privateNotes")}
-                    placeholder={canEdit("privateNotes") ? "Private notes..." : ""}
-                    placeholderTextColor={colors.textMuted}
-                    multiline
-                    style={[
-                      styles.textarea,
-                      {
-                        color: canEdit("privateNotes") ? colors.text : colors.textSecondary,
-                        backgroundColor: colors.card,
-                        borderColor: colors.border,
-                        opacity: canEdit("privateNotes") ? 1 : 0.75,
-                      },
-                    ]}
-                  />
-                </RowCard>
+                        // ✅ If editing an existing scenario, persist immediately
+                        if (isEdit && existing?.id) {
+                        try {
+                            await setScenarioMode?.(String(existing.id), nextMode);
+                        } catch (e: any) {
+                            Alert.alert("Update failed", e?.message ?? "Could not update scenario mode.");
+                        }
+                        }
+                    }}
+                    trackColor={{ false: colors.border, true: colors.tint }}
+                    thumbColor={colors.card}
+                    ios_backgroundColor={colors.border}
+                    />
+                </View>
+            </RowCard>
 
-                {/* Abilities & Spells */}
-                <RowCard label="Abilities & Spells" colors={colors}>
-                  <ThemedText style={[styles.subLabel, { color: colors.textSecondary }]}>Abilities (one per line)</ThemedText>
-                  <TextInput
-                    value={abilitiesRaw}
-                    onChangeText={setAbilitiesRaw}
-                    editable={canEdit("abilities")}
-                    placeholder={canEdit("abilities") ? "Sneak Attack — extra damage on advantage" : ""}
-                    placeholderTextColor={colors.textMuted}
-                    multiline
-                    style={[
-                      styles.textarea,
-                      {
-                        color: canEdit("abilities") ? colors.text : colors.textSecondary,
-                        backgroundColor: colors.card,
-                        borderColor: colors.border,
-                        opacity: canEdit("abilities") ? 1 : 0.75,
-                      },
-                    ]}
-                  />
+            {/* Cover (image picker + preview) */}
+            <RowCard
+              label="Cover"
+              colors={colors}
+              right={
+                canEdit ? (
+                  <Pressable
+                    onPress={pickCover}
+                    hitSlop={10}
+                    style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}
+                  >
+                    <ThemedText style={{ color: colors.tint, fontWeight: "800", fontSize: 12 }}>
+                      {cover ? "CHANGE" : "PICK"}
+                    </ThemedText>
+                  </Pressable>
+                ) : null
+              }
+            >
+              <Pressable
+                onPress={pickCover}
+                disabled={!canEdit}
+                hitSlop={12}
+                style={({ pressed }) => [
+                  styles.coverPressable,
+                  {
+                    borderColor: colors.border,
+                    backgroundColor: colors.card,
+                    opacity: !canEdit ? 0.6 : pressed ? 0.9 : 1,
+                  },
+                ]}
+              >
+                {cover ? (
+                  <>
+                    <Image
+                      source={{ uri: cover }}
+                      style={styles.coverImage}
+                      contentFit="cover"
+                      transition={150}
+                    />
+                    <View style={styles.coverOverlay}>
+                      <View style={[styles.coverBadge, { backgroundColor: "rgba(0,0,0,0.45)" }]}>
+                        <Ionicons name="image-outline" size={16} color="#fff" />
+                        <ThemedText style={{ color: "#fff", fontSize: 12, fontWeight: "800" }}>
+                          tap to change
+                        </ThemedText>
+                      </View>
+                    </View>
+                  </>
+                ) : (
+                  <View style={styles.coverEmpty}>
+                    <Ionicons name="image-outline" size={20} color={colors.textSecondary} />
+                    <ThemedText style={{ color: colors.textSecondary, fontWeight: "700" }}>
+                      Pick a cover image (16:9)
+                    </ThemedText>
+                  </View>
+                )}
+              </Pressable>
+            </RowCard>
 
-                  <ThemedText style={[styles.subLabel, { color: colors.textSecondary, marginTop: 10 }]}>Spells (one per line)</ThemedText>
-                  <TextInput
-                    value={spellsRaw}
-                    onChangeText={setSpellsRaw}
-                    editable={canEdit("spells")}
-                    placeholder={canEdit("spells") ? "Cure Wounds" : ""}
-                    placeholderTextColor={colors.textMuted}
-                    multiline
-                    style={[
-                      styles.textarea,
-                      {
-                        color: canEdit("spells") ? colors.text : colors.textSecondary,
-                        backgroundColor: colors.card,
-                        borderColor: colors.border,
-                        opacity: canEdit("spells") ? 1 : 0.75,
-                      },
-                    ]}
-                  />
-                </RowCard>
-
-                {/* Stats (GM-only unless create) */}
-                <RowCard label="Stats" colors={colors}>
-                  {!canEdit("stats") ? (
-                    <ThemedText style={{ color: colors.textSecondary, lineHeight: 18 }}>{readonlyHint("Stats")}</ThemedText>
-                  ) : null}
-
-                  <StatRow label="Strength" value={str} onChangeText={setStr} editable={canEdit("stats")} colors={colors} />
-                  <StatRow label="Dexterity" value={dex} onChangeText={setDex} editable={canEdit("stats")} colors={colors} />
-                  <StatRow label="Constitution" value={con} onChangeText={setCon} editable={canEdit("stats")} colors={colors} />
-                  <StatRow label="Intelligence" value={intell} onChangeText={setIntell} editable={canEdit("stats")} colors={colors} />
-                  <StatRow label="Wisdom" value={wis} onChangeText={setWis} editable={canEdit("stats")} colors={colors} />
-                  <StatRow label="Charisma" value={cha} onChangeText={setCha} editable={canEdit("stats")} colors={colors} />
-                </RowCard>
-
-                {/* Combat */}
-                <RowCard label="Combat" colors={colors}>
-                  {!canEdit("hp") && !canEdit("status") ? (
-                    <ThemedText style={{ color: colors.textSecondary, lineHeight: 18 }}>{readonlyHint("Combat")}</ThemedText>
-                  ) : null}
-
-                  <StatRow label="HP (Current)" value={hpCur} onChangeText={setHpCur} editable={canEdit("hp")} colors={colors} />
-                  <StatRow label="HP (Max)" value={hpMax} onChangeText={setHpMax} editable={canEdit("hp")} colors={colors} />
-
-                  <InputRow label="Status" value={status} onChangeText={setStatus} editable={canEdit("status")} colors={colors} />
-                </RowCard>
-
-                {/* Inventory */}
-                <RowCard label="Inventory (Private)" colors={colors}>
-                  {!canEdit("inventory") ? (
-                    <ThemedText style={{ color: colors.textSecondary, lineHeight: 18 }}>{readonlyHint("Inventory")}</ThemedText>
-                  ) : null}
-
-                  <TextInput
-                    value={inventoryRaw}
-                    onChangeText={setInventoryRaw}
-                    editable={canEdit("inventory")}
-                    placeholder={canEdit("inventory") ? "Torch x6\nRations x5\nRope (50 ft)" : ""}
-                    placeholderTextColor={colors.textMuted}
-                    multiline
-                    style={[
-                      styles.textarea,
-                      {
-                        color: canEdit("inventory") ? colors.text : colors.textSecondary,
-                        backgroundColor: colors.card,
-                        borderColor: colors.border,
-                        opacity: canEdit("inventory") ? 1 : 0.75,
-                      },
-                    ]}
-                  />
-
-                  <ThemedText style={[styles.subLabel, { color: colors.textSecondary, marginTop: 10 }]}>Equipment</ThemedText>
-                  <TextInput
-                    value={equipmentRaw}
-                    onChangeText={setEquipmentRaw}
-                    editable={canEdit("equipment")}
-                    placeholder={canEdit("equipment") ? "Leather Armor\nShortbow" : ""}
-                    placeholderTextColor={colors.textMuted}
-                    multiline
-                    style={[
-                      styles.textarea,
-                      {
-                        color: canEdit("equipment") ? colors.text : colors.textSecondary,
-                        backgroundColor: colors.card,
-                        borderColor: colors.border,
-                        opacity: canEdit("equipment") ? 1 : 0.75,
-                      },
-                    ]}
-                  />
-                </RowCard>
-
-                {!!(sheet as any)?.updatedAt ? (
-                  <ThemedText style={{ color: colors.textMuted ?? colors.textSecondary, fontSize: 12 }}>
-                    Last updated {new Date((sheet as any).updatedAt).toLocaleString()}
+            {/* Invite code (read-only, regen by button) */}
+            <RowCard
+              label="Invite code"
+              colors={colors}
+              right={
+                <Pressable
+                  onPress={regenerateInviteCode}
+                  hitSlop={8}
+                  disabled={!canEdit}
+                  style={({ pressed }) => [{ opacity: !canEdit ? 0.4 : pressed ? 0.65 : 1 }]}
+                >
+                  <ThemedText style={{ color: colors.textSecondary, fontWeight: "800", fontSize: 12 }}>
+                    GENERATE
                   </ThemedText>
-                ) : null}
-              </>
-            )}
+                </Pressable>
+              }
+            >
+              <TextInput
+                value={inviteCode}
+                editable={false}
+                selectTextOnFocus
+                style={[
+                  styles.input,
+                  {
+                    color: colors.textMuted,
+                    letterSpacing: 0.8,
+                    opacity: 0.85,
+                  },
+                ]}
+              />
+            </RowCard>
+
+            <RowCard label="Tags" colors={colors}>
+              <View style={{ gap: 10 }}>
+                <View style={{ flexDirection: "row", gap: 10, alignItems: "center" }}>
+                  <View style={{ flex: 1 }}>
+                    <TextInput
+                      ref={tagInputRef}
+                      value={tagInput}
+                      onChangeText={(v) => {
+                        const next = v.replace(/[^a-zA-Z0-9 ]+/g, "");
+                        setTagInput(next);
+                      }}
+                      placeholder="(e.g. adventure)"
+                      placeholderTextColor={colors.textMuted}
+                      style={[styles.input, { color: colors.text }]}
+                      autoCapitalize="none"
+                      editable={canEdit}
+                      blurOnSubmit={false}
+                      returnKeyType="done"
+                      onSubmitEditing={addTag}
+                    />
+                  </View>
+
+                  <Pressable
+                    onPress={addTag}
+                    disabled={!canEdit}
+                    hitSlop={10}
+                    style={({ pressed }) => [
+                      styles.addTagBtn,
+                      {
+                        borderColor: colors.border,
+                        backgroundColor: pressed ? colors.pressed : colors.card,
+                        opacity: canEdit ? 1 : 0.5,
+                      },
+                    ]}
+                  >
+                    <Ionicons name="add" size={18} color={colors.icon} />
+                  </Pressable>
+                </View>
+
+                {tags.length ? (
+                  <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+                    {tags.map((t) => (
+                      <View
+                        key={t.key}
+                        style={[styles.tagChip, { borderColor: colors.border, backgroundColor: colors.card }]}
+                      >
+                        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                          <View style={[styles.colorDot, { backgroundColor: t.color }]} />
+                          <ThemedText style={{ color: colors.text, fontSize: 13, fontWeight: "700" }}>
+                            {t.name}
+                          </ThemedText>
+                        </View>
+
+                        {canEdit ? (
+                          <Pressable
+                            onPress={() => removeTag(t.key)}
+                            hitSlop={8}
+                            style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}
+                          >
+                            <Ionicons name="close" size={16} color={colors.textSecondary} />
+                          </Pressable>
+                        ) : null}
+                      </View>
+                    ))}
+                  </View>
+                ) : (
+                  <ThemedText style={{ color: colors.textSecondary, fontSize: 13 }}>
+                    Add tags to the scenario (letters/numbers/spaces only).
+                  </ThemedText>
+                )}
+              </View>
+            </RowCard>
+
+            <View style={{ paddingHorizontal: 2, paddingTop: 2 }}>
+              {isEdit && !isOwner ? (
+                <ThemedText style={{ color: colors.textMuted, fontSize: 12, marginTop: 4 }}>
+                  You can view details, but only the owner can edit.
+                </ThemedText>
+              ) : null}
+            </View>
           </ScrollView>
         </KeyboardAvoidingView>
       </ThemedView>
     </SafeAreaView>
-  );
-}
-
-// ------------------------------
-// small UI helpers
-// ------------------------------
-
-function InputRow({
-  label,
-  value,
-  onChangeText,
-  editable,
-  colors,
-  keyboardType,
-  helperText,
-}: {
-  label: string;
-  value: string;
-  onChangeText: (v: string) => void;
-  editable: boolean;
-  colors: any;
-  keyboardType?: any;
-  helperText?: string;
-}) {
-  return (
-    <View style={styles.inputRow}>
-      <View style={{ flexDirection: "row", alignItems: "baseline", justifyContent: "space-between", gap: 10 }}>
-        <ThemedText style={[styles.inputLabel, { color: colors.textSecondary }]}>{label}</ThemedText>
-        {!!helperText ? (
-          <ThemedText style={{ color: colors.textMuted ?? colors.textSecondary, fontSize: 11 }} numberOfLines={2}>
-            {helperText}
-          </ThemedText>
-        ) : null}
-      </View>
-
-      <TextInput
-        value={value}
-        onChangeText={onChangeText}
-        editable={editable}
-        keyboardType={keyboardType}
-        placeholderTextColor={colors.textMuted}
-        style={[
-          styles.input,
-          {
-            color: editable ? colors.text : colors.textSecondary,
-            borderColor: colors.border,
-            backgroundColor: colors.card,
-            opacity: editable ? 1 : 0.75,
-          },
-        ]}
-      />
-    </View>
-  );
-}
-
-function StatRow({
-  label,
-  value,
-  onChangeText,
-  editable,
-  colors,
-}: {
-  label: string;
-  value: string;
-  onChangeText: (v: string) => void;
-  editable: boolean;
-  colors: any;
-}) {
-  return (
-    <InputRow
-      label={label}
-      value={value}
-      onChangeText={(v) => onChangeText(v.replace(/[^0-9-]/g, ""))}
-      editable={editable}
-      colors={colors}
-      keyboardType="number-pad"
-    />
   );
 }
 
@@ -706,39 +580,82 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    gap: 10,
   },
 
-  content: { padding: 16, paddingBottom: 28, gap: 12 },
+  content: { padding: 16, gap: 12, paddingBottom: 28 },
 
-  emptyCard: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 14,
-    padding: 14,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-  },
-
-  inputRow: { gap: 6 },
-  inputLabel: { fontSize: 12, fontWeight: "900", textTransform: "uppercase", letterSpacing: 0.6 },
   input: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
     fontSize: 15,
+    paddingVertical: 10,
+    paddingHorizontal: 0,
   },
-
-  textarea: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 15,
-    minHeight: 90,
+  inputMultiline: {
+    minHeight: 66,
     textAlignVertical: "top",
   },
 
-  subLabel: { fontSize: 12, fontWeight: "900", textTransform: "uppercase", letterSpacing: 0.6 },
+  coverPressable: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 14,
+    overflow: "hidden",
+    height: 140, // preview height
+  },
+  coverImage: {
+    width: "100%",
+    height: "100%",
+  },
+  coverOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: "flex-end",
+    padding: 10,
+  },
+  coverBadge: {
+    alignSelf: "flex-start",
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  coverEmpty: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
+
+  addTagBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  tagChip: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 999,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+  },
+  colorDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 999,
+  },
+
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.35)",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 999,
+    elevation: 999,
+  },
 });
