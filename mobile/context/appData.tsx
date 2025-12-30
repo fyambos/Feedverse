@@ -102,6 +102,7 @@ type AppDataApi = {
   
   // sheets
   getCharacterSheetByProfileId: (profileId: string) => CharacterSheet | null;
+  upsertCharacterSheet: (sheet: CharacterSheet) => Promise<void>;
   
   };
   
@@ -175,8 +176,6 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
 
       listProfilesForScenario: (scenarioId) =>
         db ? Object.values(db.profiles).filter((p) => p.scenarioId === String(scenarioId)) : [],
-      getCharacterSheetByProfileId: (profileId: string) =>
-        db ? (db as any).sheets?.[String(profileId)] ?? null : null,
       
       // --- posts
       getPostById: (id) => (db ? db.posts[String(id)] ?? null : null),
@@ -817,7 +816,43 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         setState({ isReady: true, db: nextDb as any });
         return (nextDb as any)?.scenarios?.[sid] ?? null;
       },
+      // --- character sheets
+      getCharacterSheetByProfileId: (profileId: string) =>
+        db ? (db as any).sheets?.[String(profileId)] ?? null : null,
+
+      upsertCharacterSheet: async (sheet: CharacterSheet) => {
+        const now = new Date().toISOString();
+
+        // keying strategy: sheets are stored by profileId
+        const key = String((sheet as any).profileId ?? (sheet as any).ownerProfileId ?? "");
+
+        if (!key) throw new Error("CharacterSheet.profileId is required");
+
+        const nextDb = await updateDb((prev) => {
+          const prevSheets = ((prev as any).sheets ?? {}) as Record<string, CharacterSheet>;
+          const existing = prevSheets[key];
+
+          const createdAt = (existing as any)?.createdAt ?? (sheet as any)?.createdAt ?? now;
+
+          return {
+            ...prev,
+            sheets: {
+              ...prevSheets,
+              [key]: {
+                ...(existing ?? {}),
+                ...sheet,
+                profileId: key,
+                createdAt,
+                updatedAt: now,
+              } as any,
+            },
+          };
+        });
+
+        setState({ isReady: true, db: nextDb as any });
+      },
     };
+
   }, [db]);
 
   return <Ctx.Provider value={{ ...state, ...api }}>{children}</Ctx.Provider>;

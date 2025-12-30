@@ -89,5 +89,27 @@ export const MOCK_SCENARIOS: Scenario[] = [
 
     mode: "campaign",
     dmUserIds: ["u14"],
-  }
+  },
+  {
+  id: "demo-campaign-u13",
+  name: "Ashford Hollow: The Red Ledger",
+  cover: "https://loremflickr.com/800/400/fantasy,forest,ruins",
+  playerIds: ["u13", "u12", "u10", "u11", "u14"],
+  createdAt: "2024-06-01T00:00:00Z",
+  updatedAt: "2024-06-01T00:00:00Z",
+  inviteCode: "ASHFORD24",
+
+  ownerUserId: "u13",
+  description:
+    "a campaign of cursed contracts, missing pilgrims, and a town that keeps rewriting its own history. oaths bind harder than chains, and the ledger always balances.",
+
+  tags: [
+    { id: "t_fantasy", key: "fantasy", name: "Fantasy", color: "#7c83fdff" },
+    { id: "t_campaign", key: "campaign", name: "Campaign", color: "#34d399ff" },
+    { id: "t_mystery", key: "mystery", name: "Mystery", color: "#60a5faff" },
+  ],
+
+  mode: "campaign",
+  dmUserIds: ["u13"],
+},
 ];
