@@ -36,6 +36,10 @@ import { MediaPreview } from "@/components/postComposer/MediaPreview";
 import { PostSettingsSection } from "@/components/postComposer/PostSettingSection";
 import { ComposerToolbar } from "@/components/postComposer/ComposerToolbar";
 
+import { RowCard } from "@/components/ui/RowCard";
+import { PostTypePicker } from "@/components/postComposer/PostTypePicker";
+import type { PostType } from "@/lib/campaign/postTypes";
+
 type Params = {
   scenarioId: string;
   postId?: string;
@@ -60,6 +64,7 @@ export default function CreatePostModal() {
   const { userId } = useAuth();
   const {
     isReady,
+    getScenarioById,
     getPostById,
     getProfileById,
     listProfilesForScenario,
@@ -67,6 +72,13 @@ export default function CreatePostModal() {
     setSelectedProfileId,
     upsertPost,
   } = useAppData();
+
+  const scenario = useMemo(() => getScenarioById?.(sid) ?? null, [sid, getScenarioById]);
+  const isCampaign = scenario?.mode === "campaign";
+
+  // campaign state
+  const [postType, setPostType] = useState<PostType>("rp");
+  const [meta, setMeta] = useState<any>(undefined);
 
   const selectedId = getSelectedProfileId(sid);
 
@@ -76,7 +88,6 @@ export default function CreatePostModal() {
   }, [sid, listProfilesForScenario, userId]);
 
   const initialAuthorId = selectedId ?? fallbackOwnedProfileId;
-
   const [authorProfileId, setAuthorProfileId] = useState<string | null>(initialAuthorId);
 
   // author picking coordination (avoid race while editing)
@@ -145,10 +156,8 @@ export default function CreatePostModal() {
 
       if (!picked.length) return;
 
-      // selecting images cancels fake video mode
       setAddVideoIcon(false);
       setVideoThumbUri(null);
-
       setImageUrls((prev) => uniqueLimit([...prev, ...picked], MAX_IMAGES));
     } finally {
       setPicking(false);
@@ -169,10 +178,8 @@ export default function CreatePostModal() {
       const persistedUri = await takeAndPersistPhoto("img");
       if (!persistedUri) return;
 
-      // taking a photo cancels fake video mode
       setAddVideoIcon(false);
       setVideoThumbUri(null);
-
       setImageUrls((prev) => uniqueLimit([...prev, persistedUri], MAX_IMAGES));
     } finally {
       setPicking(false);
@@ -246,7 +253,6 @@ export default function CreatePostModal() {
     return getPostById(String(quoteId));
   }, [quoteId, getPostById]);
 
-  // SECURE: author must exist in this scenario (front-only guard)
   const scenarioProfileIds = useMemo(() => {
     return new Set(listProfilesForScenario(sid).map((p) => String(p.id)));
   }, [sid, listProfilesForScenario]);
@@ -260,16 +266,19 @@ export default function CreatePostModal() {
     const replyParent = parentPostId ? String(parentPostId) : undefined;
     const q = quotedPostId ? String(quotedPostId) : undefined;
 
-    // create-mode: wire parent/quote, pick author fallback, done
     if (!isEdit) {
       setAuthorProfileId((prev) => prev ?? initialAuthorId ?? null);
       setParentId(replyParent);
       setQuoteId(q);
+
+      // campaign defaults
+      setPostType("rp");
+      setMeta(undefined);
+
       setHydrated(true);
       return;
     }
 
-    // edit-mode: hydrate once
     if (hydrated) return;
 
     const found = getPostById(editingPostId);
@@ -304,8 +313,29 @@ export default function CreatePostModal() {
 
     setInsertedAt((found as any).insertedAt ?? found.createdAt ?? new Date().toISOString());
 
+    // campaign hydration
+    setPostType(((found as any)?.postType as PostType) || "rp");
+    setMeta((found as any)?.meta);
+
     setHydrated(true);
-  }, [isReady, isEdit, hydrated, editingPostId, parentPostId, quotedPostId, getPostById, initialAuthorId]);
+  }, [
+    isReady,
+    isEdit,
+    hydrated,
+    editingPostId,
+    parentPostId,
+    quotedPostId,
+    getPostById,
+    initialAuthorId,
+  ]);
+
+  // if scenario is not campaign, force rp + clear meta
+  useEffect(() => {
+    if (!isReady) return;
+    if (isCampaign) return;
+    if (postType !== "rp") setPostType("rp");
+    if (meta) setMeta(undefined);
+  }, [isReady, isCampaign]); // intentionally not depending on postType/meta
 
   // author selection callback after coming back from select-profile
   useEffect(() => {
@@ -380,6 +410,9 @@ export default function CreatePostModal() {
       addVideoIcon,
     });
 
+    const savedPostType = isCampaign && postType !== "rp" ? postType : undefined;
+    const savedMeta = isCampaign ? meta : undefined;
+
     const isStandaloneCreate = !isEdit && !parentId && !quoteId;
 
     // EDIT: single post only (no thread)
@@ -398,6 +431,9 @@ export default function CreatePostModal() {
         quotedPostId: quoteId,
         insertedAt: insertedAt || new Date().toISOString(),
         addVideoIcon: addVideoIconForPost,
+
+        postType: savedPostType as any,
+        meta: savedMeta,
       };
 
       await upsertPost(base as any);
@@ -423,6 +459,9 @@ export default function CreatePostModal() {
         quotedPostId: quoteId,
         insertedAt: postedAtIso,
         addVideoIcon: addVideoIconForPost,
+
+        postType: savedPostType as any,
+        meta: savedMeta,
       };
 
       await upsertPost(base as any);
@@ -454,6 +493,10 @@ export default function CreatePostModal() {
         quotedPostId: undefined,
         insertedAt: insertedAtBaseIso,
         addVideoIcon: i === 0 ? addVideoIconForPost : false,
+
+        // only on the first thread item
+        postType: i === 0 ? (savedPostType as any) : undefined,
+        meta: i === 0 ? savedMeta : undefined,
       };
 
       await upsertPost(post as any);
@@ -479,6 +522,9 @@ export default function CreatePostModal() {
     insertedAt,
     upsertPost,
     setSelectedProfileId,
+    isCampaign,
+    postType,
+    meta,
   ]);
 
   return (
@@ -548,7 +594,12 @@ export default function CreatePostModal() {
 
                 {quotedPost ? (
                   <View style={{ marginTop: 12 }}>
-                    <QuotedPostCard quotedPost={quotedPost} colors={colors} getProfileById={getProfileById} scenarioId={sid} />
+                    <QuotedPostCard
+                      quotedPost={quotedPost}
+                      colors={colors}
+                      getProfileById={getProfileById}
+                      scenarioId={sid}
+                    />
                   </View>
                 ) : null}
               </View>
@@ -556,12 +607,38 @@ export default function CreatePostModal() {
 
             <View style={[styles.softDivider, { backgroundColor: colors.border }]} />
 
+            
             <ComposerToolbar
               colors={colors}
               onTakePhoto={takePhoto}
               onPickImages={pickImages}
               onPickVideoThumb={pickVideoThumb}
             />
+
+            {/* ✅ Campaign-only UI lives HERE (under text, above media) */}
+                {isCampaign ? (
+                  <View style={{ marginLeft: 20, marginRight: 20, gap: 10 }}>
+                    <RowCard label="Post type" colors={colors}>
+                      <PostTypePicker
+                        colors={colors}
+                        value={postType}
+                        onChange={(t) => {
+                          setPostType(t);
+                          // optional: reset meta when switching types
+                          setMeta(undefined);
+                        }}
+                      />
+                    </RowCard>
+
+                    {/* Drop your specific composers here later.
+                       They should call setMeta(...) as user fills fields. */}
+                    {/* {postType === "roll" ? <RollComposer colors={colors} value={meta} onChange={setMeta} /> : null}
+                    {postType === "quest" ? <QuestComposer colors={colors} value={meta} onChange={setMeta} /> : null}
+                    {postType === "combat" ? <CombatComposer colors={colors} value={meta} onChange={setMeta} /> : null}
+                    {postType === "gm" ? <GMComposer colors={colors} value={meta} onChange={setMeta} /> : null}
+                    {postType === "log" ? <LogComposer colors={colors} value={meta} onChange={setMeta} /> : null} */}
+                  </View>
+                ) : null}
 
             <PostSettingsSection
               colors={colors}
@@ -602,7 +679,6 @@ export default function CreatePostModal() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1 },
-
   composer: {
     flexDirection: "row",
     paddingHorizontal: 16,
@@ -610,9 +686,7 @@ const styles = StyleSheet.create({
     paddingBottom: 10,
     gap: 12,
   },
-
   softDivider: { height: StyleSheet.hairlineWidth, opacity: 0.9 },
-
   overlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: "rgba(0,0,0,0.35)",
