@@ -1,15 +1,13 @@
 interface User {
   id: string;
-  userName: string;
+  username: string;
+  name: string;
   email: string;
-  password: string;
-  phoneNumber: string;
-  isActive: boolean;
-  profilePicture: string;
-  authProvider: string;
-  createdAt: Date;
-  updatedAt: Date;
-  lastLogin: Date;
+  password_hash: string;
+  avatar_url: string;
+  settings: object;
+  created_at: Date;
+  updated_at: Date;
 }
 
 interface GetUser {

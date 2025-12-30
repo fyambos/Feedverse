@@ -2,17 +2,19 @@ import { JwtPayload } from "jsonwebtoken";
 
 export interface RegisterRequest {
   username: string;
+  name: string;
   email: string;
-  password: string;
-  profilePicture?: string;
+  password_hash: string;
+  avatar_url: string;
 }
 
 export interface CreateUserData {
   id: string;
   username: string;
+  name: string;
   email: string;
-  password: string;
-  profile_picture?: string;
+  password_hash: string;
+  avatar_url: string;
   created_at: Date;
   updated_at: Date;
 }
@@ -21,9 +23,12 @@ export interface RegisterResponse {
   message: string;
   User: {
     id: string;
+    username: string;
+    name: string;
     email: string;
-    createdAt: Date;
-    updatedAt: Date;
+    avatar_url: string;
+    created_at: Date;
+    updated_at: Date;
   };
 }
 
@@ -34,7 +39,7 @@ export interface ValidationError {
 
 export interface LoginRequest {
   email: string;
-  password: string;
+  password_hash: string;
 }
 
 export interface LoginResponse {
@@ -43,10 +48,10 @@ export interface LoginResponse {
   User: {
     id: string;
     email: string;
-    profile_picture: string;
+    avatar_url: string;
     created_at: Date;
     updated_at: Date;
-    last_login: Date | null;
+    // last_login: Date | null;
   };
 }
 
