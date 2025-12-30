@@ -9,6 +9,7 @@ import { Colors } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 
 import type { Post as DbPost, Profile } from "@/data/db/schema";
+import type { PostType } from "@/lib/campaign/postTypes";
 
 import { Avatar } from "@/components/ui/Avatar";
 import { formatCount, formatDetailTimestamp } from "@/lib/format";
@@ -18,12 +19,10 @@ import { PostHeader } from "@/components/post/PostHeader";
 import { PostBody } from "@/components/post/PostBody";
 
 import { useUserSettings } from "@/hooks/useUserSettings";
+import { useAppData } from "@/context/appData";
+import { useAuth } from "@/context/auth";
 
-// ✅ campaign
 import { PostTypeBadge } from "@/components/post/PostTypeBadge";
-import type { PostType } from "@/lib/campaign/postTypes";
-
-// ✅ extracted menu
 import { PostMenu } from "@/components/post/PostMenu";
 
 export type PostVariant = "feed" | "detail" | "reply";
@@ -111,17 +110,32 @@ export function Post({
   const canNavigate = Boolean(isInteractive);
 
   const postType = (item as any).postType as PostType | undefined;
+
+  const appData = useAppData() as any;
+  const { getSelectedProfileId, getCharacterSheetByProfileId, upsertCharacterSheet, upsertPost } = appData;
+
+  const { userId, currentUser } = useAuth();
+  const currentUserId: string | null = userId ?? currentUser?.id ?? null;
+
+  // Try to get the scenario object (supports different appData shapes)
+  const scenario =
+    typeof appData.getScenarioById === "function"
+      ? appData.getScenarioById(sid)
+      : appData.scenarios?.[sid] ?? appData.scenarioById?.[sid] ?? null;
+
+  // Only the scenario owner or listed GMs can use GM tools
+  const isGmUser = Boolean(
+    currentUserId &&
+      scenario &&
+      (scenario.ownerUserId === currentUserId ||
+        (Array.isArray(scenario.gmUserIds) && scenario.gmUserIds.includes(currentUserId)))
+  );
+
+  const gmProfileId = sid ? getSelectedProfileId(sid) : null;
+
   const isCampaign = isCampaignPostType(postType);
-
-  const openProfile = (view?: ProfileViewState) => {
-    if (!canNavigate) return;
-    if (!sid || !profile.id) return;
-
-    router.push({
-      pathname: `/(scenario)/${encodeURIComponent(sid)}/(tabs)/profile/${encodeURIComponent(profile.id)}`,
-      params: view ? { view } : {},
-    } as any);
-  };
+  // GM tools should only be available to actual GMs, not all users viewing campaign posts
+  const canUseGmMenu = Boolean(isCampaign && isGmUser);
 
   const replyCount = item.replyCount ?? 0;
   const repostCount = item.repostCount ?? 0;
@@ -147,7 +161,7 @@ export function Post({
     } as any);
   };
 
-  // ✅ menu state
+  // menu state
   const [menuOpen, setMenuOpen] = React.useState(false);
 
   const handleOpenMenu = () => {
@@ -157,12 +171,6 @@ export function Post({
 
   const onReportPost = () => {
     Alert.alert("Report post", "Coming soon.");
-  };
-
-  // optional: hook for next step (GM editor screen/modal)
-  const openGmEditor = () => {
-    // replace with router.push("/modal/gm-editor") later
-    Alert.alert("GM editor", "Coming next (modal with live stats + Done).");
   };
 
   // ===== DETAIL =====
@@ -185,12 +193,35 @@ export function Post({
           visible={menuOpen && canOpenMenu}
           onClose={() => setMenuOpen(false)}
           colors={colors as any}
-          isCampaign={isCampaign}
+          isCampaign={canUseGmMenu}
           profile={profile}
           item={item}
           onReportPost={onReportPost}
           onOpenProfile={(view) => openProfile(view)}
-          onOpenGmEditor={openGmEditor}
+          scenarioId={canUseGmMenu ? sid : undefined}
+          gmProfileId={canUseGmMenu ? gmProfileId ?? undefined : undefined}
+          getSheet={canUseGmMenu ? getCharacterSheetByProfileId : undefined}
+          updateSheet={
+            canUseGmMenu
+              ? (profileId, next) => upsertCharacterSheet({ ...next, profileId })
+              : undefined
+          }
+          createGmPost={
+            canUseGmMenu
+              ? ({ scenarioId, text, authorProfileId }) => {
+                  const now = new Date().toISOString();
+                  upsertPost({
+                    id: `gm_${Date.now()}`,
+                    scenarioId: String(scenarioId),
+                    authorProfileId: String(authorProfileId),
+                    text,
+                    createdAt: now,
+                    insertedAt: now,
+                    postType: "gm",
+                  } as any);
+                }
+              : undefined
+          }
         />
 
         <PostBody
@@ -272,7 +303,7 @@ export function Post({
             <Avatar uri={profile.avatarUrl} size={44} fallbackColor={colors.border} />
           </Pressable>
 
-          {/* ✅ post type under avatar (campaign only, hide "rp") */}
+          {/* post type under avatar (campaign only, hide "rp") */}
           {isCampaign && postType && postType !== "rp" ? (
             <View style={styles.avatarBadge}>
               <PostTypeBadge colors={colors as any} type={postType} compact />
@@ -299,12 +330,35 @@ export function Post({
             visible={menuOpen && canOpenMenu}
             onClose={() => setMenuOpen(false)}
             colors={colors as any}
-            isCampaign={isCampaign}
+            isCampaign={canUseGmMenu}
             profile={profile}
             item={item}
             onReportPost={onReportPost}
             onOpenProfile={(view) => openProfile(view)}
-            onOpenGmEditor={openGmEditor}
+            scenarioId={canUseGmMenu ? sid : undefined}
+            gmProfileId={canUseGmMenu ? gmProfileId ?? undefined : undefined}
+            getSheet={canUseGmMenu ? getCharacterSheetByProfileId : undefined}
+            updateSheet={
+              canUseGmMenu
+                ? (profileId, next) => upsertCharacterSheet({ ...next, profileId })
+                : undefined
+            }
+            createGmPost={
+              canUseGmMenu
+                ? ({ scenarioId, text, authorProfileId }) => {
+                    const now = new Date().toISOString();
+                    upsertPost({
+                      id: `gm_${Date.now()}`,
+                      scenarioId: String(scenarioId),
+                      authorProfileId: String(authorProfileId),
+                      text,
+                      createdAt: now,
+                      insertedAt: now,
+                      postType: "gm",
+                    } as any);
+                  }
+                : undefined
+            }
           />
 
           <PostBody
@@ -336,6 +390,16 @@ export function Post({
       </View>
     </View>
   );
+
+  function openProfile(view?: ProfileViewState) {
+    if (!canNavigate) return;
+    if (!sid || !profile.id) return;
+
+    router.push({
+      pathname: `/(scenario)/${encodeURIComponent(sid)}/(tabs)/profile/${encodeURIComponent(profile.id)}`,
+      params: view ? { view } : {},
+    } as any);
+  }
 }
 
 const styles = StyleSheet.create({
@@ -372,7 +436,6 @@ const styles = StyleSheet.create({
     opacity: 0.85,
   },
 
-  // ✅ badge under avatar
   avatarBadge: {
     marginTop: 6,
     alignItems: "center",
