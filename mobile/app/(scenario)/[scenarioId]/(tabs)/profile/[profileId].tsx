@@ -71,12 +71,34 @@ export default function ProfileScreen() {
 
     listProfileFeedPage,
     isPostRepostedByProfileId,
+
+    getScenarioById,
+    getCharacterSheetByProfileId,
   } = useAppData() as any;
 
   const sid = decodeURIComponent(String(scenarioId ?? ""));
   const pid = decodeURIComponent(String(profileId ?? ""));
 
   const profile = useMemo(() => getProfileById(String(pid)), [pid, getProfileById]);
+  
+  const scenario = useMemo(() => getScenarioById?.(sid) ?? null, [sid, getScenarioById]);
+  const isCampaign = String((scenario as any)?.mode ?? "story") === "campaign";
+
+  const isOwnerOfProfile = useMemo(() => {
+    if (!profile || !userId) return false;
+    return String((profile as any).ownerUserId ?? "") === String(userId);
+  }, [profile, userId]);
+
+  const isDm = useMemo(() => {
+    if (!scenario || !userId) return false;
+    const dmIds: string[] = Array.isArray((scenario as any).dmUserIds) ? (scenario as any).dmUserIds.map(String) : [];
+    return dmIds.includes(String(userId));
+  }, [scenario, userId]);
+
+  const sheetExists = useMemo(() => {
+    if (!profile) return false;
+    return !!getCharacterSheetByProfileId?.(String(profile.id));
+  }, [profile, getCharacterSheetByProfileId]);
 
   const selectedId = getSelectedProfileId(sid);
   const isCurrentSelected = !!profile && !!selectedId && String(selectedId) === String(profile.id);
@@ -345,6 +367,14 @@ export default function ProfileScreen() {
   }, [profile, editMode, canModifyProfile, denyModify, sid]);
 
   const onLongPressPrimary = useCallback(() => setEditMode((v) => !v), []);
+  const openCharacterSheet = useCallback(() => {
+    if (!profile) return;
+    router.push({
+      pathname: "/(scenario)/[scenarioId]/sheet/[profileId]",
+      params: { scenarioId: sid, profileId: String(profile.id) },
+    } as any);
+  }, [profile, sid]);
+  
 
   if (!isReady) {
     return (
@@ -425,6 +455,8 @@ export default function ProfileScreen() {
         forceStats={forcedStats}
         showLockOnName={(isPrivated && profile.isPrivate !== true) || profile.isPrivate === true}
         showStats={viewState === "normal" || viewState === "muted" || viewState === "reactivated"}
+        showCharacterSheetButton={isCampaign && sheetExists}
+        onPressCharacterSheet={openCharacterSheet}
       />
 
       {showTabs ? (

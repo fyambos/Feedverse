@@ -11,7 +11,11 @@ import { formatJoined, normalizeUrl, displayUrl } from "@/lib/format";
 type ColorsLike = {
   text: string;
   textSecondary: string;
+  textMuted?: string;
   tint?: string;
+  border?: string;
+  card?: string;
+  pressed?: string;
 };
 
 type Props = {
@@ -24,6 +28,9 @@ type Props = {
   forceStats?: { following: number; followers: number };
 
   showLockOnName?: boolean;
+
+  showCharacterSheetButton?: boolean;
+  onPressCharacterSheet?: () => void;
 };
 
 export function ProfileBioBlock({
@@ -32,6 +39,8 @@ export function ProfileBioBlock({
   showStats = true,
   forceStats,
   showLockOnName,
+  showCharacterSheetButton = false,
+  onPressCharacterSheet,
 }: Props) {
   const following =
     typeof forceStats?.following === "number"
@@ -153,7 +162,29 @@ export function ProfileBioBlock({
           </ThemedText>
         </View>
       ) : null}
+      
+      {showCharacterSheetButton ? (
+        <Pressable
+          onPress={onPressCharacterSheet}
+          hitSlop={10}
+          style={({ pressed }) => [
+            styles.sheetBtn,
+            {
+              borderColor: colors.border ?? "rgba(0,0,0,0.12)",
+              backgroundColor: pressed ? (colors.pressed ?? "rgba(0,0,0,0.06)") : (colors.card ?? "transparent"),
+            },
+          ]}
+        >
+          <Ionicons name="document-text-outline" size={18} color={colors.text} />
+          <ThemedText style={{ color: colors.text, fontWeight: "800", fontSize: 14 }}>
+            character sheet
+          </ThemedText>
+        </Pressable>
+      ) : null}
+      
     </View>
+
+    
   );
 }
 
@@ -175,4 +206,16 @@ const styles = StyleSheet.create({
   metaText: { fontSize: 14, opacity: 0.95, flexShrink: 1 },
 
   statsRow: { marginTop: 12, flexDirection: "row", gap: 14 },
+
+  sheetBtn: {
+    marginTop: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    alignSelf: "flex-start",
+  },
 });
