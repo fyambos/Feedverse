@@ -9,7 +9,7 @@ export const MOCK_SHEETS: Record<string, CharacterSheet> = {
     class: "Rogue",
     level: 3,
     alignment: "Chaotic Neutral",
-    background: "Urchin",
+    background: "Elyra was once a street urchin, surviving through wit and agility. She discovered a talent for thievery and deception, leading her to become a skilled rogue. Now, she seeks fortune and adventure, always looking for the next big score.",
     stats: {
       strength: 8,
       dexterity: 16,
@@ -39,7 +39,7 @@ export const MOCK_SHEETS: Record<string, CharacterSheet> = {
     class: "Fighter",
     level: 3,
     alignment: "Lawful Neutral",
-    background: "Soldier",
+    background: "Brom hails from a long line of warriors and has trained in the art of combat since childhood. Known for his unwavering loyalty and strong sense of duty, Brom is a stalwart protector of his friends. He wields his battleaxe with precision and strength, ready to face any challenge head-on.",
     stats: {
       strength: 16,
       dexterity: 10,
@@ -69,7 +69,7 @@ export const MOCK_SHEETS: Record<string, CharacterSheet> = {
     class: "Cleric",
     level: 3,
     alignment: "Neutral Good",
-    background: "Acolyte",
+    background: "Mira grew up in a small village where she was drawn to the teachings of a benevolent deity. Her compassionate nature and desire to help others led her to become a cleric. Mira uses her divine magic to heal and protect her allies, often serving as the moral compass of the group.",
     stats: {
       strength: 10,
       dexterity: 12,
