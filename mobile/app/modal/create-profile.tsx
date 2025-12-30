@@ -40,13 +40,17 @@ import {
 /* -------------------------------------------------------------------------- */
 
 export default function CreateProfileModal() {
-  const { scenarioId, profileId } = useLocalSearchParams<{
+  const { scenarioId, profileId, forced } = useLocalSearchParams<{
     scenarioId: string;
     profileId?: string;
+    forced?: string;
   }>();
 
   const sid = String(scenarioId ?? "");
   const isEdit = !!profileId;
+
+  const isForced = String(forced ?? "") === "1";
+  const hideClose = isForced && !isEdit;
 
   const scheme = useColorScheme() ?? "light";
   const colors = Colors[scheme];
@@ -166,6 +170,14 @@ export default function CreateProfileModal() {
         updatedAt: now,
       } as any);
 
+      if (isForced && !isEdit) {
+        router.replace({
+          pathname: "/modal/select-profile",
+          params: { scenarioId: sid, afterCreate: "1" },
+        } as any);
+        return;
+      }
+
       router.back();
     } catch {
       Alert.alert("Error", "Could not save profile.");
@@ -188,9 +200,14 @@ export default function CreateProfileModal() {
         >
           {/* Header */}
           <View style={[styles.header, { borderBottomColor: colors.border }]}>
-            <Pressable onPress={() => router.back()} hitSlop={12}>
-              <Ionicons name="close" size={24} color={colors.text} />
-            </Pressable>
+            {hideClose ? (
+              // keep layout stable when the close button is hidden
+              <View style={{ width: 24, height: 24 }} />
+            ) : (
+              <Pressable onPress={() => router.back()} hitSlop={12}>
+                <Ionicons name="close" size={24} color={colors.text} />
+              </Pressable>
+            )}
 
             <ThemedText type="defaultSemiBold">{isEdit ? "Edit profile" : "Create profile"}</ThemedText>
 
