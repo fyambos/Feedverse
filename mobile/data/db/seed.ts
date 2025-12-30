@@ -187,8 +187,8 @@ export async function seedDbIfNeeded(existing: any | null) {
 
     const mode: Scenario["mode"] = (s as any).mode === "campaign" ? "campaign" : "story";
 
-    // dmUserIds = MJ list
-    // default: creator is MJ; if mock provides list, include creator + dedupe
+    // dmUserIds = GM list
+    // default: creator is GM; if mock provides list, include creator + dedupe
     const dmFromMock = toStringArray((s as any).dmUserIds);
     const dmUserIds = dmFromMock.length > 0 ? Array.from(new Set([ownerUserId, ...dmFromMock])) : [ownerUserId];
 

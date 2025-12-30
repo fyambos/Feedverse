@@ -169,7 +169,7 @@ export const MOCK_FEEDS: Record<string, Post[]> = {
   ],
   "demo-campaign": [
     // ─────────────────────────────────────────────
-    // 📌 PINNED POSTS (MJ / system)
+    // 📌 PINNED POSTS (GM / system)
     // ─────────────────────────────────────────────
     {
       id: "cmp-pin-rules",
@@ -184,7 +184,7 @@ export const MOCK_FEEDS: Record<string, Post[]> = {
         "• be kind. we can be dramatic in-character, not to each other.",
       createdAt: "2025-12-29T08:00:00.000Z",
       insertedAt: "2025-12-29T08:00:02.000Z",
-      postType: "mj",
+      postType: "gm",
       isPinned: true,
       pinOrder: 1,
     },
@@ -199,7 +199,7 @@ export const MOCK_FEEDS: Record<string, Post[]> = {
         "you arrive in ashford, a town pretending it’s not scared.",
       createdAt: "2025-12-29T08:05:00.000Z",
       insertedAt: "2025-12-29T08:05:03.000Z",
-      postType: "mj",
+      postType: "gm",
       isPinned: true,
       pinOrder: 2,
     },
@@ -518,7 +518,7 @@ export const MOCK_FEEDS: Record<string, Post[]> = {
         "• Be kind. Be dramatic in-character, not to each other.",
       createdAt: "2025-12-29T08:00:00.000Z",
       insertedAt: "2025-12-29T08:00:02.000Z",
-      postType: "mj",
+      postType: "gm",
       isPinned: true,
       pinOrder: 1,
     },
@@ -533,7 +533,7 @@ export const MOCK_FEEDS: Record<string, Post[]> = {
         "names appear. dates appear. some are in the future.",
       createdAt: "2025-12-29T08:05:00.000Z",
       insertedAt: "2025-12-29T08:05:03.000Z",
-      postType: "mj",
+      postType: "gm",
       isPinned: true,
       pinOrder: 2,
     },

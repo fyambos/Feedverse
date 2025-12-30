@@ -74,7 +74,7 @@ export type Post = {
   quotedPostId?: string;
   insertedAt: string;
   updatedAt?: string;
-  postType?: "rp" | "roll" | "log" | "quest" | "combat" | "mj";
+  postType?: "rp" | "roll" | "log" | "quest" | "combat" | "gm";
   isPinned?: boolean;
   pinOrder?: number;
   meta?: any; // roll payload, quest state, combat turn, etc.
