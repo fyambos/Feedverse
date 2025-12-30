@@ -3,9 +3,7 @@ import React from "react";
 import type { DbV5, Post, Profile, Scenario, Repost, ScenarioTag, CharacterSheet } from "@/data/db/schema";
 import { readDb, updateDb } from "@/data/db/storage";
 import { seedDbIfNeeded } from "@/data/db/seed";
-import {
-  buildGlobalTagFromKey,
-} from "@/lib/tags";
+import { buildGlobalTagFromKey } from "@/lib/tags";
 
 type AppDataState = {
   isReady: boolean;
@@ -52,15 +50,48 @@ type ProfileFeedPageResult = {
   nextCursor: FeedCursor | null;
 };
 
+type ProfileViewState =
+  | "normal"
+  | "muted"
+  | "blocked"
+  | "blocked_by"
+  | "suspended"
+  | "deactivated"
+  | "reactivated"
+  | "reported"
+  | "privated";
 
+// ✅ GM: apply updates to sheets, then create a GM post that summarizes changes
+export type GmApplySheetUpdateArgs = {
+  scenarioId: string;
+  gmProfileId: string; // author of the GM summary post
+  targetProfileIds: string[]; // selected targets
+  // patch applied to each sheet (shallow merge). You can pass absolute values here.
+  patch: Partial<CharacterSheet>;
+  // optional: meta labels shown in the GM post (e.g. "HP −1", "Set Status: poisoned")
+  label?: string;
+};
+
+export type GmApplySheetUpdateResult = {
+  postId: string;
+  updatedProfileIds: string[];
+  summaryText: string;
+};
 
 type AppDataApi = {
   // scenarios
   getScenarioById: (id: string) => Scenario | null;
   listScenarios: () => Scenario[];
   upsertScenario: (s: Scenario) => Promise<void>;
-  joinScenarioByInviteCode: ( inviteCode: string, userId: string ) => Promise<{ scenario: Scenario; alreadyIn: boolean } | null>;
-  transferScenarioOwnership: (scenarioId: string,fromUserId: string,toUserId: string ) => Promise<Scenario | null>;
+  joinScenarioByInviteCode: (
+    inviteCode: string,
+    userId: string
+  ) => Promise<{ scenario: Scenario; alreadyIn: boolean } | null>;
+  transferScenarioOwnership: (
+    scenarioId: string,
+    fromUserId: string,
+    toUserId: string
+  ) => Promise<Scenario | null>;
   leaveScenario: (scenarioId: string, userId: string) => Promise<{ deleted: boolean } | null>;
   deleteScenario: (scenarioId: string, ownerUserId: string) => Promise<boolean>;
   setScenarioMode: (scenarioId: string, mode: "story" | "campaign") => Promise<Scenario | null>;
@@ -99,13 +130,15 @@ type AppDataApi = {
   // helpers
   isPostRepostedByProfileId: (profileId: string, postId: string) => boolean;
   getRepostEventForProfile: (profileId: string, postId: string) => Repost | null;
-  
+
   // sheets
   getCharacterSheetByProfileId: (profileId: string) => CharacterSheet | null;
   upsertCharacterSheet: (sheet: CharacterSheet) => Promise<void>;
-  
-  };
-  
+
+  // ✅ GM helper
+  gmApplySheetUpdate: (args: GmApplySheetUpdateArgs) => Promise<GmApplySheetUpdateResult>;
+};
+
 const Ctx = React.createContext<(AppDataState & AppDataApi) | null>(null);
 
 function normalizeHandle(input: string) {
@@ -113,7 +146,7 @@ function normalizeHandle(input: string) {
 }
 
 function makePostCursor(p: Post): PostCursor {
-  return `${String(p.insertedAt)}|${String(p.id)}`;
+  return `${String((p as any).insertedAt ?? "")}|${String(p.id)}`;
 }
 
 function sortDescByCreatedAtThenId(a: Post, b: Post) {
@@ -143,6 +176,39 @@ function makeFeedCursor(item: ProfileFeedItem): FeedCursor {
   return `${String(item.activityAt)}|${String(item.kind)}|${String(item.post.id)}|${rep}`;
 }
 
+// ✅ small util: diff shallow keys for GM post text
+function diffShallow(prev: any, next: any): string[] {
+  const lines: string[] = [];
+  const keys = new Set<string>([
+    ...Object.keys(prev ?? {}),
+    ...Object.keys(next ?? {}),
+  ]);
+
+  const skip = new Set(["updatedAt", "createdAt", "profileId", "ownerProfileId", "id", "scenarioId"]);
+
+  for (const k of Array.from(keys)) {
+    if (skip.has(k)) continue;
+
+    const a = (prev ?? {})[k];
+    const b = (next ?? {})[k];
+
+    const same =
+      (a === b) ||
+      (Number.isNaN(a) && Number.isNaN(b)) ||
+      (typeof a === "object" && typeof b === "object" && JSON.stringify(a) === JSON.stringify(b));
+
+    if (same) continue;
+
+    // make short-ish readable output
+    const aStr = typeof a === "string" ? a : a == null ? "—" : JSON.stringify(a);
+    const bStr = typeof b === "string" ? b : b == null ? "—" : JSON.stringify(b);
+
+    lines.push(`• ${k}: ${aStr} → ${bStr}`);
+  }
+
+  return lines;
+}
+
 export function AppDataProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = React.useState<AppDataState>({
     isReady: false,
@@ -161,7 +227,6 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
 
   const api = React.useMemo<AppDataApi>(() => {
     return {
-
       // --- profiles
       getProfileById: (id) => (db ? db.profiles[String(id)] ?? null : null),
 
@@ -176,7 +241,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
 
       listProfilesForScenario: (scenarioId) =>
         db ? Object.values(db.profiles).filter((p) => p.scenarioId === String(scenarioId)) : [],
-      
+
       // --- posts
       getPostById: (id) => (db ? db.posts[String(id)] ?? null : null),
 
@@ -230,8 +295,8 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         const profile = db.profiles[pid];
         const likedSet = new Set<string>((profile?.likedPostIds ?? []).map(String));
 
-        const repostEvents = Object.values(db.reposts ?? {}).filter(
-          (r) => String(r.scenarioId) === sid && String(r.profileId) === pid
+        const repostEvents = Object.values((db as any).reposts ?? {}).filter(
+          (r: any) => String(r.scenarioId) === sid && String(r.profileId) === pid
         );
 
         const items: ProfileFeedItem[] = [];
@@ -242,14 +307,14 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
           }
 
           for (const r of repostEvents) {
-            const post = db.posts[String(r.postId)];
+            const post = db.posts[String((r as any).postId)];
             if (!post) continue;
             if (post.parentPostId) continue;
 
             items.push({
               kind: "repost",
               post,
-              activityAt: String(r.createdAt),
+              activityAt: String((r as any).createdAt),
               reposterProfileId: pid,
             });
           }
@@ -297,7 +362,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       // --- selection
       getSelectedProfileId: (scenarioId) => {
         if (!db) return null;
-        return db.selectedProfileByScenario[String(scenarioId)] ?? null;
+        return (db as any).selectedProfileByScenario?.[String(scenarioId)] ?? null;
       },
 
       // --- actions
@@ -305,7 +370,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         const next = await updateDb((prev) => ({
           ...prev,
           selectedProfileByScenario: {
-            ...prev.selectedProfileByScenario,
+            ...(prev as any).selectedProfileByScenario,
             [String(scenarioId)]: String(profileId),
           },
         }));
@@ -318,7 +383,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
 
         const next = await updateDb((prev) => {
           const existing = prev.profiles[id];
-          const createdAt = existing?.createdAt ?? p.createdAt ?? now;
+          const createdAt = (existing as any)?.createdAt ?? (p as any).createdAt ?? now;
 
           return {
             ...prev,
@@ -340,14 +405,14 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       },
 
       upsertPost: async (p) => {
-        const id = String(p.id);
+        const id = String((p as any).id);
         const now = new Date().toISOString();
 
         const next = await updateDb((prev) => {
           const existing = prev.posts[id];
 
           const insertedAt = (existing as any)?.insertedAt ?? (p as any).insertedAt ?? now;
-          const createdAt = (p as any).createdAt ?? existing?.createdAt ?? now;
+          const createdAt = (p as any).createdAt ?? (existing as any)?.createdAt ?? now;
 
           return {
             ...prev,
@@ -371,10 +436,10 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       // --- likes
       isPostLikedBySelectedProfile: (scenarioId, postId) => {
         if (!db) return false;
-        const sel = db.selectedProfileByScenario[String(scenarioId)];
+        const sel = (db as any).selectedProfileByScenario?.[String(scenarioId)];
         if (!sel) return false;
         const pr = db.profiles[String(sel)];
-        const arr = pr?.likedPostIds ?? [];
+        const arr = (pr as any)?.likedPostIds ?? [];
         return arr.includes(String(postId));
       },
 
@@ -383,17 +448,17 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         const pid = String(postId);
 
         const next = await updateDb((prev) => {
-          const selectedProfileId = prev.selectedProfileByScenario[sid];
+          const selectedProfileId = (prev as any).selectedProfileByScenario?.[sid];
           if (!selectedProfileId) return prev;
 
           const liker = prev.profiles[String(selectedProfileId)];
           const post = prev.posts[pid];
           if (!liker || !post) return prev;
 
-          const liked = (liker.likedPostIds ?? []).map(String);
+          const liked = ((liker as any).likedPostIds ?? []).map(String);
           const already = liked.includes(pid);
 
-          const nextLiked = already ? liked.filter((x) => x !== pid) : [...liked, pid];
+            const nextLiked: string[] = already ? liked.filter((x: string) => x !== pid) : [...liked, pid];
 
           const now = new Date().toISOString();
 
@@ -401,19 +466,19 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
             ...prev,
             profiles: {
               ...prev.profiles,
-              [String(liker.id)]: {
+              [String((liker as any).id)]: {
                 ...liker,
                 likedPostIds: nextLiked,
                 updatedAt: now,
-              },
+              } as any,
             },
             posts: {
               ...prev.posts,
               [pid]: {
                 ...post,
-                likeCount: Math.max(0, (post.likeCount ?? 0) + (already ? -1 : 1)),
+                likeCount: Math.max(0, ((post as any).likeCount ?? 0) + (already ? -1 : 1)),
                 updatedAt: now,
-              },
+              } as any,
             },
           };
         });
@@ -421,7 +486,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         setState({ isReady: true, db: next as any });
       },
 
-      // ---reposts
+      // --- reposts
       getRepostEventForProfile: (profileId: string, postId: string) => {
         if (!db) return null;
         const id = `${String(profileId)}|${String(postId)}`;
@@ -436,7 +501,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
 
       isPostRepostedBySelectedProfile: (scenarioId: string, postId: string) => {
         if (!db) return false;
-        const sel = db.selectedProfileByScenario[String(scenarioId)];
+        const sel = (db as any).selectedProfileByScenario?.[String(scenarioId)];
         if (!sel) return false;
         const id = `${String(sel)}|${String(postId)}`;
         return !!(db as any).reposts?.[id];
@@ -447,7 +512,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         const pid = String(postId);
 
         const next = await updateDb((prev) => {
-          const selectedProfileId = prev.selectedProfileByScenario[sid];
+          const selectedProfileId = (prev as any).selectedProfileByScenario?.[sid];
           if (!selectedProfileId) return prev;
 
           const reposterId = String(selectedProfileId);
@@ -455,7 +520,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
           if (!post) return prev;
 
           const key = `${reposterId}|${pid}`;
-          const reposts = { ...(prev as any).reposts };
+          const reposts = { ...((prev as any).reposts ?? {}) };
 
           const already = !!reposts?.[key];
           const now = new Date().toISOString();
@@ -479,9 +544,9 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
               ...prev.posts,
               [pid]: {
                 ...post,
-                repostCount: Math.max(0, (post.repostCount ?? 0) + (already ? -1 : 1)),
+                repostCount: Math.max(0, ((post as any).repostCount ?? 0) + (already ? -1 : 1)),
                 updatedAt: now,
-              },
+              } as any,
             },
           };
         });
@@ -497,9 +562,9 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
           const posts = { ...prev.posts };
           delete posts[id];
 
-          const reposts = { ...(prev as any).reposts };
+          const reposts = { ...((prev as any).reposts ?? {}) };
           for (const k of Object.keys(reposts ?? {})) {
-            if (String(reposts[k]?.postId) === id) delete reposts[k];
+            if (String((reposts as any)[k]?.postId) === id) delete reposts[k];
           }
 
           return { ...prev, posts, reposts };
@@ -513,23 +578,22 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       listScenarios: () => (db ? Object.values(db.scenarios) : []),
 
       upsertScenario: async (s) => {
-        const id = String(s.id);
+        const id = String((s as any).id);
         const now = new Date().toISOString();
 
         const next = await updateDb((prev) => {
           const existing = prev.scenarios[id];
 
           // --- GLOBAL TAG REGISTRY ---
-          const prevTags = (prev as any).tags ?? {};
+          const prevTags = ((prev as any).tags ?? {}) as Record<string, ScenarioTag>;
           const nextTags: Record<string, ScenarioTag> = { ...prevTags };
 
           const scenarioTags: ScenarioTag[] = [];
 
-          for (const raw of s.tags ?? []) {
-            const key = String((raw as any).key ?? raw.id ?? "").toLowerCase();
+          for (const raw of (s as any).tags ?? []) {
+            const key = String((raw as any).key ?? (raw as any).id ?? "").toLowerCase();
             if (!key) continue;
 
-            // already registered globally?
             let tag = nextTags[key];
 
             if (!tag) {
@@ -541,7 +605,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                 key: built.key,
                 name: built.name,
                 color: built.color,
-              };
+              } as any;
 
               nextTags[key] = tag;
             }
@@ -559,9 +623,9 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                 ...s,
                 id,
                 tags: scenarioTags,
-                createdAt: existing?.createdAt ?? s.createdAt ?? now,
+                createdAt: (existing as any)?.createdAt ?? (s as any).createdAt ?? now,
                 updatedAt: now,
-              },
+              } as any,
             },
           };
         });
@@ -588,13 +652,9 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
           const current = prev.scenarios[sid];
           if (!current) return prev;
 
-          const players = Array.isArray((current as any).playerIds)
-            ? (current as any).playerIds.map(String)
-            : [];
-
+          const players = Array.isArray((current as any).playerIds) ? (current as any).playerIds.map(String) : [];
           alreadyIn = players.includes(uid);
 
-          // if already in, don't modify
           if (alreadyIn) return prev;
 
           const now = new Date().toISOString();
@@ -607,7 +667,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                 ...current,
                 playerIds: Array.from(new Set([...players, uid])),
                 updatedAt: now,
-              },
+              } as any,
             },
           };
         });
@@ -634,15 +694,10 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
           const current = prev.scenarios?.[sid];
           if (!current) return prev;
 
-          // only current owner can transfer
           const owner = String((current as any).ownerUserId ?? "");
           if (owner !== from) return prev;
 
-          // target must be a player in the scenario
-          const players = Array.isArray((current as any).playerIds)
-            ? (current as any).playerIds.map(String)
-            : [];
-
+          const players = Array.isArray((current as any).playerIds) ? (current as any).playerIds.map(String) : [];
           if (!players.includes(to)) return prev;
 
           const now = new Date().toISOString();
@@ -655,7 +710,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                 ...current,
                 ownerUserId: to,
                 updatedAt: now,
-              },
+              } as any,
             },
           };
         });
@@ -669,46 +724,31 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       leaveScenario: async (scenarioId: string, userId: string) => {
         const sid = String(scenarioId ?? "").trim();
         const uid = String(userId ?? "").trim();
-        console.log("[leaveScenario] called", { scenarioId, userId });
         if (!sid || !uid) return null;
 
         let deleted = false;
 
         const nextDb = await updateDb((prev) => {
-          
           const current = prev.scenarios?.[sid];
           if (!current) return prev;
 
           const ownerId = String((current as any).ownerUserId ?? "");
-          const players = Array.isArray((current as any).playerIds)
-          
-            ? (current as any).playerIds.map(String)
-            : [];
-
+          const players = Array.isArray((current as any).playerIds) ? (current as any).playerIds.map(String) : [];
           if (!players.includes(uid)) return prev;
 
-            const remaining: string[] = players.filter((p: string) => p !== uid);
+          const remaining: string[] = players.filter((p: string) => p !== uid);
           const now = new Date().toISOString();
 
-
-          console.log("[leaveScenario] players before", players);
-          console.log("[leaveScenario] ownerId", ownerId);
-
-          // ✅ owner leaving
+          // owner leaving (allowed only if alone)
           if (uid === ownerId) {
-            // allowed ONLY if they are alone (no other users)
-            if (remaining.length > 0) {
-              return prev; // UI should block and show "transfer ownership"
-            }
+            if (remaining.length > 0) return prev;
 
-            // alone -> deleting scenario silently
             deleted = true;
 
             const scenarios = { ...prev.scenarios };
             delete scenarios[sid];
 
-            // optional cleanup: selected profile + profiles + posts + reposts
-            const selectedProfileByScenario = { ...(prev as any).selectedProfileByScenario };
+            const selectedProfileByScenario = { ...((prev as any).selectedProfileByScenario ?? {}) };
             delete selectedProfileByScenario[sid];
 
             const profiles = { ...prev.profiles };
@@ -721,15 +761,21 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
               if (String((posts as any)[k]?.scenarioId) === sid) delete posts[k];
             }
 
-            const reposts = { ...(prev as any).reposts };
+            const reposts = { ...((prev as any).reposts ?? {}) };
             for (const k of Object.keys(reposts ?? {})) {
               if (String((reposts as any)[k]?.scenarioId) === sid) delete reposts[k];
             }
 
-            return { ...prev, scenarios, profiles, posts, reposts, selectedProfileByScenario };
+            const sheets = { ...((prev as any).sheets ?? {}) };
+            for (const k of Object.keys(sheets)) {
+              const sheet = (sheets as any)[k];
+              if (String(sheet?.scenarioId ?? "") === sid) delete sheets[k];
+            }
+
+            return { ...prev, scenarios, profiles, posts, reposts, sheets, selectedProfileByScenario };
           }
 
-          // ✅ normal user leaving
+          // normal user leaving
           return {
             ...prev,
             scenarios: {
@@ -738,7 +784,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                 ...current,
                 playerIds: remaining,
                 updatedAt: now,
-              },
+              } as any,
             },
           };
         });
@@ -757,13 +803,12 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
           if (!current) return prev;
 
           const ownerId = String((current as any).ownerUserId ?? "");
-          if (ownerId !== uid) return prev; // only owner can delete
+          if (ownerId !== uid) return prev;
 
           const scenarios = { ...prev.scenarios };
           delete scenarios[sid];
 
-          // optional cleanup: selected profile + profiles + posts + reposts
-          const selectedProfileByScenario = { ...(prev as any).selectedProfileByScenario };
+          const selectedProfileByScenario = { ...((prev as any).selectedProfileByScenario ?? {}) };
           delete selectedProfileByScenario[sid];
 
           const profiles = { ...prev.profiles };
@@ -776,19 +821,24 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
             if (String((posts as any)[k]?.scenarioId) === sid) delete posts[k];
           }
 
-          const reposts = { ...(prev as any).reposts };
+          const reposts = { ...((prev as any).reposts ?? {}) };
           for (const k of Object.keys(reposts ?? {})) {
             if (String((reposts as any)[k]?.scenarioId) === sid) delete reposts[k];
           }
 
-          return { ...prev, scenarios, profiles, posts, reposts, selectedProfileByScenario };
+          const sheets = { ...((prev as any).sheets ?? {}) };
+          for (const k of Object.keys(sheets)) {
+            const sheet = (sheets as any)[k];
+            if (String(sheet?.scenarioId ?? "") === sid) delete sheets[k];
+          }
+
+          return { ...prev, scenarios, profiles, posts, reposts, sheets, selectedProfileByScenario };
         });
 
         setState({ isReady: true, db: nextDb as any });
-
-        // confirm it actually got deleted
         return !(nextDb as any)?.scenarios?.[sid];
       },
+
       setScenarioMode: async (scenarioId, mode) => {
         const sid = String(scenarioId ?? "").trim();
         const nextMode: "story" | "campaign" = mode === "campaign" ? "campaign" : "story";
@@ -808,7 +858,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                 ...current,
                 mode: nextMode,
                 updatedAt: now,
-              },
+              } as any,
             },
           };
         });
@@ -816,22 +866,19 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         setState({ isReady: true, db: nextDb as any });
         return (nextDb as any)?.scenarios?.[sid] ?? null;
       },
+
       // --- character sheets
       getCharacterSheetByProfileId: (profileId: string) =>
         db ? (db as any).sheets?.[String(profileId)] ?? null : null,
 
       upsertCharacterSheet: async (sheet: CharacterSheet) => {
         const now = new Date().toISOString();
-
-        // keying strategy: sheets are stored by profileId
         const key = String((sheet as any).profileId ?? (sheet as any).ownerProfileId ?? "");
-
         if (!key) throw new Error("CharacterSheet.profileId is required");
 
         const nextDb = await updateDb((prev) => {
           const prevSheets = ((prev as any).sheets ?? {}) as Record<string, CharacterSheet>;
           const existing = prevSheets[key];
-
           const createdAt = (existing as any)?.createdAt ?? (sheet as any)?.createdAt ?? now;
 
           return {
@@ -851,8 +898,94 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
 
         setState({ isReady: true, db: nextDb as any });
       },
-    };
 
+      // ✅ GM: apply patch to 1+ sheets, then create a GM post that logs the diff
+      gmApplySheetUpdate: async ({ scenarioId, gmProfileId, targetProfileIds, patch, label }) => {
+        const sid = String(scenarioId ?? "").trim();
+        const gmId = String(gmProfileId ?? "").trim();
+        const targets = (targetProfileIds ?? []).map(String).filter(Boolean);
+
+        if (!sid) throw new Error("gmApplySheetUpdate: scenarioId is required");
+        if (!gmId) throw new Error("gmApplySheetUpdate: gmProfileId is required");
+        if (targets.length === 0) throw new Error("gmApplySheetUpdate: targetProfileIds is required");
+
+        const now = new Date().toISOString();
+        const postId = `gm_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+
+        let summaryText = "";
+        let updatedProfileIds: string[] = [];
+
+        const nextDb = await updateDb((prev) => {
+          const prevSheets = { ...((prev as any).sheets ?? {}) } as Record<string, CharacterSheet>;
+          const profiles = { ...prev.profiles };
+
+          const perTargetBlocks: string[] = [];
+
+          for (const pid of targets) {
+            const profile = profiles[String(pid)];
+            if (!profile) continue;
+
+            const existing = (prevSheets as any)[pid] ?? ({ profileId: pid, scenarioId: sid } as any);
+
+            const nextSheet = {
+              ...(existing ?? {}),
+              ...(patch ?? {}),
+              profileId: pid,
+              scenarioId: sid,
+              updatedAt: now,
+              createdAt: (existing as any)?.createdAt ?? now,
+            } as any;
+
+            // write back
+            prevSheets[pid] = nextSheet;
+            updatedProfileIds.push(pid);
+
+            // build diff lines
+            const lines = diffShallow(existing, nextSheet);
+            if (lines.length === 0) {
+              perTargetBlocks.push(`@${String((profile as any).handle ?? pid)}: (no changes)`);
+            } else {
+              perTargetBlocks.push(`@${String((profile as any).handle ?? pid)}\n${lines.join("\n")}`);
+            }
+          }
+
+          const targetHandles = updatedProfileIds
+            .map((pid) => {
+              const p = profiles[String(pid)];
+              return p ? `@${String((p as any).handle ?? pid)}` : `@${pid}`;
+            })
+            .join(", ");
+
+          summaryText =
+            `⚙️ gm update${label ? ` — ${label}` : ""}\n` +
+            `targets: ${targetHandles}\n\n` +
+            perTargetBlocks.join("\n\n");
+
+          const newPost: Post = {
+            id: postId,
+            scenarioId: sid,
+            authorProfileId: gmId,
+            text: summaryText,
+            createdAt: now,
+            insertedAt: now,
+          } as any;
+
+          return {
+            ...prev,
+            sheets: prevSheets as any,
+            posts: {
+              ...prev.posts,
+              [postId]: newPost as any,
+            },
+          };
+        });
+
+        setState({ isReady: true, db: nextDb as any });
+
+        // NOTE: summaryText / updatedProfileIds were set inside updateDb closure
+        return { postId, updatedProfileIds, summaryText };
+      },
+    };
   }, [db]);
 
   return <Ctx.Provider value={{ ...state, ...api }}>{children}</Ctx.Provider>;
