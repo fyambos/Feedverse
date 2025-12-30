@@ -1,4 +1,3 @@
-
 // mobile/app/modal/select-profile.tsx
 import React from "react";
 import { FlatList, Image, Pressable, StyleSheet, View } from "react-native";
@@ -25,7 +24,12 @@ type TabKey = "mine" | "public";
 type ViewMode = "tabs" | "all"; // tabs = Mine/Public, all = single list (no tabs)
 
 export default function SelectProfileModal() {
-  const { scenarioId, afterCreate } = useLocalSearchParams<{ scenarioId: string; afterCreate?: string }>();
+  const { scenarioId, afterCreate, returnTo, replace } = useLocalSearchParams<{
+    scenarioId: string;
+    afterCreate?: string;
+    returnTo?: string;
+    replace?: string; // "1" => use router.replace
+  }>();
   const scheme = useColorScheme() ?? "light";
   const colors = Colors[scheme];
 
@@ -85,8 +89,18 @@ export default function SelectProfileModal() {
           if (!selectEnabled) return;
           await setSelectedProfileId(sid, String(item.id));
 
-          // If this modal was opened right after forced profile creation,
-          // we should enter the scenario feed instead of returning to the scenario list.
+          // If the opener provided a return destination, go there instead of router.back().
+          // This fixes the case where opening Select Profile from the scenario list would otherwise
+          // return to the scenario list after choosing.
+          if (returnTo) {
+            const dest = decodeURIComponent(String(returnTo));
+            if (String(replace ?? "") === "1") router.replace(dest as any);
+            else router.push(dest as any);
+            return;
+          }
+
+          // Backward compat: if opened right after forced profile creation,
+          // enter the scenario feed instead of returning to the scenario list.
           if (String(afterCreate ?? "") === "1") {
             router.replace(`/(scenario)/${sid}` as any);
             return;
@@ -181,7 +195,12 @@ export default function SelectProfileModal() {
             if (disabled) return;
             router.push({
               pathname: "/modal/create-profile",
-              params: { scenarioId: sid },
+              params: {
+                scenarioId: sid,
+                // preserve return intent so that after creating a profile, the flow can still land in the right place
+                ...(returnTo ? { returnTo: String(returnTo) } : {}),
+                ...(replace ? { replace: String(replace) } : {}),
+              },
             } as any);
           }}
           style={({ pressed }) => [

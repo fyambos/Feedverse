@@ -130,7 +130,11 @@ export default function ScenarioListScreen() {
       // you have profiles but none selected -> go pick one
       router.push({
         pathname: "/modal/select-profile",
-        params: { scenarioId: sid },
+        params: {
+          scenarioId: sid,
+          returnTo: encodeURIComponent(`/(scenario)/${sid}`),
+          replace: "1",
+        },
       } as any);
       return;
     }
