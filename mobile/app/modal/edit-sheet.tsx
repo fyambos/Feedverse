@@ -1,6 +1,6 @@
 // mobile/app/modal/edit-sheet.tsx
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import {
   Alert,
   KeyboardAvoidingView,
@@ -11,7 +11,7 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { router, useLocalSearchParams } from "expo-router";
+import { router, Stack, useLocalSearchParams } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 
@@ -107,7 +107,7 @@ export default function EditSheetModal() {
       if (field === "abilities") return true;
       if (field === "spells") return true;
 
-      // inventory/equipment editable by owner
+      // NEW: inventory is editable by owner (manual items)
       if (field === "inventory") return true;
       if (field === "equipment") return true;
 
@@ -117,12 +117,12 @@ export default function EditSheetModal() {
     [isCreate, isDm, isOwner]
   );
 
-  // Level: editable only by DM (or turns). In CREATE mode, allow editing.
+  // Level should only be editable by DM (or turns). Not by owner in EDIT mode.
   const canEditLevel = useMemo(() => (isCreate ? true : isDm), [isCreate, isDm]);
 
   const canSave = useMemo(() => {
-    if (isCreate) return isDm || isOwner;
-    return isDm || isOwner;
+    if (isCreate) return isDm || isOwner; // create allowed for owner/dm
+    return isDm || isOwner; // edit allowed for owner/dm but fields restricted by canEdit()
   }, [isCreate, isDm, isOwner]);
 
   // ------------------------------
@@ -135,15 +135,16 @@ export default function EditSheetModal() {
   const [alignment, setAlignment] = useState(sheet?.alignment ?? "");
 
   const [background, setBackground] = useState(sheet?.background ?? "");
+
   const [publicNotes, setPublicNotes] = useState(sheet?.publicNotes ?? "");
   const [privateNotes, setPrivateNotes] = useState(sheet?.privateNotes ?? "");
 
+  // abilities/spells as multi-line simple editor (one per line)
   const abilitiesText = useMemo(() => {
     const list = (sheet as any)?.abilities ?? [];
     if (!Array.isArray(list)) return "";
     return list.map((a: any) => (a?.notes ? `${a.name} — ${a.notes}` : `${a.name}`)).join("\n");
   }, [sheet]);
-
   const spellsText = useMemo(() => {
     const list = (sheet as any)?.spells ?? [];
     if (!Array.isArray(list)) return "";
@@ -192,7 +193,7 @@ export default function EditSheetModal() {
 
   // CREATE mode warning (show once when the modal opens)
   const [warnedCreate, setWarnedCreate] = useState(false);
-  useEffect(() => {
+  useMemo(() => {
     if (isCreate && !warnedCreate) {
       setWarnedCreate(true);
       Alert.alert(
@@ -201,6 +202,7 @@ export default function EditSheetModal() {
         [{ text: "OK" }]
       );
     }
+    return null;
   }, [isCreate, warnedCreate]);
 
   const parseNamedLines = (raw: string, prefix: string) => {
@@ -223,6 +225,7 @@ export default function EditSheetModal() {
   const onSave = useCallback(async () => {
     if (!isReady) return;
 
+    // In CREATE mode, allow creating even if there was no sheet
     if (!sheet && !isCreate) {
       Alert.alert("No sheet", "This profile has no character sheet to edit.");
       return;
@@ -232,15 +235,10 @@ export default function EditSheetModal() {
       return;
     }
 
-    const now = new Date().toISOString();
-
-    // In CREATE mode, allow creating a sheet when missing
     const base: CharacterSheet =
       sheet ??
       ({
-        id: `cs_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
         profileId: pid,
-        createdAt: now,
         name: String(name).trim() || "Unnamed",
       } as any);
 
@@ -256,6 +254,7 @@ export default function EditSheetModal() {
           }
         : {}),
 
+      // Level special rule: editable only by DM in edit mode; editable in create mode.
       ...(canEditLevel
         ? {
             level: clampInt(level, (base as any)?.level ?? 1),
@@ -267,9 +266,11 @@ export default function EditSheetModal() {
       ...(canEdit("publicNotes") ? { publicNotes: String(publicNotes).trim() || undefined } : {}),
       ...(canEdit("privateNotes") ? { privateNotes: String(privateNotes).trim() || undefined } : {}),
 
+      // abilities should be editable (owner + dm in edit; everyone in create)
       ...(canEdit("abilities") ? { abilities: parseNamedLines(abilitiesRaw, "a") as any } : {}),
       ...(canEdit("spells") ? { spells: parseNamedLines(spellsRaw, "s") as any } : {}),
 
+      // dm-only fields (in edit) but editable in create
       ...(canEdit("stats")
         ? {
             stats: {
@@ -294,6 +295,7 @@ export default function EditSheetModal() {
 
       ...(canEdit("status") ? { status: String(status).trim() || undefined } : {}),
 
+      // NEW: inventory should be editable by owner (and DM) in EDIT mode
       ...(canEdit("inventory")
         ? {
             inventory: parseNamedLines(inventoryRaw, "i").map((it: any) => ({
@@ -314,7 +316,7 @@ export default function EditSheetModal() {
           }
         : {}),
 
-      updatedAt: now,
+      updatedAt: new Date().toISOString(),
     };
 
     try {
@@ -355,25 +357,25 @@ export default function EditSheetModal() {
     upsertCharacterSheet,
   ]);
 
-  const headerTitle = isCreate ? "Create Character Sheet" : "Edit Character Sheet";
-
   return (
-    <SafeAreaView edges={["top"]} style={{ flex: 1, backgroundColor: colors.background }}>
-      <ThemedView style={[styles.container, { backgroundColor: colors.background }]}>
-        <KeyboardAvoidingView
-          style={{ flex: 1 }}
-          behavior={Platform.OS === "ios" ? "padding" : undefined}
-          keyboardVerticalOffset={Platform.OS === "ios" ? 6 : 0}
-        >
+    <>
+      <Stack.Screen options={{ headerShown: false, presentation: "modal" }} />
+
+      <SafeAreaView edges={["top"]} style={{ flex: 1, backgroundColor: colors.background }}>
+        <ThemedView style={[styles.container, { backgroundColor: colors.background }]}>
           {/* Header */}
           <View style={[styles.header, { borderBottomColor: colors.border }]}>
-            <Pressable onPress={() => router.back()} hitSlop={12}>
+            <Pressable
+              onPress={() => router.back()}
+              hitSlop={12}
+              style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}
+            >
               <Ionicons name="close" size={24} color={colors.text} />
             </Pressable>
 
             <View style={{ flex: 1, alignItems: "center" }}>
               <ThemedText type="defaultSemiBold" style={{ color: colors.text }}>
-                {headerTitle}
+                {isCreate ? "Create Character Sheet" : "Edit Character Sheet"}
               </ThemedText>
               <ThemedText style={{ color: colors.textSecondary, fontSize: 12, marginTop: 2 }} numberOfLines={1}>
                 {(profile as any)?.displayName ?? pid}
@@ -388,235 +390,241 @@ export default function EditSheetModal() {
               style={({ pressed }) => [{ opacity: !canSave ? 0.4 : pressed ? 0.7 : 1 }]}
             >
               <ThemedText style={{ color: canSave ? colors.tint : colors.textMuted, fontWeight: "900" }}>
-                {isCreate ? "Create" : "Save"}
+                Save
               </ThemedText>
             </Pressable>
           </View>
 
-          <ScrollView
+          <KeyboardAvoidingView
             style={{ flex: 1 }}
-            contentContainerStyle={styles.content}
-            keyboardShouldPersistTaps="handled"
-            keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
+            behavior={Platform.OS === "ios" ? "padding" : undefined}
+            keyboardVerticalOffset={Platform.OS === "ios" ? 6 : 0}
           >
-            {!sheet && !isCreate ? (
-              <View style={[styles.emptyCard, { borderColor: colors.border, backgroundColor: colors.card }]}>
-                <Ionicons name="document-text-outline" size={20} color={colors.textSecondary} />
-                <ThemedText style={{ color: colors.textSecondary, fontWeight: "800" }}>
-                  No character sheet for this profile.
-                </ThemedText>
-              </View>
-            ) : (
-              <>
-                {/* Identity */}
-                <RowCard label="Identity" colors={colors}>
-                  <InputRow label="Name" value={name} onChangeText={setName} editable={canEdit("identity")} colors={colors} />
-                  <InputRow label="Race" value={race} onChangeText={setRace} editable={canEdit("identity")} colors={colors} />
-                  <InputRow label="Class" value={klass} onChangeText={setKlass} editable={canEdit("identity")} colors={colors} />
-
-                  <InputRow
-                    label="Level"
-                    value={level}
-                    onChangeText={setLevel}
-                    editable={canEditLevel}
-                    keyboardType="number-pad"
-                    colors={colors}
-                    helperText={!isCreate && !canEditLevel ? readonlyHint("Level") : undefined}
-                  />
-
-                  <InputRow
-                    label="Alignment"
-                    value={alignment}
-                    onChangeText={setAlignment}
-                    editable={canEdit("identity")}
-                    colors={colors}
-                  />
-                </RowCard>
-
-                {/* Background (private) */}
-                <RowCard label="Background (Private)" colors={colors}>
-                  <TextInput
-                    value={background}
-                    onChangeText={setBackground}
-                    editable={canEdit("background")}
-                    placeholder={canEdit("background") ? "Background..." : ""}
-                    placeholderTextColor={colors.textMuted}
-                    multiline
-                    style={[
-                      styles.textarea,
-                      {
-                        color: canEdit("background") ? colors.text : colors.textSecondary,
-                        backgroundColor: colors.card,
-                        borderColor: colors.border,
-                        opacity: canEdit("background") ? 1 : 0.75,
-                      },
-                    ]}
-                  />
-                </RowCard>
-
-                {/* Notes */}
-                <RowCard label="Notes" colors={colors}>
-                  <ThemedText style={[styles.subLabel, { color: colors.textSecondary }]}>Public</ThemedText>
-                  <TextInput
-                    value={publicNotes}
-                    onChangeText={setPublicNotes}
-                    editable={canEdit("publicNotes")}
-                    placeholder={canEdit("publicNotes") ? "Public notes..." : ""}
-                    placeholderTextColor={colors.textMuted}
-                    multiline
-                    style={[
-                      styles.textarea,
-                      {
-                        color: canEdit("publicNotes") ? colors.text : colors.textSecondary,
-                        backgroundColor: colors.card,
-                        borderColor: colors.border,
-                        opacity: canEdit("publicNotes") ? 1 : 0.75,
-                      },
-                    ]}
-                  />
-
-                  <ThemedText style={[styles.subLabel, { color: colors.textSecondary, marginTop: 10 }]}>Private</ThemedText>
-                  <TextInput
-                    value={privateNotes}
-                    onChangeText={setPrivateNotes}
-                    editable={canEdit("privateNotes")}
-                    placeholder={canEdit("privateNotes") ? "Private notes..." : ""}
-                    placeholderTextColor={colors.textMuted}
-                    multiline
-                    style={[
-                      styles.textarea,
-                      {
-                        color: canEdit("privateNotes") ? colors.text : colors.textSecondary,
-                        backgroundColor: colors.card,
-                        borderColor: colors.border,
-                        opacity: canEdit("privateNotes") ? 1 : 0.75,
-                      },
-                    ]}
-                  />
-                </RowCard>
-
-                {/* Abilities & Spells */}
-                <RowCard label="Abilities & Spells" colors={colors}>
-                  <ThemedText style={[styles.subLabel, { color: colors.textSecondary }]}>Abilities (one per line)</ThemedText>
-                  <TextInput
-                    value={abilitiesRaw}
-                    onChangeText={setAbilitiesRaw}
-                    editable={canEdit("abilities")}
-                    placeholder={canEdit("abilities") ? "Sneak Attack — extra damage on advantage" : ""}
-                    placeholderTextColor={colors.textMuted}
-                    multiline
-                    style={[
-                      styles.textarea,
-                      {
-                        color: canEdit("abilities") ? colors.text : colors.textSecondary,
-                        backgroundColor: colors.card,
-                        borderColor: colors.border,
-                        opacity: canEdit("abilities") ? 1 : 0.75,
-                      },
-                    ]}
-                  />
-
-                  <ThemedText style={[styles.subLabel, { color: colors.textSecondary, marginTop: 10 }]}>Spells (one per line)</ThemedText>
-                  <TextInput
-                    value={spellsRaw}
-                    onChangeText={setSpellsRaw}
-                    editable={canEdit("spells")}
-                    placeholder={canEdit("spells") ? "Cure Wounds" : ""}
-                    placeholderTextColor={colors.textMuted}
-                    multiline
-                    style={[
-                      styles.textarea,
-                      {
-                        color: canEdit("spells") ? colors.text : colors.textSecondary,
-                        backgroundColor: colors.card,
-                        borderColor: colors.border,
-                        opacity: canEdit("spells") ? 1 : 0.75,
-                      },
-                    ]}
-                  />
-                </RowCard>
-
-                {/* Stats (DM-only unless create) */}
-                <RowCard label="Stats" colors={colors}>
-                  {!canEdit("stats") ? (
-                    <ThemedText style={{ color: colors.textSecondary, lineHeight: 18 }}>{readonlyHint("Stats")}</ThemedText>
-                  ) : null}
-
-                  <StatRow label="Strength" value={str} onChangeText={setStr} editable={canEdit("stats")} colors={colors} />
-                  <StatRow label="Dexterity" value={dex} onChangeText={setDex} editable={canEdit("stats")} colors={colors} />
-                  <StatRow label="Constitution" value={con} onChangeText={setCon} editable={canEdit("stats")} colors={colors} />
-                  <StatRow label="Intelligence" value={intell} onChangeText={setIntell} editable={canEdit("stats")} colors={colors} />
-                  <StatRow label="Wisdom" value={wis} onChangeText={setWis} editable={canEdit("stats")} colors={colors} />
-                  <StatRow label="Charisma" value={cha} onChangeText={setCha} editable={canEdit("stats")} colors={colors} />
-                </RowCard>
-
-                {/* Combat */}
-                <RowCard label="Combat" colors={colors}>
-                  {!canEdit("hp") && !canEdit("status") ? (
-                    <ThemedText style={{ color: colors.textSecondary, lineHeight: 18 }}>{readonlyHint("Combat")}</ThemedText>
-                  ) : null}
-
-                  <StatRow label="HP (Current)" value={hpCur} onChangeText={setHpCur} editable={canEdit("hp")} colors={colors} />
-                  <StatRow label="HP (Max)" value={hpMax} onChangeText={setHpMax} editable={canEdit("hp")} colors={colors} />
-
-                  <InputRow label="Status" value={status} onChangeText={setStatus} editable={canEdit("status")} colors={colors} />
-                </RowCard>
-
-                {/* Inventory */}
-                <RowCard label="Inventory (Private)" colors={colors}>
-                  {!canEdit("inventory") ? (
-                    <ThemedText style={{ color: colors.textSecondary, lineHeight: 18 }}>{readonlyHint("Inventory")}</ThemedText>
-                  ) : null}
-
-                  <TextInput
-                    value={inventoryRaw}
-                    onChangeText={setInventoryRaw}
-                    editable={canEdit("inventory")}
-                    placeholder={canEdit("inventory") ? "Torch x6\nRations x5\nRope (50 ft)" : ""}
-                    placeholderTextColor={colors.textMuted}
-                    multiline
-                    style={[
-                      styles.textarea,
-                      {
-                        color: canEdit("inventory") ? colors.text : colors.textSecondary,
-                        backgroundColor: colors.card,
-                        borderColor: colors.border,
-                        opacity: canEdit("inventory") ? 1 : 0.75,
-                      },
-                    ]}
-                  />
-
-                  <ThemedText style={[styles.subLabel, { color: colors.textSecondary, marginTop: 10 }]}>Equipment</ThemedText>
-                  <TextInput
-                    value={equipmentRaw}
-                    onChangeText={setEquipmentRaw}
-                    editable={canEdit("equipment")}
-                    placeholder={canEdit("equipment") ? "Leather Armor\nShortbow" : ""}
-                    placeholderTextColor={colors.textMuted}
-                    multiline
-                    style={[
-                      styles.textarea,
-                      {
-                        color: canEdit("equipment") ? colors.text : colors.textSecondary,
-                        backgroundColor: colors.card,
-                        borderColor: colors.border,
-                        opacity: canEdit("equipment") ? 1 : 0.75,
-                      },
-                    ]}
-                  />
-                </RowCard>
-
-                {!!(sheet as any)?.updatedAt ? (
-                  <ThemedText style={{ color: colors.textMuted ?? colors.textSecondary, fontSize: 12 }}>
-                    Last updated {new Date((sheet as any).updatedAt).toLocaleString()}
+            <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+              {!sheet && !isCreate ? (
+                <View style={[styles.emptyCard, { borderColor: colors.border, backgroundColor: colors.card }]}>
+                  <Ionicons name="document-text-outline" size={20} color={colors.textSecondary} />
+                  <ThemedText style={{ color: colors.textSecondary, fontWeight: "800" }}>
+                    No character sheet for this profile.
                   </ThemedText>
-                ) : null}
-              </>
-            )}
-          </ScrollView>
-        </KeyboardAvoidingView>
-      </ThemedView>
-    </SafeAreaView>
+                </View>
+              ) : (
+                <>
+                  {/* Identity */}
+                  <RowCard label="Identity" colors={colors}>
+                    <InputRow label="Name" value={name} onChangeText={setName} editable={canEdit("identity")} colors={colors} />
+                    <InputRow label="Race" value={race} onChangeText={setRace} editable={canEdit("identity")} colors={colors} />
+                    <InputRow label="Class" value={klass} onChangeText={setKlass} editable={canEdit("identity")} colors={colors} />
+
+                    <InputRow
+                      label="Level"
+                      value={level}
+                      onChangeText={setLevel}
+                      editable={canEditLevel}
+                      keyboardType="number-pad"
+                      colors={colors}
+                      helperText={!isCreate && !canEditLevel ? readonlyHint("Level") : undefined}
+                    />
+
+                    <InputRow
+                      label="Alignment"
+                      value={alignment}
+                      onChangeText={setAlignment}
+                      editable={canEdit("identity")}
+                      colors={colors}
+                    />
+                  </RowCard>
+
+                  {/* Background (private) */}
+                  <RowCard label="Background (Private)" colors={colors}>
+                    <TextInput
+                      value={background}
+                      onChangeText={setBackground}
+                      editable={canEdit("background")}
+                      placeholder={canEdit("background") ? "Background..." : ""}
+                      placeholderTextColor={colors.textMuted}
+                      multiline
+                      style={[
+                        styles.textarea,
+                        {
+                          color: canEdit("background") ? colors.text : colors.textSecondary,
+                          backgroundColor: colors.card,
+                          borderColor: colors.border,
+                          opacity: canEdit("background") ? 1 : 0.75,
+                        },
+                      ]}
+                    />
+                  </RowCard>
+
+                  {/* Notes */}
+                  <RowCard label="Notes" colors={colors}>
+                    <ThemedText style={[styles.subLabel, { color: colors.textSecondary }]}>Public</ThemedText>
+                    <TextInput
+                      value={publicNotes}
+                      onChangeText={setPublicNotes}
+                      editable={canEdit("publicNotes")}
+                      placeholder={canEdit("publicNotes") ? "Public notes..." : ""}
+                      placeholderTextColor={colors.textMuted}
+                      multiline
+                      style={[
+                        styles.textarea,
+                        {
+                          color: canEdit("publicNotes") ? colors.text : colors.textSecondary,
+                          backgroundColor: colors.card,
+                          borderColor: colors.border,
+                          opacity: canEdit("publicNotes") ? 1 : 0.75,
+                        },
+                      ]}
+                    />
+
+                    <ThemedText style={[styles.subLabel, { color: colors.textSecondary, marginTop: 10 }]}>Private</ThemedText>
+                    <TextInput
+                      value={privateNotes}
+                      onChangeText={setPrivateNotes}
+                      editable={canEdit("privateNotes")}
+                      placeholder={canEdit("privateNotes") ? "Private notes..." : ""}
+                      placeholderTextColor={colors.textMuted}
+                      multiline
+                      style={[
+                        styles.textarea,
+                        {
+                          color: canEdit("privateNotes") ? colors.text : colors.textSecondary,
+                          backgroundColor: colors.card,
+                          borderColor: colors.border,
+                          opacity: canEdit("privateNotes") ? 1 : 0.75,
+                        },
+                      ]}
+                    />
+                  </RowCard>
+
+                  {/* Abilities & Spells */}
+                  <RowCard label="Abilities & Spells" colors={colors}>
+                    <ThemedText style={[styles.subLabel, { color: colors.textSecondary }]}>Abilities (one per line)</ThemedText>
+                    <TextInput
+                      value={abilitiesRaw}
+                      onChangeText={setAbilitiesRaw}
+                      editable={canEdit("abilities")}
+                      placeholder={canEdit("abilities") ? "Sneak Attack — extra damage on advantage" : ""}
+                      placeholderTextColor={colors.textMuted}
+                      multiline
+                      style={[
+                        styles.textarea,
+                        {
+                          color: canEdit("abilities") ? colors.text : colors.textSecondary,
+                          backgroundColor: colors.card,
+                          borderColor: colors.border,
+                          opacity: canEdit("abilities") ? 1 : 0.75,
+                        },
+                      ]}
+                    />
+
+                    <ThemedText style={[styles.subLabel, { color: colors.textSecondary, marginTop: 10 }]}>Spells (one per line)</ThemedText>
+                    <TextInput
+                      value={spellsRaw}
+                      onChangeText={setSpellsRaw}
+                      editable={canEdit("spells")}
+                      placeholder={canEdit("spells") ? "Cure Wounds" : ""}
+                      placeholderTextColor={colors.textMuted}
+                      multiline
+                      style={[
+                        styles.textarea,
+                        {
+                          color: canEdit("spells") ? colors.text : colors.textSecondary,
+                          backgroundColor: colors.card,
+                          borderColor: colors.border,
+                          opacity: canEdit("spells") ? 1 : 0.75,
+                        },
+                      ]}
+                    />
+                  </RowCard>
+
+                  {/* Stats (DM-only unless create) */}
+                  <RowCard label="Stats" colors={colors}>
+                    {!canEdit("stats") ? (
+                      <ThemedText style={{ color: colors.textSecondary, lineHeight: 18 }}>
+                        {readonlyHint("Stats")}
+                      </ThemedText>
+                    ) : null}
+
+                    <StatRow label="Strength" value={str} onChangeText={setStr} editable={canEdit("stats")} colors={colors} />
+                    <StatRow label="Dexterity" value={dex} onChangeText={setDex} editable={canEdit("stats")} colors={colors} />
+                    <StatRow label="Constitution" value={con} onChangeText={setCon} editable={canEdit("stats")} colors={colors} />
+                    <StatRow label="Intelligence" value={intell} onChangeText={setIntell} editable={canEdit("stats")} colors={colors} />
+                    <StatRow label="Wisdom" value={wis} onChangeText={setWis} editable={canEdit("stats")} colors={colors} />
+                    <StatRow label="Charisma" value={cha} onChangeText={setCha} editable={canEdit("stats")} colors={colors} />
+                  </RowCard>
+
+                  {/* Combat (DM-only unless create) */}
+                  <RowCard label="Combat" colors={colors}>
+                    {!canEdit("hp") && !canEdit("status") ? (
+                      <ThemedText style={{ color: colors.textSecondary, lineHeight: 18 }}>
+                        {readonlyHint("Combat")}
+                      </ThemedText>
+                    ) : null}
+
+                    <StatRow label="HP (Current)" value={hpCur} onChangeText={setHpCur} editable={canEdit("hp")} colors={colors} />
+                    <StatRow label="HP (Max)" value={hpMax} onChangeText={setHpMax} editable={canEdit("hp")} colors={colors} />
+                    <InputRow label="Status" value={status} onChangeText={setStatus} editable={canEdit("status")} colors={colors} />
+                  </RowCard>
+
+                  {/* Inventory (owner editable in edit; all editable in create) */}
+                  <RowCard label="Inventory (Private)" colors={colors}>
+                    {!canEdit("inventory") ? (
+                      <ThemedText style={{ color: colors.textSecondary, lineHeight: 18 }}>
+                        {readonlyHint("Inventory")}
+                      </ThemedText>
+                    ) : null}
+
+                    <TextInput
+                      value={inventoryRaw}
+                      onChangeText={setInventoryRaw}
+                      editable={canEdit("inventory")}
+                      placeholder={canEdit("inventory") ? "Torch x6\nRations x5\nRope (50 ft)" : ""}
+                      placeholderTextColor={colors.textMuted}
+                      multiline
+                      style={[
+                        styles.textarea,
+                        {
+                          color: canEdit("inventory") ? colors.text : colors.textSecondary,
+                          backgroundColor: colors.card,
+                          borderColor: colors.border,
+                          opacity: canEdit("inventory") ? 1 : 0.75,
+                        },
+                      ]}
+                    />
+
+                    <ThemedText style={[styles.subLabel, { color: colors.textSecondary, marginTop: 10 }]}>Equipment</ThemedText>
+                    <TextInput
+                      value={equipmentRaw}
+                      onChangeText={setEquipmentRaw}
+                      editable={canEdit("equipment")}
+                      placeholder={canEdit("equipment") ? "Leather Armor\nShortbow" : ""}
+                      placeholderTextColor={colors.textMuted}
+                      multiline
+                      style={[
+                        styles.textarea,
+                        {
+                          color: canEdit("equipment") ? colors.text : colors.textSecondary,
+                          backgroundColor: colors.card,
+                          borderColor: colors.border,
+                          opacity: canEdit("equipment") ? 1 : 0.75,
+                        },
+                      ]}
+                    />
+                  </RowCard>
+
+                  {!!(sheet as any)?.updatedAt ? (
+                    <ThemedText style={{ color: colors.textMuted ?? colors.textSecondary, fontSize: 12 }}>
+                      Last updated {new Date((sheet as any).updatedAt).toLocaleString()}
+                    </ThemedText>
+                  ) : null}
+                </>
+              )}
+            </ScrollView>
+          </KeyboardAvoidingView>
+        </ThemedView>
+      </SafeAreaView>
+    </>
   );
 }
 

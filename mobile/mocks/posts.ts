@@ -501,4 +501,177 @@ export const MOCK_FEEDS: Record<string, Post[]> = {
       postType: "log",
     },
   ],
+  "demo-campaign-u13": [
+    // ─────────────────────────────────────────────
+    // 📌 PINNED (SYSTEM)
+    // ─────────────────────────────────────────────
+    {
+      id: "u13-pin-rules",
+      scenarioId: "demo-campaign-u13",
+      authorProfileId: "pr_cmp_u13_system",
+      text:
+        "📌 CAMPAIGN RULES\n\n" +
+        "• Rolls are public.\n" +
+        "• Say what you attempt, then roll.\n" +
+        "• Crits: d20 = crit success, d1 = crit fail.\n" +
+        "• Keep OOC in DMs.\n" +
+        "• Be kind. Be dramatic in-character, not to each other.",
+      createdAt: "2025-12-29T08:00:00.000Z",
+      insertedAt: "2025-12-29T08:00:02.000Z",
+      postType: "mj",
+      isPinned: true,
+      pinOrder: 1,
+    },
+    {
+      id: "u13-pin-intro",
+      scenarioId: "demo-campaign-u13",
+      authorProfileId: "pr_cmp_u13_system",
+      text:
+        "📌 INTRO\n\n" +
+        "ashford hollow smells like wet paper and old coins.\n" +
+        "a red ledger has started updating itself again.\n" +
+        "names appear. dates appear. some are in the future.",
+      createdAt: "2025-12-29T08:05:00.000Z",
+      insertedAt: "2025-12-29T08:05:03.000Z",
+      postType: "mj",
+      isPinned: true,
+      pinOrder: 2,
+    },
+    {
+      id: "u13-pin-quests",
+      scenarioId: "demo-campaign-u13",
+      authorProfileId: "pr_cmp_u13_system",
+      text:
+        "📌 QUEST BOARD\n\n" +
+        "1) The Red Ledger — who is writing in it?\n" +
+        "2) Missing Pilgrims — last seen near the salt chapel.\n" +
+        "3) The Old Archive — locked room under the town hall.\n\n" +
+        "reply with what you take + any preparation.",
+      createdAt: "2025-12-29T08:10:00.000Z",
+      insertedAt: "2025-12-29T08:10:03.000Z",
+      postType: "quest",
+      isPinned: true,
+      pinOrder: 3,
+      meta: {
+        quests: [
+          { id: "q1", title: "the red ledger", status: "open" },
+          { id: "q2", title: "missing pilgrims", status: "open" },
+          { id: "q3", title: "the old archive", status: "open" },
+        ],
+      },
+    },
+
+    // ─────────────────────────────────────────────
+    // 📰 LOG (DM)
+    // ─────────────────────────────────────────────
+    {
+      id: "u13-log-1",
+      scenarioId: "demo-campaign-u13",
+      authorProfileId: "pr_cmp_u13_dm",
+      text:
+        "session log — day 1\n" +
+        "• you meet at the hollow inn.\n" +
+        "• rumor: the ledger ‘predicts’ debts.\n" +
+        "• you decide to check the town hall archive first.",
+      createdAt: "2025-12-29T09:00:00.000Z",
+      insertedAt: "2025-12-29T09:00:05.000Z",
+      postType: "log",
+    },
+
+    // ─────────────────────────────────────────────
+    // ✍️ RP
+    // ─────────────────────────────────────────────
+    {
+      id: "u13-rp-1",
+      scenarioId: "demo-campaign-u13",
+      authorProfileId: "pr_cmp_u13_riven",
+      text:
+        "riven doesn’t sit with his back to the room. he never does.\n" +
+        "\"tell me where the ledger is kept,\" he says, like it’s a request and a threat.",
+      createdAt: "2025-12-29T09:05:00.000Z",
+      insertedAt: "2025-12-29T09:05:04.000Z",
+      replyCount: 3,
+      likeCount: 5,
+      repostCount: 0,
+      postType: "rp",
+    },
+    {
+      id: "u13-rp-1-r1",
+      scenarioId: "demo-campaign-u13",
+      authorProfileId: "pr_cmp_u13_sera",
+      text:
+        "sera smiles like she’s reading a contract nobody else can see.\n" +
+        "\"if it’s predicting debts, i’d like to know who’s collecting.\"",
+      createdAt: "2025-12-29T09:06:30.000Z",
+      insertedAt: "2025-12-29T09:06:33.000Z",
+      parentPostId: "u13-rp-1",
+      postType: "rp",
+      likeCount: 6,
+    },
+    {
+      id: "u13-rp-1-r2",
+      scenarioId: "demo-campaign-u13",
+      authorProfileId: "pr_cmp_u13_ioren",
+      text:
+        "\"predictions are just data with better PR,\" ioren says.\n" +
+        "he taps the table once. \"let’s see the source.\"",
+      createdAt: "2025-12-29T09:07:10.000Z",
+      insertedAt: "2025-12-29T09:07:13.000Z",
+      parentPostId: "u13-rp-1",
+      postType: "rp",
+      likeCount: 4,
+    },
+    {
+      id: "u13-rp-1-r3",
+      scenarioId: "demo-campaign-u13",
+      authorProfileId: "pr_cmp_u13_winter",
+      text:
+        "winter glances at the quest board like it might glance back.\n" +
+        "\"i don’t like when paper acts alive,\" she admits, quiet and honest.",
+      createdAt: "2025-12-29T09:08:10.000Z",
+      insertedAt: "2025-12-29T09:08:13.000Z",
+      parentPostId: "u13-rp-1",
+      postType: "rp",
+      likeCount: 7,
+    },
+
+    // ─────────────────────────────────────────────
+    // 🎲 ROLLS
+    // ─────────────────────────────────────────────
+    {
+      id: "u13-roll-1",
+      scenarioId: "demo-campaign-u13",
+      authorProfileId: "pr_cmp_u13_ioren",
+      text: "i want to recall anything about cursed ledgers / self-updating tomes.",
+      createdAt: "2025-12-29T09:12:00.000Z",
+      insertedAt: "2025-12-29T09:12:02.000Z",
+      postType: "roll",
+      meta: {
+        type: "roll",
+        profileId: "pr_cmp_u13_ioren",
+        stat: "intelligence",
+        dice: "d20",
+        baseRoll: 15,
+        modifier: 3,
+        total: 18,
+        result: "success",
+        text: "arcana — cursed documentation",
+      },
+    },
+    {
+      id: "u13-quest-1",
+      scenarioId: "demo-campaign-u13",
+      authorProfileId: "pr_cmp_u13_system",
+      text: "quest update: the old archive — you get escorted to the town hall basement.",
+      createdAt: "2025-12-29T09:20:00.000Z",
+      insertedAt: "2025-12-29T09:20:04.000Z",
+      postType: "quest",
+      meta: {
+        questId: "q3",
+        status: "active",
+        objective: "reach the archive door + find the key",
+      },
+    },
+  ],
+  
 };
