@@ -35,6 +35,8 @@ export type Scenario = {
   ownerUserId: string;
   description?: string;
   tags?: ScenarioTag[];
+  mode: "story" | "campaign";
+  dmUserIds?: string[]; // MJ list (creator is default)
 };
 
 export type Profile = {
@@ -72,6 +74,10 @@ export type Post = {
   quotedPostId?: string;
   insertedAt: string;
   updatedAt?: string;
+  postType?: "rp" | "roll" | "log" | "quest" | "combat" | "mj";
+  isPinned?: boolean;
+  pinOrder?: number;
+  meta?: any; // roll payload, quest state, combat turn, etc.
 };
 
 export type Repost = {
@@ -88,6 +94,45 @@ export type GlobalTag = {
   color: string;   // deterministic + locked
 };
 
+export type CharacterSheet = {
+  profileId: string;
+
+  // identity
+  name?: string;
+  race?: string;
+  class?: string;
+  level?: number;
+  alignment?: string;
+  background?: string;
+
+  // stats
+  stats: {
+    strength: number;
+    dexterity: number;
+    constitution: number;
+    intelligence: number;
+    wisdom: number;
+    charisma: number;
+  };
+
+  // combat
+  hp: { current: number; max: number; temp?: number };
+  status?: string; // “ok”, “down”, etc.
+
+  // inventory
+  inventory: Array<{ id: string; name: string; qty?: number; notes?: string }>;
+  equipment?: Array<{ id: string; name: string; notes?: string }>;
+
+  // spells & abilities
+  spells?: Array<{ id: string; name: string; notes?: string }>;
+  abilities?: Array<{ id: string; name: string; notes?: string }>;
+
+  // notes
+  publicNotes?: string;
+  privateNotes?: string; // visible owner + MJ only
+  updatedAt?: string;
+};
+
 export type DbV5 = {
   version: 5;
   seededAt: string;
@@ -98,4 +143,5 @@ export type DbV5 = {
   reposts: Record<string, Repost>;
   selectedProfileByScenario: Record<string, string>;
   tags: Record<string, GlobalTag>; // key -> tag
+  sheets: Record<string, CharacterSheet>; // key = profileId
 };
