@@ -96,10 +96,12 @@ type AppDataApi = {
   
   // scenarios
   upsertScenario: (s: Scenario) => Promise<void>;
-  joinScenarioByInviteCode: ( inviteCode: string, userId: string ) => Promise<{ scenario: Scenario; alreadyIn: boolean } | null>;};
+  joinScenarioByInviteCode: ( inviteCode: string, userId: string ) => Promise<{ scenario: Scenario; alreadyIn: boolean } | null>;
   transferScenarioOwnership: (scenarioId: string,fromUserId: string,toUserId: string ) => Promise<Scenario | null>;
   leaveScenario: (scenarioId: string, userId: string) => Promise<{ deleted: boolean } | null>;
   deleteScenario: (scenarioId: string, ownerUserId: string) => Promise<boolean>;
+  setScenarioMode: (scenarioId: string, mode: "story" | "campaign") => Promise<Scenario | null>;
+  };
   
   const Ctx = React.createContext<(AppDataState & AppDataApi) | null>(null);
 
@@ -782,6 +784,33 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
 
         // confirm it actually got deleted
         return !(nextDb as any)?.scenarios?.[sid];
+      },
+      setScenarioMode: async (scenarioId, mode) => {
+        const sid = String(scenarioId ?? "").trim();
+        const nextMode: "story" | "campaign" = mode === "campaign" ? "campaign" : "story";
+        if (!sid) return null;
+
+        const nextDb = await updateDb((prev) => {
+          const current = prev.scenarios?.[sid];
+          if (!current) return prev;
+
+          const now = new Date().toISOString();
+
+          return {
+            ...prev,
+            scenarios: {
+              ...prev.scenarios,
+              [sid]: {
+                ...current,
+                mode: nextMode,
+                updatedAt: now,
+              },
+            },
+          };
+        });
+
+        setState({ isReady: true, db: nextDb as any });
+        return (nextDb as any)?.scenarios?.[sid] ?? null;
       },
     };
   }, [db]);
