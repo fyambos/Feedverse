@@ -22,7 +22,7 @@ export const MOCK_SCENARIOS: Scenario[] = [
     ],
 
     mode: "story",
-    dmUserIds: ["u14"],
+    gmUserIds: ["u14"],
   },
   {
     id: "demo-royalty",
@@ -44,7 +44,7 @@ export const MOCK_SCENARIOS: Scenario[] = [
     ],
 
     mode: "story",
-    dmUserIds: ["u14"],
+    gmUserIds: ["u14"],
   },
   {
     id: "demo-mafia",
@@ -66,7 +66,7 @@ export const MOCK_SCENARIOS: Scenario[] = [
     ],
 
     mode: "story",
-    dmUserIds: ["u13"],
+    gmUserIds: ["u13"],
   },
   {
     id: "demo-campaign",
@@ -88,7 +88,7 @@ export const MOCK_SCENARIOS: Scenario[] = [
     ],
 
     mode: "campaign",
-    dmUserIds: ["u14"],
+    gmUserIds: ["u14"],
   },
   {
   id: "demo-campaign-u13",
@@ -110,6 +110,6 @@ export const MOCK_SCENARIOS: Scenario[] = [
   ],
 
   mode: "campaign",
-  dmUserIds: ["u13"],
+  gmUserIds: ["u13"],
 },
 ];

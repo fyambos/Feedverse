@@ -36,7 +36,7 @@ export type Scenario = {
   description?: string;
   tags?: ScenarioTag[];
   mode: "story" | "campaign";
-  dmUserIds?: string[]; // MJ list (creator is default)
+  gmUserIds?: string[]; // (creator is default)
 };
 
 export type Profile = {

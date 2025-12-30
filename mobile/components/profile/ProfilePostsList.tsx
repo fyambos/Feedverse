@@ -13,7 +13,7 @@ import { Post as PostCard } from "@/components/post/Post";
 import { SwipeableRow } from "@/components/ui/SwipeableRow";
 
 import { router } from "expo-router";
-import type { Post as DbPost, Profile } from "@/data/db/schema";
+import type { Post as DbPost, Profile, Repost as DbRepost } from "@/data/db/schema";
 import { canEditPost } from "@/lib/permission";
 
 type ColorsLike = {
@@ -29,7 +29,7 @@ type Props = {
 
   viewingProfileId: string;
 
-  items: DbPost[];
+  items: Array<DbPost | { kind: "repost"; repost: DbRepost; post: DbPost }>;
   initialLoading: boolean;
   loadingMore: boolean;
   onLoadMore: () => void;
@@ -55,6 +55,17 @@ type Props = {
     postId: string
   ) => string | null;
 };
+
+type FeedItem = DbPost | { kind: "repost"; repost: DbRepost; post: DbPost };
+
+function isRepostItem(it: any): it is { kind: "repost"; repost: DbRepost; post: DbPost } {
+  return !!it && typeof it === "object" && it.kind === "repost" && !!it.repost && !!it.post;
+}
+
+function itemKey(it: FeedItem): string {
+  if (isRepostItem(it)) return `repost:${String(it.repost.id)}`;
+  return `post:${String((it as DbPost).id)}`;
+}
 
 function findRootPostId(
   getPostById: (id: string) => DbPost | undefined,
@@ -112,8 +123,8 @@ export function ProfilePostsList({
 }: Props) {
   return (
     <FlatList
-      data={items}
-      keyExtractor={(p) => String(p.id)}
+      data={items as FeedItem[]}
+      keyExtractor={(it) => itemKey(it as FeedItem)}
       onEndReachedThreshold={0.6}
       onEndReached={() => {
         if (!initialLoading) onLoadMore();
@@ -140,73 +151,79 @@ export function ProfilePostsList({
       }}
       ListHeaderComponent={ListHeaderComponent}
       renderItem={({ item }) => {
-        const authorProfile = getProfileById(String(item.authorProfileId));
+        const feedItem = item as FeedItem;
+        const post: DbPost = isRepostItem(feedItem) ? feedItem.post : (feedItem as DbPost);
+
+        const authorProfile = getProfileById(String(post.authorProfileId));
         if (!authorProfile) return null;
 
-        const isReply = !!item.parentPostId;
-        const replyingTo = isReply
-          ? getReplyingToHandle(getPostById, getProfileById, item)
-          : "";
+        const isReply = !!post.parentPostId;
+        const replyingTo = isReply ? getReplyingToHandle(getPostById, getProfileById, post) : "";
 
-        const targetPostId = isReply
-          ? findRootPostId(getPostById, item)
-          : String(item.id);
+        const targetPostId = isReply ? findRootPostId(getPostById, post) : String(post.id);
 
-        const canEditThisPost = canEditPost({
-          authorProfile,
-          userId,
-        });
+        // swipe actions should only apply to real posts (not repost events)
+        const canEditThisPost = !isRepostItem(feedItem)
+          ? canEditPost({
+              authorProfile,
+              userId,
+            })
+          : false;
 
-        const postId = String(item.id);
+        const postId = String(post.id);
 
         const isLiked = getIsLiked ? getIsLiked(postId) : false;
         const isReposted = getIsReposted ? getIsReposted(postId) : false;
 
-        const repostLabel = repostLabelForPost
-          ? repostLabelForPost(String(item.authorProfileId), postId)
-          : null;
+        // Banner priority:
+        // 1) If this row is explicitly a repost event, show who reposted.
+        // 2) Otherwise fall back to provided `repostLabelForPost` (ex: viewing profile reposted).
+        let repostLabel: string | null = null;
+        if (isRepostItem(feedItem)) {
+          const reposterProfile = getProfileById(String(feedItem.repost.profileId));
+          const reposterId = String(feedItem.repost.profileId);
+          if (reposterId === String(viewingProfileId)) {
+            repostLabel = "retweeted by you";
+          } else if (reposterProfile) {
+            repostLabel = `retweeted by ${reposterProfile.displayName}`;
+          } else {
+            repostLabel = "retweeted";
+          }
+        } else {
+          repostLabel = repostLabelForPost
+            ? repostLabelForPost(String(post.authorProfileId), postId)
+            : null;
+        }
 
         const row = (
           <Pressable
             onPress={() =>
               router.push({
-                pathname: `/(scenario)/${encodeURIComponent(
-                  sid
-                )}/(tabs)/post/${encodeURIComponent(targetPostId)}`,
+                pathname: `/(scenario)/${encodeURIComponent(sid)}/(tabs)/post/${encodeURIComponent(targetPostId)}`,
                 params: {
-                  from: `/(scenario)/${encodeURIComponent(
-                    sid
-                  )}/(tabs)/profile/${encodeURIComponent(
-                    String(viewingProfileId)
-                  )}`,
+                  from: `/(scenario)/${encodeURIComponent(sid)}/(tabs)/profile/${encodeURIComponent(String(viewingProfileId))}`,
                 },
               } as any)
             }
             style={({ pressed }) => [
               {
-                backgroundColor: pressed
-                  ? colors.pressed
-                  : colors.background,
+                backgroundColor: pressed ? colors.pressed : colors.background,
               },
             ]}
           >
             <PostCard
               scenarioId={sid}
               profile={authorProfile}
-              item={item}
+              item={post}
               variant={isReply ? "reply" : "feed"}
               replyingTo={replyingTo}
               showActions={!disableEngagement}
               // ❤️ likes
               isLiked={isLiked}
-              onLike={
-                onLikePost ? () => onLikePost(postId) : undefined
-              }
+              onLike={onLikePost ? () => onLikePost(postId) : undefined}
               // 🔁 reposts
               isReposted={isReposted}
-              onRepost={
-                onRepostPost ? () => onRepostPost(postId) : undefined
-              }
+              onRepost={onRepostPost ? () => onRepostPost(postId) : undefined}
               // 🔁 banner
               repostedByLabel={repostLabel}
             />

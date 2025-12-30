@@ -89,10 +89,10 @@ export default function ProfileScreen() {
     return String((profile as any).ownerUserId ?? "") === String(userId);
   }, [profile, userId]);
 
-  const isDm = useMemo(() => {
+  const isGm = useMemo(() => {
     if (!scenario || !userId) return false;
-    const dmIds: string[] = Array.isArray((scenario as any).dmUserIds) ? (scenario as any).dmUserIds.map(String) : [];
-    return dmIds.includes(String(userId));
+    const gmIds: string[] = Array.isArray((scenario as any).gmUserIds) ? (scenario as any).gmUserIds.map(String) : [];
+    return gmIds.includes(String(userId));
   }, [scenario, userId]);
 
   const sheetExists = useMemo(() => {

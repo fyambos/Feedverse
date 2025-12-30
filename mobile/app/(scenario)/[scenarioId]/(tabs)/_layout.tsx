@@ -9,7 +9,6 @@ import { Colors } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { useAppData } from "@/context/appData";
 import { Avatar } from "@/components/ui/Avatar";
-import { View } from "react-native";
 
 function TabIcon({
   iosName,

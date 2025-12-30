@@ -47,7 +47,7 @@ function clampInt(raw: string, fallback: number) {
 }
 
 function readonlyHint(label: string) {
-  return `${label} is auto-updated by turns. Only the DM can edit it manually.`;
+  return `${label} is auto-updated by turns. Only the GM can edit it manually.`;
 }
 
 export default function EditSheetModal() {
@@ -81,12 +81,12 @@ export default function EditSheetModal() {
     return String((profile as any).ownerUserId ?? "") === String(userId);
   }, [profile, userId]);
 
-  const isDm = useMemo(() => {
+  const isGm = useMemo(() => {
     if (!scenario || !userId) return false;
-    const dmIds: string[] = Array.isArray((scenario as any).dmUserIds)
-      ? (scenario as any).dmUserIds.map(String)
+    const gmIds: string[] = Array.isArray((scenario as any).gmUserIds)
+      ? (scenario as any).gmUserIds.map(String)
       : [];
-    return dmIds.includes(String(userId));
+    return gmIds.includes(String(userId));
   }, [scenario, userId]);
 
   const isCreate = screenMode === "create";
@@ -96,7 +96,7 @@ export default function EditSheetModal() {
   const canEdit = useCallback(
     (field: FieldKey) => {
       if (isCreate) return true;
-      if (isDm) return true;
+      if (isGm) return true;
       if (!isOwner) return false;
 
       // owner-editable fields in EDIT mode
@@ -111,19 +111,18 @@ export default function EditSheetModal() {
       if (field === "inventory") return true;
       if (field === "equipment") return true;
 
-      // dm-only / turns-only
+      // gm-only / turns-only
       return false;
     },
-    [isCreate, isDm, isOwner]
+    [isCreate, isGm, isOwner]
   );
 
-  // Level: editable only by DM (or turns). In CREATE mode, allow editing.
-  const canEditLevel = useMemo(() => (isCreate ? true : isDm), [isCreate, isDm]);
-
+  // Level: editable only by GM (or turns). In CREATE mode, allow editing.
+  const canEditLevel = useMemo(() => (isCreate ? true : isGm), [isCreate, isGm]);
   const canSave = useMemo(() => {
-    if (isCreate) return isDm || isOwner;
-    return isDm || isOwner;
-  }, [isCreate, isDm, isOwner]);
+    if (isCreate) return isGm || isOwner;
+    return isGm || isOwner;
+  }, [isCreate, isGm, isOwner]);
 
   // ------------------------------
   // form state
@@ -153,7 +152,7 @@ export default function EditSheetModal() {
   const [abilitiesRaw, setAbilitiesRaw] = useState(abilitiesText);
   const [spellsRaw, setSpellsRaw] = useState(spellsText);
 
-  // DM-only fields (still visible read-only to owner in EDIT mode)
+  // GM-only fields (still visible read-only to owner in EDIT mode)
   const [str, setStr] = useState(String(sheet?.stats?.strength ?? ""));
   const [dex, setDex] = useState(String(sheet?.stats?.dexterity ?? ""));
   const [con, setCon] = useState(String(sheet?.stats?.constitution ?? ""));
@@ -377,7 +376,7 @@ export default function EditSheetModal() {
               </ThemedText>
               <ThemedText style={{ color: colors.textSecondary, fontSize: 12, marginTop: 2 }} numberOfLines={1}>
                 {(profile as any)?.displayName ?? pid}
-                {isDm ? " · DM" : isOwner ? " · Owner" : ""}
+                {isGm ? " · GM" : isOwner ? " · Owner" : ""}
               </ThemedText>
             </View>
 
@@ -536,7 +535,7 @@ export default function EditSheetModal() {
                   />
                 </RowCard>
 
-                {/* Stats (DM-only unless create) */}
+                {/* Stats (GM-only unless create) */}
                 <RowCard label="Stats" colors={colors}>
                   {!canEdit("stats") ? (
                     <ThemedText style={{ color: colors.textSecondary, lineHeight: 18 }}>{readonlyHint("Stats")}</ThemedText>

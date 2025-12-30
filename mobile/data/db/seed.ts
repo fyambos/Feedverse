@@ -187,10 +187,10 @@ export async function seedDbIfNeeded(existing: any | null) {
 
     const mode: Scenario["mode"] = (s as any).mode === "campaign" ? "campaign" : "story";
 
-    // dmUserIds = GM list
+    // gmUserIds = GM list
     // default: creator is GM; if mock provides list, include creator + dedupe
-    const dmFromMock = toStringArray((s as any).dmUserIds);
-    const dmUserIds = dmFromMock.length > 0 ? Array.from(new Set([ownerUserId, ...dmFromMock])) : [ownerUserId];
+    const gmFromMock = toStringArray((s as any).gmUserIds);
+    const gmUserIds = gmFromMock.length > 0 ? Array.from(new Set([ownerUserId, ...gmFromMock])) : [ownerUserId];
 
     return {
       id: String(s.id),
@@ -208,7 +208,7 @@ export async function seedDbIfNeeded(existing: any | null) {
       tags: deduped,
 
       mode,
-      dmUserIds,
+      gmUserIds,
     };
   });
 

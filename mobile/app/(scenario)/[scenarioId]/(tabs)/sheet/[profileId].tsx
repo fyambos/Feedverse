@@ -84,17 +84,17 @@ export default function CharacterSheetScreen() {
     return String((profile as any).ownerUserId ?? "") === String(userId);
   }, [profile, userId]);
 
-  // Is the viewer a DM in this scenario?
-  const isDm = useMemo(() => {
+  // Is the viewer a GM in this scenario?
+  const isGm = useMemo(() => {
     if (!scenario || !userId) return false;
-    const dmIds: string[] = Array.isArray((scenario as any).dmUserIds)
-      ? (scenario as any).dmUserIds.map(String)
+    const gmIds: string[] = Array.isArray((scenario as any).gmUserIds)
+      ? (scenario as any).gmUserIds.map(String)
       : [];
-    return dmIds.includes(String(userId));
+    return gmIds.includes(String(userId));
   }, [scenario, userId]);
 
   // Can the viewer see private sheet info?
-  const canSeePrivate = isOwner || isDm;
+  const canSeePrivate = isOwner || isGm;
 
   // Is this a public profile?
   const isPublicProfile = useMemo(() => {
@@ -183,7 +183,7 @@ export default function CharacterSheetScreen() {
                     {sheet.background ?? "—"}
                   </ThemedText>
                 ) : (
-                  <Locked colors={colors} text="Private (Owner + DM)" />
+                  <Locked colors={colors} text="Private (Owner + GM)" />
                 )}
               </Section>
 
@@ -272,7 +272,7 @@ export default function CharacterSheetScreen() {
                     )}
                   </>
                 ) : (
-                  <Locked colors={colors} text="Private (Owner + DM)" />
+                  <Locked colors={colors} text="Private (Owner + GM)" />
                 )}
               </Section>
 
@@ -340,7 +340,7 @@ export default function CharacterSheetScreen() {
                     {sheet.privateNotes ?? "—"}
                   </ThemedText>
                 ) : (
-                  <Locked colors={colors} text="Private (Owner + DM)" />
+                  <Locked colors={colors} text="Private (Owner + GM)" />
                 )}
               </Section>
 

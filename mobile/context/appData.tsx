@@ -302,14 +302,33 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         const items: ProfileFeedItem[] = [];
 
         if (tab === "posts") {
+          // Track post ids already represented as normal posts on this profile page.
+          // This prevents returning the same post twice (post + repost) which breaks
+          // your UI because ProfileScreen maps feed items -> it.post (FlatList key = post.id).
+          const authoredPostIds = new Set<string>();
+
           for (const p of authoredPosts.filter((p) => !p.parentPostId)) {
-            items.push({ kind: "post", post: p, activityAt: String(p.createdAt) });
+            const postId = String(p.id);
+            authoredPostIds.add(postId);
+
+            items.push({
+              kind: "post",
+              post: p,
+              activityAt: String(p.createdAt),
+            });
           }
 
           for (const r of repostEvents) {
             const post = db.posts[String((r as any).postId)];
             if (!post) continue;
             if (post.parentPostId) continue;
+
+            // ✅ allow reposting your own post in the DB,
+            // but DO NOT return it as a separate feed item (avoids duplicate post.id rows)
+            if (String(post.authorProfileId) === pid) continue;
+
+            // extra safety: if somehow the post is already represented, don't duplicate it
+            if (authoredPostIds.has(String(post.id))) continue;
 
             items.push({
               kind: "repost",
