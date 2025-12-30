@@ -25,7 +25,7 @@ type TabKey = "mine" | "public";
 type ViewMode = "tabs" | "all"; // tabs = Mine/Public, all = single list (no tabs)
 
 export default function SelectProfileModal() {
-  const { scenarioId } = useLocalSearchParams<{ scenarioId: string }>();
+  const { scenarioId, afterCreate } = useLocalSearchParams<{ scenarioId: string; afterCreate?: string }>();
   const scheme = useColorScheme() ?? "light";
   const colors = Colors[scheme];
 
@@ -84,6 +84,14 @@ export default function SelectProfileModal() {
         onPress={async () => {
           if (!selectEnabled) return;
           await setSelectedProfileId(sid, String(item.id));
+
+          // If this modal was opened right after forced profile creation,
+          // we should enter the scenario feed instead of returning to the scenario list.
+          if (String(afterCreate ?? "") === "1") {
+            router.replace(`/(scenario)/${sid}` as any);
+            return;
+          }
+
           router.back();
         }}
         style={({ pressed }) => [

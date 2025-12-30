@@ -1,5 +1,6 @@
-import { Tabs, router, useLocalSearchParams } from "expo-router";
-import React from "react";
+// mobile/app/(scenario)/[scenarioId]/(tabs)/_layout.tsx
+import { Tabs, router, useLocalSearchParams, useSegments } from "expo-router";
+import React, { useEffect, useMemo } from "react";
 import { Image, Platform, Pressable } from "react-native";
 
 import { HapticTab } from "@/components/haptic-tab";
@@ -9,6 +10,7 @@ import { Colors } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { useAppData } from "@/context/appData";
 import { Avatar } from "@/components/ui/Avatar";
+import { useAuth } from "@/context/auth";
 
 function TabIcon({
   iosName,
@@ -29,12 +31,52 @@ function TabIcon({
 
 export default function TabLayout() {
   const { scenarioId } = useLocalSearchParams<{ scenarioId: string }>();
+  const sid = String(scenarioId ?? "");
+
+  const segments = useSegments();
+
   const colorScheme = useColorScheme() ?? "light";
   const colors = Colors[colorScheme];
-  const { getProfileById, getSelectedProfileId } = useAppData();
-  const selectedProfileId = getSelectedProfileId(String(scenarioId));
+
+  const { userId } = useAuth();
+  const { isReady, db, getProfileById, getSelectedProfileId } = useAppData() as any;
+
+  const selectedProfileId = getSelectedProfileId?.(sid) ?? null;
   const selectedProfile = selectedProfileId ? getProfileById(String(selectedProfileId)) : null;
-  
+
+  // ---- GATE: force create/select profile when entering a scenario ----
+  useEffect(() => {
+    if (!isReady) return;
+    if (!sid) return;
+
+    const path = segments.join("/");
+    const inProfileSetupModal =
+      path.includes("modal/create-profile") || path.includes("modal/select-profile");
+
+    if (inProfileSetupModal) return;
+
+    if (selectedProfileId) return;
+
+    const uid = String(userId ?? "").trim();
+    const profilesMap = (db as any)?.profiles ?? {};
+    const hasAnyProfileInScenario = Object.values(profilesMap).some((p: any) => {
+      return String(p?.scenarioId) === sid && String(p?.ownerUserId) === uid;
+    });
+
+    if (hasAnyProfileInScenario) {
+      router.replace({
+        pathname: "/modal/select-profile",
+        params: { scenarioId: sid, forced: "1" },
+      } as any);
+      return;
+    }
+
+    router.replace({
+      pathname: "/modal/create-profile",
+      params: { scenarioId: sid, mode: "create", forced: "1" },
+    } as any);
+  }, [isReady, sid, selectedProfileId, segments, db, userId]);
+
   return (
     <Tabs
       screenOptions={{
@@ -53,30 +95,23 @@ export default function TabLayout() {
               onPress={() =>
                 router.push({
                   pathname: "/modal/select-profile",
-                  params: { scenarioId: String(scenarioId) },
+                  params: { scenarioId: sid },
                 } as any)
               }
               hitSlop={12}
-              style={({ pressed }) => [
-                { opacity: pressed ? 0.7 : 1, marginLeft: 12 },
-              ]}
+              style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1, marginLeft: 12 }]}
               accessibilityRole="button"
               accessibilityLabel="Switch Profile"
             >
-              <Avatar
-                uri={selectedProfile?.avatarUrl ?? null}
-                size={30}
-                fallbackColor={colors.border}
-              />
+              <Avatar uri={selectedProfile?.avatarUrl ?? null} size={30} fallbackColor={colors.border} />
             </Pressable>
           ),
-
           headerTitle: () => (
             <Pressable
               onPress={() =>
                 router.push({
                   pathname: "/modal/select-profile",
-                  params: { scenarioId: String(scenarioId) },
+                  params: { scenarioId: sid },
                 } as any)
               }
               hitSlop={12}
@@ -90,10 +125,7 @@ export default function TabLayout() {
               />
             </Pressable>
           ),
-
-          tabBarIcon: ({ color }) => (
-            <TabIcon iosName="house.fill" androidIonicon="home" color={color} />
-          ),
+          tabBarIcon: ({ color }) => <TabIcon iosName="house.fill" androidIonicon="home" color={color} />,
         }}
       />
 
@@ -102,9 +134,7 @@ export default function TabLayout() {
         options={{
           title: "",
           headerTitle: "Search",
-          tabBarIcon: ({ color }) => (
-            <TabIcon iosName="magnifyingglass" androidIonicon="search" color={color} />
-          ),
+          tabBarIcon: ({ color }) => <TabIcon iosName="magnifyingglass" androidIonicon="search" color={color} />,
         }}
       />
 
@@ -113,9 +143,7 @@ export default function TabLayout() {
         options={{
           title: "",
           headerTitle: "Notifications",
-          tabBarIcon: ({ color }) => (
-            <TabIcon iosName="bell.fill" androidIonicon="notifications" color={color} />
-          ),
+          tabBarIcon: ({ color }) => <TabIcon iosName="bell.fill" androidIonicon="notifications" color={color} />,
         }}
       />
 
@@ -124,34 +152,13 @@ export default function TabLayout() {
         options={{
           title: "",
           headerTitle: "Direct Messages",
-          tabBarIcon: ({ color }) => (
-            <TabIcon iosName="envelope.fill" androidIonicon="mail" color={color} />
-          ),
+          tabBarIcon: ({ color }) => <TabIcon iosName="envelope.fill" androidIonicon="mail" color={color} />,
         }}
       />
 
-      <Tabs.Screen
-        name="post/[postId]"
-        options={{
-          href: null,
-        }}
-      />
-
-      <Tabs.Screen
-        name="profile/[profileId]"
-        options={{
-          href: null,
-          headerShown: false,
-        }}
-      />
-
-      <Tabs.Screen
-        name="sheet/[profileId]"
-        options={{
-          href: null,
-          headerShown: false,
-        }}
-      />
+      <Tabs.Screen name="post/[postId]" options={{ href: null }} />
+      <Tabs.Screen name="profile/[profileId]" options={{ href: null, headerShown: false }} />
+      <Tabs.Screen name="sheet/[profileId]" options={{ href: null, headerShown: false }} />
     </Tabs>
   );
 }

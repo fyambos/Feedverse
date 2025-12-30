@@ -109,7 +109,41 @@ export default function ScenarioListScreen() {
   }, [isReady, listScenarios, userId]);
 
   const openScenario = (scenarioId: string) => {
-    router.push(`/(scenario)/${scenarioId}` as any);
+    const sid = String(scenarioId ?? "").trim();
+    if (!sid) return;
+
+    // if you already have a selected profile for this scenario => go in
+    const selected = (db as any)?.selectedProfileByScenario?.[sid];
+    if (selected) {
+      router.push(`/(scenario)/${sid}` as any);
+      return;
+    }
+
+    // otherwise check if you own ANY profile in this scenario
+    const uid = String(userId ?? "").trim();
+    const profilesMap = (db as any)?.profiles ?? {};
+    const hasAnyProfileInScenario = Object.values(profilesMap).some((p: any) => {
+      return String(p?.scenarioId) === sid && String(p?.ownerUserId) === uid;
+    });
+
+    if (hasAnyProfileInScenario) {
+      // you have profiles but none selected -> go pick one
+      router.push({
+        pathname: "/modal/select-profile",
+        params: { scenarioId: sid },
+      } as any);
+      return;
+    }
+
+    // no profile at all -> force create
+    router.push({
+      pathname: "/modal/create-profile",
+      params: {
+        scenarioId: sid,
+        mode: "create",
+        forced: "1", // to hide cancel/back in the modal
+      },
+    } as any);
   };
 
   const openScenarioMenu = (scenario: any) => {
