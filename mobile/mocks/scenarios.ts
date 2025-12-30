@@ -20,6 +20,9 @@ export const MOCK_SCENARIOS: Scenario[] = [
       { id: "t_romcom", key: "romcom", name: "Romcom", color: "#fd92d0ff" },
       { id: "t_groupchat", key: "group chat", name: "Group Chat", color: "#83fad3ff" },
     ],
+
+    mode: "story",
+    dmUserIds: ["u14"],
   },
   {
     id: "demo-royalty",
@@ -39,6 +42,9 @@ export const MOCK_SCENARIOS: Scenario[] = [
       { id: "t_royalty", key: "royalty", name: "Royalty", color: "#d8b4feff" },
       { id: "t_drama", key: "drama", name: "Drama", color: "#ff8aaeff" },
     ],
+
+    mode: "story",
+    dmUserIds: ["u14"],
   },
   {
     id: "demo-mafia",
@@ -58,5 +64,30 @@ export const MOCK_SCENARIOS: Scenario[] = [
       { id: "t_heist", key: "heist", name: "Heist", color: "#f59e0bff" },
       { id: "t_action", key: "action", name: "Action", color: "#22c55eff" },
     ],
+
+    mode: "story",
+    dmUserIds: ["u13"],
   },
+  {
+    id: "demo-campaign",
+    name: "Echoes of the Fallen Realm",
+    cover: "https://loremflickr.com/800/400/fantasy,dragon",
+    playerIds: ["u14", "u5", "u7", "u9"],
+    createdAt: "2024-06-01T00:00:00Z",
+    updatedAt: "2024-06-01T00:00:00Z",
+    inviteCode: "ECHOES2024",
+
+    ownerUserId: "u14",
+    description:
+      "a text-based fantasy campaign where ancient ruins, broken oaths, and forgotten gods resurface. choices matter, rolls are public, and the realm remembers everything.",
+
+    tags: [
+      { id: "t_fantasy", key: "fantasy", name: "Fantasy", color: "#7c83fdff" },
+      { id: "t_campaign", key: "campaign", name: "Campaign", color: "#34d399ff" },
+      { id: "t_rp", key: "rp", name: "RP", color: "#f472b6ff" },
+    ],
+
+    mode: "campaign",
+    dmUserIds: ["u14"],
+  }
 ];

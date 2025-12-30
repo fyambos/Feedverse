@@ -573,6 +573,17 @@ export default function ScenarioListScreen() {
             const tags = Array.isArray((item as any).tags) ? (item as any).tags : [];
             const isOwner = !!userId && String((item as any).ownerUserId) === String(userId);
 
+            const mode = (item as any)?.mode === "campaign" ? "campaign" : "story";
+            const modeLabel = mode === "campaign" ? "CAMPAIGN" : "STORY";
+
+            // ✅ Theme-based styling
+            const modeBorderColor = mode === "campaign" ? colors.tint : colors.border;
+
+            // background "tinted" without hardcoding: use pressed as base, stronger for campaign
+            const modeBgColor = mode === "campaign" ? colors.pressed : "transparent";
+
+            // text: campaign = tint (visible), story = secondary (more neutral)
+            const modeTextColor = mode === "campaign" ? colors.tint : colors.textSecondary;
             return (
               <Pressable
                 onPress={() => openScenario(String(item.id))}
@@ -586,9 +597,17 @@ export default function ScenarioListScreen() {
 
                 <View style={styles.cardContent}>
                   <View style={styles.titleRow}>
-                    <ThemedText type="defaultSemiBold" numberOfLines={1} style={{ flex: 1 }}>
-                      {item.name}
-                    </ThemedText>
+                    <View style={{ flex: 1, flexDirection: "row", alignItems: "center", gap: 8, minWidth: 0 }}>
+                      <ThemedText type="defaultSemiBold" numberOfLines={1} style={{ flexShrink: 1 }}>
+                        {item.name}
+                      </ThemedText>
+
+                      <View style={[styles.modePill, { borderColor: modeBorderColor, backgroundColor: modeBgColor }]}>
+                        <ThemedText style={[styles.modePillText, { color: modeTextColor }]}>
+                          {modeLabel}
+                        </ThemedText>
+                      </View>
+                    </View>
 
                     {isOwner ? (
                       <Pressable
@@ -812,5 +831,18 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     alignItems: "center",
     justifyContent: "center",
+  },
+  modePill: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    borderWidth: 1,
+    alignSelf: "center",
+  },
+  modePillText: {
+    fontSize: 12,
+    fontWeight: "900",
+    letterSpacing: 0.6,
+    textTransform: "uppercase",
   },
 });
