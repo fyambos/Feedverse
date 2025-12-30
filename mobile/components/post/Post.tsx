@@ -1,6 +1,6 @@
 // mobile/components/post/Post.tsx
 import React from "react";
-import { Alert, Modal, Pressable, StyleSheet, View } from "react-native";
+import { Alert, Pressable, StyleSheet, View } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import AntDesign from "@expo/vector-icons/AntDesign";
 
@@ -18,6 +18,13 @@ import { PostHeader } from "@/components/post/PostHeader";
 import { PostBody } from "@/components/post/PostBody";
 
 import { useUserSettings } from "@/hooks/useUserSettings";
+
+// ✅ campaign
+import { PostTypeBadge } from "@/components/post/PostTypeBadge";
+import type { PostType } from "@/lib/campaign/postTypes";
+
+// ✅ extracted menu
+import { PostMenu } from "@/components/post/PostMenu";
 
 export type PostVariant = "feed" | "detail" | "reply";
 
@@ -61,25 +68,8 @@ function pluralize(n: number, singular: string, plural?: string) {
   return n === 1 ? singular : p;
 }
 
-function menuLabelToView(label: string): ProfileViewState | null {
-  switch (label) {
-    case "Blocked account":
-      return "blocked";
-    case "Blocked by account":
-      return "blocked_by";
-    case "Suspended account":
-      return "suspended";
-    case "Deactivated account":
-      return "deactivated";
-    case "Reactivated account":
-      return "reactivated";
-    case "Privated account":
-      return "privated";
-    case "Muted account":
-      return "muted";
-    default:
-      return null;
-  }
+function isCampaignPostType(t: any): t is PostType {
+  return t === "rp" || t === "roll" || t === "log" || t === "quest" || t === "combat" || t === "gm";
 }
 
 export function Post({
@@ -120,6 +110,9 @@ export function Post({
   const canOpenMenu = Boolean(showMenu && isInteractive);
   const canNavigate = Boolean(isInteractive);
 
+  const postType = (item as any).postType as PostType | undefined;
+  const isCampaign = isCampaignPostType(postType);
+
   const openProfile = (view?: ProfileViewState) => {
     if (!canNavigate) return;
     if (!sid || !profile.id) return;
@@ -154,75 +147,22 @@ export function Post({
     } as any);
   };
 
+  // ✅ menu state
   const [menuOpen, setMenuOpen] = React.useState(false);
-  const REPORT_LABEL = "Report post";
-
-  const STATE_OPTIONS = React.useMemo(
-    () => [
-      "Blocked account",
-      "Muted account",
-      "Blocked by account",
-      "Suspended account",
-      "Deactivated account",
-      "Reactivated account",
-      "Private account",
-    ],
-    []
-  );
-
-  const onReportPost = () => {
-    setMenuOpen(false);
-    Alert.alert("Report post", "Coming soon.");
-  };
-
-  const onStateOption = (label: string) => {
-    setMenuOpen(false);
-    const view = menuLabelToView(label);
-    if (view) openProfile(view);
-  };
-
-  const MenuModal = () => {
-    if (!canOpenMenu) return null;
-
-    return (
-      <Modal transparent visible={menuOpen} animationType="fade" onRequestClose={() => setMenuOpen(false)}>
-        <Pressable style={styles.menuBackdrop} onPress={() => setMenuOpen(false)}>
-          <Pressable style={[styles.menuSheet, { backgroundColor: colors.background, borderColor: colors.border }]}>
-            <Pressable
-              onPress={onReportPost}
-              style={({ pressed }) => [
-                styles.menuItem,
-                { backgroundColor: pressed ? colors.pressed : "transparent" },
-              ]}
-            >
-              <ThemedText style={{ color: "#ff3b30", fontSize: 15, fontWeight: "600" }}>
-                {REPORT_LABEL}
-              </ThemedText>
-            </Pressable>
-
-            <View style={[styles.menuDivider, { backgroundColor: colors.border }]} />
-
-            {STATE_OPTIONS.map((label) => (
-              <Pressable
-                key={label}
-                onPress={() => onStateOption(label)}
-                style={({ pressed }) => [
-                  styles.menuItem,
-                  { backgroundColor: pressed ? colors.pressed : "transparent" },
-                ]}
-              >
-                <ThemedText style={{ color: colors.text, fontSize: 15 }}>{label}</ThemedText>
-              </Pressable>
-            ))}
-          </Pressable>
-        </Pressable>
-      </Modal>
-    );
-  };
 
   const handleOpenMenu = () => {
     if (!canOpenMenu) return;
     setMenuOpen(true);
+  };
+
+  const onReportPost = () => {
+    Alert.alert("Report post", "Coming soon.");
+  };
+
+  // optional: hook for next step (GM editor screen/modal)
+  const openGmEditor = () => {
+    // replace with router.push("/modal/gm-editor") later
+    Alert.alert("GM editor", "Coming next (modal with live stats + Done).");
   };
 
   // ===== DETAIL =====
@@ -241,7 +181,17 @@ export function Post({
           showTimestamps={showTimestampsPref}
         />
 
-        <MenuModal />
+        <PostMenu
+          visible={menuOpen && canOpenMenu}
+          onClose={() => setMenuOpen(false)}
+          colors={colors as any}
+          isCampaign={isCampaign}
+          profile={profile}
+          item={item}
+          onReportPost={onReportPost}
+          onOpenProfile={(view) => openProfile(view)}
+          onOpenGmEditor={openGmEditor}
+        />
 
         <PostBody
           sid={sid}
@@ -321,6 +271,13 @@ export function Post({
           <Pressable onPress={() => openProfile()} hitSlop={0} style={styles.avatarPress} disabled={!canNavigate}>
             <Avatar uri={profile.avatarUrl} size={44} fallbackColor={colors.border} />
           </Pressable>
+
+          {/* ✅ post type under avatar (campaign only, hide "rp") */}
+          {isCampaign && postType && postType !== "rp" ? (
+            <View style={styles.avatarBadge}>
+              <PostTypeBadge colors={colors as any} type={postType} compact />
+            </View>
+          ) : null}
         </View>
 
         <View style={styles.rightCol}>
@@ -338,7 +295,17 @@ export function Post({
             showTimestamps={showTimestampsPref}
           />
 
-          <MenuModal />
+          <PostMenu
+            visible={menuOpen && canOpenMenu}
+            onClose={() => setMenuOpen(false)}
+            colors={colors as any}
+            isCampaign={isCampaign}
+            profile={profile}
+            item={item}
+            onReportPost={onReportPost}
+            onOpenProfile={(view) => openProfile(view)}
+            onOpenGmEditor={openGmEditor}
+          />
 
           <PostBody
             sid={sid}
@@ -395,22 +362,6 @@ const styles = StyleSheet.create({
   countsRow: { flexDirection: "row", gap: 16 },
   countItem: { fontSize: 14 },
 
-  menuBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.35)", justifyContent: "flex-end" },
-  menuSheet: {
-    borderTopLeftRadius: 18,
-    borderTopRightRadius: 18,
-    borderWidth: StyleSheet.hairlineWidth,
-    paddingVertical: 8,
-    paddingHorizontal: 8,
-  },
-  menuItem: { paddingVertical: 12, paddingHorizontal: 12, borderRadius: 12 },
-  menuDivider: {
-    height: StyleSheet.hairlineWidth,
-    opacity: 0.9,
-    marginVertical: 6,
-    marginHorizontal: 8,
-  },
-
   avatarCol: { width: 44, alignItems: "center", position: "relative", alignSelf: "stretch" },
   threadLine: {
     position: "absolute",
@@ -419,5 +370,11 @@ const styles = StyleSheet.create({
     width: 2,
     borderRadius: 4,
     opacity: 0.85,
+  },
+
+  // ✅ badge under avatar
+  avatarBadge: {
+    marginTop: 6,
+    alignItems: "center",
   },
 });
