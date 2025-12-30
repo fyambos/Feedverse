@@ -455,7 +455,7 @@ export default function ProfileScreen() {
         forceStats={forcedStats}
         showLockOnName={(isPrivated && profile.isPrivate !== true) || profile.isPrivate === true}
         showStats={viewState === "normal" || viewState === "muted" || viewState === "reactivated"}
-        showCharacterSheetButton={isCampaign && sheetExists}
+        showCharacterSheetButton={isCampaign}
         onPressCharacterSheet={openCharacterSheet}
       />
 
