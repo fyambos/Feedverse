@@ -7,6 +7,7 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   TextInput,
   View,
   ActivityIndicator,
@@ -82,8 +83,8 @@ export default function CreateScenarioModal() {
   const colors = Colors[scheme];
 
   const { userId } = useAuth();
-  const { isReady, getScenarioById, upsertScenario } = useAppData() as any;
-
+  const { isReady, getScenarioById, upsertScenario, setScenarioMode } = useAppData() as any;
+  
   const existing: Scenario | null = useMemo(() => {
     if (!isEdit) return null;
     return getScenarioById?.(String(scenarioId)) ?? null;
@@ -99,6 +100,9 @@ export default function CreateScenarioModal() {
   // form state
   const [name, setName] = useState(existing?.name ?? "");
   const [description, setDescription] = useState(existing?.description ?? "");
+  const [mode, setMode] = useState<"story" | "campaign">(
+    (existing as any)?.mode === "campaign" ? "campaign" : "story"
+    );
 
   // cover: picked image uri
   const [cover, setCover] = useState<string>(String(existing?.cover ?? "").trim());
@@ -267,6 +271,14 @@ export default function CreateScenarioModal() {
         name: t.name,
         color: t.color,
       })) as any,
+      mode,
+      // preserves existing list when editing
+      dmUserIds: Array.from(
+        new Set([
+          String(userId),
+          ...((existing as any)?.dmUserIds ? (existing as any).dmUserIds.map(String) : []),
+        ])
+      ),
     };
 
     try {
@@ -275,7 +287,7 @@ export default function CreateScenarioModal() {
     } catch (e: any) {
       Alert.alert("Save failed", e?.message ?? "Could not save scenario.");
     }
-  }, [isReady, validate, existing, userId, name, description, cover, inviteCode, tags, upsertScenario]);
+  }, [isReady, validate, existing, userId, name, description, cover, inviteCode, tags, upsertScenario, mode]);
 
   const headerTitle = isEdit ? "Edit scenario" : "Create scenario";
 
@@ -340,6 +352,44 @@ export default function CreateScenarioModal() {
                 style={[styles.input, styles.inputMultiline, { color: colors.text }]}
                 editable={canEdit}
               />
+            </RowCard>
+
+            {/* Mode (story vs. campaign) */}
+            <RowCard label="Mode" colors={colors} right={null}>
+                <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                    <View style={{ flex: 1, paddingRight: 12 }}>
+                    <ThemedText style={{ color: colors.text, fontWeight: "800" }}>
+                        {mode === "campaign" ? "Campaign" : "Story"}
+                    </ThemedText>
+                    <ThemedText style={{ color: colors.textSecondary, fontSize: 12, marginTop: 4 }}>
+                        {mode === "campaign"
+                        ? "Enables character sheets, rolls, pinned posts, logs, quests, combat."
+                        : "Freeform narration (classic posts)."}
+                    </ThemedText>
+                    </View>
+
+                    <Switch
+                    value={mode === "campaign"}
+                    onValueChange={async (v) => {
+                        if (!canEdit) return;
+
+                        const nextMode: "story" | "campaign" = v ? "campaign" : "story";
+                        setMode(nextMode);
+
+                        // ✅ If editing an existing scenario, persist immediately
+                        if (isEdit && existing?.id) {
+                        try {
+                            await setScenarioMode?.(String(existing.id), nextMode);
+                        } catch (e: any) {
+                            Alert.alert("Update failed", e?.message ?? "Could not update scenario mode.");
+                        }
+                        }
+                    }}
+                    trackColor={{ false: colors.border, true: colors.tint }}
+                    thumbColor={colors.card}
+                    ios_backgroundColor={colors.border}
+                    />
+                </View>
             </RowCard>
 
             {/* Cover (image picker + preview) */}
