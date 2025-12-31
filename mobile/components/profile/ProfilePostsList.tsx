@@ -1,3 +1,5 @@
+// mobile/components/profile/ProfilePostsList.tsx
+
 import React from "react";
 import {
   ActivityIndicator,

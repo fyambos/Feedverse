@@ -32,7 +32,11 @@ export default function PostScreen() {
   const sid = String(scenarioId ?? "");
   const pid = String(postId ?? "");
 
-  const fromPath = typeof from === "string" && from.length > 0 ? from : null;
+  // If opened from a deep link / notification, there might be no back stack.
+  const fromPath =
+    typeof from === "string" && from.length > 0
+      ? from
+      : `/(scenario)/${encodeURIComponent(sid)}/(tabs)`;
 
   const { userId } = useAuth();
   const {
@@ -69,7 +73,8 @@ export default function PostScreen() {
   const root = isReady ? getPostById(pid) : null;
   const isDeletedRoot = isReady && !root;
 
-  const isMissingParent = isReady && !!root?.parentPostId && !getPostById(String(root.parentPostId));
+  const isMissingParent =
+    isReady && !!root?.parentPostId && !getPostById(String(root.parentPostId));
   const showDeletedPlaceholder = isDeletedRoot || isMissingParent;
 
   const thread = useMemo(() => {
@@ -93,6 +98,18 @@ export default function PostScreen() {
     return result;
   }, [isReady, root, pid, listRepliesForPost]);
 
+  const onBack = useCallback(() => {
+    // ✅ This preserves swipe-back chain:
+    // Post -> Profile -> Feed
+    if ((router as any)?.canGoBack?.()) {
+      router.back();
+      return;
+    }
+
+    // Fallback for deep links (no back stack)
+    router.replace(fromPath as any);
+  }, [fromPath]);
+
   return (
     <ThemedView style={[styles.container, { backgroundColor: colors.background }]}>
       <Stack.Screen
@@ -102,13 +119,7 @@ export default function PostScreen() {
           headerTitleAlign: "center",
           headerLeft: () => (
             <Pressable
-              onPress={() => {
-                if (fromPath) {
-                  router.replace(fromPath as any);
-                  return;
-                }
-                router.back();
-              }}
+              onPress={onBack}
               hitSlop={12}
               accessibilityRole="button"
               accessibilityLabel="Back"
@@ -149,7 +160,9 @@ export default function PostScreen() {
             if (!profile) return null;
 
             const parent = item.parentPostId ? getPostById(String(item.parentPostId)) : null;
-            const parentProfile = parent?.authorProfileId ? getProfileById(String(parent.authorProfileId)) : null;
+            const parentProfile = parent?.authorProfileId
+              ? getProfileById(String(parent.authorProfileId))
+              : null;
 
             const isRoot = itemId === pid;
             const focusedIsReply = isRoot && !!item.parentPostId;
