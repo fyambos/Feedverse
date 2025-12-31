@@ -87,9 +87,6 @@ export default function ScenarioListScreen() {
     router.push("/modal/join-scenario" as any);
   };
 
-  // ✅ IMPORTANT FIX:
-  // Only show scenarios where the signed-in user is a player.
-  // Otherwise "leave" works but the scenario still shows in the list (looks like nothing happened).
   const scenarios = useMemo(() => {
     if (!isReady) return [];
     const all = listScenarios?.() ?? [];
