@@ -1,7 +1,7 @@
 // mobile/app/(scenario)/[scenarioId]/(tabs)/_layout.tsx
 import { Tabs, router, useLocalSearchParams, useSegments } from "expo-router";
-import React, { useEffect, useMemo } from "react";
-import { Image, Platform, Pressable } from "react-native";
+import React, { useEffect } from "react";
+import { Alert, Image, Platform, Pressable } from "react-native"; // ✅ add Alert
 
 import { HapticTab } from "@/components/haptic-tab";
 import { IconSymbol } from "@/components/ui/icon-symbol";
@@ -77,6 +77,42 @@ export default function TabLayout() {
     } as any);
   }, [isReady, sid, selectedProfileId, segments, db, userId]);
 
+  // ✅ Scenario menu (icon in headerTitle)
+  const openScenarioMenu = () => {
+    const profileId = selectedProfile?.id ? String(selectedProfile.id) : null;
+
+    Alert.alert("Scenario menu", "", [
+      {
+        text: "Profile",
+        onPress: () => {
+          if (!profileId) {
+            Alert.alert("No profile selected", "Select a profile first.");
+            return;
+          }
+          router.push(
+            `/(scenario)/${encodeURIComponent(sid)}/(tabs)/profile/${encodeURIComponent(profileId)}` as any
+          );
+        },
+      },
+      {
+        text: "Settings",
+        onPress: () => {
+          router.push("/(scenario)/settings" as any);
+        },
+      },
+      {
+        text: "More",
+        onPress: () => {
+          Alert.alert("More", "", [
+            { text: "Import (coming soon)", onPress: () => Alert.alert("Coming soon", "Import is not available yet.") },
+            { text: "Export (coming soon)", onPress: () => Alert.alert("Coming soon", "Export is not available yet.") },
+            { text: "Cancel", style: "cancel" },
+          ]);
+        },
+      },
+    ]);
+  };
+
   return (
     <Tabs
       screenOptions={{
@@ -106,17 +142,15 @@ export default function TabLayout() {
               <Avatar uri={selectedProfile?.avatarUrl ?? null} size={30} fallbackColor={colors.border} />
             </Pressable>
           ),
+
+          // ✅ Feedverse icon now opens scenario menu
           headerTitle: () => (
             <Pressable
-              onPress={() =>
-                router.push({
-                  pathname: "/modal/select-profile",
-                  params: { scenarioId: sid },
-                } as any)
-              }
+              onPress={openScenarioMenu}
               hitSlop={12}
               accessibilityRole="button"
-              accessibilityLabel="Switch Profile"
+              accessibilityLabel="Scenario menu"
+              style={({ pressed }) => [{ opacity: pressed ? 0.75 : 1 }]}
             >
               <Image
                 source={require("@/assets/images/FeedverseIcon.png")}
@@ -125,6 +159,7 @@ export default function TabLayout() {
               />
             </Pressable>
           ),
+
           tabBarIcon: ({ color }) => <TabIcon iosName="house.fill" androidIonicon="home" color={color} />,
         }}
       />

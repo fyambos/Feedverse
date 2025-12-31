@@ -586,7 +586,7 @@ export function PostMenu({
               </View>
 
               <ThemedText style={{ color: colors.textSecondary, fontSize: 13, marginTop: 6 }} numberOfLines={1}>
-                {isCampaign ? "campaign post" : "⋯ post options"}
+                {isCampaign ? "⋯ gm actions" : "⋯ post options"}
               </ThemedText>
             </View>
 
