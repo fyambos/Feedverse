@@ -1,3 +1,5 @@
+// mobile/app/(scenario)/[scenarioId]/(tabs)/profile/[profileId].tsx
+
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Alert, StyleSheet, View } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";

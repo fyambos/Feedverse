@@ -1,7 +1,7 @@
 // mobile/app/(scenario)/[scenarioId]/(tabs)/_layout.tsx
 import { Tabs, router, useLocalSearchParams, useSegments } from "expo-router";
 import React, { useEffect } from "react";
-import { Alert, Image, Platform, Pressable } from "react-native"; 
+import { Alert, Image, Platform, Pressable } from "react-native";
 
 import { HapticTab } from "@/components/haptic-tab";
 import { IconSymbol } from "@/components/ui/icon-symbol";
@@ -77,7 +77,7 @@ export default function TabLayout() {
     } as any);
   }, [isReady, sid, selectedProfileId, segments, db, userId]);
 
-  // Scenario menu 
+  // Scenario menu
   const openScenarioMenu = () => {
     const profileId = selectedProfile?.id ? String(selectedProfile.id) : null;
 
@@ -97,22 +97,40 @@ export default function TabLayout() {
       {
         text: "View Settings",
         onPress: () => {
-          router.push({ 
+          router.push({
             pathname: "/modal/create-scenario",
-            params: { scenarioId: sid }
-           } as any);
+            params: { scenarioId: sid },
+          } as any);
         },
       },
+
+      {
+        text: "Back to home",
+        onPress: () => {
+          try {
+            router.dismissAll();
+          } catch {}
+          router.replace("/" as any);
+        },
+      },
+
       {
         text: "More",
         onPress: () => {
           Alert.alert("More", "", [
-            { text: "Import (coming soon)", onPress: () => Alert.alert("Coming soon", "Import is not available yet.") },
-            { text: "Export (coming soon)", onPress: () => Alert.alert("Coming soon", "Export is not available yet.") },
+            {
+              text: "Import (coming soon)",
+              onPress: () => Alert.alert("Coming soon", "Import is not available yet."),
+            },
+            {
+              text: "Export (coming soon)",
+              onPress: () => Alert.alert("Coming soon", "Export is not available yet."),
+            },
             { text: "Cancel", style: "cancel" },
           ]);
         },
       },
+      { text: "Cancel", style: "cancel" },
     ]);
   };
 
