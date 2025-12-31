@@ -1,7 +1,7 @@
 // mobile/app/(scenario)/[scenarioId]/(tabs)/_layout.tsx
 import { Tabs, router, useLocalSearchParams, useSegments } from "expo-router";
 import React, { useEffect } from "react";
-import { Alert, Image, Platform, Pressable } from "react-native"; // ✅ add Alert
+import { Alert, Image, Platform, Pressable } from "react-native"; 
 
 import { HapticTab } from "@/components/haptic-tab";
 import { IconSymbol } from "@/components/ui/icon-symbol";
@@ -77,7 +77,7 @@ export default function TabLayout() {
     } as any);
   }, [isReady, sid, selectedProfileId, segments, db, userId]);
 
-  // ✅ Scenario menu (icon in headerTitle)
+  // Scenario menu 
   const openScenarioMenu = () => {
     const profileId = selectedProfile?.id ? String(selectedProfile.id) : null;
 
@@ -95,9 +95,12 @@ export default function TabLayout() {
         },
       },
       {
-        text: "Settings",
+        text: "View Settings",
         onPress: () => {
-          router.push("/(scenario)/settings" as any);
+          router.push({ 
+            pathname: "/modal/create-scenario",
+            params: { scenarioId: sid }
+           } as any);
         },
       },
       {
@@ -143,7 +146,6 @@ export default function TabLayout() {
             </Pressable>
           ),
 
-          // ✅ Feedverse icon now opens scenario menu
           headerTitle: () => (
             <Pressable
               onPress={openScenarioMenu}
