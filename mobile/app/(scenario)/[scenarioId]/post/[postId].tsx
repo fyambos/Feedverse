@@ -99,15 +99,9 @@ export default function PostScreen() {
   }, [isReady, root, pid, listRepliesForPost]);
 
   const onBack = useCallback(() => {
-    // ✅ This preserves swipe-back chain:
-    // Post -> Profile -> Feed
-    if ((router as any)?.canGoBack?.()) {
-      router.back();
-      return;
-    }
-
-    // Fallback for deep links (no back stack)
-    router.replace(fromPath as any);
+    if (router.canGoBack?.()) router.back();
+    else if (fromPath) router.replace(fromPath as any);
+    else router.replace(`/(scenario)/${sid}/(tabs)` as any);
   }, [fromPath]);
 
   return (
