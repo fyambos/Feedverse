@@ -1,5 +1,5 @@
 // mobile/app/modal/create-scenario.tsx
-import React, { useCallback, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   KeyboardAvoidingView,
@@ -75,6 +75,31 @@ type ScenarioTagUI = {
   color: string;
 };
 
+function buildTagsUI(existing: any): ScenarioTagUI[] {
+  const raw = existing?.tags;
+  if (!Array.isArray(raw)) return [];
+
+  const list = raw
+    .map((t: any) => {
+      const rawInput = String(t?.key ?? t?.name ?? t?.id ?? "");
+      const key = tagKeyFromInput(rawInput);
+      if (!key) return null;
+      return {
+        key,
+        name: tagNameFromKey(key),
+        color: colorForTagKey(key),
+      };
+    })
+    .filter(Boolean) as ScenarioTagUI[];
+
+  const seen = new Set<string>();
+  return list.filter((t) => {
+    if (seen.has(t.key)) return false;
+    seen.add(t.key);
+    return true;
+  });
+}
+
 export default function CreateScenarioModal() {
   const { scenarioId } = useLocalSearchParams<Params>();
   const isEdit = Boolean(scenarioId);
@@ -84,7 +109,7 @@ export default function CreateScenarioModal() {
 
   const { userId } = useAuth();
   const { isReady, getScenarioById, upsertScenario, setScenarioMode } = useAppData() as any;
-  
+
   const existing: Scenario | null = useMemo(() => {
     if (!isEdit) return null;
     return getScenarioById?.(String(scenarioId)) ?? null;
@@ -92,9 +117,10 @@ export default function CreateScenarioModal() {
 
   const isOwner = useMemo(() => {
     if (!existing) return true;
-    return String(existing.ownerUserId) === String(userId ?? "");
+    return String((existing as any).ownerUserId) === String(userId ?? "");
   }, [existing, userId]);
 
+  // canEdit means: all fields/actions are editable
   const canEdit = !isEdit || isOwner;
 
   // form state
@@ -102,11 +128,38 @@ export default function CreateScenarioModal() {
   const [description, setDescription] = useState(existing?.description ?? "");
   const [mode, setMode] = useState<"story" | "campaign">(
     (existing as any)?.mode === "campaign" ? "campaign" : "story"
-    );
+  );
 
   // cover: picked image uri
   const [cover, setCover] = useState<string>(String(existing?.cover ?? "").trim());
   const [pickingCover, setPickingCover] = useState(false);
+
+  const [inviteCode, setInviteCode] = useState<string>(() => {
+    const existingCode = String(existing?.inviteCode ?? "").trim();
+    if (existingCode) return existingCode;
+    return generateInviteCode();
+  });
+
+  const [tags, setTags] = useState<ScenarioTagUI[]>(() => buildTagsUI(existing));
+
+  const [tagInput, setTagInput] = useState("");
+  const tagInputRef = useRef<TextInput>(null);
+
+  // hydrate state when editing + scenario becomes available (or changes)
+  useEffect(() => {
+    if (!isEdit) return;
+    if (!existing) return;
+
+    setName(existing?.name ?? "");
+    setDescription(existing?.description ?? "");
+    setMode((existing as any)?.mode === "campaign" ? "campaign" : "story");
+    setCover(String(existing?.cover ?? "").trim());
+
+    const existingCode = String(existing?.inviteCode ?? "").trim();
+    setInviteCode(existingCode || generateInviteCode());
+
+    setTags(buildTagsUI(existing));
+  }, [isEdit, existing]);
 
   const pickCover = useCallback(async () => {
     if (!canEdit) return;
@@ -125,42 +178,6 @@ export default function CreateScenarioModal() {
       setPickingCover(false);
     }
   }, [canEdit]);
-
-  // inviteCode: read-only, but can regenerate via button
-  const [inviteCode, setInviteCode] = useState<string>(() => {
-    const existingCode = String(existing?.inviteCode ?? "").trim();
-    if (existingCode) return existingCode;
-    return generateInviteCode();
-  });
-
-  const [tags, setTags] = useState<ScenarioTagUI[]>(() => {
-    const raw = (existing as any)?.tags;
-    if (!Array.isArray(raw)) return [];
-
-    const list = raw
-      .map((t: any) => {
-        const rawInput = String(t?.key ?? t?.name ?? t?.id ?? "");
-        const key = tagKeyFromInput(rawInput);
-        if (!key) return null;
-        return {
-          key,
-          name: tagNameFromKey(key),
-          color: colorForTagKey(key),
-        };
-      })
-      .filter(Boolean) as ScenarioTagUI[];
-
-    const seen = new Set<string>();
-    return list.filter((t) => {
-      if (seen.has(t.key)) return false;
-      seen.add(t.key);
-      return true;
-    });
-  });
-
-  // tag input
-  const [tagInput, setTagInput] = useState("");
-  const tagInputRef = useRef<TextInput>(null);
 
   const addTag = useCallback(() => {
     if (!canEdit) return;
@@ -261,7 +278,8 @@ export default function CreateScenarioModal() {
     const next: Scenario = {
       ...base,
       name: String(name).trim().slice(0, SCENARIO_LIMITS.MAX_NAME),
-      description: String(description).trim().slice(0, SCENARIO_LIMITS.MAX_DESCRIPTION) || undefined,
+      description:
+        String(description).trim().slice(0, SCENARIO_LIMITS.MAX_DESCRIPTION) || undefined,
       cover: String(cover).trim(),
       inviteCode: String(inviteCode).trim(),
       updatedAt: now,
@@ -272,11 +290,11 @@ export default function CreateScenarioModal() {
         color: t.color,
       })) as any,
       mode,
-      // preserves existing list when editing
+      // ✅ preserves existing list when editing (and FIXED dmUserIds typo)
       gmUserIds: Array.from(
         new Set([
           String(userId),
-          ...((existing as any)?.dmUserIds ? (existing as any).dmUserIds.map(String) : []),
+          ...((existing as any)?.gmUserIds ? (existing as any).gmUserIds.map(String) : []),
         ])
       ),
     };
@@ -287,9 +305,21 @@ export default function CreateScenarioModal() {
     } catch (e: any) {
       Alert.alert("Save failed", e?.message ?? "Could not save scenario.");
     }
-  }, [isReady, validate, existing, userId, name, description, cover, inviteCode, tags, upsertScenario, mode]);
+  }, [
+    isReady,
+    validate,
+    existing,
+    userId,
+    name,
+    description,
+    cover,
+    inviteCode,
+    tags,
+    upsertScenario,
+    mode,
+  ]);
 
-  const headerTitle = isEdit ? "Edit scenario" : "Create scenario";
+  const headerTitle = isEdit ? (isOwner ? "Edit scenario" : "Scenario details") : "Create scenario";
 
   return (
     <SafeAreaView edges={["top"]} style={{ flex: 1, backgroundColor: colors.background }}>
@@ -313,16 +343,19 @@ export default function CreateScenarioModal() {
 
             <ThemedText type="defaultSemiBold">{headerTitle}</ThemedText>
 
-            <Pressable
-              onPress={onSave}
-              disabled={!canEdit}
-              hitSlop={12}
-              style={({ pressed }) => [{ opacity: !canEdit ? 0.4 : pressed ? 0.7 : 1 }]}
-            >
-              <ThemedText style={{ color: canEdit ? colors.tint : colors.textMuted, fontWeight: "800" }}>
-                {isEdit ? "Save" : "Create"}
-              </ThemedText>
-            </Pressable>
+            {canEdit ? (
+              <Pressable
+                onPress={onSave}
+                hitSlop={12}
+                style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}
+              >
+                <ThemedText style={{ color: colors.tint, fontWeight: "800" }}>
+                  {isEdit ? "Save" : "Create"}
+                </ThemedText>
+              </Pressable>
+            ) : (
+              <View style={{ width: 44 }} />
+            )}
           </View>
 
           <ScrollView
@@ -342,7 +375,10 @@ export default function CreateScenarioModal() {
               />
             </RowCard>
 
-            <RowCard label={`Description (${description.length}/${SCENARIO_LIMITS.MAX_DESCRIPTION})`} colors={colors}>
+            <RowCard
+              label={`Description (${description.length}/${SCENARIO_LIMITS.MAX_DESCRIPTION})`}
+              colors={colors}
+            >
               <TextInput
                 value={description}
                 onChangeText={(v) => setDescription(v.slice(0, SCENARIO_LIMITS.MAX_DESCRIPTION))}
@@ -356,40 +392,40 @@ export default function CreateScenarioModal() {
 
             {/* Mode (story vs. campaign) */}
             <RowCard label="Mode" colors={colors} right={null}>
-                <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-                    <View style={{ flex: 1, paddingRight: 12 }}>
-                    <ThemedText style={{ color: colors.text, fontWeight: "800" }}>
-                        {mode === "campaign" ? "Campaign" : "Story"}
-                    </ThemedText>
-                    <ThemedText style={{ color: colors.textSecondary, fontSize: 12, marginTop: 4 }}>
-                        {mode === "campaign"
-                        ? "Enables character sheets, rolls, pinned posts, logs, quests, combat."
-                        : "Freeform narration (classic posts)."}
-                    </ThemedText>
-                    </View>
-
-                    <Switch
-                    value={mode === "campaign"}
-                    onValueChange={async (v) => {
-                        if (!canEdit) return;
-
-                        const nextMode: "story" | "campaign" = v ? "campaign" : "story";
-                        setMode(nextMode);
-
-                        // ✅ If editing an existing scenario, persist immediately
-                        if (isEdit && existing?.id) {
-                        try {
-                            await setScenarioMode?.(String(existing.id), nextMode);
-                        } catch (e: any) {
-                            Alert.alert("Update failed", e?.message ?? "Could not update scenario mode.");
-                        }
-                        }
-                    }}
-                    trackColor={{ false: colors.border, true: colors.tint }}
-                    thumbColor={colors.card}
-                    ios_backgroundColor={colors.border}
-                    />
+              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                <View style={{ flex: 1, paddingRight: 12 }}>
+                  <ThemedText style={{ color: colors.text, fontWeight: "800" }}>
+                    {mode === "campaign" ? "Campaign" : "Story"}
+                  </ThemedText>
+                  <ThemedText style={{ color: colors.textSecondary, fontSize: 12, marginTop: 4 }}>
+                    {mode === "campaign"
+                      ? "Enables character sheets, rolls, pinned posts, logs, quests, combat."
+                      : "Freeform narration (classic posts)."}
+                  </ThemedText>
                 </View>
+
+                <Switch
+                  value={mode === "campaign"}
+                  onValueChange={async (v) => {
+                    if (!canEdit) return;
+
+                    const nextMode: "story" | "campaign" = v ? "campaign" : "story";
+                    setMode(nextMode);
+
+                    // ✅ If editing an existing scenario, persist immediately
+                    if (isEdit && existing?.id) {
+                      try {
+                        await setScenarioMode?.(String(existing.id), nextMode);
+                      } catch (e: any) {
+                        Alert.alert("Update failed", e?.message ?? "Could not update scenario mode.");
+                      }
+                    }
+                  }}
+                  trackColor={{ false: colors.border, true: colors.tint }}
+                  thumbColor={colors.card}
+                  ios_backgroundColor={colors.border}
+                />
+              </View>
             </RowCard>
 
             {/* Cover (image picker + preview) */}
@@ -425,12 +461,7 @@ export default function CreateScenarioModal() {
               >
                 {cover ? (
                   <>
-                    <Image
-                      source={{ uri: cover }}
-                      style={styles.coverImage}
-                      contentFit="cover"
-                      transition={150}
-                    />
+                    <Image source={{ uri: cover }} style={styles.coverImage} contentFit="cover" transition={150} />
                     <View style={styles.coverOverlay}>
                       <View style={[styles.coverBadge, { backgroundColor: "rgba(0,0,0,0.45)" }]}>
                         <Ionicons name="image-outline" size={16} color="#fff" />

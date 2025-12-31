@@ -1,4 +1,4 @@
-// mobile/app/modal/edit-sheet.tsx
+// mobile/app/modal/create-sheet.tsx
 
 import React, { useCallback, useMemo, useState } from "react";
 import {

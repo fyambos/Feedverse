@@ -141,7 +141,7 @@ export default function CharacterSheetScreen() {
           {canEditSheet ? (
             <Pressable
               onPress={() => {
-                router.push({ pathname: `/modal/edit-sheet`, params: { scenarioId: sid, profileId: pid } } as any);
+                router.push({ pathname: `/modal/create-sheet`, params: { scenarioId: sid, profileId: pid } } as any);
               }}
               hitSlop={10}
               style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}
