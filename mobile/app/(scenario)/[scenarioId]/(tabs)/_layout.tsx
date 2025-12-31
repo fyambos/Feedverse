@@ -90,7 +90,7 @@ export default function TabLayout() {
             return;
           }
           router.push(
-            `/(scenario)/${encodeURIComponent(sid)}/(tabs)/profile/${encodeURIComponent(profileId)}` as any
+            `/(scenario)/${encodeURIComponent(sid)}/profile/${encodeURIComponent(profileId)}` as any
           );
         },
       },
@@ -211,9 +211,6 @@ export default function TabLayout() {
         }}
       />
 
-      <Tabs.Screen name="post/[postId]" options={{ href: null }} />
-      <Tabs.Screen name="profile/[profileId]" options={{ href: null, headerShown: false }} />
-      <Tabs.Screen name="sheet/[profileId]" options={{ href: null, headerShown: false }} />
     </Tabs>
   );
 }

@@ -124,7 +124,7 @@ export default function HomeScreen() {
   const openPostDetail = useCallback(
     (postId: string) => {
       router.push({
-        pathname: "/(scenario)/[scenarioId]/(tabs)/post/[postId]",
+        pathname: "/(scenario)/[scenarioId]/post/[postId]",
         params: {
           scenarioId: sid,
           postId,

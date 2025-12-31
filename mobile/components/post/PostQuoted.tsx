@@ -82,7 +82,7 @@ export function PostQuoted({ sid, isDetail, quotedPostId, colors }: Props) {
       onPress={() => {
         if (!sid) return;
         router.push(
-          `/(scenario)/${encodeURIComponent(sid)}/(tabs)/post/${String(post.id)}` as any
+          `/(scenario)/${encodeURIComponent(sid)}/post/${String(post.id)}` as any
         );
       }}
       style={({ pressed }) => [

@@ -396,7 +396,7 @@ export function Post({
     if (!sid || !profile.id) return;
 
     router.push({
-      pathname: `/(scenario)/${encodeURIComponent(sid)}/(tabs)/profile/${encodeURIComponent(profile.id)}`,
+      pathname: `/(scenario)/${encodeURIComponent(sid)}/profile/${encodeURIComponent(profile.id)}`,
       params: view ? { view } : {},
     } as any);
   }
