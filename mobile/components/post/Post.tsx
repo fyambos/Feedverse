@@ -49,6 +49,9 @@ type Props = {
   isReposted?: boolean;
   onRepost?: () => void | Promise<void>;
 
+  // share 
+  onShare?: () => void;
+
   repostedByLabel?: string | null;
 };
 
@@ -90,6 +93,8 @@ export function Post({
 
   isReposted = false,
   onRepost,
+
+  onShare,
 
   repostedByLabel = null,
 }: Props) {
@@ -203,9 +208,7 @@ export function Post({
           gmProfileId={canUseGmMenu ? gmProfileId ?? undefined : undefined}
           getSheet={canUseGmMenu ? getCharacterSheetByProfileId : undefined}
           updateSheet={
-            canUseGmMenu
-              ? (profileId, next) => upsertCharacterSheet({ ...next, profileId })
-              : undefined
+            canUseGmMenu ? (profileId, next) => upsertCharacterSheet({ ...next, profileId }) : undefined
           }
           createGmPost={
             canUseGmMenu
@@ -276,6 +279,7 @@ export function Post({
             onLike={onLike}
             isReposted={isReposted}
             onRepost={onRepost}
+            onShare={onShare}
           />
         )}
       </View>
@@ -340,9 +344,7 @@ export function Post({
             gmProfileId={canUseGmMenu ? gmProfileId ?? undefined : undefined}
             getSheet={canUseGmMenu ? getCharacterSheetByProfileId : undefined}
             updateSheet={
-              canUseGmMenu
-                ? (profileId, next) => upsertCharacterSheet({ ...next, profileId })
-                : undefined
+              canUseGmMenu ? (profileId, next) => upsertCharacterSheet({ ...next, profileId }) : undefined
             }
             createGmPost={
               canUseGmMenu
@@ -385,14 +387,13 @@ export function Post({
               onLike={onLike}
               isReposted={isReposted}
               onRepost={onRepost}
+              onShare={onShare} 
             />
           )}
         </View>
       </View>
     </View>
   );
-
-
 
   // inside your component
   const segments = useSegments();
@@ -415,7 +416,6 @@ export function Post({
       ...(view ? { view } : {}),
     };
 
-    
     router.push({ pathname, params } as any);
   }
 }

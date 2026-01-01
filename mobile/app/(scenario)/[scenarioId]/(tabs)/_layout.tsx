@@ -116,7 +116,7 @@ export default function TabLayout() {
     <Tabs
       screenOptions={{
         tabBarActiveTintColor: colors.tint,
-        headerShown: false, // ✅ Home renders its own sticky header inside the screen
+        headerShown: false,
         tabBarButton: HapticTab,
       }}
     >

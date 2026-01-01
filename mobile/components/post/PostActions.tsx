@@ -147,9 +147,7 @@ export function PostActions({
               accessibilityRole="button"
               accessibilityLabel="Reply"
             >
-              <Animated.View
-                style={[styles.replyIconNudge, { transform: [{ scale: replyScale }] }]}
-              >
+              <Animated.View style={[styles.replyIconNudge, { transform: [{ scale: replyScale }] }]}>
                 <SimpleLineIcons name="bubble" size={20} color={colors.icon} />
               </Animated.View>
             </Pressable>
@@ -213,7 +211,7 @@ export function PostActions({
                 style={[
                   styles.actionCount,
                   styles.actionCountNudge,
-                  { color: colors.textSecondary, opacity: showRepostCount ? repostOffOpacity as any : 0 },
+                  { color: colors.textSecondary, opacity: showRepostCount ? (repostOffOpacity as any) : 0 },
                 ]}
               >
                 {showRepostCount ? formatCount(repostCount) : "0"}
@@ -224,7 +222,7 @@ export function PostActions({
                   styles.actionCount,
                   styles.repostCountOn,
                   styles.actionCountNudge,
-                  { color: colors.tint, opacity: showRepostCount ? repostOnOpacity as any : 0 },
+                  { color: colors.tint, opacity: showRepostCount ? (repostOnOpacity as any) : 0 },
                 ]}
               >
                 {showRepostCount ? formatCount(repostCount) : "0"}
@@ -295,8 +293,7 @@ export function PostActions({
             <Pressable
               onPress={() => {
                 pop(shareScale);
-                if (onShare) onShare();
-                else comingSoon("Sharing");
+                onShare?.(); // if undefined => does nothing
               }}
               hitSlop={6}
               pressRetentionOffset={6}
@@ -359,21 +356,22 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     borderWidth: 2,
   },
+
   iconBox: {
-  width: 26,
-  height: 26,
-  alignItems: "center",
-  justifyContent: "center",
-},
+    width: 26,
+    height: 26,
+    alignItems: "center",
+    justifyContent: "center",
+  },
 
-replyActionNudge: {
-  transform: [{ translateY: 1.5 }],
-},
+  replyActionNudge: {
+    transform: [{ translateY: 1.5 }],
+  },
 
-replyIconNudge: {
-  transform: [{ translateY: 1 }],
-},
-actionCountNudge: {
-  transform: [{ translateX: -4 }],
-},
+  replyIconNudge: {
+    transform: [{ translateY: 1 }],
+  },
+  actionCountNudge: {
+    transform: [{ translateX: -4 }],
+  },
 });
