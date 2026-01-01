@@ -10,8 +10,8 @@ import React, {
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import type { User, UserSettings } from "@/data/db/schema";
-import { updateDb } from "@/data/db/storage";
-import { useAppData } from "@/context/appData";
+import { readDb, updateDb } from "@/data/db/storage"; // ✅ add readDb, keep updateDb
+// ❌ remove: import { useAppData } from "@/context/appData";
 
 type AuthState = {
   isReady: boolean;
@@ -35,13 +35,8 @@ const KEY = "feedverse.auth.userId";
 const DEV_USER_ID = "u14";
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  // AppData is the single source of truth for the DB lifecycle
-  const app = useAppData();
-  const { isReady: appReady, db } = app;
-
   const [authReady, setAuthReady] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
-
   const [currentUser, setCurrentUser] = useState<User | null>(null);
 
   // hydrate stored auth id once
@@ -53,32 +48,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     })();
   }, []);
 
-  // keep currentUser in sync when app db or userId changes
-  useEffect(() => {
-    if (!authReady || !appReady) return;
-
-    if (!userId || !db) {
-      setCurrentUser(null);
-      return;
-    }
-
-    setCurrentUser((db as any)?.users?.[String(userId)] ?? null);
-  }, [authReady, appReady, userId, db]);
-
   const refreshCurrentUser = useCallback(async () => {
-    // since AppData owns db, "refresh" here is just re-reading from current db
-    if (!appReady || !db || !userId) {
+    if (!userId) {
       setCurrentUser(null);
       return;
     }
+
+    const db = await readDb();
     setCurrentUser((db as any)?.users?.[String(userId)] ?? null);
-  }, [appReady, db, userId]);
+  }, [userId]);
+
+  // keep currentUser in sync when userId changes
+  useEffect(() => {
+    if (!authReady) return;
+
+    if (!userId) {
+      setCurrentUser(null);
+      return;
+    }
+
+    // best-effort fetch from storage
+    refreshCurrentUser();
+  }, [authReady, userId, refreshCurrentUser]);
 
   const signInMock = useCallback(async () => {
     setUserId(DEV_USER_ID);
     await AsyncStorage.setItem(KEY, DEV_USER_ID);
-
-    // currentUser will sync from AppData db via effect
+    // currentUser will be refreshed by effect
   }, []);
 
   const signOut = useCallback(async () => {
@@ -95,13 +91,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const now = new Date().toISOString();
 
       const nextDb = await updateDb((prev) => {
-        const existing = prev.users?.[id];
+        const existing = (prev as any).users?.[id];
         if (!existing) return prev;
 
         return {
           ...prev,
           users: {
-            ...prev.users,
+            ...(prev as any).users,
             [id]: {
               ...existing,
               settings: {
@@ -127,13 +123,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const now = new Date().toISOString();
 
       const nextDb = await updateDb((prev) => {
-        const existing = prev.users?.[id];
+        const existing = (prev as any).users?.[id];
         if (!existing) return prev;
 
         return {
           ...prev,
           users: {
-            ...prev.users,
+            ...(prev as any).users,
             [id]: {
               ...existing,
               avatarUrl: avatarUrl ?? existing.avatarUrl,
@@ -150,7 +146,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const value = useMemo<AuthState>(
     () => ({
-      isReady: authReady && appReady,
+      // ✅ auth is ready when storage hydration is done
+      isReady: authReady,
       isLoggedIn: !!userId,
       userId,
 
@@ -165,7 +162,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }),
     [
       authReady,
-      appReady,
       userId,
       currentUser,
       signInMock,

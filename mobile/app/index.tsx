@@ -15,6 +15,8 @@ import { useAuth } from "@/context/auth";
 import { useAppData } from "@/context/appData";
 import { TagPill } from "@/components/ui/TagPill";
 
+import { createScenarioIO } from "@/lib/scenarioIO";
+
 const MAX_PLAYERS = 20;
 
 type ScenarioMenuState = {
@@ -42,7 +44,31 @@ export default function ScenarioListScreen() {
     transferScenarioOwnership,
     leaveScenario: leaveScenarioApi,
     deleteScenario: deleteScenarioApi,
+
+    // ✅ import/export APIs
+    previewImportScenarioFromFile,
+    importScenarioFromFile,
+    exportScenarioToFile,
   } = useAppData() as any;
+
+  const io = useMemo(
+  () =>
+    createScenarioIO({
+      isReady,
+      userId,
+      db,
+      previewImportScenarioFromFile,
+      importScenarioFromFile,
+      exportScenarioToFile,
+      onImportedNavigate: (scenarioId) => {
+        router.replace({
+          pathname: "/(scenario)/[scenarioId]",
+          params: { scenarioId },
+        } as any);
+      },
+    }),
+  [isReady, userId, db, previewImportScenarioFromFile, importScenarioFromFile, exportScenarioToFile]
+);
 
   const [menu, setMenu] = useState<ScenarioMenuState>({
     open: false,
@@ -91,11 +117,15 @@ export default function ScenarioListScreen() {
     if (!isReady) return [];
     const all = listScenarios?.() ?? [];
     const uid = String(userId ?? "").trim();
-    if (!uid) return all.sort((a: any, b: any) => {
-      const aTime = new Date(a.createdAt ?? 0).getTime();
-      const bTime = new Date(b.createdAt ?? 0).getTime();
-      return bTime - aTime;
-    });
+
+    if (!uid) {
+      return all.sort((a: any, b: any) => {
+        const aTime = new Date(a.createdAt ?? 0).getTime();
+        const bTime = new Date(b.createdAt ?? 0).getTime();
+        return bTime - aTime;
+      });
+    }
+
     return all
       .filter((s: any) => (s?.playerIds ?? []).map(String).includes(uid))
       .sort((a: any, b: any) => {
@@ -279,6 +309,16 @@ export default function ScenarioListScreen() {
     );
   };
 
+
+  const openExportChoice = () => {
+    const sid = String(menu.scenarioId ?? "").trim();
+    if (!sid) return;
+
+    io.openExportChoice(sid, {
+      onBeforeOpen: () => closeScenarioMenu(),
+    });
+  };
+
   const ScenarioMenuSheet = () => (
     <Modal transparent visible={menu.open} animationType="fade" onRequestClose={closeScenarioMenu}>
       <Pressable style={styles.menuBackdrop} onPress={closeScenarioMenu}>
@@ -314,6 +354,20 @@ export default function ScenarioListScreen() {
 
           <View style={[styles.menuDivider, { backgroundColor: colors.border }]} />
 
+          {/* ✅ Export */}
+          <Pressable
+            onPress={openExportChoice}
+            style={({ pressed }) => [
+              styles.menuItem,
+              { backgroundColor: pressed ? colors.pressed : "transparent" },
+            ]}
+          >
+            <Ionicons name="download-outline" size={18} color={colors.text} />
+            <ThemedText style={{ color: colors.text, fontSize: 15, fontWeight: "700" }}>
+              Export
+            </ThemedText>
+          </Pressable>
+          
           {/* Transfer ownership (owner-only) */}
           {!!userId &&
           !!menu.scenarioId &&
@@ -546,6 +600,17 @@ export default function ScenarioListScreen() {
           </ThemedText>
 
           <View style={[styles.topBarSide, styles.topBarActions]}>
+            {/* ✅ Top button = Import only */}
+            <Pressable
+              onPress={io.runImportFlow}
+              hitSlop={10}
+              style={({ pressed }) => [styles.headerIconBtn, pressed && { opacity: 0.6 }]}
+              accessibilityRole="button"
+              accessibilityLabel="Import scenario"
+            >
+              <Ionicons name="cloud-upload-outline" size={22} color={colors.icon} />
+            </Pressable>
+
             <Pressable
               onPress={openSettings}
               hitSlop={10}
@@ -621,14 +686,10 @@ export default function ScenarioListScreen() {
             const mode = (item as any)?.mode === "campaign" ? "campaign" : "story";
             const modeLabel = mode === "campaign" ? "CAMPAIGN" : "STORY";
 
-            // ✅ Theme-based styling
             const modeBorderColor = mode === "campaign" ? colors.tint : colors.border;
-
-            // background "tinted" without hardcoding: use pressed as base, stronger for campaign
             const modeBgColor = mode === "campaign" ? colors.pressed : "transparent";
-
-            // text: campaign = tint (visible), story = secondary (more neutral)
             const modeTextColor = mode === "campaign" ? colors.tint : colors.textSecondary;
+
             return (
               <Pressable
                 onPress={() => openScenario(String(item.id))}
@@ -648,9 +709,7 @@ export default function ScenarioListScreen() {
                       </ThemedText>
 
                       <View style={[styles.modePill, { borderColor: modeBorderColor, backgroundColor: modeBgColor }]}>
-                        <ThemedText style={[styles.modePillText, { color: modeTextColor }]}>
-                          {modeLabel}
-                        </ThemedText>
+                        <ThemedText style={[styles.modePillText, { color: modeTextColor }]}>{modeLabel}</ThemedText>
                       </View>
                     </View>
 
@@ -806,7 +865,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "flex-end",
   },
-  topBarActions: { gap: 14 },
+  topBarActions: { gap: 6 },
   topBarTitle: { fontSize: 18 },
 
   menuBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.35)", justifyContent: "flex-end" },
@@ -861,6 +920,7 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     padding: 14,
     justifyContent: "center",
+    marginBottom: 18,
   },
   confirmAvatar: {
     width: 56,
@@ -877,6 +937,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+
   modePill: {
     paddingHorizontal: 10,
     paddingVertical: 4,

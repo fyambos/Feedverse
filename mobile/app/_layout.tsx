@@ -1,3 +1,4 @@
+// mobile/app/_layout.tsx
 import React, { useEffect } from "react";
 import { ThemeProvider } from "@react-navigation/native";
 import { Stack, useRouter, useSegments } from "expo-router";
@@ -50,15 +51,16 @@ export default function RootLayout() {
   const colors = Colors[colorScheme]; 
 
   return (
-    <AppDataProvider>
-      <GestureHandlerRootView style={{ flex: 1, backgroundColor: colors.background }}>
-        <AuthProvider>
-          <ThemeProvider value={colorScheme === "dark" ? NavDarkTheme : NavLightTheme}>
-            <AuthGate />
-            <StatusBar style={colorScheme === "dark" ? "light" : "dark"} />
-          </ThemeProvider>
-        </AuthProvider>
-      </GestureHandlerRootView>
-    </AppDataProvider>
+    <AuthProvider>
+      <AppDataProvider>
+        <GestureHandlerRootView style={{ flex: 1, backgroundColor: colors.background }}>
+          
+            <ThemeProvider value={colorScheme === "dark" ? NavDarkTheme : NavLightTheme}>
+              <AuthGate />
+              <StatusBar style={colorScheme === "dark" ? "light" : "dark"} />
+            </ThemeProvider>
+        </GestureHandlerRootView>
+      </AppDataProvider>
+    </AuthProvider>
   );
 }

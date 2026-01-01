@@ -1,4 +1,4 @@
-// mobile/app/(scenario)/[scenarioId]/(tabs)/profile/[profileId].tsx
+// mobile/app/(scenario)/[scenarioId]/profile/[profileId].tsx
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Alert, StyleSheet, View } from "react-native";

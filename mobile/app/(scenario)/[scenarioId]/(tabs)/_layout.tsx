@@ -1,7 +1,7 @@
 // mobile/app/(scenario)/[scenarioId]/(tabs)/_layout.tsx
 import { Tabs, router, useLocalSearchParams, useSegments } from "expo-router";
-import React, { useEffect } from "react";
-import { Alert, Image, Platform, Pressable } from "react-native";
+import React, { useEffect, useMemo } from "react";
+import { Alert, Image, Platform, Pressable, View } from "react-native";
 
 import { HapticTab } from "@/components/haptic-tab";
 import { IconSymbol } from "@/components/ui/icon-symbol";
@@ -11,6 +11,7 @@ import { useColorScheme } from "@/hooks/use-color-scheme";
 import { useAppData } from "@/context/appData";
 import { Avatar } from "@/components/ui/Avatar";
 import { useAuth } from "@/context/auth";
+import { createScenarioIO } from "@/lib/scenarioIO";
 
 function TabIcon({
   iosName,
@@ -31,7 +32,7 @@ function TabIcon({
 
 export default function TabLayout() {
   const { scenarioId } = useLocalSearchParams<{ scenarioId: string }>();
-  const sid = String(scenarioId ?? "");
+  const sid = String(scenarioId ?? "").trim();
 
   const segments = useSegments();
 
@@ -39,10 +40,47 @@ export default function TabLayout() {
   const colors = Colors[colorScheme];
 
   const { userId } = useAuth();
-  const { isReady, db, getProfileById, getSelectedProfileId } = useAppData() as any;
 
-  const selectedProfileId = getSelectedProfileId?.(sid) ?? null;
-  const selectedProfile = selectedProfileId ? getProfileById(String(selectedProfileId)) : null;
+  const app = useAppData() as any;
+
+  const { isReady, db, getProfileById, getSelectedProfileId } = app;
+
+  const selectedProfileId = useMemo(
+    () => (sid ? getSelectedProfileId?.(sid) ?? null : null),
+    [getSelectedProfileId, sid]
+  );
+
+  const selectedProfile = useMemo(
+    () => (selectedProfileId ? getProfileById?.(String(selectedProfileId)) : null),
+    [getProfileById, selectedProfileId]
+  );
+
+  // ✅ Reusable import/export flows (same as index.tsx)
+  const io = useMemo(() => {
+    return createScenarioIO({
+      isReady,
+      userId,
+      db,
+      previewImportScenarioFromFile: app.previewImportScenarioFromFile,
+      importScenarioFromFile: app.importScenarioFromFile,
+      exportScenarioToFile: app.exportScenarioToFile,
+
+      // when import creates a new scenario, jump there
+      onImportedNavigate: (newScenarioId: string) => {
+        router.replace({
+          pathname: "/(scenario)/[scenarioId]",
+          params: { scenarioId: newScenarioId },
+        } as any);
+      },
+    });
+  }, [
+    isReady,
+    userId,
+    db,
+    app.previewImportScenarioFromFile,
+    app.importScenarioFromFile,
+    app.exportScenarioToFile,
+  ]);
 
   // ---- GATE: force create/select profile when entering a scenario ----
   useEffect(() => {
@@ -52,7 +90,6 @@ export default function TabLayout() {
     const path = segments.join("/");
     const inProfileSetupModal =
       path.includes("modal/create-profile") || path.includes("modal/select-profile");
-
     if (inProfileSetupModal) return;
 
     if (selectedProfileId) return;
@@ -77,7 +114,14 @@ export default function TabLayout() {
     } as any);
   }, [isReady, sid, selectedProfileId, segments, db, userId]);
 
-  // Scenario menu
+  // ✅ Export action for this scenario (same choice sheet as index)
+  const exportThisScenario = () => {
+    if (!sid) return;
+    // createScenarioIO should show “all profiles” vs “only my user”
+    io.openExportChoice?.(sid);
+  };
+
+  // Scenario menu (tap Feedverse icon)
   const openScenarioMenu = () => {
     const profileId = selectedProfile?.id ? String(selectedProfile.id) : null;
 
@@ -103,7 +147,10 @@ export default function TabLayout() {
           } as any);
         },
       },
-
+      {
+        text: "Export…",
+        onPress: exportThisScenario,
+      },
       {
         text: "Back to home",
         onPress: () => {
@@ -111,23 +158,6 @@ export default function TabLayout() {
             router.dismissAll();
           } catch {}
           router.replace("/" as any);
-        },
-      },
-
-      {
-        text: "More",
-        onPress: () => {
-          Alert.alert("More", "", [
-            {
-              text: "Import (coming soon)",
-              onPress: () => Alert.alert("Coming soon", "Import is not available yet."),
-            },
-            {
-              text: "Export (coming soon)",
-              onPress: () => Alert.alert("Coming soon", "Export is not available yet."),
-            },
-            { text: "Cancel", style: "cancel" },
-          ]);
         },
       },
       { text: "Cancel", style: "cancel" },
@@ -160,10 +190,13 @@ export default function TabLayout() {
               accessibilityRole="button"
               accessibilityLabel="Switch Profile"
             >
-              <Avatar uri={selectedProfile?.avatarUrl ?? null} size={30} fallbackColor={colors.border} />
+              <Avatar
+                uri={selectedProfile?.avatarUrl ?? null}
+                size={30}
+                fallbackColor={colors.border}
+              />
             </Pressable>
           ),
-
           headerTitle: () => (
             <Pressable
               onPress={openScenarioMenu}
@@ -179,8 +212,9 @@ export default function TabLayout() {
               />
             </Pressable>
           ),
-
-          tabBarIcon: ({ color }) => <TabIcon iosName="house.fill" androidIonicon="home" color={color} />,
+          tabBarIcon: ({ color }) => (
+            <TabIcon iosName="house.fill" androidIonicon="home" color={color} />
+          ),
         }}
       />
 
@@ -189,7 +223,9 @@ export default function TabLayout() {
         options={{
           title: "",
           headerTitle: "Search",
-          tabBarIcon: ({ color }) => <TabIcon iosName="magnifyingglass" androidIonicon="search" color={color} />,
+          tabBarIcon: ({ color }) => (
+            <TabIcon iosName="magnifyingglass" androidIonicon="search" color={color} />
+          ),
         }}
       />
 
@@ -198,7 +234,9 @@ export default function TabLayout() {
         options={{
           title: "",
           headerTitle: "Notifications",
-          tabBarIcon: ({ color }) => <TabIcon iosName="bell.fill" androidIonicon="notifications" color={color} />,
+          tabBarIcon: ({ color }) => (
+            <TabIcon iosName="bell.fill" androidIonicon="notifications" color={color} />
+          ),
         }}
       />
 
@@ -207,10 +245,11 @@ export default function TabLayout() {
         options={{
           title: "",
           headerTitle: "Direct Messages",
-          tabBarIcon: ({ color }) => <TabIcon iosName="envelope.fill" androidIonicon="mail" color={color} />,
+          tabBarIcon: ({ color }) => (
+            <TabIcon iosName="envelope.fill" androidIonicon="mail" color={color} />
+          ),
         }}
       />
-
     </Tabs>
   );
 }
