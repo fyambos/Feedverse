@@ -45,7 +45,7 @@ export default function ScenarioListScreen() {
     leaveScenario: leaveScenarioApi,
     deleteScenario: deleteScenarioApi,
 
-    // ✅ import/export APIs
+    //import/export APIs
     previewImportScenarioFromFile,
     importScenarioFromFile,
     exportScenarioToFile,
@@ -354,7 +354,7 @@ export default function ScenarioListScreen() {
 
           <View style={[styles.menuDivider, { backgroundColor: colors.border }]} />
 
-          {/* ✅ Export */}
+          {/* Export */}
           <Pressable
             onPress={openExportChoice}
             style={({ pressed }) => [
@@ -600,7 +600,7 @@ export default function ScenarioListScreen() {
           </ThemedText>
 
           <View style={[styles.topBarSide, styles.topBarActions]}>
-            {/* ✅ Top button = Import only */}
+            {/* Import */}
             <Pressable
               onPress={io.runImportFlow}
               hitSlop={10}

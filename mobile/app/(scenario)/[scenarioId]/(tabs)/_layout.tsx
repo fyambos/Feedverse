@@ -55,7 +55,6 @@ export default function TabLayout() {
     [getProfileById, selectedProfileId]
   );
 
-  // ✅ Reusable import/export flows (same as index.tsx)
   const io = useMemo(() => {
     return createScenarioIO({
       isReady,
@@ -114,7 +113,6 @@ export default function TabLayout() {
     } as any);
   }, [isReady, sid, selectedProfileId, segments, db, userId]);
 
-  // ✅ Export action for this scenario (same choice sheet as index)
   const exportThisScenario = () => {
     if (!sid) return;
     // createScenarioIO should show “all profiles” vs “only my user”

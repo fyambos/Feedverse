@@ -20,7 +20,7 @@ import { MOCK_SHEETS } from "@/mocks/sheets"; // ✅ NEW
 import { tagKeyFromInput, buildGlobalTagFromKey } from "@/lib/tags";
 
 /**
- * ✅ FORCE RESEED MODE
+ * FORCE RESEED MODE
  * Overwrites the entire local DB from mocks.
  */
 const FORCE_RESEED = false;

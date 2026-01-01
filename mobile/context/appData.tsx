@@ -66,7 +66,7 @@ type ProfileViewState =
   | "reported"
   | "privated";
 
-// ✅ GM: apply updates to sheets, then create a GM post that summarizes changes
+// GM: apply updates to sheets, then create a GM post that summarizes changes
 export type GmApplySheetUpdateArgs = {
   scenarioId: string;
   gmProfileId: string; // author of the GM summary post
@@ -384,7 +384,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
             if (!post) continue;
             if (post.parentPostId) continue;
 
-            // ✅ allow reposting your own post in the DB,
+            // allow reposting your own post in the DB,
             // but DO NOT return it as a separate feed item (avoids duplicate post.id rows)
             if (String(post.authorProfileId) === pid) continue;
 

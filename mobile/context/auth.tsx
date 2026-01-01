@@ -10,8 +10,7 @@ import React, {
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import type { User, UserSettings } from "@/data/db/schema";
-import { readDb, updateDb } from "@/data/db/storage"; // ✅ add readDb, keep updateDb
-// ❌ remove: import { useAppData } from "@/context/appData";
+import { readDb, updateDb } from "@/data/db/storage"; 
 
 type AuthState = {
   isReady: boolean;
@@ -146,7 +145,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const value = useMemo<AuthState>(
     () => ({
-      // ✅ auth is ready when storage hydration is done
+      // auth is ready when storage hydration is done
       isReady: authReady,
       isLoggedIn: !!userId,
       userId,

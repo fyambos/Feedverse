@@ -1,6 +1,6 @@
 // mobile/app/_layout.tsx
-import React, { useEffect } from "react";
-import { ThemeProvider } from "@react-navigation/native";
+import React, { useEffect, useMemo } from "react";
+import { ThemeProvider as NavThemeProvider } from "@react-navigation/native";
 import { Stack, useRouter, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import "react-native-reanimated";
@@ -8,16 +8,18 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { AuthProvider, useAuth } from "@/context/auth";
-import { NavDarkTheme, NavLightTheme } from "@/constants/navigation-theme";
 import { AppDataProvider } from "@/context/appData";
+import { NavDarkTheme, NavLightTheme } from "@/constants/navigation-theme";
 import { Colors } from "@/constants/theme";
+
+import { ThemeProvider as AppThemeProvider, DarkMode } from "@/context/theme";
 
 function AuthGate() {
   const { isReady, isLoggedIn } = useAuth();
   const segments = useSegments();
   const router = useRouter();
 
-  const scheme = useColorScheme() ?? "light"; 
+  const scheme = useColorScheme() ?? "light";
   const colors = Colors[scheme];
 
   useEffect(() => {
@@ -40,26 +42,47 @@ function AuthGate() {
     <Stack
       screenOptions={{
         headerShown: false,
-        contentStyle: { backgroundColor: colors.background }, 
+        contentStyle: { backgroundColor: colors.background },
       }}
     />
   );
 }
 
-export default function RootLayout() {
-  const colorScheme = useColorScheme() ?? "light";
-  const colors = Colors[colorScheme]; 
+function AppShell() {
+  const { currentUser } = useAuth();
 
+  // user setting drives theme (safe + typed)
+  const mode = useMemo<DarkMode>(() => {
+    const m = currentUser?.settings?.darkMode;
+    return (m === "light" || m === "dark" || m === "system") ? m : "system";
+  }, [currentUser?.settings?.darkMode]);
+
+  return (
+    <AppThemeProvider mode={mode}>
+      <ThemedNavigation />
+    </AppThemeProvider>
+  );
+}
+
+function ThemedNavigation() {
+  const scheme = useColorScheme() ?? "light";
+  const colors = Colors[scheme];
+
+  return (
+    <GestureHandlerRootView style={{ flex: 1, backgroundColor: colors.background }}>
+      <NavThemeProvider value={scheme === "dark" ? NavDarkTheme : NavLightTheme}>
+        <AuthGate />
+        <StatusBar style={scheme === "dark" ? "light" : "dark"} />
+      </NavThemeProvider>
+    </GestureHandlerRootView>
+  );
+}
+
+export default function RootLayout() {
   return (
     <AuthProvider>
       <AppDataProvider>
-        <GestureHandlerRootView style={{ flex: 1, backgroundColor: colors.background }}>
-          
-            <ThemeProvider value={colorScheme === "dark" ? NavDarkTheme : NavLightTheme}>
-              <AuthGate />
-              <StatusBar style={colorScheme === "dark" ? "light" : "dark"} />
-            </ThemeProvider>
-        </GestureHandlerRootView>
+        <AppShell />
       </AppDataProvider>
     </AuthProvider>
   );

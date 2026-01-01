@@ -46,7 +46,7 @@ export default function SelectProfileModal() {
     getSelectedProfileId,
     setSelectedProfileId,
     db,
-    getScenarioById, // ✅ need scenario settings
+    getScenarioById,
   } = useAppData() as any;
 
   const usersMap = (db as any)?.users ?? {};
@@ -89,7 +89,7 @@ const allProfiles = React.useMemo<Profile[]>(() => {
 
   const totalScenarioCount = React.useMemo(() => allProfiles.length, [allProfiles]);
 
-  // ✅ creation rule depends on scenario setting
+  // creation rule depends on scenario setting
   const canCreate = React.useMemo(() => {
     if (profileLimitMode === "per_scenario") {
       return totalScenarioCount < MAX_TOTAL_PROFILES_PER_SCENARIO;

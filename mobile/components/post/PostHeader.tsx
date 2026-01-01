@@ -31,7 +31,6 @@ type Props = {
   showMenu?: boolean;
   isInteractive?: boolean;
 
-  // ✅ NEW
   showTimestamps?: boolean;
 };
 
