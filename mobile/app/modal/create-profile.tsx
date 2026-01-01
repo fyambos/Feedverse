@@ -80,10 +80,11 @@ export default function CreateProfileModal() {
   const [isPrivate, setIsPrivate] = useState<boolean>(existing?.isPrivate ?? false);
 
   const [followingText, setFollowingText] = useState<string>(
-    existing && (existing as any)?.following != null ? String((existing as any).following) : ""
+    existing && (existing as any)?.followingCount != null ? String((existing as any).followingCount) : ""
   );
+
   const [followersText, setFollowersText] = useState<string>(
-    existing && (existing as any)?.followers != null ? String((existing as any).followers) : ""
+    existing && (existing as any)?.followerCount != null ? String((existing as any).followerCount) : ""
   );
 
   const initialJoinedISO = (existing as any)?.joinedDate ?? existing?.createdAt ?? new Date().toISOString();
@@ -131,19 +132,18 @@ export default function CreateProfileModal() {
       const now = new Date().toISOString();
       const createdAt = existing?.createdAt ?? now;
 
-      const followers = followersText.trim().length
+     const followerCount = followersText.trim().length
         ? clampInt(Number(digitsOnly(followersText)) || 0, 0, PROFILE_LIMITS.MAX_COUNT)
         : undefined;
 
-      const rawFollowing = followingText.trim().length
+      const rawFollowingCount = followingText.trim().length
         ? clampInt(Number(digitsOnly(followingText)) || 0, 0, PROFILE_LIMITS.MAX_COUNT)
         : undefined;
 
-      let following = rawFollowing;
+      let followingCount = rawFollowingCount;
 
-      // keep invariant: following < followers when possible (only if both exist)
-      if (followers != null && following != null && followers > 0 && following >= followers) {
-        following = Math.max(0, followers - 1);
+      if (followerCount != null && followingCount != null && followerCount > 0 && followingCount >= followerCount) {
+        followingCount = Math.max(0, followerCount - 1);
       }
 
       await upsertProfile({
@@ -160,8 +160,8 @@ export default function CreateProfileModal() {
         isPublic,
         isPrivate,
 
-        followers,
-        following,
+        followerCount,
+        followingCount,
         joinedDate: joinedDate.toISOString(),
         location: safeLocation ? safeLocation : undefined,
         link: safeLink ? safeLink : undefined,
