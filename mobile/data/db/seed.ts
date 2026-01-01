@@ -16,7 +16,7 @@ import { MOCK_FEEDS } from "@/mocks/posts";
 import { MOCK_PROFILES } from "@/mocks/profiles";
 import { MOCK_USERS } from "@/mocks/users";
 import { MOCK_SCENARIOS } from "@/mocks/scenarios";
-import { MOCK_SHEETS } from "@/mocks/sheets"; // ✅ NEW
+import { MOCK_SHEETS } from "@/mocks/sheets";
 import { tagKeyFromInput, buildGlobalTagFromKey } from "@/lib/tags";
 
 /**

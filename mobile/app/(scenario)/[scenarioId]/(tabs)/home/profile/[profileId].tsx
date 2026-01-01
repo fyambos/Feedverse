@@ -87,7 +87,7 @@ export default function ProfileScreen() {
   const scenario = useMemo(() => getScenarioById?.(sid) ?? null, [sid, getScenarioById]);
   const isCampaign = String((scenario as any)?.mode ?? "story") === "campaign";
 
-  // ✅ compute once; reuse everywhere (prevents stale/undefined inline calls)
+  // compute once; reuse everywhere (prevents stale/undefined inline calls)
   const selectedProfileId = useMemo(() => {
     try {
       return getSelectedProfileId?.(sid) ?? null;
@@ -386,7 +386,6 @@ export default function ProfileScreen() {
     } as any);
   }, [profile, sid]);
 
-  // ✅ make it always "work":
   // - if no selected profile, send them to select-profile (forced)
   // - else open create-post
   const openCreatePost = useCallback(() => {
@@ -506,7 +505,7 @@ export default function ProfileScreen() {
 
   const shouldHidePostsAndShowMessage = isBlockedBy || isBlocked || isSuspended || isPrivated;
 
-  // ✅ SHOW FAB when:
+  // SHOW FAB when:
   // - normal/muted
   // - not blocked/privated/etc
   // - AND (a selected profile exists OR you’re on your own profile)
