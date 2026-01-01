@@ -83,9 +83,18 @@ export default function ProfileScreen() {
   const pid = decodeURIComponent(String(profileId ?? ""));
 
   const profile = useMemo(() => getProfileById(String(pid)), [pid, getProfileById]);
-  
+
   const scenario = useMemo(() => getScenarioById?.(sid) ?? null, [sid, getScenarioById]);
   const isCampaign = String((scenario as any)?.mode ?? "story") === "campaign";
+
+  // ✅ compute once; reuse everywhere (prevents stale/undefined inline calls)
+  const selectedProfileId = useMemo(() => {
+    try {
+      return getSelectedProfileId?.(sid) ?? null;
+    } catch {
+      return null;
+    }
+  }, [getSelectedProfileId, sid]);
 
   const isOwnerOfProfile = useMemo(() => {
     if (!profile || !userId) return false;
@@ -94,7 +103,9 @@ export default function ProfileScreen() {
 
   const isGm = useMemo(() => {
     if (!scenario || !userId) return false;
-    const gmIds: string[] = Array.isArray((scenario as any).gmUserIds) ? (scenario as any).gmUserIds.map(String) : [];
+    const gmIds: string[] = Array.isArray((scenario as any).gmUserIds)
+      ? (scenario as any).gmUserIds.map(String)
+      : [];
     return gmIds.includes(String(userId));
   }, [scenario, userId]);
 
@@ -103,13 +114,13 @@ export default function ProfileScreen() {
     return !!getCharacterSheetByProfileId?.(String(profile.id));
   }, [profile, getCharacterSheetByProfileId]);
 
-  const selectedId = getSelectedProfileId(sid);
-  const isCurrentSelected = !!profile && !!selectedId && String(selectedId) === String(profile.id);
+  const isCurrentSelected =
+    !!profile && !!selectedProfileId && String(selectedProfileId) === String(profile.id);
 
   const canModifyProfile = canEditProfile({
     profile,
     userId,
-    selectedProfileId: selectedId ? String(selectedId) : null,
+    selectedProfileId: selectedProfileId ? String(selectedProfileId) : null,
   });
 
   const [activeTab, setActiveTab] = useState<ProfileTab>("posts");
@@ -243,7 +254,6 @@ export default function ProfileScreen() {
     return null;
   }, [isBlockedBy, isBlocked, isSuspended, isPrivated, at]);
 
-  // we show the banner only when the viewing profile reposted that post and the post is not authored by them
   const repostLabelForPost = useCallback(
     (postAuthorProfileId: string, postId: string) => {
       if (!profile) return null;
@@ -272,7 +282,6 @@ export default function ProfileScreen() {
       ? "No likes yet."
       : "No posts yet.";
 
-  // ===== FEED (uses listProfileFeedPage so reposts bump to top) =====
   const [items, setItems] = useState<any[]>([]);
   const [cursor, setCursor] = useState<Cursor>(null);
   const [hasMore, setHasMore] = useState(true);
@@ -286,12 +295,11 @@ export default function ProfileScreen() {
     const page = listProfileFeedPage({
       scenarioId: sid,
       profileId: String(profile.id),
-      tab: activeTab, // "posts" includes repost events ordered by repost createdAt
+      tab: activeTab,
       limit: PAGE_SIZE,
       cursor: null,
     });
 
-    // ProfilePostsList still expects DbPost[], so we pass the underlying post objects.
     setItems(page.items.map((it: any) => it.post));
     setCursor(page.nextCursor);
     setHasMore(!!page.nextCursor);
@@ -378,11 +386,19 @@ export default function ProfileScreen() {
     } as any);
   }, [profile, sid]);
 
+  // ✅ make it always "work":
+  // - if no selected profile, send them to select-profile (forced)
+  // - else open create-post
   const openCreatePost = useCallback(() => {
-    // requires a selected profile (posting identity)
-    const selected = getSelectedProfileId(sid);
+    if (!sid) return;
+
+    const selected = selectedProfileId;
+
     if (!selected) {
-      Alert.alert("Select a profile", "Choose a profile first to create a post.");
+      router.push({
+        pathname: "/modal/select-profile",
+        params: { scenarioId: sid, forced: "1" },
+      } as any);
       return;
     }
 
@@ -390,8 +406,7 @@ export default function ProfileScreen() {
       pathname: "/modal/create-post",
       params: { scenarioId: sid },
     } as any);
-  }, [sid, getSelectedProfileId]);
-  
+  }, [sid, selectedProfileId]);
 
   if (!isReady) {
     return (
@@ -491,12 +506,24 @@ export default function ProfileScreen() {
 
   const shouldHidePostsAndShowMessage = isBlockedBy || isBlocked || isSuspended || isPrivated;
 
+  // ✅ SHOW FAB when:
+  // - normal/muted
+  // - not blocked/privated/etc
+  // - AND (a selected profile exists OR you’re on your own profile)
+  const canShowFab =
+    (viewState === "normal" || viewState === "muted") &&
+    !shouldHidePostsAndShowMessage &&
+    (!!selectedProfileId || isOwnerOfProfile);
+
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <ThemedView style={[styles.screen, { backgroundColor: colors.background }]}>
-        {(viewState === "normal" || viewState === "muted") && !!getSelectedProfileId(sid) && !shouldHidePostsAndShowMessage ? (
-          <CreatePostFab scenarioId={sid} colors={colors as any} onPress={openCreatePost} />
-        ) : null}
+        <View pointerEvents="box-none" style={styles.fabLayer}>
+          {canShowFab ? (
+            <CreatePostFab scenarioId={sid} colors={colors as any} onPress={openCreatePost} />
+          ) : null}
+        </View>
+
         {shouldHidePostsAndShowMessage ? (
           <View>
             {headerEl}
@@ -528,10 +555,8 @@ export default function ProfileScreen() {
             onDeletePost={onDeletePost}
             ListHeaderComponent={headerEl}
             emptyText={emptyText}
-            // likes
             getIsLiked={(postId: string) => isPostLikedBySelectedProfile(sid, String(postId))}
             onLikePost={(postId: string) => toggleLike(sid, String(postId))}
-            // reposts
             getIsReposted={(postId: string) => isPostRepostedBySelectedProfile(sid, String(postId))}
             onRepostPost={(postId: string) => toggleRepost(sid, String(postId))}
             repostLabelForPost={(postAuthorProfileId: string, postId: string) =>
@@ -608,4 +633,11 @@ const styles = StyleSheet.create({
   deactivatedAvatarOuter: { width: 88, height: 88, borderRadius: 999, padding: 4 },
   deactivatedAvatarInner: { width: 80, height: 80, borderRadius: 999, opacity: 0.35 },
   deactivatedBody: { paddingTop: 22, paddingHorizontal: 16 },
+
+  fabLayer: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 50,
+    elevation: 50,
+    pointerEvents: "box-none",
+  },
 });
