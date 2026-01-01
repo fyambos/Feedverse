@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { FlatList, StyleSheet, View, Pressable, ActivityIndicator } from "react-native";
-import { router, useLocalSearchParams, usePathname } from "expo-router";
+import { FlatList, StyleSheet, View, Pressable, ActivityIndicator, Image, Alert } from "react-native";
+import { router, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 import { ThemedView } from "@/components/themed-view";
 import { ThemedText } from "@/components/themed-text";
@@ -13,6 +14,8 @@ import { useAuth } from "@/context/auth";
 import { useAppData } from "@/context/appData";
 import { SwipeableRow } from "@/components/ui/SwipeableRow";
 import { canEditPost } from "@/lib/permission";
+import { Avatar } from "@/components/ui/Avatar";
+import { createScenarioIO } from "@/lib/scenarioIO";
 
 type Cursor = string | null;
 const PAGE_SIZE = 12;
@@ -21,14 +24,16 @@ export default function HomeScreen() {
   const { scenarioId } = useLocalSearchParams<{ scenarioId: string }>();
   const sid = String(scenarioId ?? "");
 
-
-
   const scheme = useColorScheme() ?? "light";
   const colors = Colors[scheme];
 
   const { userId } = useAuth();
+  const app = useAppData() as any;
+
   const {
     isReady,
+    db,
+
     listPostsPage,
     getProfileById,
     deletePost,
@@ -38,8 +43,90 @@ export default function HomeScreen() {
 
     toggleRepost,
     isPostRepostedBySelectedProfile,
-  } = useAppData();
 
+    getSelectedProfileId,
+
+    previewImportScenarioFromFile,
+    importScenarioFromFile,
+    exportScenarioToFile,
+  } = app;
+
+  const selectedProfileId = useMemo(() => {
+    try {
+      return getSelectedProfileId?.(sid) ?? null;
+    } catch {
+      return null;
+    }
+  }, [getSelectedProfileId, sid]);
+
+  const selectedProfile = useMemo(() => {
+    const pid = selectedProfileId ? String(selectedProfileId) : "";
+    return pid ? getProfileById?.(pid) ?? null : null;
+  }, [getProfileById, selectedProfileId]);
+
+  const io = useMemo(() => {
+    return createScenarioIO({
+      isReady,
+      userId,
+      db,
+      previewImportScenarioFromFile,
+      importScenarioFromFile,
+      exportScenarioToFile,
+      onImportedNavigate: (newScenarioId: string) => {
+        router.replace({
+          pathname: "/(scenario)/[scenarioId]",
+          params: { scenarioId: newScenarioId },
+        } as any);
+      },
+    });
+  }, [isReady, userId, db, previewImportScenarioFromFile, importScenarioFromFile, exportScenarioToFile]);
+
+  const exportThisScenario = useCallback(() => {
+    if (!sid) return;
+    io.openExportChoice?.(sid);
+  }, [io, sid]);
+
+  const openScenarioMenu = useCallback(() => {
+    const profileId = selectedProfile?.id ? String(selectedProfile.id) : null;
+
+    Alert.alert("Scenario menu", "", [
+      {
+        text: "Profile",
+        onPress: () => {
+          if (!profileId) {
+            Alert.alert("No profile selected", "Select a profile first.");
+            return;
+          }
+          router.push({
+            pathname: "/(scenario)/[scenarioId]/home/profile/[profileId]",
+            params: { scenarioId: sid, profileId },
+          } as any);
+        },
+      },
+      {
+        text: "View Settings",
+        onPress: () => {
+          router.push({
+            pathname: "/modal/create-scenario",
+            params: { scenarioId: sid },
+          } as any);
+        },
+      },
+      { text: "Export…", onPress: exportThisScenario },
+      {
+        text: "Back to home",
+        onPress: () => {
+          try {
+            router.dismissAll();
+          } catch {}
+          router.replace("/" as any);
+        },
+      },
+      { text: "Cancel", style: "cancel" },
+    ]);
+  }, [exportThisScenario, selectedProfile?.id, sid]);
+
+  // ===== FEED =====
   const [items, setItems] = useState<any[]>([]);
   const [cursor, setCursor] = useState<Cursor>(null);
   const [hasMore, setHasMore] = useState(true);
@@ -52,7 +139,6 @@ export default function HomeScreen() {
     if (!isReady) return;
 
     const page = listPostsPage({ scenarioId: sid, limit: PAGE_SIZE, cursor: null });
-
     setItems(page.items);
     setCursor(page.nextCursor);
     setHasMore(!!page.nextCursor);
@@ -87,9 +173,9 @@ export default function HomeScreen() {
     if (isReady) loadFirstPage();
   }, [sid, isReady, loadFirstPage]);
 
-  const navLock = React.useRef(false);
+  const navLock = useRef(false);
 
-  const openCreatePost = () => {
+  const openCreatePost = useCallback(() => {
     if (navLock.current) return;
     navLock.current = true;
 
@@ -101,7 +187,7 @@ export default function HomeScreen() {
     setTimeout(() => {
       navLock.current = false;
     }, 450);
-  };
+  }, [sid]);
 
   const openEditPost = useCallback(
     (postId: string) => {
@@ -122,8 +208,6 @@ export default function HomeScreen() {
         params: {
           scenarioId: sid,
           postId: String(postId),
-
-          // fallback if no back stack
           from: "/(scenario)/[scenarioId]/(tabs)/home",
         },
       } as any);
@@ -139,6 +223,48 @@ export default function HomeScreen() {
     [deletePost, loadFirstPage]
   );
 
+  const Header = useMemo(() => {
+    return (
+      <SafeAreaView edges={["top"]} style={{ backgroundColor: colors.background }}>
+        <View style={[styles.topbar, { borderBottomColor: colors.border }]}>
+          {/* Left: avatar -> select profile */}
+          <Pressable
+            onPress={() =>
+              router.push({
+                pathname: "/modal/select-profile",
+                params: { scenarioId: sid },
+              } as any)
+            }
+            hitSlop={12}
+            style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}
+          >
+            <Avatar uri={selectedProfile?.avatarUrl ?? null} size={30} fallbackColor={colors.border} />
+          </Pressable>
+
+          {/* Center: logo -> menu */}
+          <View style={{ flex: 1, alignItems: "center" }}>
+            <Pressable
+              onPress={openScenarioMenu}
+              hitSlop={12}
+              accessibilityRole="button"
+              accessibilityLabel="Scenario menu"
+              style={({ pressed }) => [{ opacity: pressed ? 0.75 : 1 }]}
+            >
+              <Image
+                source={require("@/assets/images/FeedverseIcon.png")}
+                style={{ width: 32, height: 32 }}
+                resizeMode="contain"
+              />
+            </Pressable>
+          </View>
+
+          {/* Right spacer for symmetry */}
+          <View style={{ width: 30 }} />
+        </View>
+      </SafeAreaView>
+    );
+  }, [colors.background, colors.border, openScenarioMenu, selectedProfile?.avatarUrl, sid]);
+
   const data = useMemo(() => items, [items]);
 
   return (
@@ -147,6 +273,8 @@ export default function HomeScreen() {
         data={data}
         keyExtractor={(item) => String(item.id)}
         contentContainerStyle={styles.list}
+        ListHeaderComponent={Header}
+        stickyHeaderIndices={[0]}
         ItemSeparatorComponent={() => <View style={[styles.separator, { backgroundColor: colors.border }]} />}
         onEndReachedThreshold={0.6}
         onEndReached={() => {
@@ -243,6 +371,17 @@ export default function HomeScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  list: { paddingVertical: 8 },
+
+  // IMPORTANT: don't add top padding here (the header is already in the list)
+  list: { paddingBottom: 8 },
+
   separator: { height: StyleSheet.hairlineWidth, opacity: 0.8 },
+
+  topbar: {
+    height: 44,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
 });
