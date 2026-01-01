@@ -24,6 +24,7 @@ import { ProfileBioBlock } from "@/components/profile/ProfileBioBlock";
 import { ProfileTabsBar, type ProfileTab } from "@/components/profile/ProfileTabsBar";
 import { ProfilePostsList } from "@/components/profile/ProfilePostsList";
 import { ProfileStatusOverlay } from "@/components/profile/ProfileStatusOverlay";
+import { CreatePostFab } from "@/components/post/CreatePostFab";
 import type { ProfileOverlayConfig, ProfileViewState } from "@/components/profile/profileTypes";
 
 type Cursor = string | null;
@@ -376,6 +377,20 @@ export default function ProfileScreen() {
       params: { scenarioId: sid, profileId: String(profile.id) },
     } as any);
   }, [profile, sid]);
+
+  const openCreatePost = useCallback(() => {
+    // requires a selected profile (posting identity)
+    const selected = getSelectedProfileId(sid);
+    if (!selected) {
+      Alert.alert("Select a profile", "Choose a profile first to create a post.");
+      return;
+    }
+
+    router.push({
+      pathname: "/modal/create-post",
+      params: { scenarioId: sid },
+    } as any);
+  }, [sid, getSelectedProfileId]);
   
 
   if (!isReady) {
@@ -479,6 +494,9 @@ export default function ProfileScreen() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <ThemedView style={[styles.screen, { backgroundColor: colors.background }]}>
+        {(viewState === "normal" || viewState === "muted") && !!getSelectedProfileId(sid) && !shouldHidePostsAndShowMessage ? (
+          <CreatePostFab scenarioId={sid} colors={colors as any} onPress={openCreatePost} />
+        ) : null}
         {shouldHidePostsAndShowMessage ? (
           <View>
             {headerEl}
