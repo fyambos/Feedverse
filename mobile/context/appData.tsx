@@ -1,9 +1,14 @@
 // mobile/context/appData.tsx
 import React from "react";
 import type { DbV5, Post, Profile, Scenario, Repost, ScenarioTag, CharacterSheet } from "@/data/db/schema";
-import { readDb, updateDb } from "@/data/db/storage";
+import { readDb, updateDb, writeDb } from "@/data/db/storage";
 import { seedDbIfNeeded } from "@/data/db/seed";
 import { buildGlobalTagFromKey } from "@/lib/tags";
+import { pickScenarioExportJson } from "@/lib/importExport/importFromFile";
+import { importScenarioFromJson } from "@/lib/importExport/importScenario";
+import { useAuth } from "@/context/auth"; 
+import { buildScenarioExportBundleV1 } from "@/lib/importExport/exportScenarioBundle";
+import { saveAndShareScenarioExport } from "@/lib/importExport/exportScenario";
 
 type AppDataState = {
   isReady: boolean;
@@ -135,8 +140,57 @@ type AppDataApi = {
   getCharacterSheetByProfileId: (profileId: string) => CharacterSheet | null;
   upsertCharacterSheet: (sheet: CharacterSheet) => Promise<void>;
 
-  // ✅ GM helper
+  // GM helper
   gmApplySheetUpdate: (args: GmApplySheetUpdateArgs) => Promise<GmApplySheetUpdateResult>;
+
+  // import/export
+  importScenarioFromFile: (args: {
+    includeProfiles: boolean;
+    includePosts: boolean;
+    includeReposts: boolean;
+    includeSheets: boolean;
+  }) => Promise<
+    | { ok: true; scenarioId: string; importedProfiles: number; importedPosts: number; renamedHandles: Array<{from:string;to:string}> }
+    | { ok: false; error: string }
+  >;
+  exportScenarioToFile: (args: {
+    scenarioId: string;
+    includeProfiles: boolean;
+    includePosts: boolean;
+    includeReposts: boolean;
+    includeSheets: boolean;
+    profileIds?: string[]; // if undefined => export all scenario profiles
+  }) => Promise<
+    | { ok: true; uri: string; filename: string; counts: { profiles: number; posts: number; reposts: number; sheets: number } }
+    | { ok: false; error: string }
+  >;
+  previewImportScenarioFromFile: (args: {
+    includeProfiles: boolean;
+    includePosts: boolean;
+    includeReposts: boolean;
+    includeSheets: boolean;
+  }) => Promise<
+    | {
+        ok: true;
+        fileName?: string;
+        jsonBytes: number;
+        preview: {
+          willCreateNewScenarioId: boolean;
+          importedProfiles: number;
+          importedPosts: number;
+          importedReposts: number;
+          importedSheets: number;
+          renamedHandles: Array<{ from: string; to: string }>;
+          skipped: {
+            profilesDueToLimit: number;
+            postsDueToMissingProfile: number;
+            repostsDueToMissingProfileOrPost: number;
+            sheetsDueToMissingProfile: number;
+          };
+        };
+      }
+    | { ok: false; error: string }
+  >;
 };
 
 const Ctx = React.createContext<(AppDataState & AppDataApi) | null>(null);
@@ -176,7 +230,7 @@ function makeFeedCursor(item: ProfileFeedItem): FeedCursor {
   return `${String(item.activityAt)}|${String(item.kind)}|${String(item.post.id)}|${rep}`;
 }
 
-// ✅ small util: diff shallow keys for GM post text
+// small util: diff shallow keys for GM post text
 function diffShallow(prev: any, next: any): string[] {
   const lines: string[] = [];
   const keys = new Set<string>([
@@ -224,6 +278,9 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const db = state.db;
+
+  const auth = useAuth();
+  const currentUserId = String(auth.userId ?? "");
 
   const api = React.useMemo<AppDataApi>(() => {
     return {
@@ -918,7 +975,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         setState({ isReady: true, db: nextDb as any });
       },
 
-      // ✅ GM: apply patch to 1+ sheets, then create a GM post that logs the diff
+      // GM: apply patch to 1+ sheets, then create a GM post that logs the diff
       gmApplySheetUpdate: async ({ scenarioId, gmProfileId, targetProfileIds, patch, label }) => {
         const sid = String(scenarioId ?? "").trim();
         const gmId = String(gmProfileId ?? "").trim();
@@ -1004,8 +1061,108 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         // NOTE: summaryText / updatedProfileIds were set inside updateDb closure
         return { postId, updatedProfileIds, summaryText };
       },
+
+      // --- import/export
+      importScenarioFromFile: async ({ includeProfiles, includePosts, includeReposts, includeSheets }) => {
+        if (!db) return { ok: false, error: "DB not ready" };
+        if (!auth.isReady) return { ok: false, error: "Auth not ready" };
+        if (!currentUserId) return { ok: false, error: "Not signed in" };
+
+        const picked = await pickScenarioExportJson();
+        if (!picked.ok) return picked;
+
+        const res = importScenarioFromJson(picked.raw, {
+          db,
+          currentUserId,
+          includeProfiles,
+          includePosts,
+          includeReposts,
+          includeSheets,
+          forceNewScenarioId: true,
+        });
+
+        if (!res.ok) return res;
+
+        // persist
+        await writeDb(res.nextDb); // OR updateDb(() => res.nextDb)
+        setState({ isReady: true, db: res.nextDb });
+
+        return {
+          ok: true,
+          scenarioId: res.imported.scenarioId,
+          importedProfiles: res.imported.profiles,
+          importedPosts: res.imported.posts,
+          renamedHandles: res.imported.renamedHandles,
+        };
+      },
+      
+      exportScenarioToFile: async ({ scenarioId, includeProfiles, includePosts, includeReposts, includeSheets, profileIds }) => {
+        try {
+          if (!db) return { ok: false, error: "DB not ready" };
+
+          const scope = {
+            includeProfiles,
+            includePosts,
+            includeReposts,
+            includeSheets,
+            exportAllProfiles: !profileIds || profileIds.length === 0,
+            selectedProfileIds: profileIds ?? [],
+          };
+
+          const bundle = buildScenarioExportBundleV1(db, scenarioId, scope);
+
+          const { uri, filename } = await saveAndShareScenarioExport(bundle);
+
+          const counts = {
+            profiles: bundle.profiles?.length ?? 0,
+            posts: bundle.posts?.length ?? 0,
+            reposts: bundle.reposts?.length ?? 0,
+            sheets: bundle.sheets?.length ?? 0,
+          };
+
+          return { ok: true, uri, filename, counts };
+        } catch (e: any) {
+          return { ok: false, error: String(e?.message ?? e) };
+        }
+      },
+
+      previewImportScenarioFromFile: async ({ includeProfiles, includePosts, includeReposts, includeSheets }) => {
+        if (!db) return { ok: false, error: "DB not ready" };
+        if (!currentUserId) return { ok: false, error: "Not signed in" };
+
+        const picked = await pickScenarioExportJson();
+        if (!picked.ok) return picked;
+
+        const res = importScenarioFromJson(picked.raw, {
+          db,
+          currentUserId,
+          includeProfiles,
+          includePosts,
+          includeReposts,
+          includeSheets,
+          forceNewScenarioId: true,
+        });
+
+        if (!res.ok) return res;
+
+        return {
+          ok: true,
+          fileName: picked.fileName,
+          jsonBytes: picked.jsonBytes,
+          preview: {
+            willCreateNewScenarioId: true,
+            importedProfiles: res.imported.profiles,
+            importedPosts: res.imported.posts,
+            importedReposts: res.imported.reposts,
+            importedSheets: res.imported.sheets,
+            renamedHandles: res.imported.renamedHandles,
+            skipped: res.imported.skipped,
+          },
+        };
+      },
     };
-  }, [db]);
+  }, [db, currentUserId]);
+  
 
   return <Ctx.Provider value={{ ...state, ...api }}>{children}</Ctx.Provider>;
 }

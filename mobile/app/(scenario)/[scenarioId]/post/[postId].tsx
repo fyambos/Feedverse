@@ -1,4 +1,4 @@
-// mobile/app/(scenario)/[scenarioId]/(tabs)/post/[postId].tsx
+// mobile/app/(scenario)/[scenarioId]/post/[postId].tsx
 
 import React, { useCallback, useMemo } from "react";
 import { FlatList, Pressable, StyleSheet, View } from "react-native";
