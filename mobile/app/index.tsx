@@ -142,7 +142,7 @@ export default function ScenarioListScreen() {
     // if you already have a selected profile for this scenario => go in
     const selected = (db as any)?.selectedProfileByScenario?.[sid];
     if (selected) {
-      router.push(`/(scenario)/${sid}` as any);
+      router.push(`/(scenario)/${sid}/home` as any);
       return;
     }
 
@@ -159,7 +159,7 @@ export default function ScenarioListScreen() {
         pathname: "/modal/select-profile",
         params: {
           scenarioId: sid,
-          returnTo: encodeURIComponent(`/(scenario)/${sid}`),
+          returnTo: encodeURIComponent(`/(scenario)/${sid}/home`),
           replace: "1",
         },
       } as any);

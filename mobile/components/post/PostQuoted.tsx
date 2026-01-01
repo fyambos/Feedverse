@@ -81,9 +81,13 @@ export function PostQuoted({ sid, isDetail, quotedPostId, colors }: Props) {
     <Pressable
       onPress={() => {
         if (!sid) return;
-        router.push(
-          `/(scenario)/${encodeURIComponent(sid)}/post/${String(post.id)}` as any
-        );
+        router.push({
+          pathname: "/(scenario)/[scenarioId]/(tabs)/home/post/[postId]",
+          params: {
+            scenarioId: sid,
+            postId: String(post.id),
+          },
+        } as any);
       }}
       style={({ pressed }) => [
         containerStyle,

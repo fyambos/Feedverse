@@ -1,4 +1,4 @@
-// mobile/app/(scenario)/[scenarioId]/post/[postId].tsx
+// mobile/app/(scenario)/[scenarioId]/(tabs)/index/post/[postId].tsx
 
 import React, { useCallback, useMemo } from "react";
 import { FlatList, Pressable, StyleSheet, View } from "react-native";
@@ -29,15 +29,19 @@ export default function PostScreen() {
   const scheme = useColorScheme() ?? "light";
   const colors = Colors[scheme];
 
-  const sid = String(scenarioId ?? "");
-  const pid = String(postId ?? "");
+  // decode for data access (your ids are plain anyway, but safe)
+  const sid = decodeURIComponent(String(scenarioId ?? ""));
+  const pid = decodeURIComponent(String(postId ?? ""));
 
-  // If opened from a deep link / notification, there might be no back stack.
-  const fromPath =
-    typeof from === "string" && from.length > 0
-      ? from
-      : `/(scenario)/${encodeURIComponent(sid)}/(tabs)`;
+  const sidEnc = encodeURIComponent(sid);
 
+  const fallbackPath = `/(scenario)/${sidEnc}/(tabs)/index`;
+
+const fromPath =
+  typeof from === "string" && from.length > 0
+    ? from
+    : `/(scenario)/${encodeURIComponent(sid)}/(tabs)/home`;
+    
   const { userId } = useAuth();
   const {
     isReady,
@@ -100,8 +104,7 @@ export default function PostScreen() {
 
   const onBack = useCallback(() => {
     if (router.canGoBack?.()) router.back();
-    else if (fromPath) router.replace(fromPath as any);
-    else router.replace(`/(scenario)/${sid}/(tabs)` as any);
+    else router.replace(fromPath as any);
   }, [fromPath]);
 
   return (

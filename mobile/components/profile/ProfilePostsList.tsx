@@ -201,9 +201,12 @@ export function ProfilePostsList({
           <Pressable
             onPress={() =>
               router.push({
-                pathname: `/(scenario)/${encodeURIComponent(sid)}/post/${encodeURIComponent(targetPostId)}`,
+                pathname: "/(scenario)/[scenarioId]/(tabs)/home/post/[postId]",
                 params: {
-                  from: `/(scenario)/${encodeURIComponent(sid)}/profile/${encodeURIComponent(String(viewingProfileId))}`,
+                  scenarioId: sid,
+                  postId: String(targetPostId),
+                  from: "/(scenario)/[scenarioId]/(tabs)/home/profile/[profileId]",
+                  profileId: String(viewingProfileId),
                 },
               } as any)
             }
