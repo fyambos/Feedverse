@@ -1,7 +1,5 @@
-// mobile/app/(scenario)/[scenarioId]/(tabs)/index.tsx
-
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { FlatList, StyleSheet, View, Pressable, Animated as RNAnimated, ActivityIndicator } from "react-native";
+import { FlatList, StyleSheet, View, Pressable, ActivityIndicator } from "react-native";
 import { useLocalSearchParams, router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 
@@ -10,6 +8,7 @@ import { ThemedText } from "@/components/themed-text";
 import { Colors } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { Post as PostCard } from "@/components/post/Post";
+import { CreatePostFab } from "@/components/post/CreatePostFab";
 import { useAuth } from "@/context/auth";
 import { useAppData } from "@/context/appData";
 import { SwipeableRow } from "@/components/ui/SwipeableRow";
@@ -85,17 +84,7 @@ export default function HomeScreen() {
     if (isReady) loadFirstPage();
   }, [sid, isReady, loadFirstPage]);
 
-  const scale = React.useRef(new RNAnimated.Value(1)).current;
   const navLock = React.useRef(false);
-
-  const pressIn = () => {
-    if (navLock.current) return;
-    RNAnimated.spring(scale, { toValue: 0.9, useNativeDriver: true }).start();
-  };
-
-  const pressOut = () => {
-    RNAnimated.spring(scale, { toValue: 1, friction: 4, useNativeDriver: true }).start();
-  };
 
   const openCreatePost = () => {
     if (navLock.current) return;
@@ -240,18 +229,7 @@ export default function HomeScreen() {
         }}
       />
 
-      <RNAnimated.View style={[styles.fab, { backgroundColor: colors.tint, transform: [{ scale }] }]}>
-        <Pressable
-          onPress={openCreatePost}
-          onPressIn={pressIn}
-          onPressOut={pressOut}
-          hitSlop={16}
-          style={styles.fabPress}
-          disabled={navLock.current}
-        >
-          <Ionicons name="add" size={32} color="#fff" />
-        </Pressable>
-      </RNAnimated.View>
+      <CreatePostFab scenarioId={sid} colors={colors} onPress={openCreatePost} />
     </ThemedView>
   );
 }
@@ -260,20 +238,4 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   list: { paddingVertical: 8 },
   separator: { height: StyleSheet.hairlineWidth, opacity: 0.8 },
-  fab: {
-    position: "absolute",
-    right: 20,
-    bottom: 24,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: "#000",
-    shadowOpacity: 0.25,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 6,
-  },
-  fabPress: { flex: 1, alignItems: "center", justifyContent: "center" },
 });
