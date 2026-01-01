@@ -615,7 +615,7 @@ export default function CreatePostModal() {
               onPickVideoThumb={pickVideoThumb}
             />
 
-            {/* ✅ Campaign-only UI lives HERE (under text, above media) */}
+            {/* Campaign */}
                 {isCampaign ? (
                   <View style={{ marginLeft: 20, marginRight: 20, gap: 10 }}>
                     <RowCard label="Post type" colors={colors}>

@@ -143,7 +143,7 @@ export default function CreateScenarioModal() {
     (existing as any)?.mode === "campaign" ? "campaign" : "story"
   );
 
-  // ✅ scenario setting: profileLimitMode (stored in scenario.settings)
+  // scenario setting: profileLimitMode (stored in scenario.settings)
   const [profileLimitMode, setProfileLimitMode] = useState<ProfileLimitMode>(() => {
     const m = (existing as any)?.settings?.profileLimitMode;
     return m === "per_scenario" ? "per_scenario" : "per_owner";
@@ -179,12 +179,12 @@ export default function CreateScenarioModal() {
 
     setTags(buildTagsUI(existing));
 
-    // ✅ hydrate setting from scenario.settings
+    // hydrate setting from scenario.settings
     const m = (existing as any)?.settings?.profileLimitMode;
     setProfileLimitMode(m === "per_scenario" ? "per_scenario" : "per_owner");
   }, [isEdit, existing]);
 
-  // ✅ determine if we can switch back to per_owner (only relevant when editing)
+  // determine if we can switch back to per_owner (only relevant when editing)
   const canSwitchBackToPerOwner = useMemo(() => {
     if (!existing?.id) return true; // creating scenario => always ok
     const sid = String(existing.id);
@@ -324,7 +324,7 @@ export default function CreateScenarioModal() {
       }
     }
 
-    // ✅ safety: don't allow saving per_owner if it would violate rule
+    // safety: don't allow saving per_owner if it would break limits
     if (isEdit && existing?.id && profileLimitMode === "per_owner" && !canSwitchBackToPerOwner) {
       Alert.alert(
         "Cannot save this setting",
@@ -365,7 +365,7 @@ export default function CreateScenarioModal() {
     const prevSettings = (existing as any)?.settings ?? {};
     const nextSettings = {
       ...(prevSettings ?? {}),
-      profileLimitMode, // ✅ stored here
+      profileLimitMode, 
     };
 
     const next: Scenario = {
@@ -383,8 +383,8 @@ export default function CreateScenarioModal() {
         color: t.color,
       })) as any,
       mode,
-      settings: nextSettings, // ✅ persisted
-      // ✅ preserves existing list when editing (and FIXED dmUserIds typo)
+      settings: nextSettings, 
+      
       gmUserIds: Array.from(
         new Set([
           String(userId),
@@ -485,7 +485,7 @@ export default function CreateScenarioModal() {
               />
             </RowCard>
 
-            {/* ✅ Profile limit mode (scenario setting) */}
+            {/* Profile limit mode */}
             <RowCard
               label="Profile limits"
               colors={colors}
@@ -536,7 +536,7 @@ export default function CreateScenarioModal() {
                     const nextMode: "story" | "campaign" = v ? "campaign" : "story";
                     setMode(nextMode);
 
-                    // ✅ If editing an existing scenario, persist immediately
+                    // If editing an existing scenario, persist immediately
                     if (isEdit && existing?.id) {
                       try {
                         await setScenarioMode?.(String(existing.id), nextMode);

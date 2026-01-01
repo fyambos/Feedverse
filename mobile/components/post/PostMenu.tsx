@@ -41,7 +41,7 @@ type Props = {
   onReportPost: () => void;
   onOpenProfile: (view?: ProfileViewState) => void;
 
-  // ✅ campaign wiring (PostMenu becomes the editor)
+  // campaign wiring (PostMenu becomes the editor)
   scenarioId?: string;
   gmProfileId?: string; // who posts the recap
   getSheet?: (profileId: string) => DbCharacterSheet | null;
