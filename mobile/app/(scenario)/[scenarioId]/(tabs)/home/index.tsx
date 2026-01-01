@@ -21,6 +21,8 @@ export default function HomeScreen() {
   const { scenarioId } = useLocalSearchParams<{ scenarioId: string }>();
   const sid = String(scenarioId ?? "");
 
+
+
   const scheme = useColorScheme() ?? "light";
   const colors = Colors[scheme];
 
@@ -48,6 +50,7 @@ export default function HomeScreen() {
 
   const loadFirstPage = useCallback(() => {
     if (!isReady) return;
+
     const page = listPostsPage({ scenarioId: sid, limit: PAGE_SIZE, cursor: null });
 
     setItems(page.items);
@@ -112,12 +115,16 @@ export default function HomeScreen() {
 
   const openPostDetail = useCallback(
     (postId: string) => {
+      if (!sid) return;
+
       router.push({
-        pathname: "/(scenario)/[scenarioId]/post/[postId]",
+        pathname: "/(scenario)/[scenarioId]/(tabs)/home/post/[postId]",
         params: {
           scenarioId: sid,
-          postId,
-          from: `/(scenario)/${encodeURIComponent(sid)}/(tabs)`,
+          postId: String(postId),
+
+          // fallback if no back stack
+          from: "/(scenario)/[scenarioId]/(tabs)/home",
         },
       } as any);
     },

@@ -51,10 +51,9 @@ function AuthGate() {
 function AppShell() {
   const { currentUser } = useAuth();
 
-  // user setting drives theme (safe + typed)
   const mode = useMemo<DarkMode>(() => {
     const m = currentUser?.settings?.darkMode;
-    return (m === "light" || m === "dark" || m === "system") ? m : "system";
+    return m === "light" || m === "dark" || m === "system" ? m : "system";
   }, [currentUser?.settings?.darkMode]);
 
   return (
@@ -66,24 +65,26 @@ function AppShell() {
 
 function ThemedNavigation() {
   const scheme = useColorScheme() ?? "light";
-  const colors = Colors[scheme];
 
   return (
-    <GestureHandlerRootView style={{ flex: 1, backgroundColor: colors.background }}>
-      <NavThemeProvider value={scheme === "dark" ? NavDarkTheme : NavLightTheme}>
-        <AuthGate />
-        <StatusBar style={scheme === "dark" ? "light" : "dark"} />
-      </NavThemeProvider>
-    </GestureHandlerRootView>
+    <NavThemeProvider value={scheme === "dark" ? NavDarkTheme : NavLightTheme}>
+      <AuthGate />
+      <StatusBar style={scheme === "dark" ? "light" : "dark"} />
+    </NavThemeProvider>
   );
 }
 
 export default function RootLayout() {
+  const scheme = useColorScheme() ?? "light";
+  const colors = Colors[scheme];
+
   return (
-    <AuthProvider>
-      <AppDataProvider>
-        <AppShell />
-      </AppDataProvider>
-    </AuthProvider>
+    <GestureHandlerRootView style={{ flex: 1, backgroundColor: colors.background }}>
+      <AuthProvider>
+        <AppDataProvider>
+          <AppShell />
+        </AppDataProvider>
+      </AuthProvider>
+    </GestureHandlerRootView>
   );
 }

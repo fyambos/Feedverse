@@ -24,6 +24,7 @@ import { useAuth } from "@/context/auth";
 
 import { PostTypeBadge } from "@/components/post/PostTypeBadge";
 import { PostMenu } from "@/components/post/PostMenu";
+import { useSegments } from "expo-router";
 
 export type PostVariant = "feed" | "detail" | "reply";
 
@@ -391,14 +392,31 @@ export function Post({
     </View>
   );
 
-  function openProfile(view?: ProfileViewState) {
-    if (!canNavigate) return;
-    if (!sid || !profile.id) return;
 
-    router.push({
-      pathname: `/(scenario)/${encodeURIComponent(sid)}/profile/${encodeURIComponent(profile.id)}`,
-      params: view ? { view } : {},
-    } as any);
+
+  // inside your component
+  const segments = useSegments();
+
+  function openProfile(view?: ProfileViewState) {
+    if (!canNavigate) {
+      console.warn("[openProfile] blocked: canNavigate = false");
+      return;
+    }
+
+    if (!sid || !profile?.id) {
+      console.warn("[openProfile] missing params", { sid, profileId: profile?.id });
+      return;
+    }
+
+    const pathname = "/(scenario)/[scenarioId]/(tabs)/home/profile/[profileId]";
+    const params = {
+      scenarioId: sid,
+      profileId: String(profile.id),
+      ...(view ? { view } : {}),
+    };
+
+    
+    router.push({ pathname, params } as any);
   }
 }
 

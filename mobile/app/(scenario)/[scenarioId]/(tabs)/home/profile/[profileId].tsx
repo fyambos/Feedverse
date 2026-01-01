@@ -373,7 +373,7 @@ export default function ProfileScreen() {
   const openCharacterSheet = useCallback(() => {
     if (!profile) return;
     router.push({
-      pathname: "/(scenario)/[scenarioId]/sheet/[profileId]",
+      pathname: "/(scenario)/[scenarioId]/(tabs)/index/sheet/[profileId]",
       params: { scenarioId: sid, profileId: String(profile.id) },
     } as any);
   }, [profile, sid]);

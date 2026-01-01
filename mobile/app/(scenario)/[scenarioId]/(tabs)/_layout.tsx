@@ -1,11 +1,17 @@
 // mobile/app/(scenario)/[scenarioId]/(tabs)/_layout.tsx
-import { Tabs, router, useLocalSearchParams, useSegments } from "expo-router";
 import React, { useEffect, useMemo } from "react";
-import { Alert, Image, Platform, Pressable, View } from "react-native";
+import { Alert, Image, Platform, Pressable } from "react-native";
+import {
+  Tabs,
+  router,
+  useLocalSearchParams,
+  usePathname,
+  useSegments,
+} from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
 
 import { HapticTab } from "@/components/haptic-tab";
 import { IconSymbol } from "@/components/ui/icon-symbol";
-import { Ionicons } from "@expo/vector-icons";
 import { Colors } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { useAppData } from "@/context/appData";
@@ -30,19 +36,57 @@ function TabIcon({
   return <Ionicons name={androidIonicon} size={size} color={color} />;
 }
 
-export default function TabLayout() {
-  const { scenarioId } = useLocalSearchParams<{ scenarioId: string }>();
-  const sid = String(scenarioId ?? "").trim();
+/**
+ * Extracts the scenarioId from a pathname like:
+ * "/demo-kpop", "/demo-kpop/home", "/demo-kpop/home/post/123"
+ */
+function scenarioIdFromPathname(pathname: string): string {
+  const first = pathname.split("/").filter(Boolean)[0];
+  return String(first ?? "").trim();
+}
 
+export default function TabLayout() {
+  const pathname = usePathname();
   const segments = useSegments();
+
+  // ✅ if available, prefer params (more correct than pathname)
+  const params = useLocalSearchParams<{ scenarioId?: string }>();
+
+  const gateRanRef = React.useRef<string | null>(null);
+
+  // ✅ keep last valid scenario id so /modal/* doesn't turn sid into "modal"
+  const lastSidRef = React.useRef<string>("");
+
+  // ✅ reliable sid for layouts (handles modal routes safely)
+  const sid = useMemo(() => {
+    const fromParams =
+      typeof params?.scenarioId === "string" ? params.scenarioId.trim() : "";
+
+    if (fromParams) {
+      lastSidRef.current = fromParams;
+      return fromParams;
+    }
+
+    // if we're in a modal route, keep the last scenario id
+    if (pathname.startsWith("/modal")) {
+      return lastSidRef.current;
+    }
+
+    // fallback
+    const fromPath = scenarioIdFromPathname(pathname);
+    if (fromPath && fromPath !== "modal") {
+      lastSidRef.current = fromPath;
+      return fromPath;
+    }
+
+    return lastSidRef.current;
+  }, [params?.scenarioId, pathname]);
 
   const colorScheme = useColorScheme() ?? "light";
   const colors = Colors[colorScheme];
 
   const { userId } = useAuth();
-
   const app = useAppData() as any;
-
   const { isReady, db, getProfileById, getSelectedProfileId } = app;
 
   const selectedProfileId = useMemo(
@@ -51,7 +95,8 @@ export default function TabLayout() {
   );
 
   const selectedProfile = useMemo(
-    () => (selectedProfileId ? getProfileById?.(String(selectedProfileId)) : null),
+    () =>
+      selectedProfileId ? getProfileById?.(String(selectedProfileId)) : null,
     [getProfileById, selectedProfileId]
   );
 
@@ -63,8 +108,6 @@ export default function TabLayout() {
       previewImportScenarioFromFile: app.previewImportScenarioFromFile,
       importScenarioFromFile: app.importScenarioFromFile,
       exportScenarioToFile: app.exportScenarioToFile,
-
-      // when import creates a new scenario, jump there
       onImportedNavigate: (newScenarioId: string) => {
         router.replace({
           pathname: "/(scenario)/[scenarioId]",
@@ -81,45 +124,61 @@ export default function TabLayout() {
     app.exportScenarioToFile,
   ]);
 
+  // ✅ HEADER BUG FIX:
+  // Hide the Tabs header (avatar + Feedverse icon) on profile & post detail screens.
+  // Works whether your nested routes live under /home/... or /index/...
+  const hideTabsHeader = useMemo(() => {
+    return (
+      pathname.includes("/home/profile/") ||
+      pathname.includes("/home/post/") ||
+      pathname.includes("/index/profile/") ||
+      pathname.includes("/index/post/")
+    );
+  }, [pathname]);
+
   // ---- GATE: force create/select profile when entering a scenario ----
   useEffect(() => {
     if (!isReady) return;
     if (!sid) return;
 
-    const path = segments.join("/");
-    const inProfileSetupModal =
-      path.includes("modal/create-profile") || path.includes("modal/select-profile");
-    if (inProfileSetupModal) return;
+    // ✅ do NOT gate while a modal is open (prevents "modal" sid bugs / hijacks)
+    if (pathname.startsWith("/modal")) return;
 
-    if (selectedProfileId) return;
+    // 🧠 run ONCE per scenario
+    if (gateRanRef.current === sid) return;
+
+    if (selectedProfileId) {
+      gateRanRef.current = sid;
+      return;
+    }
 
     const uid = String(userId ?? "").trim();
     const profilesMap = (db as any)?.profiles ?? {};
+
     const hasAnyProfileInScenario = Object.values(profilesMap).some((p: any) => {
       return String(p?.scenarioId) === sid && String(p?.ownerUserId) === uid;
     });
+
+    gateRanRef.current = sid; // 🔒 lock BEFORE navigating
 
     if (hasAnyProfileInScenario) {
       router.replace({
         pathname: "/modal/select-profile",
         params: { scenarioId: sid, forced: "1" },
       } as any);
-      return;
+    } else {
+      router.replace({
+        pathname: "/modal/create-profile",
+        params: { scenarioId: sid, mode: "create", forced: "1" },
+      } as any);
     }
-
-    router.replace({
-      pathname: "/modal/create-profile",
-      params: { scenarioId: sid, mode: "create", forced: "1" },
-    } as any);
-  }, [isReady, sid, selectedProfileId, segments, db, userId]);
+  }, [isReady, sid, selectedProfileId, userId, db, pathname]);
 
   const exportThisScenario = () => {
     if (!sid) return;
-    // createScenarioIO should show “all profiles” vs “only my user”
     io.openExportChoice?.(sid);
   };
 
-  // Scenario menu (tap Feedverse icon)
   const openScenarioMenu = () => {
     const profileId = selectedProfile?.id ? String(selectedProfile.id) : null;
 
@@ -132,7 +191,9 @@ export default function TabLayout() {
             return;
           }
           router.push(
-            `/(scenario)/${encodeURIComponent(sid)}/profile/${encodeURIComponent(profileId)}` as any
+            `/(scenario)/${encodeURIComponent(
+              sid
+            )}/(tabs)/home/profile/${encodeURIComponent(profileId)}` as any
           );
         },
       },
@@ -145,10 +206,7 @@ export default function TabLayout() {
           } as any);
         },
       },
-      {
-        text: "Export…",
-        onPress: exportThisScenario,
-      },
+      { text: "Export…", onPress: exportThisScenario },
       {
         text: "Back to home",
         onPress: () => {
@@ -166,13 +224,13 @@ export default function TabLayout() {
     <Tabs
       screenOptions={{
         tabBarActiveTintColor: colors.tint,
-        headerShown: true,
+        headerShown: !hideTabsHeader, // ✅ 핵심: hide on profile/post detail
         headerTitleAlign: "center",
         tabBarButton: HapticTab,
       }}
     >
       <Tabs.Screen
-        name="index"
+        name="home"
         options={{
           title: "",
           headerLeft: () => (
@@ -184,7 +242,9 @@ export default function TabLayout() {
                 } as any)
               }
               hitSlop={12}
-              style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1, marginLeft: 12 }]}
+              style={({ pressed }) => [
+                { opacity: pressed ? 0.7 : 1, marginLeft: 12 },
+              ]}
               accessibilityRole="button"
               accessibilityLabel="Switch Profile"
             >
@@ -211,7 +271,11 @@ export default function TabLayout() {
             </Pressable>
           ),
           tabBarIcon: ({ color }) => (
-            <TabIcon iosName="house.fill" androidIonicon="home" color={color} />
+            <TabIcon
+              iosName="house.fill"
+              androidIonicon="home"
+              color={color}
+            />
           ),
         }}
       />
@@ -222,7 +286,11 @@ export default function TabLayout() {
           title: "",
           headerTitle: "Search",
           tabBarIcon: ({ color }) => (
-            <TabIcon iosName="magnifyingglass" androidIonicon="search" color={color} />
+            <TabIcon
+              iosName="magnifyingglass"
+              androidIonicon="search"
+              color={color}
+            />
           ),
         }}
       />
@@ -233,7 +301,11 @@ export default function TabLayout() {
           title: "",
           headerTitle: "Notifications",
           tabBarIcon: ({ color }) => (
-            <TabIcon iosName="bell.fill" androidIonicon="notifications" color={color} />
+            <TabIcon
+              iosName="bell.fill"
+              androidIonicon="notifications"
+              color={color}
+            />
           ),
         }}
       />
@@ -244,7 +316,11 @@ export default function TabLayout() {
           title: "",
           headerTitle: "Direct Messages",
           tabBarIcon: ({ color }) => (
-            <TabIcon iosName="envelope.fill" androidIonicon="mail" color={color} />
+            <TabIcon
+              iosName="envelope.fill"
+              androidIonicon="mail"
+              color={color}
+            />
           ),
         }}
       />
