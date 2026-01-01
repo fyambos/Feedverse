@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { router } from 'expo-router';
 
@@ -7,18 +7,54 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { useAuth } from '@/context/auth';
 import { AuthScreen } from '@/components/auth/AuthScreen';
+import { isValidEmail, isValidPassword } from '@/lib/validation/auth';
+
+const MAX_IDENTIFIER_LEN = 128;
+const MAX_PASSWORD_LEN = 128;
+const MIN_PASSWORD_LEN = 8;
 
 export default function SignupScreen() {
   const scheme = useColorScheme() ?? 'light';
   const colors = Colors[scheme];
   const { signInMock } = useAuth();
 
+  const passwordRef = useRef<TextInput>(null);
+
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
-  const canSubmit = identifier.trim().length > 0 && password.length > 0;
+  const [showPw, setShowPw] = useState(false);
+
+  const normalizedIdentifier = useMemo(() => identifier.trim(), [identifier]);
+
+  const canSubmit =
+    isValidEmail(normalizedIdentifier) &&
+    isValidPassword(password);
+
+  useEffect(() => {
+    return () => {
+      setPassword('');
+      setShowPw(false);
+    };
+  }, []);
 
   const onCreate = async () => {
+    const email = normalizedIdentifier;
+
+    if (!isValidEmail(email)) {
+      alert('Please enter a valid email address.');
+      return;
+    }
+
+    if (!isValidPassword(password)) {
+      alert(`Password must be at least ${MIN_PASSWORD_LEN} characters, including one letter and one number.`);
+      return;
+    }
+
     await signInMock();
+
+    setPassword('');
+    setShowPw(false);
+
     router.replace('/' as any);
   };
 
@@ -48,9 +84,17 @@ export default function SignupScreen() {
           </ThemedText>
           <TextInput
             value={identifier}
-            onChangeText={setIdentifier}
+            onChangeText={(t) => setIdentifier(t.slice(0, MAX_IDENTIFIER_LEN))}
             autoCapitalize="none"
             autoCorrect={false}
+            spellCheck={false}
+            keyboardType="email-address"
+            inputMode="email"
+            autoComplete="email"
+            textContentType="emailAddress"
+            importantForAutofill="yes"
+            returnKeyType="next"
+            onSubmitEditing={() => passwordRef.current?.focus()}
             placeholder=" "
             placeholderTextColor={colors.textMuted}
             style={[styles.input, { color: colors.text }]}
@@ -63,17 +107,44 @@ export default function SignupScreen() {
             { backgroundColor: colors.card, borderColor: colors.border },
           ]}
         >
-          <ThemedText style={[styles.label, { color: colors.textSecondary }]}>
-            Password
-          </ThemedText>
+          <View style={styles.passwordRow}>
+            <ThemedText style={[styles.label, { color: colors.textSecondary }]}>
+              Password
+            </ThemedText>
+
+            <Pressable
+              onPress={() => setShowPw((v) => !v)}
+              hitSlop={10}
+              accessibilityRole="button"
+              accessibilityLabel={showPw ? 'Hide password' : 'Show password'}
+            >
+              <ThemedText style={[styles.pwToggle, { color: colors.tint }]}>
+                {showPw ? 'Hide' : 'Show'}
+              </ThemedText>
+            </Pressable>
+          </View>
+
           <TextInput
+            ref={passwordRef}
             value={password}
-            onChangeText={setPassword}
-            secureTextEntry
+            onChangeText={(t) => setPassword(t.slice(0, MAX_PASSWORD_LEN))}
+            secureTextEntry={!showPw}
+            autoCapitalize="none"
+            autoCorrect={false}
+            spellCheck={false}
+            autoComplete="new-password"
+            textContentType="newPassword"
+            importantForAutofill="yes"
+            returnKeyType="done"
+            onSubmitEditing={onCreate}
             placeholder=" "
             placeholderTextColor={colors.textMuted}
             style={[styles.input, { color: colors.text }]}
           />
+
+          <ThemedText style={[styles.hint, { color: colors.textSecondary }]}>
+            Use at least {MIN_PASSWORD_LEN} characters.
+          </ThemedText>
         </View>
 
         <Pressable
@@ -111,6 +182,14 @@ const styles = StyleSheet.create({
     paddingVertical: 0,
     minHeight: 22,
   },
+
+  passwordRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  pwToggle: { fontSize: 13, fontWeight: '700' },
+  hint: { marginTop: 6, fontSize: 12 },
 
   primaryBtn: {
     marginTop: 6,
