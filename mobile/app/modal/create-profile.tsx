@@ -1,6 +1,4 @@
-// mobile/app/modal/create-profile.tsx
-
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Alert,
   KeyboardAvoidingView,
@@ -62,6 +60,35 @@ export default function CreateProfileModal() {
     if (!isEdit || !profileId) return null;
     return getProfileById(String(profileId));
   }, [isEdit, profileId, getProfileById]);
+
+  // only the owner can change the "Shared" flag
+  const isOwner = !existing || String(existing.ownerUserId) === String(userId);
+  
+  // when editing, existing can load/refresh after first render => keep form in sync
+  useEffect(() => {
+    if (!existing) return;
+
+    setDisplayName(existing.displayName ?? "");
+    setHandle(existing.handle ?? "");
+    setBio(existing.bio ?? "");
+    setAvatarUrl(existing.avatarUrl ?? null);
+
+    setIsPublic(!!existing.isPublic);
+    setIsPrivate(!!existing.isPrivate);
+
+    setFollowingText(
+      (existing as any)?.followingCount != null ? String((existing as any).followingCount) : ""
+    );
+    setFollowersText(
+      (existing as any)?.followerCount != null ? String((existing as any).followerCount) : ""
+    );
+
+    const joinedISO = (existing as any)?.joinedDate ?? existing.createdAt ?? new Date().toISOString();
+    setJoinedDate(new Date(joinedISO));
+
+    setLocation((existing as any)?.location ?? "");
+    setLink((existing as any)?.link ?? "");
+  }, [existing]);
 
   /* -------------------------------------------------------------------------- */
   /* Form state                                                                 */
@@ -149,7 +176,7 @@ export default function CreateProfileModal() {
       await upsertProfile({
         id: existing?.id ?? `profile_${Date.now()}`,
         scenarioId: sid,
-        ownerUserId: String(userId),
+        ownerUserId: existing?.ownerUserId ?? String(userId),
 
         displayName: safeDisplayName,
         handle: safeHandle,
@@ -157,7 +184,7 @@ export default function CreateProfileModal() {
 
         avatarUrl: avatarUrl ?? undefined,
 
-        isPublic,
+        isPublic: isOwner ? isPublic : !!existing?.isPublic,
         isPrivate,
 
         followerCount,
@@ -287,6 +314,7 @@ export default function CreateProfileModal() {
               setLink={setLink}
               maxLocation={PROFILE_LIMITS.MAX_LOCATION}
               maxLink={PROFILE_LIMITS.MAX_LINK}
+              canEditShared={isOwner}
             />
           </ScrollView>
         </KeyboardAvoidingView>

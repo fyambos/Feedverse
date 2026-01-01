@@ -39,6 +39,8 @@ export function ProfileSettingsSection({
 
   maxLocation,
   maxLink,
+
+  canEditShared,
 }: {
   colors: any;
 
@@ -62,6 +64,8 @@ export function ProfileSettingsSection({
 
   maxLocation: number;
   maxLink: number;
+
+  canEditShared: boolean;
 }) {
   const [showJoinedPicker, setShowJoinedPicker] = React.useState(false);
 
@@ -82,13 +86,20 @@ export function ProfileSettingsSection({
         right={
           <Switch
             value={!!isPublic}
-            onValueChange={(v) => setIsPublic(!!v)}
+            disabled={!canEditShared}
+            onValueChange={(v) => {
+              if (!canEditShared) return;
+              setIsPublic(!!v);
+            }}
             trackColor={{ false: colors.border, true: colors.tint }}
             thumbColor={Platform.OS === "android" ? colors.background : undefined}
           />
         }
       >
-        <ThemedText style={{ color: colors.textSecondary }}>Other players can use this profile</ThemedText>
+        <ThemedText style={{ color: colors.textSecondary, opacity: canEditShared ? 1 : 0.5 }}>
+          Other players can use this profile
+          {!canEditShared ? " (only the owner can change this)" : ""}
+        </ThemedText>
       </RowCard>
 
       <RowCard
