@@ -24,6 +24,10 @@ export type ScenarioTag = {
   color: string;
 };
 
+export type ScenarioSettings = {
+  profileLimitMode?: "per_owner" | "per_scenario";
+};
+
 export type Scenario = {
   id: string;
   name: string;
@@ -37,6 +41,7 @@ export type Scenario = {
   tags?: ScenarioTag[];
   mode: "story" | "campaign";
   gmUserIds?: string[]; // (creator is default)
+  settings?: ScenarioSettings; 
 };
 
 export type Profile = {

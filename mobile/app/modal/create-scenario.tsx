@@ -25,7 +25,7 @@ import { useColorScheme } from "@/hooks/use-color-scheme";
 import { useAuth } from "@/context/auth";
 import { useAppData } from "@/context/appData";
 
-import type { Scenario } from "@/data/db/schema";
+import type { Scenario, Profile } from "@/data/db/schema";
 import { RowCard } from "@/components/ui/RowCard";
 
 import {
@@ -36,6 +36,7 @@ import {
 } from "@/lib/tags";
 
 import { pickAndPersistOneImage } from "@/components/ui/ImagePicker";
+import { MAX_OWNED_PROFILES_PER_USER, MAX_TOTAL_PROFILES_PER_SCENARIO } from "@/lib/rules";
 
 /* -------------------------------------------------------------------------- */
 /* Limits                                                                      */
@@ -100,6 +101,12 @@ function buildTagsUI(existing: any): ScenarioTagUI[] {
   });
 }
 
+type ProfileLimitMode = "per_owner" | "per_scenario";
+const PROFILE_LIMIT_LABEL: Record<ProfileLimitMode, string> = {
+  per_owner: `Per player (${MAX_OWNED_PROFILES_PER_USER} max)`,
+  per_scenario: `Per scenario (${MAX_TOTAL_PROFILES_PER_SCENARIO} total)`,
+};
+
 export default function CreateScenarioModal() {
   const { scenarioId } = useLocalSearchParams<Params>();
   const isEdit = Boolean(scenarioId);
@@ -108,7 +115,13 @@ export default function CreateScenarioModal() {
   const colors = Colors[scheme];
 
   const { userId } = useAuth();
-  const { isReady, getScenarioById, upsertScenario, setScenarioMode } = useAppData() as any;
+  const {
+    isReady,
+    getScenarioById,
+    upsertScenario,
+    setScenarioMode,
+    listProfilesForScenario,
+  } = useAppData() as any;
 
   const existing: Scenario | null = useMemo(() => {
     if (!isEdit) return null;
@@ -129,6 +142,12 @@ export default function CreateScenarioModal() {
   const [mode, setMode] = useState<"story" | "campaign">(
     (existing as any)?.mode === "campaign" ? "campaign" : "story"
   );
+
+  // ✅ scenario setting: profileLimitMode (stored in scenario.settings)
+  const [profileLimitMode, setProfileLimitMode] = useState<ProfileLimitMode>(() => {
+    const m = (existing as any)?.settings?.profileLimitMode;
+    return m === "per_scenario" ? "per_scenario" : "per_owner";
+  });
 
   // cover: picked image uri
   const [cover, setCover] = useState<string>(String(existing?.cover ?? "").trim());
@@ -159,7 +178,55 @@ export default function CreateScenarioModal() {
     setInviteCode(existingCode || generateInviteCode());
 
     setTags(buildTagsUI(existing));
+
+    // ✅ hydrate setting from scenario.settings
+    const m = (existing as any)?.settings?.profileLimitMode;
+    setProfileLimitMode(m === "per_scenario" ? "per_scenario" : "per_owner");
   }, [isEdit, existing]);
+
+  // ✅ determine if we can switch back to per_owner (only relevant when editing)
+  const canSwitchBackToPerOwner = useMemo(() => {
+    if (!existing?.id) return true; // creating scenario => always ok
+    const sid = String(existing.id);
+    const profiles: Profile[] = (listProfilesForScenario?.(sid) ?? []) as any;
+
+    const counts = new Map<string, number>(); // ownerUserId -> count
+    for (const p of profiles) {
+      const uid = String((p as any)?.ownerUserId ?? "").trim();
+      if (!uid) continue;
+      counts.set(uid, (counts.get(uid) ?? 0) + 1);
+    }
+
+    for (const n of counts.values()) {
+      if (n > MAX_OWNED_PROFILES_PER_USER) return false;
+    }
+    return true;
+  }, [existing?.id, listProfilesForScenario]);
+
+  const pickProfileLimitMode = useCallback(() => {
+    if (!canEdit) return;
+
+    Alert.alert("Profile limits", "Choose how limits work in this scenario:", [
+      {
+        text: PROFILE_LIMIT_LABEL.per_scenario,
+        onPress: () => setProfileLimitMode("per_scenario"),
+      },
+      {
+        text: PROFILE_LIMIT_LABEL.per_owner,
+        onPress: () => {
+          if (!canSwitchBackToPerOwner) {
+            Alert.alert(
+              "Cannot switch back",
+              `Someone in this scenario has more than ${MAX_OWNED_PROFILES_PER_USER} owned profiles.\n\nReduce their profiles first, then you can use “Per player”.`
+            );
+            return;
+          }
+          setProfileLimitMode("per_owner");
+        },
+      },
+      { text: "Cancel", style: "cancel" },
+    ]);
+  }, [canEdit, canSwitchBackToPerOwner]);
 
   const pickCover = useCallback(async () => {
     if (!canEdit) return;
@@ -257,8 +324,28 @@ export default function CreateScenarioModal() {
       }
     }
 
+    // ✅ safety: don't allow saving per_owner if it would violate rule
+    if (isEdit && existing?.id && profileLimitMode === "per_owner" && !canSwitchBackToPerOwner) {
+      Alert.alert(
+        "Cannot save this setting",
+        `Someone in this scenario has more than ${MAX_OWNED_PROFILES_PER_USER} owned profiles.\n\nKeep “Per scenario” or reduce profiles first.`
+      );
+      return false;
+    }
+
     return true;
-  }, [userId, isEdit, isOwner, name, cover, inviteCode, tags]);
+  }, [
+    userId,
+    isEdit,
+    isOwner,
+    name,
+    cover,
+    inviteCode,
+    tags,
+    profileLimitMode,
+    canSwitchBackToPerOwner,
+    existing?.id,
+  ]);
 
   const onSave = useCallback(async () => {
     if (!isReady) return;
@@ -275,6 +362,12 @@ export default function CreateScenarioModal() {
           ownerUserId: String(userId),
         } as any);
 
+    const prevSettings = (existing as any)?.settings ?? {};
+    const nextSettings = {
+      ...(prevSettings ?? {}),
+      profileLimitMode, // ✅ stored here
+    };
+
     const next: Scenario = {
       ...base,
       name: String(name).trim().slice(0, SCENARIO_LIMITS.MAX_NAME),
@@ -290,6 +383,7 @@ export default function CreateScenarioModal() {
         color: t.color,
       })) as any,
       mode,
+      settings: nextSettings, // ✅ persisted
       // ✅ preserves existing list when editing (and FIXED dmUserIds typo)
       gmUserIds: Array.from(
         new Set([
@@ -317,6 +411,7 @@ export default function CreateScenarioModal() {
     tags,
     upsertScenario,
     mode,
+    profileLimitMode,
   ]);
 
   const headerTitle = isEdit ? (isOwner ? "Edit scenario" : "Scenario details") : "Create scenario";
@@ -388,6 +483,35 @@ export default function CreateScenarioModal() {
                 style={[styles.input, styles.inputMultiline, { color: colors.text }]}
                 editable={canEdit}
               />
+            </RowCard>
+
+            {/* ✅ Profile limit mode (scenario setting) */}
+            <RowCard
+              label="Profile limits"
+              colors={colors}
+              right={<Ionicons name="chevron-forward" size={18} color={colors.icon} />}
+            >
+              <Pressable
+                onPress={pickProfileLimitMode}
+                hitSlop={10}
+                disabled={!canEdit}
+                style={({ pressed }) => [{ opacity: !canEdit ? 0.5 : pressed ? 0.75 : 1 }]}
+              >
+                <ThemedText style={{ color: colors.text, fontWeight: "800" }}>
+                  {PROFILE_LIMIT_LABEL[profileLimitMode]}
+                </ThemedText>
+                <ThemedText style={{ color: colors.textSecondary, fontSize: 12, marginTop: 4 }}>
+                  {profileLimitMode === "per_scenario"
+                    ? "Total profiles are capped for the whole scenario (players can have uneven counts)."
+                    : "Each player is capped individually (fair distribution)."}
+                </ThemedText>
+
+                {isEdit && profileLimitMode === "per_scenario" && !canSwitchBackToPerOwner ? (
+                  <ThemedText style={{ color: colors.textMuted, fontSize: 12, marginTop: 6 }}>
+                    Can’t switch back to “Per player” while someone exceeds {MAX_OWNED_PROFILES_PER_USER}.
+                  </ThemedText>
+                ) : null}
+              </Pressable>
             </RowCard>
 
             {/* Mode (story vs. campaign) */}
