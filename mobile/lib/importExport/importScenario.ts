@@ -1,6 +1,6 @@
 // mobile/lib/importExport/importScenario.ts
 import type { DbV5, Scenario, Profile, Post, Repost, CharacterSheet, ScenarioTag, GlobalTag } from "@/data/db/schema";
-import { MAX_OWNED_PROFILES_PER_USER } from "@/lib/rules";
+import { MAX_OWNED_PROFILES_PER_USER, MAX_TOTAL_PROFILES_PER_SCENARIO } from "@/lib/rules";
 import { validateScenarioExportBundleV1, isValidHandleAlnum } from "./validateScenarioExport";
 import type { ScenarioExportBundleV1 } from "./exportTypes";
 import { buildGlobalTagFromKey } from "@/lib/tags";
@@ -51,8 +51,21 @@ function normalizeHandle(h: string) {
   return String(h ?? "").trim(); // your validator guarantees alnum (no @)
 }
 
-function countOwnedInDb(db: DbV5, userId: string) {
-  return Object.values(db.profiles).filter((p) => String(p.ownerUserId) === String(userId)).length;
+function countOwnedInScenario(db: DbV5, scenarioId: string, userId: string) {
+  const sid = String(scenarioId ?? "");
+  const uid = String(userId ?? "");
+  if (!sid || !uid) return 0;
+
+  return Object.values(db.profiles).filter(
+    (p) => String(p.scenarioId) === sid && String(p.ownerUserId) === uid
+  ).length;
+}
+
+function countTotalInScenario(db: DbV5, scenarioId: string) {
+  const sid = String(scenarioId ?? "");
+  if (!sid) return 0;
+
+  return Object.values(db.profiles).filter((p) => String(p.scenarioId) === sid).length;
 }
 
 function makeUniqueHandle(baseHandle: string, takenLower: Set<string>, maxLen = 32) {
@@ -131,30 +144,58 @@ export function importScenarioFromJson(raw: any, opts: ImportOptions): ImportRes
 
   // 2) choose scenario id
   const incomingScenario = bundle.scenario;
-  const forceNew = opts.forceNewScenarioId ?? true;
-  const targetScenarioId =
-    forceNew || db.scenarios[String(incomingScenario.id)]
-      ? genId("sc")
-      : String(incomingScenario.id);
+  const forceNew = opts.forceNewScenarioId ?? false; // to force new scenario
+  const incomingId = String(incomingScenario.id); // will be ignored if forceNew
+  const existingScenario = !forceNew ? (db.scenarios[incomingId] ?? null) : null; // to merge into existing scenario (with the scenario id in the json file) if not forcing new
+
+  const targetScenarioId = forceNew ? genId("sc") : existingScenario ? incomingId : incomingId;
 
   // 3) merge tags registry + normalize scenario tags
   const { nextTags, scenarioTags } = mergeScenarioTagsIntoGlobalRegistry(db.tags ?? {}, incomingScenario.tags);
 
   // 4) create scenario record
-  const scenarioToInsert: Scenario = {
-    ...incomingScenario,
-    id: targetScenarioId,
-    ownerUserId: String(currentUserId),
-    playerIds: Array.from(new Set([String(currentUserId), ...(incomingScenario.playerIds ?? []).map(String)])),
-    tags: scenarioTags,
-    createdAt: incomingScenario.createdAt || nowIso(),
-    updatedAt: nowIso(),
-  };
+  // when importing into an existing scenario, do NOT overwrite its core metadata.
+  // we only ensure the current user is in playerIds, and we normalize/merge tags.
+  // when creating a new scenario, we take metadata from the bundle but set owner to current user.
+  const scenarioToInsert: Scenario = existingScenario
+    ? {
+        ...existingScenario,
+        playerIds: Array.from(
+          new Set([
+            ...(existingScenario.playerIds ?? []).map(String),
+            String(currentUserId),
+            ...(incomingScenario.playerIds ?? []).map(String),
+          ])
+        ),
+        tags: scenarioTags,
+        updatedAt: nowIso(),
+      }
+    : {
+        ...incomingScenario,
+        id: targetScenarioId,
+        ownerUserId: String(currentUserId),
+        playerIds: Array.from(new Set([String(currentUserId), ...(incomingScenario.playerIds ?? []).map(String)])),
+        tags: scenarioTags,
+        createdAt: incomingScenario.createdAt || nowIso(),
+        updatedAt: nowIso(),
+      };
 
-  // 5) compute owned profile slot remaining
-  const maxOwned = opts.maxOwnedProfiles ?? MAX_OWNED_PROFILES_PER_USER;
-  const alreadyOwned = countOwnedInDb(db, currentUserId);
-  const remaining = Math.max(0, maxOwned - alreadyOwned);
+  // 5) compute profile slot remaining (depends on scenario setting)
+  type ProfileLimitMode = "per_owner" | "per_scenario";
+  const limitSource = (existingScenario ?? incomingScenario) as any;
+  const profileLimitMode: ProfileLimitMode =
+    limitSource?.settings?.profileLimitMode === "per_scenario" ? "per_scenario" : "per_owner";
+
+  let remaining = 0;
+
+  if (profileLimitMode === "per_scenario") {
+    const alreadyTotal = countTotalInScenario(db, targetScenarioId);
+    remaining = Math.max(0, MAX_TOTAL_PROFILES_PER_SCENARIO - alreadyTotal);
+  } else {
+    const maxOwned = opts.maxOwnedProfiles ?? MAX_OWNED_PROFILES_PER_USER;
+    const alreadyOwned = countOwnedInScenario(db, targetScenarioId, currentUserId);
+    remaining = Math.max(0, maxOwned - alreadyOwned);
+  }
 
   // 6) handles taken in that scenario
   const takenHandlesLower = new Set<string>();
@@ -313,7 +354,9 @@ export function importScenarioFromJson(raw: any, opts: ImportOptions): ImportRes
     },
     selectedProfileByScenario: {
       ...(db.selectedProfileByScenario ?? {}),
-      ...(importedProfiles.length > 0 ? { [targetScenarioId]: String(importedProfiles[0].id) } : {}),
+      ...(!((db.selectedProfileByScenario ?? {}) as any)[targetScenarioId] && importedProfiles.length > 0
+        ? { [targetScenarioId]: String(importedProfiles[0].id) }
+        : {}),
     },
   };
 

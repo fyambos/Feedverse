@@ -13,7 +13,7 @@ import { saveAndShareScenarioExport } from "@/lib/importExport/exportScenario";
 type AppDataState = {
   isReady: boolean;
   db: DbV5 | null;
-};
+};  
 
 type PostCursor = string; // `${insertedAt}|${id}`
 
@@ -191,6 +191,10 @@ type AppDataApi = {
       }
     | { ok: false; error: string }
   >;
+
+  // scenario settings
+  getScenarioSettings: (scenarioId: string) => any;
+  updateScenarioSettings: (scenarioId: string, patch: any) => Promise<void>;
 };
 
 const Ctx = React.createContext<(AppDataState & AppDataApi) | null>(null);
@@ -1159,6 +1163,42 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
             skipped: res.imported.skipped,
           },
         };
+      },
+
+            // --- scenario settings
+      getScenarioSettings: (scenarioId: string) => {
+        if (!db) return {};
+        const sid = String(scenarioId ?? "").trim();
+        return (db.scenarios?.[sid] as any)?.settings ?? {};
+      },
+
+      updateScenarioSettings: async (scenarioId: string, patch: any) => {
+        const sid = String(scenarioId ?? "").trim();
+        if (!sid) return;
+
+        const nextDb = await updateDb((prev) => {
+          const current = prev.scenarios?.[sid];
+          if (!current) return prev;
+
+          const prevSettings = ((current as any).settings ?? {}) as Record<string, any>;
+          const nextSettings = { ...prevSettings, ...(patch ?? {}) };
+
+          const now = new Date().toISOString();
+
+          return {
+            ...prev,
+            scenarios: {
+              ...prev.scenarios,
+              [sid]: {
+                ...current,
+                settings: nextSettings,
+                updatedAt: now,
+              } as any,
+            },
+          };
+        });
+
+        setState({ isReady: true, db: nextDb as any });
       },
     };
   }, [db, currentUserId]);

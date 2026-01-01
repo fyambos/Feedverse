@@ -16,12 +16,15 @@ import { canEditProfile } from "@/lib/permission";
 
 import {
   MAX_OWNED_PROFILES_PER_USER,
+  MAX_TOTAL_PROFILES_PER_SCENARIO,
   canCreateOwnedProfileForUser,
   countOwnedProfilesForUser,
 } from "@/lib/rules";
 
 type TabKey = "mine" | "public";
 type ViewMode = "tabs" | "all"; // tabs = Mine/Public, all = single list (no tabs)
+
+type ProfileLimitMode = "per_owner" | "per_scenario";
 
 export default function SelectProfileModal() {
   const { scenarioId, afterCreate, returnTo, replace } = useLocalSearchParams<{
@@ -30,23 +33,41 @@ export default function SelectProfileModal() {
     returnTo?: string;
     replace?: string; // "1" => use router.replace
   }>();
+
   const scheme = useColorScheme() ?? "light";
   const colors = Colors[scheme];
 
   const sid = String(scenarioId ?? "");
   const { userId } = useAuth();
 
-  const { isReady, listProfilesForScenario, getSelectedProfileId, setSelectedProfileId, db } = useAppData();
+  const {
+    isReady,
+    listProfilesForScenario,
+    getSelectedProfileId,
+    setSelectedProfileId,
+    db,
+    getScenarioById, // ✅ need scenario settings
+  } = useAppData() as any;
 
   const usersMap = (db as any)?.users ?? {};
 
   const [tab, setTab] = React.useState<TabKey>("mine");
   const [mode, setMode] = React.useState<ViewMode>("tabs");
 
-  const allProfiles = React.useMemo(() => {
-    if (!isReady) return [];
-    return listProfilesForScenario(sid);
-  }, [isReady, sid, listProfilesForScenario]);
+  const scenario = React.useMemo(() => {
+    if (!isReady) return null;
+    return getScenarioById?.(sid) ?? null;
+  }, [isReady, getScenarioById, sid]);
+
+  const profileLimitMode: ProfileLimitMode = React.useMemo(() => {
+    const m = (scenario as any)?.settings?.profileLimitMode;
+    return m === "per_scenario" ? "per_scenario" : "per_owner";
+  }, [scenario]);
+
+const allProfiles = React.useMemo<Profile[]>(() => {
+  if (!isReady) return [];
+  return listProfilesForScenario(sid) as Profile[];
+}, [isReady, sid, listProfilesForScenario]);
 
   const mine = React.useMemo(
     () => allProfiles.filter((p) => String(p.ownerUserId) === String(userId)),
@@ -62,13 +83,19 @@ export default function SelectProfileModal() {
 
   const current = getSelectedProfileId(sid);
 
-  const ownedNonSharedCount = React.useMemo(() => {
+  const ownedCount = React.useMemo(() => {
     return countOwnedProfilesForUser(allProfiles, userId ?? null);
   }, [allProfiles, userId]);
 
+  const totalScenarioCount = React.useMemo(() => allProfiles.length, [allProfiles]);
+
+  // ✅ creation rule depends on scenario setting
   const canCreate = React.useMemo(() => {
+    if (profileLimitMode === "per_scenario") {
+      return totalScenarioCount < MAX_TOTAL_PROFILES_PER_SCENARIO;
+    }
     return canCreateOwnedProfileForUser(allProfiles, userId ?? null);
-  }, [allProfiles, userId]);
+  }, [profileLimitMode, totalScenarioCount, allProfiles, userId]);
 
   const Row = ({ item }: { item: Profile }) => {
     const selectEnabled = mode !== "all";
@@ -89,9 +116,6 @@ export default function SelectProfileModal() {
           if (!selectEnabled) return;
           await setSelectedProfileId(sid, String(item.id));
 
-          // If the opener provided a return destination, go there instead of router.back().
-          // This fixes the case where opening Select Profile from the scenario list would otherwise
-          // return to the scenario list after choosing.
           if (returnTo) {
             const dest = decodeURIComponent(String(returnTo));
             if (String(replace ?? "") === "1") router.replace(dest as any);
@@ -99,8 +123,6 @@ export default function SelectProfileModal() {
             return;
           }
 
-          // Backward compat: if opened right after forced profile creation,
-          // enter the scenario feed instead of returning to the scenario list.
           if (String(afterCreate ?? "") === "1") {
             router.replace(`/(scenario)/${sid}` as any);
             return;
@@ -157,7 +179,10 @@ export default function SelectProfileModal() {
               </ThemedText>
 
               {item.isPublic ? (
-                <ThemedText style={[styles.publicBadge, { color: colors.textSecondary }]}> • Shared</ThemedText>
+                <ThemedText style={[styles.publicBadge, { color: colors.textSecondary }]}>
+                  {" "}
+                  • Shared
+                </ThemedText>
               ) : null}
             </View>
           </View>
@@ -187,6 +212,15 @@ export default function SelectProfileModal() {
 
     const disabled = !canCreate;
 
+    const subtitle =
+      profileLimitMode === "per_scenario"
+        ? disabled
+          ? `Limit reached (${MAX_TOTAL_PROFILES_PER_SCENARIO} total profiles in this scenario).`
+          : "Create a profile (scenario-wide limit)"
+        : disabled
+        ? `Limit reached (${MAX_OWNED_PROFILES_PER_USER} owned profiles).`
+        : "Add a character for this scenario";
+
     return (
       <View>
         <Pressable
@@ -197,7 +231,6 @@ export default function SelectProfileModal() {
               pathname: "/modal/create-profile",
               params: {
                 scenarioId: sid,
-                // preserve return intent so that after creating a profile, the flow can still land in the right place
                 ...(returnTo ? { returnTo: String(returnTo) } : {}),
                 ...(replace ? { replace: String(replace) } : {}),
               },
@@ -220,22 +253,27 @@ export default function SelectProfileModal() {
               Create a new profile
             </ThemedText>
 
-            {disabled ? (
-              <ThemedText style={{ color: colors.textSecondary }}>
-                Limit reached ({MAX_OWNED_PROFILES_PER_USER} owned profiles).
-              </ThemedText>
-            ) : (
-              <ThemedText style={{ color: colors.textSecondary }}>Add a character for this scenario</ThemedText>
-            )}
+            <ThemedText style={{ color: colors.textSecondary }}>{subtitle}</ThemedText>
           </View>
 
           <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
         </Pressable>
 
         <View style={{ paddingHorizontal: 16, paddingBottom: 10 }}>
-          <ThemedText style={{ color: colors.textSecondary, fontSize: 12 }}>
-            Owned profiles: {ownedNonSharedCount}/{MAX_OWNED_PROFILES_PER_USER} (shared profiles don’t count)
-          </ThemedText>
+          {profileLimitMode === "per_scenario" ? (
+            <>
+              <ThemedText style={{ color: colors.textSecondary, fontSize: 12 }}>
+                Scenario profiles: {totalScenarioCount}/{MAX_TOTAL_PROFILES_PER_SCENARIO}
+              </ThemedText>
+              <ThemedText style={{ color: colors.textSecondary, fontSize: 12, marginTop: 2 }}>
+                You own: {ownedCount} (no per-player cap in this mode)
+              </ThemedText>
+            </>
+          ) : (
+            <ThemedText style={{ color: colors.textSecondary, fontSize: 12 }}>
+              Owned profiles: {ownedCount}/{MAX_OWNED_PROFILES_PER_USER} (shared profiles don’t count)
+            </ThemedText>
+          )}
         </View>
 
         <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: colors.border }} />
@@ -276,7 +314,9 @@ export default function SelectProfileModal() {
         data={data}
         keyExtractor={(p) => String(p.id)}
         ListHeaderComponent={CreateProfileHeader}
-        ItemSeparatorComponent={() => <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: colors.border }} />}
+        ItemSeparatorComponent={() => (
+          <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: colors.border }} />
+        )}
         renderItem={({ item }) => <Row item={item as Profile} />}
         ListEmptyComponent={() => (
           <View style={{ padding: 24 }}>
