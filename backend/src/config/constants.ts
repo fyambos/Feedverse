@@ -19,9 +19,10 @@ export const DATABASE_SSL_MODE = Boolean(process.env.DB_SSLMODE);
 // ============================================================================
 
 export const CLOUDFLARE = {
-  ACCOUNT: process.env.ACCOUNT_ID,
-  ACCESS_KEY: process.env.ACCESS_KEY_ID,
-  SECRET: process.env.SECRET_ACCESS_KEY,
+  BUCKET: process.env.R2_BUCKET,
+  ACCOUNT: process.env.R2_ACCOUNT_ID,
+  ACCESS_KEY: process.env.R2_ACCESS_KEY_ID,
+  SECRET: process.env.R2_SECRET_ACCESS_KEY,
 } as const;
 
 // ============================================================================
