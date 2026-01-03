@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router, useLocalSearchParams } from "expo-router";
+import { useFocusEffect } from "@react-navigation/native";
 
 import type { Post, CharacterSheet } from "@/data/db/schema";
 import { useAppData } from "@/context/appData";
@@ -140,6 +141,8 @@ export default function CreatePostModal() {
   // campaign state
   const [postType, setPostType] = useState<PostType>("rp");
   const [meta, setMeta] = useState<any>(undefined);
+  // When using items, we force the next created post to be a campaign "log" even if state hasn't flushed yet.
+  const forceLogForUsedItemsRef = React.useRef(false);
 
   const selectedId = getSelectedProfileId(sid);
 
@@ -194,6 +197,13 @@ export default function CreatePostModal() {
         });
       }
 
+      // Make the resulting post a LOG (campaign-only).
+      // Use a ref so it applies immediately even if the user posts before state flushes.
+      if (isCampaign) {
+        forceLogForUsedItemsRef.current = true;
+        setPostType("log");
+      }
+
       // 2) consume inventory locally + persist to sheet
       const nextInv = consumeInventory(inventory, selectedIds);
       setInventory(nextInv);
@@ -212,7 +222,7 @@ export default function CreatePostModal() {
         // keep UX smooth; if persistence fails, user can still post
       }
     },
-    [isEdit, inventory, sheet, upsertCharacterSheet]
+    [isEdit, inventory, sheet, upsertCharacterSheet, isCampaign, setPostType]
   );
 
   // thread
@@ -455,6 +465,20 @@ export default function CreatePostModal() {
     if (meta) setMeta(undefined);
   }, [isReady, isCampaign]); // intentionally not depending on postType/meta
 
+  // On open/focus (create only): always start from RP post type.
+  // This avoids re-opening the modal with a previous type (e.g. after using items => log).
+  useFocusEffect(
+    useCallback(() => {
+      if (!isReady) return;
+      if (isEdit) return;
+
+      // reset to defaults on create modal open
+      setPostType("rp");
+      setMeta(undefined);
+      forceLogForUsedItemsRef.current = false;
+    }, [isReady, isEdit])
+  );
+
   // author selection callback after coming back from select-profile
   useEffect(() => {
     if (!isReady) return;
@@ -531,10 +555,19 @@ export default function CreatePostModal() {
       addVideoIcon,
     });
 
-    const savedPostType = isCampaign && postType !== "rp" ? postType : undefined;
+    const forcedLog = isCampaign && forceLogForUsedItemsRef.current;
+
+    // Ensure we always have a concrete post type (never undefined).
+    // Default is "rp".
+    const safeStatePostType: PostType = (postType as any) || "rp";
+    const effectivePostType: PostType = forcedLog ? "log" : safeStatePostType;
+
+    // Always persist a postType so posts never end up with "no type".
+    // Meta remains campaign-only.
+    const savedPostType: PostType = effectivePostType;
     const savedMeta = isCampaign ? meta : undefined;
 
-    const isRollCreate = Boolean(!isEdit && savedPostType === "roll");
+    const isRollCreate = Boolean(!isEdit && isCampaign && savedPostType === "roll");
     const d20 = isRollCreate ? randInt(1, 20) : null;
     const rollLine = d20 ? `\n\n🎲 d20 → ${d20}` : "";
 
@@ -621,7 +654,7 @@ export default function CreatePostModal() {
         const createdAt = new Date(baseTime.getTime() + i * 1000).toISOString();
 
         const baseText = threadTexts[i].trim();
-        const text = i === 0 && savedPostType === "roll" ? `${baseText}${rollLine}` : baseText;
+        const text = i === 0 && isCampaign && savedPostType === "roll" ? `${baseText}${rollLine}` : baseText;
 
         const post: Post & { addVideoIcon?: boolean; insertedAt?: string } = {
           id,
@@ -638,6 +671,7 @@ export default function CreatePostModal() {
           insertedAt: insertedAtBaseIso,
           addVideoIcon: i === 0 ? addVideoIconForPost : false,
 
+          // only on the first thread item
           postType: i === 0 ? (savedPostType as any) : undefined,
           meta: i === 0 ? savedMeta : undefined,
         };
@@ -652,6 +686,7 @@ export default function CreatePostModal() {
     } finally {
       setPosting(false);
       setPostingRoll(null);
+      forceLogForUsedItemsRef.current = false;
     }
   }, [
     canPost,
@@ -737,15 +772,18 @@ export default function CreatePostModal() {
                 />
 
                 {/* NEW: use items (create-only) */}
-                <View style={{ marginTop: 10 }}>
-                  <UseItemsPicker
-                    colors={colors as any}
-                    items={inventory}
-                    disabled={!canUseItems}
-                    onConfirm={applyUsedItems}
-                    buttonLabel={canUseItems ? "use item" : !sheet ? "no sheet" : inventory.length ? "unavailable" : "no items"}
-                  />
-                </View>
+                {isCampaign ? (
+                  <View style={{ marginTop: 10 }}>
+                    <UseItemsPicker
+                      colors={colors as any}
+                      items={inventory}
+                      disabled={!canUseItems}
+                      onConfirm={applyUsedItems}
+                      buttonLabel={canUseItems ? "use item" : !sheet ? "no sheet" : inventory.length ? "unavailable" : "no items"}
+                    />
+                  </View>
+                ) : null}
+                
 
                 <MediaPreview
                   colors={colors}
