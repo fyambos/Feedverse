@@ -48,6 +48,7 @@ export default function SelectProfileModal() {
     db,
     getScenarioById,
     transferProfilesToUser,
+    adoptPublicProfile,
   } = useAppData() as any;
 
   const usersMap = (db as any)?.users ?? {};
@@ -65,6 +66,14 @@ export default function SelectProfileModal() {
     open: boolean;
     toUserId: string | null;
   }>(() => ({ open: false, toUserId: null }));
+
+  // state for adopting a shared profile
+  const [adopt, setAdopt] = React.useState<{ open: boolean; profileId: string | null }>(() => ({
+    open: false,
+    profileId: null,
+  }));
+
+  const closeAdopt = () => setAdopt({ open: false, profileId: null });
 
   const closeTransfer = () => setTransfer({ open: false });
   const closeConfirmTransfer = () => setConfirmTransfer({ open: false, toUserId: null });
@@ -165,6 +174,30 @@ const allProfiles = React.useMemo<Profile[]>(() => {
     });
   };
 
+  const finishSelection = React.useCallback(
+    async (profileId: string) => {
+      await setSelectedProfileId(sid, String(profileId));
+
+      if (returnTo) {
+        const dest = decodeURIComponent(String(returnTo));
+        if (String(replace ?? "") === "1") router.replace(dest as any);
+        else router.push(dest as any);
+        return;
+      }
+
+      if (String(afterCreate ?? "") === "1") {
+        router.replace({
+          pathname: "/(scenario)/[scenarioId]/(tabs)/home",
+          params: { scenarioId: sid },
+        } as any);
+        return;
+      }
+
+      router.back();
+    },
+    [afterCreate, replace, returnTo, setSelectedProfileId, sid]
+  );
+
   // ---- RENDERING ----
 
   const Row = ({ item }: { item: Profile }) => {
@@ -176,6 +209,7 @@ const allProfiles = React.useMemo<Profile[]>(() => {
     const showCheckbox = multi && isMineTab && selectEnabled;
     const checked = selectedIds.has(id);
 
+    const isSharedFromOther = !!item.isPublic && String(item.ownerUserId) !== String(userId);
     const owner = usersMap[String(item.ownerUserId)] ?? null;
 
     const canEditThis = canEditProfile({
@@ -193,24 +227,14 @@ const allProfiles = React.useMemo<Profile[]>(() => {
             toggleOne(id);
             return;
           }
-          await setSelectedProfileId(sid, String(item.id));
 
-          if (returnTo) {
-            const dest = decodeURIComponent(String(returnTo));
-            if (String(replace ?? "") === "1") router.replace(dest as any);
-            else router.push(dest as any);
+          // shared profile from someone else => adopt flow (confirm modal)
+          if (isSharedFromOther) {
+            setAdopt({ open: true, profileId: id });
             return;
           }
 
-          if (String(afterCreate ?? "") === "1") {
-            router.replace({
-              pathname: "/(scenario)/[scenarioId]/(tabs)/home",
-              params: { scenarioId: sid },
-            } as any);
-            return;
-          }
-
-          router.back();
+          await finishSelection(String(item.id));
         }}
         style={({ pressed }) => [
           styles.row,
@@ -283,21 +307,94 @@ const allProfiles = React.useMemo<Profile[]>(() => {
         </View>
 
         <View style={styles.right}>
-          {owner?.avatarUrl ? (
-            <Image source={{ uri: owner.avatarUrl }} style={styles.ownerAvatar} />
-          ) : (
-            <View style={[styles.ownerAvatar, { backgroundColor: colors.border }]} />
-          )}
+          {!isSharedFromOther ? (
+            <>
+              {owner?.avatarUrl ? (
+                <Image source={{ uri: owner.avatarUrl }} style={styles.ownerAvatar} />
+              ) : (
+                <View style={[styles.ownerAvatar, { backgroundColor: colors.border }]} />
+              )}
 
-          <ThemedText numberOfLines={1} style={{ fontSize: 12, color: colors.textSecondary }}>
-            {owner?.username ?? "unknown"}
-          </ThemedText>
+              <ThemedText numberOfLines={1} style={{ fontSize: 12, color: colors.textSecondary }}>
+                {owner?.username ?? "unknown"}
+              </ThemedText>
+            </>
+          ) : null}
 
           {selectEnabled && active ? (
             <ThemedText style={{ color: colors.tint, fontWeight: "800", marginLeft: 6 }}>✓</ThemedText>
           ) : null}
         </View>
       </Pressable>
+    );
+  };
+
+  const AdoptProfileConfirmSheet = () => {
+    if (!adopt.open) return null;
+
+    const pid = String(adopt.profileId ?? "");
+    const profile = allProfiles.find((p) => String(p.id) === pid) ?? null;
+
+    const onConfirm = async () => {
+      if (!profile) return;
+      const uid = String(userId ?? "");
+      if (!uid) return;
+
+      const res = await adoptPublicProfile?.({ scenarioId: sid, profileId: pid, userId: uid });
+      if (!res || !res.ok) {
+        // no Alert; keep it simple and let user cancel/try again
+        return;
+      }
+
+      closeAdopt();
+      await finishSelection(pid);
+    };
+
+    return (
+      <Modal transparent visible={adopt.open} animationType="fade" onRequestClose={closeAdopt}>
+        <Pressable style={styles.menuBackdrop} onPress={closeAdopt}>
+          <Pressable
+            style={[styles.confirmCard, { backgroundColor: colors.background, borderColor: colors.border }]}
+            onPress={(e) => e?.stopPropagation?.()}
+          >
+            <ThemedText type="defaultSemiBold" style={{ color: colors.text, fontSize: 16 }}>
+              Adopt character?
+            </ThemedText>
+
+            <ThemedText style={{ color: colors.textSecondary, marginTop: 8 }}>
+              This will make <ThemedText style={{ color: colors.text, fontWeight: "800" }}>{profile?.displayName}</ThemedText> yours.
+            </ThemedText>
+
+            {profile?.avatarUrl ? (
+              <View style={{ alignItems: "center", marginTop: 14 }}>
+                <Image source={{ uri: String(profile.avatarUrl) }} style={[styles.confirmAvatar, { borderColor: colors.border }]} />
+              </View>
+            ) : null}
+
+            <View style={{ flexDirection: "row", gap: 10, marginTop: 16 }}>
+              <Pressable
+                onPress={closeAdopt}
+                style={({ pressed }) => [
+                  styles.confirmBtn,
+                  { borderColor: colors.border, backgroundColor: pressed ? colors.pressed : (colors as any).card },
+                ]}
+              >
+                <ThemedText style={{ color: colors.text, fontWeight: "800" }}>Cancel</ThemedText>
+              </Pressable>
+
+              <Pressable
+                onPress={onConfirm}
+                style={({ pressed }) => [
+                  styles.confirmBtn,
+                  { borderColor: colors.border, backgroundColor: pressed ? colors.pressed : "transparent" },
+                ]}
+              >
+                <ThemedText style={{ color: colors.tint, fontWeight: "900" }}>Adopt</ThemedText>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
     );
   };
 
@@ -703,6 +800,8 @@ const allProfiles = React.useMemo<Profile[]>(() => {
           </View>
         )}
       />
+
+      <AdoptProfileConfirmSheet />
       {mode === "tabs" && tab === "mine" && multi ? (
         <View style={[styles.bottomBar, { borderTopColor: colors.border, backgroundColor: colors.background }]}>
           <View style={{ flex: 1 }}>

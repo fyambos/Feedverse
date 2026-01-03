@@ -91,6 +91,14 @@ type AppDataApi = {
     profileIds: string[];
     toUserId: string;
   }) => Promise<{ ok: true; transferred: number; skipped: string[] } | { ok: false; error: string }>;
+
+  // adopt a shared (public) profile; claims ownership and makes it private
+  adoptPublicProfile: (args: {
+    scenarioId: string;
+    profileId: string;
+    userId: string;
+  }) => Promise<{ ok: true } | { ok: false; error: string }>;
+
   leaveScenario: (scenarioId: string, userId: string) => Promise<{ deleted: boolean } | null>;
   deleteScenario: (scenarioId: string, ownerUserId: string) => Promise<boolean>;
   setScenarioMode: (scenarioId: string, mode: "story" | "campaign") => Promise<Scenario | null>;
@@ -949,6 +957,18 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
 
           const now = new Date().toISOString();
 
+          // also reclaim any of your still-owned shared profiles in this scenario
+          // (i.e. profiles that were made public when you left, and were not adopted by someone else)
+          const profiles = { ...prev.profiles };
+          for (const k of Object.keys(profiles)) {
+            const p = (profiles as any)[k];
+            if (!p) continue;
+            if (String(p.scenarioId) !== sid) continue;
+            if (String(p.ownerUserId) !== uid) continue;
+            if (!p.isPublic) continue;
+            profiles[k] = { ...p, isPublic: false, updatedAt: now };
+          }
+
           return {
             ...prev,
             scenarios: {
@@ -959,6 +979,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                 updatedAt: now,
               } as any,
             },
+            profiles,
           };
         });
 
@@ -970,6 +991,63 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         if (!scenario) return null;
 
         return { scenario, alreadyIn };
+      },
+
+      adoptPublicProfile: async ({ scenarioId, profileId, userId }) => {
+        const sid = String(scenarioId ?? "").trim();
+        const pid = String(profileId ?? "").trim();
+        const uid = String(userId ?? "").trim();
+
+        if (!sid) return { ok: false, error: "scenarioId is required" };
+        if (!pid) return { ok: false, error: "profileId is required" };
+        if (!uid) return { ok: false, error: "userId is required" };
+        if (!db) return { ok: false, error: "DB not ready" };
+
+        const scenario = (db as any).scenarios?.[sid];
+        if (!scenario) return { ok: false, error: "Scenario not found" };
+
+        const players: string[] = Array.isArray((scenario as any).playerIds)
+          ? (scenario as any).playerIds.map(String)
+          : [];
+        if (!players.includes(uid)) return { ok: false, error: "User not in scenario" };
+
+        const existing = (db as any).profiles?.[pid] as Profile | undefined;
+        if (!existing) return { ok: false, error: "Profile not found" };
+        if (String((existing as any).scenarioId) !== sid) return { ok: false, error: "Profile not in scenario" };
+
+        const ownerId = String((existing as any).ownerUserId ?? "");
+        if (ownerId === uid) return { ok: false, error: "You already own this profile" };
+        if (!existing.isPublic) return { ok: false, error: "Profile is not shared" };
+
+        const now = new Date().toISOString();
+
+        const nextDb = await updateDb((prev) => {
+          const current = (prev as any).profiles?.[pid];
+          if (!current) return prev;
+          if (String((current as any).scenarioId) !== sid) return prev;
+          if (!(current as any).isPublic) return prev;
+
+          return {
+            ...prev,
+            profiles: {
+              ...(prev as any).profiles,
+              [pid]: {
+                ...current,
+                ownerUserId: uid,
+                isPublic: false,
+                updatedAt: now,
+              },
+            },
+          };
+        });
+
+        setState({ isReady: true, db: nextDb as any });
+
+        const after = (nextDb as any)?.profiles?.[pid];
+        if (!after) return { ok: false, error: "Adoption failed" };
+        if (String((after as any).ownerUserId ?? "") !== uid) return { ok: false, error: "Adoption failed" };
+
+        return { ok: true };
       },
 
       transferScenarioOwnership: async (scenarioId: string, fromUserId: string, toUserId: string) => {
@@ -1144,6 +1222,18 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
           }
 
           // normal user leaving
+          // - remove from scenario playerIds
+          // - mark all profiles you own in this scenario as shared/public
+          //   (ownerUserId remains, so if you re-join and nobody adopted them, you can reclaim them)
+          const profiles = { ...prev.profiles };
+          for (const k of Object.keys(profiles)) {
+            const p = (profiles as any)[k];
+            if (!p) continue;
+            if (String(p.scenarioId) !== sid) continue;
+            if (String(p.ownerUserId) !== uid) continue;
+            profiles[k] = { ...p, isPublic: true, updatedAt: now };
+          }
+
           return {
             ...prev,
             scenarios: {
@@ -1154,6 +1244,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                 updatedAt: now,
               } as any,
             },
+            profiles,
           };
         });
 
