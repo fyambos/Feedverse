@@ -23,7 +23,8 @@ export const CLOUDFLARE = {
   ACCOUNT: process.env.R2_ACCOUNT_ID,
   ACCESS_KEY: process.env.R2_ACCESS_KEY_ID,
   SECRET: process.env.R2_SECRET_ACCESS_KEY,
-  USER_DIR: "users/",
+  PUBLIC_URL: process.env.R2_PUBLIC_URL,
+  USER_DIR: "users",
 } as const;
 
 // ============================================================================

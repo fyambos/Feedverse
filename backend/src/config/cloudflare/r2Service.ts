@@ -7,7 +7,7 @@ export class R2Service {
   async uploadAvatar(file: Express.Multer.File): Promise<string> {
     const fileExtension = file.originalname.split(".").pop();
     const fileName = `${uuidv4()}.${fileExtension}`;
-    const key = `${CLOUDFLARE.USER_DIR}+${fileName}`;
+    const key = `${CLOUDFLARE.USER_DIR}/${fileName}`;
 
     await CLOUDFLARE_S3.send(
       new PutObjectCommand({
@@ -18,7 +18,7 @@ export class R2Service {
       }),
     );
 
-    const publicUrl = `https://your-r2-domain.com/${key}`;
+    const publicUrl = `${CLOUDFLARE.PUBLIC_URL}/${key}`;
     return publicUrl;
   }
 }

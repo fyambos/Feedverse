@@ -64,7 +64,7 @@ export const RegisterUserService = async (
       created_at: date,
       updated_at: date,
     },
-    avatar_url,
+    avatarFile,
   );
 
   const user: RegisterResponse = {
