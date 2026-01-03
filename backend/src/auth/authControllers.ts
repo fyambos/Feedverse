@@ -13,42 +13,46 @@ import { upload } from "../config/multer";
 export const RegisterController = [
   upload.single("avatar"),
   async (req: Request, res: Response) => {
-  if (req.method !== HTTP_METHODS.POST) {
-    return res
-      .status(HTTP_STATUS.BAD_REQUEST)
-      .send(ERROR_MESSAGES.METHOD_NOT_ALLOWED);
-  }
-
-  try {
-    const { username, name, email, password_hash, avatar_url } = req.body;
-    const avatarFile = req.file;
-
-    const result = await RegisterUserService({
-      username,
-      name,
-      email,
-      password_hash,
-      avatar_url,
-    }, avatarFile);
-
-    if (result.errors) {
-      return res.status(HTTP_STATUS.OK).json({
-        errors: result.errors,
-      });
+    if (req.method !== HTTP_METHODS.POST) {
+      return res
+        .status(HTTP_STATUS.BAD_REQUEST)
+        .send(ERROR_MESSAGES.METHOD_NOT_ALLOWED);
     }
 
-    res.status(HTTP_STATUS.CREATED).json({
-      message: USER_MESSAGES.CREATION_SUCCESS,
-      user: result.user,
-    });
-  } catch (error: unknown) {
-    console.error("Erreur lors de l'inscription:", error);
-    res
-      .status(HTTP_STATUS.INTERNAL_SERVER_ERROR)
-      .json({ error: ERROR_MESSAGES.INTERNAL_SERVER_ERROR });
-  }
-};
-]
+    try {
+      const { username, name, email, password_hash, avatar_url } = req.body;
+      const avatarFile = req.file;
+
+      const result = await RegisterUserService(
+        {
+          username,
+          name,
+          email,
+          password_hash,
+          avatar_url,
+        },
+        avatarFile,
+      );
+
+      if (result.errors) {
+        return res.status(HTTP_STATUS.OK).json({
+          errors: result.errors,
+        });
+      }
+
+      res.status(HTTP_STATUS.CREATED).json({
+        message: USER_MESSAGES.CREATION_SUCCESS,
+        user: result.user,
+      });
+    } catch (error: unknown) {
+      console.error("Erreur lors de l'inscription:", error);
+      res
+        .status(HTTP_STATUS.INTERNAL_SERVER_ERROR)
+        .json({ error: ERROR_MESSAGES.INTERNAL_SERVER_ERROR });
+    }
+  },
+];
+
 export const LoginController = async (req: Request, res: Response) => {
   if (req.method !== HTTP_METHODS.POST) {
     return res
