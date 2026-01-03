@@ -1,5 +1,6 @@
 import { CreateUserData } from "../auth/authModels";
 import { r2Service } from "../config/cloudflare/r2Service";
+import { APP_CONFIG } from "../config/constants";
 import { pool } from "../config/database";
 import { User } from "./userModels";
 
@@ -20,7 +21,7 @@ export class UserRepository {
     userData: CreateUserData,
     avatarFile?: Express.Multer.File,
   ): Promise<User> {
-    let finalAvatarUrl = userData.avatar_url;
+    let finalAvatarUrl = userData.avatar_url || APP_CONFIG.EMPTY_STRING;
 
     if (avatarFile) {
       finalAvatarUrl = await r2Service.uploadAvatar(avatarFile);

@@ -12,7 +12,12 @@ import {
   validateEmail,
   validatePassword,
 } from "./authValidators";
-import { ERROR_MESSAGES, USER_MESSAGES, VALIDATION } from "../config/constants";
+import {
+  APP_CONFIG,
+  ERROR_MESSAGES,
+  USER_MESSAGES,
+  VALIDATION,
+} from "../config/constants";
 import { UserRepository } from "../users/userRepositories";
 
 const userRepository = new UserRepository();
@@ -60,7 +65,7 @@ export const RegisterUserService = async (
       name: nameFormatted,
       email: email,
       password_hash: hashedPassword,
-      avatar_url: avatar_url,
+      avatar_url: avatar_url || APP_CONFIG.EMPTY_STRING,
       created_at: date,
       updated_at: date,
     },
