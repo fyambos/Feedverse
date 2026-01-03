@@ -24,6 +24,7 @@ export const CLOUDFLARE = {
   ACCESS_KEY: process.env.R2_ACCESS_KEY_ID,
   SECRET: process.env.R2_SECRET_ACCESS_KEY,
   PUBLIC_URL: process.env.R2_PUBLIC_URL,
+  IMAGES_SIZE: 5 * 1024 * 1024,
   USER_DIR: "users",
 } as const;
 

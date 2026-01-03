@@ -24,7 +24,7 @@ export class UserRepository {
     let finalAvatarUrl = userData.avatar_url || APP_CONFIG.EMPTY_STRING;
 
     if (avatarFile) {
-      finalAvatarUrl = await r2Service.uploadAvatar(avatarFile);
+      finalAvatarUrl = await r2Service.uploadAvatar(avatarFile, userData.id);
     }
     const query = `
       INSERT INTO users (id, username, name, email, password_hash, avatar_url, created_at, updated_at)
