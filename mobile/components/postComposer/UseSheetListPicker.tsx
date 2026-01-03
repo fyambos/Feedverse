@@ -1,5 +1,3 @@
-// mobile/components/postComposer/UseItemsPicker.tsx
-
 import React from "react";
 import { Modal, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { ThemedText } from "@/components/themed-text";
@@ -13,35 +11,50 @@ type ColorsLike = {
   tint?: string;
 };
 
-export type InvItem = { id: string; name: string; qty?: number; notes?: string };
+export type SheetListItem = { id: string; name: string; qty?: number; notes?: string };
 
 type Props = {
   colors: ColorsLike;
-
-  /** inventory items to pick from */
-  items: InvItem[];
-
-  /** disabled state (e.g. edit mode / no sheet / no items) */
+  title: string;
+  subtitle?: string;
+  items: SheetListItem[];
   disabled?: boolean;
-
-  /** called with selected item ids when user confirms */
   onConfirm: (selectedIds: string[]) => void;
 
-  /** optional label override */
+  variant?: "default" | "icon";
+  icon?: string;
   buttonLabel?: string;
+  accessibilityLabel?: string;
 };
 
 function norm(s: any) {
   return String(s ?? "").trim();
 }
 
-export function UseItemsPicker({ colors, items, disabled, onConfirm, buttonLabel = "use item" }: Props) {
+export function UseSheetListPicker({
+  colors,
+  title,
+  subtitle,
+  items,
+  disabled,
+  onConfirm,
+  variant = "icon",
+  icon = "✨",
+  buttonLabel = "",
+  accessibilityLabel = title,
+}: Props) {
   const [open, setOpen] = React.useState(false);
   const [selected, setSelected] = React.useState<Record<string, boolean>>({});
 
   const safeItems = React.useMemo(() => {
     return (Array.isArray(items) ? items : [])
-      .map((it) => ({ ...it, id: norm(it?.id), name: norm(it?.name) }))
+      .map((it) => {
+        const id = norm(it?.id);
+        const name = norm(it?.name);
+        const notes = norm(it?.notes);
+        const qty = typeof (it as any)?.qty === "number" ? Math.max(0, Math.floor((it as any).qty)) : undefined;
+        return { ...it, id, name, notes: notes || undefined, qty };
+      })
       .filter((it) => !!it.id && !!it.name);
   }, [items]);
 
@@ -69,22 +82,43 @@ export function UseItemsPicker({ colors, items, disabled, onConfirm, buttonLabel
 
   return (
     <>
-      <Pressable
-        disabled={!canOpen}
-        onPress={() => setOpen(true)}
-        style={({ pressed }) => [
-          styles.useBtn,
-          {
-            borderColor: colors.border,
-            backgroundColor: pressed ? colors.pressed : "transparent",
-            opacity: canOpen ? 1 : 0.5,
-          },
-        ]}
-        accessibilityRole="button"
-        accessibilityLabel="Use item"
-      >
-        <ThemedText style={{ color: colors.text, fontWeight: "900" }}>🎒 {buttonLabel}</ThemedText>
-      </Pressable>
+      {variant === "icon" ? (
+        <Pressable
+          disabled={!canOpen}
+          onPress={() => setOpen(true)}
+          hitSlop={10}
+          style={({ pressed }) => [
+            styles.iconBtn,
+            {
+              backgroundColor: pressed ? colors.pressed : "transparent",
+              opacity: canOpen ? 1 : 0.5,
+            },
+          ]}
+          accessibilityRole="button"
+          accessibilityLabel={accessibilityLabel}
+        >
+          <ThemedText style={{ color: colors.text, fontSize: 18, fontWeight: "900" }}>{icon}</ThemedText>
+        </Pressable>
+      ) : (
+        <Pressable
+          disabled={!canOpen}
+          onPress={() => setOpen(true)}
+          style={({ pressed }) => [
+            styles.useBtn,
+            {
+              borderColor: colors.border,
+              backgroundColor: pressed ? colors.pressed : "transparent",
+              opacity: canOpen ? 1 : 0.5,
+            },
+          ]}
+          accessibilityRole="button"
+          accessibilityLabel={accessibilityLabel}
+        >
+          <ThemedText style={{ color: colors.text, fontWeight: "900" }}>
+            {icon} {buttonLabel}
+          </ThemedText>
+        </Pressable>
+      )}
 
       <Modal transparent visible={open} animationType="fade" onRequestClose={close}>
         <Pressable style={styles.backdrop} onPress={close}>
@@ -98,10 +132,10 @@ export function UseItemsPicker({ colors, items, disabled, onConfirm, buttonLabel
               },
             ]}
           >
-            <ThemedText style={{ color: colors.text, fontSize: 16, fontWeight: "900" }}>use items</ThemedText>
-            <ThemedText style={{ color: colors.textSecondary, marginTop: 4, lineHeight: 18 }}>
-              pick what you’re using this post. (qty isn’t shown here)
-            </ThemedText>
+            <ThemedText style={{ color: colors.text, fontSize: 16, fontWeight: "900" }}>{title}</ThemedText>
+            {subtitle ? (
+              <ThemedText style={{ color: colors.textSecondary, marginTop: 4, lineHeight: 18 }}>{subtitle}</ThemedText>
+            ) : null}
 
             <View style={[styles.divider, { backgroundColor: colors.border }]} />
 
@@ -167,9 +201,7 @@ export function UseItemsPicker({ colors, items, disabled, onConfirm, buttonLabel
                   },
                 ]}
               >
-                <ThemedText style={{ color: colors.tint ?? colors.text, fontWeight: "900" }}>
-                  add ({selectedIds.length})
-                </ThemedText>
+                <ThemedText style={{ color: colors.tint ?? colors.text, fontWeight: "900" }}>add ({selectedIds.length})</ThemedText>
               </Pressable>
             </View>
           </Pressable>
@@ -186,6 +218,14 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingHorizontal: 12,
     paddingVertical: 10,
+  },
+
+  iconBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 999,
+    alignItems: "center",
+    justifyContent: "center",
   },
 
   backdrop: {

@@ -42,7 +42,7 @@ import { RowCard } from "@/components/ui/RowCard";
 import { PostTypePicker } from "@/components/postComposer/PostTypePicker";
 import type { PostType } from "@/lib/campaign/postTypes";
 
-import { UseItemsPicker, type InvItem } from "@/components/postComposer/UseItemsPicker";
+import { UseSheetListPicker, type SheetListItem } from "@/components/postComposer/UseSheetListPicker";
 
 type Params = {
   scenarioId: string;
@@ -65,14 +65,20 @@ function buildUsedItemsLine(names: string[]) {
   return `🎒 used: ${uniq.join(", ")}`;
 }
 
+function buildUsedListLine(prefixEmoji: string, label: string, names: string[]) {
+  const uniq = Array.from(new Set(names.map((n) => norm(n)).filter(Boolean)));
+  if (!uniq.length) return "";
+  return `${prefixEmoji} ${label}: ${uniq.join(", ")}`;
+}
+
 /**
  * Consume selected items from inventory:
  * - if qty exists: qty-- ; if 0 => remove; if 1 => keep but remove qty (qty undefined)
  * - if qty missing: remove (single-use)
  */
-function consumeInventory(inventory: InvItem[], selectedIds: string[]) {
+function consumeInventory(inventory: SheetListItem[], selectedIds: string[]) {
   const pick = new Set((selectedIds ?? []).map(String));
-  const next: InvItem[] = [];
+  const next: SheetListItem[] = [];
 
   for (const it of Array.isArray(inventory) ? inventory : []) {
     const id = String(it?.id ?? "");
@@ -171,12 +177,34 @@ export default function CreatePostModal() {
     return getCharacterSheetByProfileId?.(String(authorProfileId)) ?? null;
   }, [authorProfileId, getCharacterSheetByProfileId]);
 
-  const [inventory, setInventory] = useState<InvItem[]>([]);
+  const [inventory, setInventory] = useState<SheetListItem[]>([]);
+  const [equipment, setEquipment] = useState<SheetListItem[]>([]);
+  const [spells, setSpells] = useState<SheetListItem[]>([]);
+  const [abilities, setAbilities] = useState<SheetListItem[]>([]);
 
   useEffect(() => {
-    const inv = Array.isArray((sheet as any)?.inventory) ? ((sheet as any).inventory as InvItem[]) : [];
+    const inv = Array.isArray((sheet as any)?.inventory) ? ((sheet as any).inventory as SheetListItem[]) : [];
     setInventory(inv);
+
+    const eq = Array.isArray((sheet as any)?.equipment) ? ((sheet as any).equipment as SheetListItem[]) : [];
+    setEquipment(eq);
+
+    const sp = Array.isArray((sheet as any)?.spells) ? ((sheet as any).spells as SheetListItem[]) : [];
+    setSpells(sp);
+
+    const ab = Array.isArray((sheet as any)?.abilities) ? ((sheet as any).abilities as SheetListItem[]) : [];
+    setAbilities(ab);
   }, [sheet]);
+
+  const appendLineToFirstPost = useCallback((line: string) => {
+    if (!line) return;
+    setThreadTexts((prev) => {
+      const next = [...prev];
+      const base = (next[0] ?? "").trimEnd();
+      next[0] = base.length ? `${base}\n\n${line}` : line;
+      return next;
+    });
+  }, []);
 
   const applyUsedItems = useCallback(
     async (selectedIds: string[]) => {
@@ -188,14 +216,7 @@ export default function CreatePostModal() {
 
       // 1) append recap line to first tweet
       const line = buildUsedItemsLine(pickedNames);
-      if (line) {
-        setThreadTexts((prev) => {
-          const next = [...prev];
-          const base = (next[0] ?? "").trimEnd();
-          next[0] = base.length ? `${base}\n\n${line}` : line;
-          return next;
-        });
-      }
+      appendLineToFirstPost(line);
 
       // Make the resulting post a LOG (campaign-only).
       // Use a ref so it applies immediately even if the user posts before state flushes.
@@ -222,7 +243,52 @@ export default function CreatePostModal() {
         // keep UX smooth; if persistence fails, user can still post
       }
     },
-    [isEdit, inventory, sheet, upsertCharacterSheet, isCampaign, setPostType]
+    [isEdit, inventory, sheet, upsertCharacterSheet, isCampaign, setPostType, appendLineToFirstPost]
+  );
+
+  const applyUsedEquipment = useCallback(
+    async (selectedIds: string[]) => {
+      if (isEdit) return;
+      if (!selectedIds?.length) return;
+      const picked = equipment.filter((it) => selectedIds.includes(String(it.id)));
+      appendLineToFirstPost(buildUsedListLine("🛡️", "equipped", picked.map((it) => it.name)));
+
+      if (isCampaign) {
+        forceLogForUsedItemsRef.current = true;
+        setPostType("log");
+      }
+    },
+    [isEdit, equipment, appendLineToFirstPost, isCampaign, setPostType]
+  );
+
+  const applyUsedSpells = useCallback(
+    async (selectedIds: string[]) => {
+      if (isEdit) return;
+      if (!selectedIds?.length) return;
+      const picked = spells.filter((it) => selectedIds.includes(String(it.id)));
+      appendLineToFirstPost(buildUsedListLine("✨", "cast", picked.map((it) => it.name)));
+
+      if (isCampaign) {
+        forceLogForUsedItemsRef.current = true;
+        setPostType("log");
+      }
+    },
+    [isEdit, spells, appendLineToFirstPost, isCampaign, setPostType]
+  );
+
+  const applyUsedAbilities = useCallback(
+    async (selectedIds: string[]) => {
+      if (isEdit) return;
+      if (!selectedIds?.length) return;
+      const picked = abilities.filter((it) => selectedIds.includes(String(it.id)));
+      appendLineToFirstPost(buildUsedListLine("🧠", "used", picked.map((it) => it.name)));
+
+      if (isCampaign) {
+        forceLogForUsedItemsRef.current = true;
+        setPostType("log");
+      }
+    },
+    [isEdit, abilities, appendLineToFirstPost, isCampaign, setPostType]
   );
 
   // thread
@@ -712,6 +778,9 @@ export default function CreatePostModal() {
   ]);
 
   const canUseItems = !isEdit && !!authorProfileId && !!sheet && inventory.length > 0;
+  const canUseEquipment = !isEdit && !!authorProfileId && !!sheet && equipment.length > 0;
+  const canUseSpells = !isEdit && !!authorProfileId && !!sheet && spells.length > 0;
+  const canUseAbilities = !isEdit && !!authorProfileId && !!sheet && abilities.length > 0;
 
   return (
     <SafeAreaView edges={["top"]} style={{ flex: 1, backgroundColor: colors.background }}>
@@ -771,20 +840,6 @@ export default function CreatePostModal() {
                   onRemoveThreadItem={removeThreadItem}
                 />
 
-                {/* NEW: use items (create-only) */}
-                {isCampaign ? (
-                  <View style={{ marginTop: 10 }}>
-                    <UseItemsPicker
-                      colors={colors as any}
-                      items={inventory}
-                      disabled={!canUseItems}
-                      onConfirm={applyUsedItems}
-                      buttonLabel={canUseItems ? "use item" : !sheet ? "no sheet" : inventory.length ? "unavailable" : "no items"}
-                    />
-                  </View>
-                ) : null}
-                
-
                 <MediaPreview
                   colors={colors}
                   imageUrls={imageUrls}
@@ -809,7 +864,65 @@ export default function CreatePostModal() {
 
             <View style={[styles.softDivider, { backgroundColor: colors.border }]} />
 
-            <ComposerToolbar colors={colors} onTakePhoto={takePhoto} onPickImages={pickImages} onPickVideoThumb={pickVideoThumb} />
+            <ComposerToolbar
+              colors={colors}
+              onTakePhoto={takePhoto}
+              onPickImages={pickImages}
+              onPickVideoThumb={pickVideoThumb}
+              leftTools={
+                isCampaign ? (
+                  <>
+                    <UseSheetListPicker
+                      colors={colors as any}
+                      title="use items"
+                      subtitle="pick what you’re using this post."
+                      items={inventory}
+                      disabled={!canUseItems}
+                      onConfirm={applyUsedItems}
+                      variant="icon"
+                      icon="🎒"
+                      accessibilityLabel="Use item"
+                    />
+
+                    <UseSheetListPicker
+                      colors={colors as any}
+                      title="use equipment"
+                      subtitle="pick what you’re using this post."
+                      items={equipment}
+                      disabled={!canUseEquipment}
+                      onConfirm={applyUsedEquipment}
+                      variant="icon"
+                      icon="🛡️"
+                      accessibilityLabel="Use equipment"
+                    />
+
+                    <UseSheetListPicker
+                      colors={colors as any}
+                      title="use spells"
+                      subtitle="pick what you’re using this post."
+                      items={spells}
+                      disabled={!canUseSpells}
+                      onConfirm={applyUsedSpells}
+                      variant="icon"
+                      icon="✨"
+                      accessibilityLabel="Use spells"
+                    />
+
+                    <UseSheetListPicker
+                      colors={colors as any}
+                      title="use abilities"
+                      subtitle="pick what you’re using this post."
+                      items={abilities}
+                      disabled={!canUseAbilities}
+                      onConfirm={applyUsedAbilities}
+                      variant="icon"
+                      icon="🧠"
+                      accessibilityLabel="Use abilities"
+                    />
+                  </>
+                ) : null
+              }
+            />
 
             {/* Campaign */}
             {isCampaign ? (
