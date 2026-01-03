@@ -24,7 +24,8 @@ export function formatRelativeTime(iso: string) {
   const h = Math.floor(min / 60);
   if (h < 24) return `${h}h`;
   const d = Math.floor(h / 24);
-  return `${d}d`;
+  if (d < 7) return `${d}d`;
+  return `${new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" })}`;
 }
 export function formatDetailTimestamp(iso: string) {
   const d = new Date(iso);

@@ -679,7 +679,7 @@ export default function CreatePostModal() {
 
       // CREATE: reply/quote => single post
       if (!isStandaloneCreate) {
-        const postedAtIso = new Date().toISOString();
+        const postedAtIso = date.toISOString();
 
         const baseText = (threadTexts[0] ?? "").trim();
         const text = savedPostType === "roll" ? `${baseText}${rollLine}` : baseText;
@@ -711,7 +711,7 @@ export default function CreatePostModal() {
       }
 
       // CREATE: thread => chain as replies
-      const baseTime = new Date();
+      const baseTime = new Date(date);
       const insertedAtBaseIso = baseTime.toISOString();
       let prevId: string | undefined;
 
