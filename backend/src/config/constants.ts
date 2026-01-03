@@ -15,6 +15,20 @@ export const DATABASE_NAME = process.env.DB_NAME;
 export const DATABASE_SSL_MODE = Boolean(process.env.DB_SSLMODE);
 
 // ============================================================================
+// CLOUDFLARE
+// ============================================================================
+
+export const CLOUDFLARE = {
+  BUCKET: process.env.R2_BUCKET,
+  ACCOUNT: process.env.R2_ACCOUNT_ID,
+  ACCESS_KEY: process.env.R2_ACCESS_KEY_ID,
+  SECRET: process.env.R2_SECRET_ACCESS_KEY,
+  PUBLIC_URL: process.env.R2_PUBLIC_URL,
+  IMAGES_SIZE: 5 * 1024 * 1024,
+  USER_DIR: "users",
+} as const;
+
+// ============================================================================
 // CODES DE STATUT HTTP
 // ============================================================================
 
@@ -181,4 +195,5 @@ export const APP_CONFIG = {
   MAX_REQUEST_TIMEOUT_MS: 30000,
   RATE_LIMIT_WINDOW_MS: 900000, // 15 minutes
   RATE_LIMIT_MAX_REQUESTS: 100,
+  EMPTY_STRING: "",
 } as const;

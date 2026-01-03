@@ -12,10 +12,12 @@ app.use(bodyParser.urlencoded({ extended: true }));
 app.use(ROUTES_AUTH.BASE, authRouter);
 app.use(ROUTES_USERS.BASE, userRouter);
 
-app.listen(APP_CONFIG.SERVER_PORT, () => {
+const AppStart = async () => {
   console.log(
     `L'application est lançée à l'adresse : ${APP_CONFIG.ENVIRONMENT}:${APP_CONFIG.SERVER_PORT}`,
   );
-});
+};
+
+app.listen(APP_CONFIG.SERVER_PORT, AppStart);
 
 export default app;
