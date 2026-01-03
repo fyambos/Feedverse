@@ -1,11 +1,14 @@
 // mobile/components/post/PostMenu.tsx
 import React from "react";
-import { Alert, Modal, Pressable, StyleSheet, View, ScrollView } from "react-native";
+import { Alert, Dimensions, Modal, Pressable, StyleSheet, View, ScrollView } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ThemedText } from "@/components/themed-text";
 import { Avatar } from "@/components/ui/Avatar";
 import type { Profile, Post as DbPost, CharacterSheet as DbCharacterSheet } from "@/data/db/schema";
+import { useAppData } from "@/context/appData";
+
+// ---------- Types ----------
 
 type ColorsLike = {
   background: string;
@@ -211,7 +214,12 @@ export function PostMenu({
   updateSheet,
   createGmPost,
 }: Props) {
+  const appData = useAppData();
+  const [pinBusy, setPinBusy] = React.useState(false);
+
   const insets = useSafeAreaInsets();
+  const screenH = Dimensions.get("window").height;
+  const sheetMaxH = Math.max(320, screenH - insets.top - 12);
 
   // ---------- NORMAL MENU ----------
   const REPORT_LABEL = "Report post";
@@ -294,7 +302,6 @@ export function PostMenu({
     setDraft(setStat(draft, k, next));
   };
 
- 
   const setStatusManually = () => {
     if (!draft) return;
 
@@ -303,34 +310,35 @@ export function PostMenu({
     // iOS: Alert.prompt exists
     const anyAlert = Alert as any;
     if (typeof anyAlert.prompt === "function") {
-        anyAlert.prompt(
+      anyAlert.prompt(
         "Set status",
         "Type a status (ex: ok, down, stunned, bleeding...)",
         [
-            { text: "Cancel", style: "cancel" },
-            {
+          { text: "Cancel", style: "cancel" },
+          {
             text: "Clear",
             style: "destructive",
             onPress: () => setDraft(setStatus(draft, "")),
-            },
-            {
+          },
+          {
             text: "Save",
             onPress: (value?: string) => setDraft(setStatus(draft, String(value ?? "").trim())),
-            },
+          },
         ],
         "plain-text",
         current
-        );
-        return;
+      );
+      return;
     }
 
     // Android fallback (no prompt): quick preset + clear
     Alert.alert("Set status", current ? `Current: ${current}` : "Current: —", [
-        { text: "Cancel", style: "cancel" },
-        { text: "Clear", style: "destructive", onPress: () => setDraft(setStatus(draft, "")) },
-        { text: "OK", onPress: () => {} },
+      { text: "Cancel", style: "cancel" },
+      { text: "Clear", style: "destructive", onPress: () => setDraft(setStatus(draft, "")) },
+      { text: "OK", onPress: () => {} },
     ]);
-    };
+  };
+
   const commitDone = () => {
     if (!isCampaign) {
       onClose();
@@ -370,6 +378,30 @@ export function PostMenu({
     onClose();
   };
 
+  // pinned state (your DB uses isPinned + pinOrder)
+  const pinned = Boolean((item as any)?.isPinned) || Number((item as any)?.pinOrder ?? 0) > 0;
+
+  const onTogglePin = async () => {
+    if (!scenarioId) {
+      Alert.alert("Pin/Unpin failed", "Missing scenarioId.");
+      return;
+    }
+
+    if (pinBusy) return;
+
+    const nextPinned = !pinned;
+
+    try {
+      setPinBusy(true);
+      await appData.togglePinPost(String(scenarioId), String(item.id), nextPinned);
+      onClose();
+    } catch (e: any) {
+      Alert.alert("Failed", e?.message ?? "Could not update pin status.");
+    } finally {
+      setPinBusy(false);
+    }
+  };
+
   // ---------- Sections ----------
   const NORMAL_SECTIONS: MenuSection[] = React.useMemo(
     () => [
@@ -390,7 +422,7 @@ export function PostMenu({
         ],
       },
       {
-        title: "Profile",
+        title: "Profile (view as…)",
         emoji: "👤",
         items: STATE_OPTIONS.map((label) => ({
           key: label,
@@ -445,76 +477,81 @@ export function PostMenu({
         title: "Stats",
         emoji: "🧬",
         items: [
-            {
+          {
             key: "stats_block",
             render: () => (
-                <View style={[styles.statsBlock, { borderColor: colors.border }]}>
+              <View style={[styles.statsBlock, { borderColor: colors.border }]}>
                 {STAT_KEYS.map((k) => {
-                    const value = draft ? getStat(draft, k) : 0;
-                    const short =
-                    k === "strength" ? "STR" :
-                    k === "dexterity" ? "DEX" :
-                    k === "constitution" ? "CON" :
-                    k === "intelligence" ? "INT" :
-                    k === "wisdom" ? "WIS" : "CHA";
+                  const value = draft ? getStat(draft, k) : 0;
+                  const short =
+                    k === "strength"
+                      ? "STR"
+                      : k === "dexterity"
+                      ? "DEX"
+                      : k === "constitution"
+                      ? "CON"
+                      : k === "intelligence"
+                      ? "INT"
+                      : k === "wisdom"
+                      ? "WIS"
+                      : "CHA";
 
-                    const disabled = !draft;
+                  const disabled = !draft;
 
-                    return (
+                  return (
                     <View key={k} style={styles.statRow}>
-                        <ThemedText style={{ color: colors.textSecondary, fontWeight: "800", width: 52 }}>
-                        {short}
-                        </ThemedText>
+                      <ThemedText style={{ color: colors.textSecondary, fontWeight: "800", width: 52 }}>{short}</ThemedText>
 
-                        <Pressable
+                      <Pressable
                         disabled={disabled}
                         onPress={() => bumpStat(k, -1)}
                         style={({ pressed }) => [
-                            styles.stepBtn,
-                            {
+                          styles.stepBtn,
+                          {
                             borderColor: colors.border,
                             backgroundColor: pressed ? colors.pressed : "transparent",
                             opacity: disabled ? 0.45 : 1,
-                            },
+                          },
                         ]}
-                        >
+                      >
                         <ThemedText style={{ color: colors.text, fontSize: 18, fontWeight: "900" }}>−</ThemedText>
-                        </Pressable>
+                      </Pressable>
 
-                        <ThemedText style={{ color: colors.text, fontSize: 16, fontWeight: "900", width: 42, textAlign: "center" }}>
+                      <ThemedText
+                        style={{ color: colors.text, fontSize: 16, fontWeight: "900", width: 42, textAlign: "center" }}
+                      >
                         {value}
-                        </ThemedText>
+                      </ThemedText>
 
-                        <Pressable
+                      <Pressable
                         disabled={disabled}
                         onPress={() => bumpStat(k, +1)}
                         style={({ pressed }) => [
-                            styles.stepBtn,
-                            {
+                          styles.stepBtn,
+                          {
                             borderColor: colors.border,
                             backgroundColor: pressed ? colors.pressed : "transparent",
                             opacity: disabled ? 0.45 : 1,
-                            },
+                          },
                         ]}
-                        >
+                      >
                         <ThemedText style={{ color: colors.text, fontSize: 18, fontWeight: "900" }}>+</ThemedText>
-                        </Pressable>
+                      </Pressable>
                     </View>
-                    );
+                  );
                 })}
-                </View>
+              </View>
             ),
-            },
+          },
         ],
-        },
+      },
       {
         title: "Status",
         emoji: "🏷️",
         items: [{ key: "status_set", emoji: "🏷️", label: "Set status…", onPress: setStatusManually }],
       },
     ],
-    // include draft so the memo is safe; it doesn't actually depend on it, but it's fine
-    [draft]
+    [draft, colors.border, colors.pressed, colors.text, colors.textSecondary]
   );
 
   const sections = isCampaign ? GM_SECTIONS : NORMAL_SECTIONS;
@@ -558,7 +595,7 @@ export function PostMenu({
 
   return (
     <Modal transparent visible={visible} animationType="fade" onRequestClose={onClose}>
-      <SafeAreaView style={styles.safeRoot} edges={["left", "right", "bottom"]}>
+      <SafeAreaView style={styles.safeRoot} edges={["top", "left", "right", "bottom"]}>
         <Pressable style={styles.menuBackdrop} onPress={onClose}>
           <Pressable
             style={[
@@ -566,7 +603,9 @@ export function PostMenu({
               {
                 backgroundColor: colors.background,
                 borderColor: colors.border,
-                paddingBottom: 10,
+                paddingBottom: 10 + insets.bottom, // protects Cancel
+                maxHeight: sheetMaxH, // prevents reaching under notch
+                marginTop: 8, // breathing room from top if tall
               },
             ]}
             onPress={() => {}}
@@ -585,16 +624,37 @@ export function PostMenu({
                 </View>
               </View>
 
-              <ThemedText style={{ color: colors.textSecondary, fontSize: 13, marginTop: 6 }} numberOfLines={1}>
-                {isCampaign ? "⋯ gm actions" : "⋯ post options"}
-              </ThemedText>
+              {isCampaign ? (
+                <Pressable
+                  onPress={onTogglePin}
+                  disabled={pinBusy}
+                  style={({ pressed }) => [
+                    styles.pinBtn,
+                    {
+                      borderColor: colors.border,
+                      backgroundColor: pressed ? colors.pressed : "transparent",
+                      opacity: pinBusy ? 0.6 : 1,
+                    },
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityLabel={pinned ? "Unpin Post" : "Pin Post"}
+                >
+                  <ThemedText style={{ color: colors.text, fontSize: 13, fontWeight: "900" }}>
+                    {pinBusy ? "…" : pinned ? "Unpin Post" : "Pin Post"}
+                  </ThemedText>
+                </Pressable>
+              ) : (
+                <ThemedText style={{ color: colors.textSecondary, fontSize: 13, marginTop: 6 }} numberOfLines={1}>
+                  ⋯ post options
+                </ThemedText>
+              )}
             </View>
 
             <View style={[styles.menuDivider, { backgroundColor: colors.border }]} />
 
             {isCampaign ? renderCampaignHeader() : null}
 
-            <ScrollView style={{ maxHeight: 520 }} contentContainerStyle={{ paddingBottom: 12 + insets.bottom }} showsVerticalScrollIndicator={false}>
+            <ScrollView style={{ flexGrow: 0 }} contentContainerStyle={{ paddingBottom: 12 }} showsVerticalScrollIndicator={false}>
               {sections.map((sec, idx) => (
                 <View key={sec.title}>
                   <ThemedText style={[styles.menuSectionTitle, { color: colors.textSecondary }]}>
@@ -605,45 +665,45 @@ export function PostMenu({
                   {sec.items.map((it) => {
                     // custom block item
                     if (it.render) {
-                        return (
+                      return (
                         <View key={it.key} style={{ paddingHorizontal: 12, paddingVertical: 6 }}>
-                            {it.render()}
+                          {it.render()}
                         </View>
-                        );
+                      );
                     }
 
                     // normal press item
                     const disabled = isCampaign && !draft;
                     return (
-                        <Pressable
+                      <Pressable
                         key={it.key}
                         onPress={disabled ? undefined : it.onPress}
                         style={({ pressed }) => [
-                            styles.menuItem,
-                            {
+                          styles.menuItem,
+                          {
                             backgroundColor: pressed ? colors.pressed : "transparent",
                             opacity: disabled ? 0.45 : 1,
-                            },
+                          },
                         ]}
-                        >
+                      >
                         <View style={styles.menuItemRow}>
-                            {it.emoji ? (
+                          {it.emoji ? (
                             <ThemedText style={{ fontSize: 16, width: 22, textAlign: "center" }}>{it.emoji}</ThemedText>
-                            ) : null}
-                            <ThemedText
+                          ) : null}
+                          <ThemedText
                             style={{
-                                color: it.danger ? "#ff3b30" : colors.text,
-                                fontSize: 15,
-                                fontWeight: it.danger ? "700" : "500",
-                                flex: 1,
+                              color: it.danger ? "#ff3b30" : colors.text,
+                              fontSize: 15,
+                              fontWeight: it.danger ? "700" : "500",
+                              flex: 1,
                             }}
-                            >
+                          >
                             {it.label}
-                            </ThemedText>
+                          </ThemedText>
                         </View>
-                        </Pressable>
+                      </Pressable>
                     );
-                    })}
+                  })}
 
                   {idx < sections.length - 1 ? <View style={[styles.menuDivider, { backgroundColor: colors.border }]} /> : null}
                 </View>
@@ -735,25 +795,35 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+
   statsBlock: {
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: 14,
     padding: 10,
-    },
+  },
 
-    statRow: {
+  statRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     paddingVertical: 8,
-    },
+  },
 
-    stepBtn: {
+  stepBtn: {
     width: 44,
     height: 40,
     borderRadius: 12,
     borderWidth: StyleSheet.hairlineWidth,
     alignItems: "center",
     justifyContent: "center",
-    },
+  },
+
+  pinBtn: {
+    marginTop: 6,
+    alignSelf: "flex-start",
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 999,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
 });

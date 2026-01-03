@@ -6,14 +6,14 @@ import { seedDbIfNeeded } from "@/data/db/seed";
 import { buildGlobalTagFromKey } from "@/lib/tags";
 import { pickScenarioExportJson } from "@/lib/importExport/importFromFile";
 import { importScenarioFromJson } from "@/lib/importExport/importScenario";
-import { useAuth } from "@/context/auth"; 
+import { useAuth } from "@/context/auth";
 import { buildScenarioExportBundleV1 } from "@/lib/importExport/exportScenarioBundle";
 import { saveAndShareScenarioExport } from "@/lib/importExport/exportScenario";
 
 type AppDataState = {
   isReady: boolean;
   db: DbV5 | null;
-};  
+};
 
 type PostCursor = string; // `${insertedAt}|${id}`
 
@@ -55,16 +55,6 @@ type ProfileFeedPageResult = {
   nextCursor: FeedCursor | null;
 };
 
-type ProfileViewState =
-  | "normal"
-  | "muted"
-  | "blocked"
-  | "blocked_by"
-  | "suspended"
-  | "deactivated"
-  | "reactivated"
-  | "reported"
-  | "privated";
 
 // GM: apply updates to sheets, then create a GM post that summarizes changes
 export type GmApplySheetUpdateArgs = {
@@ -136,6 +126,11 @@ type AppDataApi = {
   isPostRepostedByProfileId: (profileId: string, postId: string) => boolean;
   getRepostEventForProfile: (profileId: string, postId: string) => Repost | null;
 
+  // pins (campaign)
+  togglePinPost: (scenarioId: string, postId: string, nextPinned: boolean) => Promise<void>;
+  listPinnedPostsForScenario: (scenarioId: string) => Post[];
+  reorderPinnedPostsForScenario: (scenarioId: string, orderedPostIds: string[]) => Promise<void>;
+
   // sheets
   getCharacterSheetByProfileId: (profileId: string) => CharacterSheet | null;
   upsertCharacterSheet: (sheet: CharacterSheet) => Promise<void>;
@@ -150,7 +145,7 @@ type AppDataApi = {
     includeReposts: boolean;
     includeSheets: boolean;
   }) => Promise<
-    | { ok: true; scenarioId: string; importedProfiles: number; importedPosts: number; renamedHandles: Array<{from:string;to:string}> }
+    | { ok: true; scenarioId: string; importedProfiles: number; importedPosts: number; renamedHandles: Array<{ from: string; to: string }> }
     | { ok: false; error: string }
   >;
   exportScenarioToFile: (args: {
@@ -234,13 +229,22 @@ function makeFeedCursor(item: ProfileFeedItem): FeedCursor {
   return `${String(item.activityAt)}|${String(item.kind)}|${String(item.post.id)}|${rep}`;
 }
 
+// --- pins helpers (stored on scenario.settings.pinnedPostIds)
+function getPinnedIdsFromScenario(db: DbV5, scenarioId: string): string[] {
+  const sid = String(scenarioId);
+  const s = db.scenarios?.[sid];
+  const arr = ((s as any)?.settings?.pinnedPostIds ?? []) as any;
+  return Array.isArray(arr) ? arr.map(String).filter(Boolean) : [];
+}
+
+function uniq(arr: string[]) {
+  return Array.from(new Set(arr.map(String)));
+}
+
 // small util: diff shallow keys for GM post text
 function diffShallow(prev: any, next: any): string[] {
   const lines: string[] = [];
-  const keys = new Set<string>([
-    ...Object.keys(prev ?? {}),
-    ...Object.keys(next ?? {}),
-  ]);
+  const keys = new Set<string>([...Object.keys(prev ?? {}), ...Object.keys(next ?? {})]);
 
   const skip = new Set(["updatedAt", "createdAt", "profileId", "ownerProfileId", "id", "scenarioId"]);
 
@@ -251,7 +255,7 @@ function diffShallow(prev: any, next: any): string[] {
     const b = (next ?? {})[k];
 
     const same =
-      (a === b) ||
+      a === b ||
       (Number.isNaN(a) && Number.isNaN(b)) ||
       (typeof a === "object" && typeof b === "object" && JSON.stringify(a) === JSON.stringify(b));
 
@@ -513,6 +517,46 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         setState({ isReady: true, db: next as any });
       },
 
+      deletePost: async (postId) => {
+        const id = String(postId);
+        const next = await updateDb((prev) => {
+          if (!prev.posts[id]) return prev;
+
+          const posts = { ...prev.posts };
+          delete posts[id];
+
+          const reposts = { ...((prev as any).reposts ?? {}) };
+          for (const k of Object.keys(reposts ?? {})) {
+            if (String((reposts as any)[k]?.postId) === id) delete reposts[k];
+          }
+
+          // also remove from pinned list for its scenario (if present)
+          const scenarios = { ...prev.scenarios };
+          const removedPostScenarioId = String((prev.posts as any)?.[id]?.scenarioId ?? "");
+
+          if (removedPostScenarioId && scenarios[removedPostScenarioId]) {
+            const s = scenarios[removedPostScenarioId];
+            const prevSettings = (((s as any).settings ?? {}) as Record<string, any>);
+            const prevPinned = Array.isArray(prevSettings.pinnedPostIds)
+              ? prevSettings.pinnedPostIds.map(String).filter(Boolean)
+              : [];
+
+            if (prevPinned.includes(id)) {
+              const nextPinned = prevPinned.filter((x) => x !== id);
+              scenarios[removedPostScenarioId] = {
+                ...s,
+                settings: { ...prevSettings, pinnedPostIds: nextPinned },
+                updatedAt: new Date().toISOString(),
+              } as any;
+            }
+          }
+
+          return { ...prev, posts, reposts, scenarios };
+        });
+
+        setState({ isReady: true, db: next as any });
+      },
+
       // --- likes
       isPostLikedBySelectedProfile: (scenarioId, postId) => {
         if (!db) return false;
@@ -538,7 +582,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
           const liked = ((liker as any).likedPostIds ?? []).map(String);
           const already = liked.includes(pid);
 
-            const nextLiked: string[] = already ? liked.filter((x: string) => x !== pid) : [...liked, pid];
+          const nextLiked: string[] = already ? liked.filter((x: string) => x !== pid) : [...liked, pid];
 
           const now = new Date().toISOString();
 
@@ -634,23 +678,179 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         setState({ isReady: true, db: next as any });
       },
 
-      deletePost: async (postId) => {
-        const id = String(postId);
-        const next = await updateDb((prev) => {
-          if (!prev.posts[id]) return prev;
+      // --- pins (campaign)
+      listPinnedPostsForScenario: (scenarioId: string) => {
+        if (!db) return [];
+        const sid = String(scenarioId);
 
-          const posts = { ...prev.posts };
-          delete posts[id];
+        const pinnedIds = getPinnedIdsFromScenario(db, sid);
+        const out: Post[] = [];
 
-          const reposts = { ...((prev as any).reposts ?? {}) };
-          for (const k of Object.keys(reposts ?? {})) {
-            if (String((reposts as any)[k]?.postId) === id) delete reposts[k];
+        for (const id of pinnedIds) {
+          const p = db.posts?.[String(id)];
+          if (!p) continue;
+          if (String((p as any).scenarioId) !== sid) continue;
+          if ((p as any).parentPostId) continue;
+          out.push(p);
+        }
+
+        return out;
+      },
+
+      togglePinPost: async (scenarioId: string, postId: string, nextPinned: boolean) => {
+        const sid = String(scenarioId ?? "").trim();
+        const pid = String(postId ?? "").trim();
+        if (!sid || !pid) return;
+
+        const nextDb = await updateDb((prev) => {
+          const scenario = prev.scenarios?.[sid];
+          if (!scenario) return prev;
+
+          const post = prev.posts?.[pid];
+          if (!post) return prev;
+
+          // only pin root posts in this scenario
+          if ((post as any).parentPostId) return prev;
+          if (String((post as any).scenarioId) !== sid) return prev;
+
+          const now = new Date().toISOString();
+
+          const prevSettings = (((scenario as any).settings ?? {}) as Record<string, any>);
+          const prevPinned = Array.isArray(prevSettings.pinnedPostIds)
+            ? prevSettings.pinnedPostIds.map(String).filter(Boolean)
+            : [];
+
+          let pinnedIds = [...prevPinned];
+          const already = pinnedIds.includes(pid);
+
+          if (nextPinned) {
+            if (!already) {
+              // append so “first pinned is #1”
+              pinnedIds.push(pid);
+            }
+          } else {
+            if (already) pinnedIds = pinnedIds.filter((x) => x !== pid);
           }
 
-          return { ...prev, posts, reposts };
+          pinnedIds = uniq(pinnedIds);
+
+          const nextSettings = { ...prevSettings, pinnedPostIds: pinnedIds };
+
+          const posts = { ...prev.posts };
+
+          // update pinned posts’ pinOrder (1-based)
+          pinnedIds.forEach((id, idx) => {
+            const p = posts[id];
+            if (!p) return;
+            if (String((p as any).scenarioId) !== sid) return;
+            posts[id] = {
+              ...p,
+              isPinned: true,
+              pinOrder: idx + 1,
+              updatedAt: now,
+            } as any;
+          });
+
+          // clear pin flags for posts in this scenario not pinned anymore
+          const pinnedSet = new Set(pinnedIds);
+          for (const p of Object.values(posts)) {
+            if (String((p as any).scenarioId) !== sid) continue;
+            const id = String((p as any).id);
+            if (!pinnedSet.has(id) && (((p as any).isPinned) || (p as any).pinOrder != null)) {
+              posts[id] = {
+                ...p,
+                isPinned: false,
+                pinOrder: undefined,
+                updatedAt: now,
+              } as any;
+            }
+          }
+
+          return {
+            ...prev,
+            scenarios: {
+              ...prev.scenarios,
+              [sid]: {
+                ...scenario,
+                settings: nextSettings,
+                updatedAt: now,
+              } as any,
+            },
+            posts,
+          };
         });
 
-        setState({ isReady: true, db: next as any });
+        setState({ isReady: true, db: nextDb as any });
+      },
+
+      reorderPinnedPostsForScenario: async (scenarioId: string, orderedPostIds: string[]) => {
+        const sid = String(scenarioId ?? "").trim();
+        if (!sid) return;
+
+        const ids = (orderedPostIds ?? []).map(String).filter(Boolean);
+
+        const nextDb = await updateDb((prev) => {
+          const scenario = prev.scenarios?.[sid];
+          if (!scenario) return prev;
+
+          const now = new Date().toISOString();
+
+          // validate + keep only existing root posts in this scenario
+          const clean: string[] = [];
+          const seen = new Set<string>();
+
+          for (const id of ids) {
+            if (seen.has(id)) continue;
+            const p = prev.posts?.[id];
+            if (!p) continue;
+            if (String((p as any).scenarioId) !== sid) continue;
+            if ((p as any).parentPostId) continue;
+            clean.push(id);
+            seen.add(id);
+          }
+
+          const prevSettings = (((scenario as any).settings ?? {}) as Record<string, any>);
+          const nextSettings = { ...prevSettings, pinnedPostIds: clean };
+
+          const posts = { ...prev.posts };
+
+          // apply pinOrder (1-based)
+          clean.forEach((id, idx) => {
+            const p = posts[id];
+            if (!p) return;
+            posts[id] = {
+              ...p,
+              isPinned: true,
+              pinOrder: idx + 1,
+              updatedAt: now,
+            } as any;
+          });
+
+          // clear pin flags for posts in scenario not in clean
+          const pinnedSet = new Set(clean);
+          for (const p of Object.values(posts)) {
+            if (String((p as any).scenarioId) !== sid) continue;
+            const id = String((p as any).id);
+            if (!pinnedSet.has(id) && (((p as any).isPinned) || (p as any).pinOrder != null)) {
+              posts[id] = { ...p, isPinned: false, pinOrder: undefined, updatedAt: now } as any;
+            }
+          }
+
+          return {
+            ...prev,
+            scenarios: {
+              ...prev.scenarios,
+              [sid]: {
+                ...scenario,
+                settings: nextSettings,
+                updatedAt: now,
+              } as any,
+            },
+            posts,
+          };
+        });
+
+        setState({ isReady: true, db: nextDb as any });
       },
 
       // --- scenarios
@@ -948,8 +1148,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       },
 
       // --- character sheets
-      getCharacterSheetByProfileId: (profileId: string) =>
-        db ? (db as any).sheets?.[String(profileId)] ?? null : null,
+      getCharacterSheetByProfileId: (profileId: string) => (db ? (db as any).sheets?.[String(profileId)] ?? null : null),
 
       upsertCharacterSheet: async (sheet: CharacterSheet) => {
         const now = new Date().toISOString();
@@ -1099,7 +1298,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
           renamedHandles: res.imported.renamedHandles,
         };
       },
-      
+
       exportScenarioToFile: async ({ scenarioId, includeProfiles, includePosts, includeReposts, includeSheets, profileIds }) => {
         try {
           if (!db) return { ok: false, error: "DB not ready" };
@@ -1165,7 +1364,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         };
       },
 
-            // --- scenario settings
+      // --- scenario settings
       getScenarioSettings: (scenarioId: string) => {
         if (!db) return {};
         const sid = String(scenarioId ?? "").trim();
@@ -1201,8 +1400,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         setState({ isReady: true, db: nextDb as any });
       },
     };
-  }, [db, currentUserId]);
-  
+  }, [db, currentUserId, auth.isReady]);
 
   return <Ctx.Provider value={{ ...state, ...api }}>{children}</Ctx.Provider>;
 }

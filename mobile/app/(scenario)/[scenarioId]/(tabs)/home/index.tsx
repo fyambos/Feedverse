@@ -89,7 +89,15 @@ export default function HomeScreen() {
   const openScenarioMenu = useCallback(() => {
     const profileId = selectedProfile?.id ? String(selectedProfile.id) : null;
 
-    Alert.alert("Scenario menu", "", [
+    // detect scenario mode (campaign vs story)
+    const scenario =
+      typeof app.getScenarioById === "function"
+        ? app.getScenarioById(sid)
+        : app.scenarios?.[sid] ?? app.scenarioById?.[sid] ?? null;
+
+    const isCampaign = String((scenario as any)?.mode ?? "story") === "campaign";
+
+    const actions: any[] = [
       {
         text: "Profile",
         onPress: () => {
@@ -103,6 +111,22 @@ export default function HomeScreen() {
           } as any);
         },
       },
+    ];
+
+    // Add "View pins" only in campaign mode, before View Settings
+    if (isCampaign) {
+      actions.push({
+        text: "View pins",
+        onPress: () => {
+          router.push({
+            pathname: "/(scenario)/[scenarioId]/pins",
+            params: { scenarioId: sid },
+          } as any);
+        },
+      });
+    }
+
+    actions.push(
       {
         text: "View Settings",
         onPress: () => {
@@ -122,9 +146,11 @@ export default function HomeScreen() {
           router.replace("/" as any);
         },
       },
-      { text: "Cancel", style: "cancel" },
-    ]);
-  }, [exportThisScenario, selectedProfile?.id, sid]);
+      { text: "Cancel", style: "cancel" }
+    );
+
+    Alert.alert("Scenario menu", "", actions);
+  }, [app, exportThisScenario, selectedProfile?.id, sid]);
 
   // ===== FEED =====
   const [items, setItems] = useState<any[]>([]);
@@ -372,7 +398,6 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
 
-  // IMPORTANT: don't add top padding here (the header is already in the list)
   list: { paddingBottom: 8 },
 
   separator: { height: StyleSheet.hairlineWidth, opacity: 0.8 },
