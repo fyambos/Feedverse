@@ -35,6 +35,8 @@ import {
   trimTo,
 } from "@/lib/profileForm";
 
+import { MAX_TOTAL_PROFILES_PER_SCENARIO } from "@/lib/rules";
+
 /* -------------------------------------------------------------------------- */
 
 export default function CreateProfileModal() {
@@ -142,6 +144,18 @@ export default function CreateProfileModal() {
     if (!userId) {
       Alert.alert("Not logged in", "You need a user to create a profile.");
       return;
+    }
+
+    // scenario-level cap: when full, users must ask an admin to transfer a profile
+    if (!isEdit) {
+      const totalScenarioCount = listProfilesForScenario(sid).length;
+      if (totalScenarioCount >= MAX_TOTAL_PROFILES_PER_SCENARIO) {
+        Alert.alert(
+          "All spots taken",
+          "This scenario has reached the maximum number of profiles. Ask an admin to transfer you a profile."
+        );
+        return;
+      }
     }
 
     // handle must be unique per scenario (exclude self when editing)
