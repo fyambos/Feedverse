@@ -203,7 +203,10 @@ const allProfiles = React.useMemo<Profile[]>(() => {
           }
 
           if (String(afterCreate ?? "") === "1") {
-            router.replace(`/(scenario)/${sid}` as any);
+            router.replace({
+              pathname: "/(scenario)/[scenarioId]/(tabs)/home",
+              params: { scenarioId: sid },
+            } as any);
             return;
           }
 

@@ -29,8 +29,32 @@ function TabIcon({
 }
 
 function scenarioIdFromPathname(pathname: string): string {
-  const first = pathname.split("/").filter(Boolean)[0];
-  return String(first ?? "").trim();
+  const parts = pathname
+    .split("/")
+    .map((p) => p.trim())
+    .filter(Boolean);
+
+  // Typical shapes:
+  // - /(scenario)/demo-kpop/(tabs)/home
+  // - /demo-kpop/home (depending on router config)
+  const scenarioIdx = parts.findIndex((p) => p === "(scenario)" || p === "scenario");
+  const candidate =
+    scenarioIdx >= 0
+      ? parts[scenarioIdx + 1]
+      : parts.length > 0
+      ? parts[0]
+      : "";
+
+  const raw = String(candidate ?? "").trim();
+  if (!raw) return "";
+  if (raw === "modal") return "";
+  if (raw.startsWith("(")) return ""; // route group
+
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
 }
 
 export default function TabLayout() {
@@ -54,7 +78,7 @@ export default function TabLayout() {
     }
 
     const fromPath = scenarioIdFromPathname(pathname);
-    if (fromPath && fromPath !== "modal") {
+    if (fromPath) {
       lastSidRef.current = fromPath;
       return fromPath;
     }
