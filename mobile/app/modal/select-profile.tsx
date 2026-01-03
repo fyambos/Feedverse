@@ -1,6 +1,6 @@
 // mobile/app/modal/select-profile.tsx
 import React from "react";
-import { FlatList, Image, Pressable, StyleSheet, View } from "react-native";
+import { FlatList, Image, Pressable, StyleSheet, View, Modal, Alert } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -47,6 +47,7 @@ export default function SelectProfileModal() {
     setSelectedProfileId,
     db,
     getScenarioById,
+    transferProfilesToUser,
   } = useAppData() as any;
 
   const usersMap = (db as any)?.users ?? {};
@@ -54,10 +55,36 @@ export default function SelectProfileModal() {
   const [tab, setTab] = React.useState<TabKey>("mine");
   const [mode, setMode] = React.useState<ViewMode>("tabs");
 
+  // state for multi select
+  const [multi, setMulti] = React.useState<boolean>(false);
+  const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
+
+  // state for transfer ownership (profiles)
+  const [transfer, setTransfer] = React.useState<{ open: boolean }>(() => ({ open: false }));
+  const [confirmTransfer, setConfirmTransfer] = React.useState<{
+    open: boolean;
+    toUserId: string | null;
+  }>(() => ({ open: false, toUserId: null }));
+
+  const closeTransfer = () => setTransfer({ open: false });
+  const closeConfirmTransfer = () => setConfirmTransfer({ open: false, toUserId: null });
+
   const scenario = React.useMemo(() => {
     if (!isReady) return null;
     return getScenarioById?.(sid) ?? null;
   }, [isReady, getScenarioById, sid]);
+
+  const transferCandidates = React.useMemo(() => {
+    const players: string[] = Array.isArray((scenario as any)?.playerIds)
+      ? (scenario as any).playerIds.map(String)
+      : [];
+
+    const uid = String(userId ?? "");
+
+    return players
+      .filter((pid) => pid && pid !== uid)
+      .map((pid) => usersMap[String(pid)] ?? { id: pid, username: pid, avatarUrl: "" });
+  }, [scenario, usersMap, userId]);
 
   const profileLimitMode: ProfileLimitMode = React.useMemo(() => {
     const m = (scenario as any)?.settings?.profileLimitMode;
@@ -89,6 +116,14 @@ const allProfiles = React.useMemo<Profile[]>(() => {
 
   const totalScenarioCount = React.useMemo(() => allProfiles.length, [allProfiles]);
 
+  React.useEffect(() => {
+    // reset tab when switching to tabs mode
+    if (!(mode === "tabs" && tab === "mine")) {
+      setMulti(false);
+      setSelectedIds(new Set());
+    }
+  }, [mode, tab]);
+
   // creation rule depends on scenario setting
   const canCreate = React.useMemo(() => {
     if (profileLimitMode === "per_scenario") {
@@ -97,9 +132,49 @@ const allProfiles = React.useMemo<Profile[]>(() => {
     return canCreateOwnedProfileForUser(allProfiles, userId ?? null);
   }, [profileLimitMode, totalScenarioCount, allProfiles, userId]);
 
+  // ---- HELPERS ----
+  const toggleOne = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const isAllMineSelected = React.useMemo(() => {
+    if (!multi) return false;
+    if (mine.length === 0) return false;
+    const mineIds = mine.map((p) => String(p.id));
+    return mineIds.every((id) => selectedIds.has(id));
+  }, [mine, selectedIds, multi]);
+
+  const toggleSelectAllMine = () => {
+    setSelectedIds((prev) => {
+      const next = new Set(Array.from(prev).map(String));
+      const mineIds = mine.map((p) => String(p.id));
+      const allSelected = mineIds.length > 0 && mineIds.every((id) => next.has(id));
+
+      if (allSelected) {
+        for (const id of mineIds) next.delete(id);
+      } else {
+        for (const id of mineIds) next.add(id);
+      }
+
+      return next;
+    });
+  };
+
+  // ---- RENDERING ----
+
   const Row = ({ item }: { item: Profile }) => {
     const selectEnabled = mode !== "all";
     const active = String(item.id) === String(current);
+
+    const id = String(item.id);
+    const isMineTab = mode === "tabs" && tab === "mine";
+    const showCheckbox = multi && isMineTab && selectEnabled;
+    const checked = selectedIds.has(id);
 
     const owner = usersMap[String(item.ownerUserId)] ?? null;
 
@@ -114,6 +189,10 @@ const allProfiles = React.useMemo<Profile[]>(() => {
         disabled={!selectEnabled}
         onPress={async () => {
           if (!selectEnabled) return;
+          if (showCheckbox) {
+            toggleOne(id);
+            return;
+          }
           await setSelectedProfileId(sid, String(item.id));
 
           if (returnTo) {
@@ -139,6 +218,18 @@ const allProfiles = React.useMemo<Profile[]>(() => {
         ]}
       >
         <View style={styles.left}>
+          {showCheckbox ? (
+            <Pressable
+              onPress={() => toggleOne(id)}
+              style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1}]}
+            >
+              <Ionicons
+                name={checked ? "checkbox" : "square-outline"}
+                size={22}
+                color={checked ? colors.tint : colors.textSecondary}
+              />
+            </Pressable>
+          ) : null}
           {item.avatarUrl ? (
             <Image source={{ uri: item.avatarUrl }} style={styles.profileAvatar} />
           ) : (
@@ -281,6 +372,269 @@ const allProfiles = React.useMemo<Profile[]>(() => {
     );
   };
 
+  const SelectControlsHeader = () => {
+    // only show in tabs/mine mode
+    if (!(mode === "tabs" && tab === "mine")) return null;
+
+    return (
+      <View
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+          paddingHorizontal: 16,
+          paddingVertical: 8,
+        }}
+      >
+        <Pressable
+          onPress={() => setMulti((m) => !m)}
+          hitSlop={8}
+          style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}
+        >
+          <ThemedText style={{ color: colors.tint, fontWeight: "600" }}>
+            {multi ? "Cancel" : "Select"}
+          </ThemedText>
+        </Pressable>
+
+        {multi ? (
+          <Pressable
+            onPress={toggleSelectAllMine}
+            hitSlop={8}
+            style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}
+          >
+            <ThemedText style={{ color: colors.tint, fontWeight: "600" }}>
+              {isAllMineSelected ? "Unselect All" : "Select All"}
+            </ThemedText>
+          </Pressable>
+        ) : null}
+      </View>
+    );
+  };
+
+  const TransferProfilesSheet = () => {
+    if (!transfer.open) return null;
+
+    if (transferCandidates.length === 0) {
+      return (
+        <Modal transparent visible={transfer.open} animationType="fade" onRequestClose={closeTransfer}>
+          <Pressable style={styles.menuBackdrop} onPress={closeTransfer}>
+            <Pressable
+              style={[styles.menuSheet, { backgroundColor: colors.background, borderColor: colors.border }]}
+              onPress={(e) => e?.stopPropagation?.()}
+            >
+              <View style={{ paddingHorizontal: 12, paddingTop: 10, paddingBottom: 6 }}>
+                <ThemedText style={{ color: colors.textSecondary, fontSize: 12 }}>Transfer profiles</ThemedText>
+                <ThemedText type="defaultSemiBold" style={{ color: colors.text, fontSize: 16, marginTop: 4 }}>
+                  No other players found
+                </ThemedText>
+              </View>
+
+              <View style={[styles.menuDivider, { backgroundColor: colors.border }]} />
+
+              <Pressable
+                onPress={closeTransfer}
+                style={({ pressed }) => [styles.menuItem, { backgroundColor: pressed ? colors.pressed : "transparent" }]}
+              >
+                <Ionicons name="close-outline" size={18} color={colors.text} />
+                <ThemedText style={{ color: colors.text, fontSize: 15, fontWeight: "700" }}>Close</ThemedText>
+              </Pressable>
+            </Pressable>
+          </Pressable>
+        </Modal>
+      );
+    }
+
+    return (
+      <Modal transparent visible={transfer.open} animationType="fade" onRequestClose={closeTransfer}>
+        <Pressable style={styles.menuBackdrop} onPress={closeTransfer}>
+          <Pressable
+            style={[styles.menuSheet, { backgroundColor: colors.background, borderColor: colors.border }]}
+            onPress={(e) => e?.stopPropagation?.()}
+          >
+            <View style={{ paddingHorizontal: 12, paddingTop: 10, paddingBottom: 6 }}>
+              <ThemedText style={{ color: colors.textSecondary, fontSize: 12 }}>Transfer profiles</ThemedText>
+              <ThemedText type="defaultSemiBold" style={{ color: colors.text, fontSize: 16, marginTop: 4 }}>
+                Choose the new owner
+              </ThemedText>
+              <ThemedText style={{ color: colors.textSecondary, marginTop: 4, fontSize: 12 }}>
+                Selected: {selectedIds.size}
+              </ThemedText>
+            </View>
+
+            <View style={[styles.menuDivider, { backgroundColor: colors.border }]} />
+
+            <View style={{ maxHeight: 340 }}>
+              <FlatList
+                data={transferCandidates}
+                keyExtractor={(u: any) => String(u.id)}
+                contentContainerStyle={{ paddingHorizontal: 8, paddingBottom: 8 }}
+                renderItem={({ item }: any) => {
+                  const label = item?.username ? `@${String(item.username)}` : String(item.id);
+
+                  return (
+                    <Pressable
+                      onPress={() => setConfirmTransfer({ open: true, toUserId: String(item.id) })}
+                      style={({ pressed }) => [
+                        styles.transferRow,
+                        { backgroundColor: pressed ? colors.pressed : "transparent", borderColor: colors.border },
+                      ]}
+                    >
+                      {item?.avatarUrl ? (
+                        <Image
+                          source={{ uri: String(item.avatarUrl ?? "") }}
+                          style={[styles.transferAvatar, { borderColor: colors.border }]}
+                        />
+                      ) : (
+                        <View style={[styles.transferAvatar, { borderColor: colors.border }]} />
+                      )}
+
+                      <View style={{ flex: 1, gap: 2 }}>
+                        <ThemedText style={{ color: colors.text, fontWeight: "800", fontSize: 14 }} numberOfLines={1}>
+                          {label}
+                        </ThemedText>
+                      </View>
+
+                      <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
+                    </Pressable>
+                  );
+                }}
+              />
+            </View>
+
+            <View style={[styles.menuDivider, { backgroundColor: colors.border }]} />
+
+            <Pressable
+              onPress={closeTransfer}
+              style={({ pressed }) => [styles.menuItem, { backgroundColor: pressed ? colors.pressed : "transparent" }]}
+            >
+              <Ionicons name="close-outline" size={18} color={colors.text} />
+              <ThemedText style={{ color: colors.text, fontSize: 15, fontWeight: "700" }}>Cancel</ThemedText>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
+    );
+  };
+
+  const TransferProfilesConfirmSheet = () => {
+    if (!confirmTransfer.open) return null;
+
+    const toId = String(confirmTransfer.toUserId ?? "");
+    const target = usersMap[toId];
+    const label = target?.username ? `@${String(target.username)}` : toId;
+
+    const onConfirm = async () => {
+      if (!toId) return;
+      if (selectedIds.size === 0) {
+        Alert.alert("Nothing selected", "Select at least one profile.");
+        return;
+      }
+
+      try {
+        const transferredIds = Array.from(selectedIds).map(String);
+
+        await transferProfilesToUser?.({
+          scenarioId: sid,
+          profileIds: transferredIds,
+          toUserId: toId,
+        });
+
+        // Close sheets + reset UI FIRST so the modal backdrop can't "freeze" the screen
+        // if anything below takes time.
+        closeConfirmTransfer();
+        closeTransfer();
+        setSelectedIds(new Set());
+        setMulti(false);
+
+        // If the currently selected profile was transferred away,
+        // fall back to the first remaining profile you still own.
+        // Do this asynchronously (do not block UI / modal close).
+        const fixSelectionAfterTransfer = async () => {
+          try {
+            const currentSelected = String(getSelectedProfileId(sid) ?? "");
+            if (!currentSelected || !transferredIds.includes(currentSelected)) return;
+
+            // Read from DB after transfer (more reliable than the `mine` memo which may be stale this tick)
+            const profilesMap = (db as any)?.profiles ?? {};
+            const remainingOwned = Object.values(profilesMap)
+              .filter((p: any) => String(p?.scenarioId) === String(sid) && String(p?.ownerUserId) === String(userId))
+              .map((p: any) => String(p?.id))
+              .filter((id: string) => id && !transferredIds.includes(id));
+
+            if (remainingOwned.length > 0) {
+              await setSelectedProfileId(sid, remainingOwned[0]);
+            } else {
+              // No owned profiles left => clear selection (app should force pick/create later)
+              await setSelectedProfileId(sid, null as any);
+            }
+          } catch {
+            // no-op
+          }
+        };
+
+        // run after this call stack so UI can settle
+        setTimeout(() => {
+          void fixSelectionAfterTransfer();
+        }, 0);
+
+        Alert.alert("Done", "Profiles transferred.");
+      } catch (e: any) {
+        Alert.alert("Transfer failed", e?.message ?? "Could not transfer profiles.");
+      }
+    };
+
+    return (
+      <Modal transparent visible={confirmTransfer.open} animationType="fade" onRequestClose={closeConfirmTransfer}>
+        <Pressable style={styles.menuBackdrop} onPress={closeConfirmTransfer}>
+          <Pressable
+            style={[styles.confirmCard, { backgroundColor: colors.background, borderColor: colors.border }]}
+            onPress={(e) => e?.stopPropagation?.()}
+          >
+            <ThemedText type="defaultSemiBold" style={{ color: colors.text, fontSize: 16 }}>
+              Confirm transfer
+            </ThemedText>
+
+            <ThemedText style={{ color: colors.textSecondary, marginTop: 8 }}>
+              Transfer {selectedIds.size} profile{selectedIds.size === 1 ? "" : "s"} to{" "}
+              <ThemedText style={{ color: colors.text, fontWeight: "800" }}>{label}</ThemedText>?
+            </ThemedText>
+
+            {target?.avatarUrl ? (
+              <View style={{ alignItems: "center", marginTop: 14 }}>
+                <Image
+                  source={{ uri: String(target.avatarUrl) }}
+                  style={[styles.confirmAvatar, { borderColor: colors.border }]}
+                />
+              </View>
+            ) : null}
+
+            <View style={{ flexDirection: "row", gap: 10, marginTop: 16 }}>
+              <Pressable
+                onPress={closeConfirmTransfer}
+                style={({ pressed }) => [
+                  styles.confirmBtn,
+                  { borderColor: colors.border, backgroundColor: pressed ? colors.pressed : (colors as any).card },
+                ]}
+              >
+                <ThemedText style={{ color: colors.text, fontWeight: "800" }}>Cancel</ThemedText>
+              </Pressable>
+
+              <Pressable
+                onPress={onConfirm}
+                style={({ pressed }) => [
+                  styles.confirmBtn,
+                  { borderColor: "#ff3b30", backgroundColor: pressed ? "rgba(255,59,48,0.12)" : "transparent" },
+                ]}
+              >
+                <ThemedText style={{ color: "#ff3b30", fontWeight: "900" }}>Transfer</ThemedText>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+    );
+  };
+
   return (
     <SafeAreaView edges={["top"]} style={[styles.screen, { backgroundColor: colors.background }]}>
       <View style={[styles.header, { borderBottomColor: colors.border }]}>
@@ -313,7 +667,13 @@ const allProfiles = React.useMemo<Profile[]>(() => {
       <FlatList
         data={data}
         keyExtractor={(p) => String(p.id)}
-        ListHeaderComponent={CreateProfileHeader}
+        ListHeaderComponent={() => (
+          <>
+            <CreateProfileHeader />
+            <SelectControlsHeader />
+          </>
+        )}
+
         ItemSeparatorComponent={() => (
           <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: colors.border }} />
         )}
@@ -330,6 +690,41 @@ const allProfiles = React.useMemo<Profile[]>(() => {
           </View>
         )}
       />
+      {mode === "tabs" && tab === "mine" && multi ? (
+        <View style={[styles.bottomBar, { borderTopColor: colors.border, backgroundColor: colors.background }]}>
+          <View style={{ flex: 1 }}>
+            <ThemedText style={{ color: colors.textSecondary }}>
+              Selected: {selectedIds.size}
+            </ThemedText>
+            <ThemedText style={{ color: colors.textSecondary, fontSize: 12, marginTop: 2 }} numberOfLines={1}>
+              Transfer changes profile owner
+            </ThemedText>
+          </View>
+
+          <View style={{ flexDirection: "row", gap: 10 }}>
+            <Pressable
+              disabled={selectedIds.size === 0}
+              onPress={() => {
+                if (selectedIds.size === 0) return;
+                setTransfer({ open: true });
+              }}
+              style={({ pressed }) => [
+                styles.transferBtn,
+                {
+                  borderColor: colors.border,
+                  backgroundColor: pressed ? colors.pressed : "transparent",
+                  opacity: selectedIds.size === 0 ? 0.55 : 1,
+                },
+              ]}
+            >
+              <Ionicons name="swap-horizontal-outline" size={18} color={colors.text} />
+              <ThemedText style={{ color: colors.text, fontWeight: "900" }}>Transfer</ThemedText>
+            </Pressable>
+          </View>
+        </View>
+      ) : null}
+      <TransferProfilesSheet />
+      <TransferProfilesConfirmSheet />
     </SafeAreaView>
   );
 }
@@ -409,4 +804,103 @@ const styles = StyleSheet.create({
   handleRow: { flexDirection: "row", alignItems: "center", flexWrap: "wrap" },
 
   publicBadge: { fontSize: 13, opacity: 0.9 },
+
+  selectBar: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  
+  bottomBar: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+
+  useBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 999,
+  },
+  menuBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.35)", justifyContent: "flex-end" },
+  menuSheet: {
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingVertical: 8,
+    paddingHorizontal: 8,
+  },
+  menuItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+  },
+  menuDivider: {
+    height: StyleSheet.hairlineWidth,
+    opacity: 0.9,
+    marginVertical: 6,
+    marginHorizontal: 8,
+  },
+
+  transferRow: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginBottom: 8,
+  },
+  transferAvatar: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    borderWidth: StyleSheet.hairlineWidth,
+    backgroundColor: "rgba(127,127,127,0.15)",
+  },
+
+  confirmCard: {
+    marginHorizontal: 16,
+    borderRadius: 18,
+    borderWidth: StyleSheet.hairlineWidth,
+    padding: 14,
+    justifyContent: "center",
+    marginBottom: 18,
+  },
+  confirmAvatar: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    borderWidth: StyleSheet.hairlineWidth,
+    backgroundColor: "rgba(127,127,127,0.15)",
+  },
+  confirmBtn: {
+    flex: 1,
+    height: 44,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  transferBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
 });
