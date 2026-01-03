@@ -22,6 +22,7 @@ import {
   limitCountText,
   makeEngagementPreset,
   MAX_COUNT,
+  randInt,
   toCountStringOrEmpty,
 } from "@/lib/postComposer/counts";
 
@@ -35,6 +36,7 @@ import { ThreadComposer } from "@/components/postComposer/ThreadComposer";
 import { MediaPreview } from "@/components/postComposer/MediaPreview";
 import { PostSettingsSection } from "@/components/postComposer/PostSettingSection";
 import { ComposerToolbar } from "@/components/postComposer/ComposerToolbar";
+import { DiceRollOverlay } from "@/components/postComposer/DiceRollOverlay";
 
 import { RowCard } from "@/components/ui/RowCard";
 import { PostTypePicker } from "@/components/postComposer/PostTypePicker";
@@ -124,6 +126,8 @@ export default function CreatePostModal() {
   const [videoThumbUri, setVideoThumbUri] = useState<string | null>(null);
   const [addVideoIcon, setAddVideoIcon] = useState(false);
   const [picking, setPicking] = useState(false);
+  const [posting, setPosting] = useState(false);
+  const [postingRoll, setPostingRoll] = useState<number | null>(null);
 
   const clearMedia = useCallback(() => {
     setImageUrls([]);
@@ -372,6 +376,8 @@ export default function CreatePostModal() {
   }, [isReady, isEdit, sid, authorProfileId, selectedId, setSelectedProfileId]);
 
   const canPost =
+    !posting &&
+    !picking &&
     Boolean(authorProfileId) &&
     threadTexts.length > 0 &&
     threadTexts.every((t) => isTruthyText(t));
@@ -398,6 +404,7 @@ export default function CreatePostModal() {
 
   const onPost = useCallback(async () => {
     if (!canPost) return;
+    if (posting) return;
 
     const safeAuthorId = ensureAuthorValid();
     if (!safeAuthorId) return;
@@ -413,100 +420,130 @@ export default function CreatePostModal() {
     const savedPostType = isCampaign && postType !== "rp" ? postType : undefined;
     const savedMeta = isCampaign ? meta : undefined;
 
+    const isRollCreate = Boolean(!isEdit && savedPostType === "roll");
+    const d20 = isRollCreate ? randInt(1, 20) : null;
+    const rollLine = d20 ? `\n\n🎲 d20 → ${d20}` : "";
+
+    // Fancy local "spinner" for roll posts.
+    const minFxMs = isRollCreate ? 700 : 0;
+    let fxPromise: Promise<void> | null = null;
+    if (isRollCreate && d20) {
+      setPostingRoll(d20);
+      setPosting(true);
+      fxPromise = sleep(minFxMs);
+    } else {
+      // For non-roll posts, just block double submits.
+      setPosting(true);
+    }
+
     const isStandaloneCreate = !isEdit && !parentId && !quoteId;
 
-    // EDIT: single post only (no thread)
-    if (isEdit) {
-      const base: Post & { addVideoIcon?: boolean; insertedAt?: string } = {
-        id: editingPostId,
-        scenarioId: sid,
-        authorProfileId: safeAuthorId,
-        text: (threadTexts[0] ?? "").trim(),
-        createdAt: date.toISOString(),
-        imageUrls: postImageUrls,
-        replyCount: safeCounts.reply,
-        repostCount: safeCounts.repost,
-        likeCount: safeCounts.like,
-        parentPostId: parentId,
-        quotedPostId: quoteId,
-        insertedAt: insertedAt || new Date().toISOString(),
-        addVideoIcon: addVideoIconForPost,
+    try {
+      // EDIT: single post only (no thread)
+      if (isEdit) {
+        const base: Post & { addVideoIcon?: boolean; insertedAt?: string } = {
+          id: editingPostId,
+          scenarioId: sid,
+          authorProfileId: safeAuthorId,
+          text: (threadTexts[0] ?? "").trim(),
+          createdAt: date.toISOString(),
+          imageUrls: postImageUrls,
+          replyCount: safeCounts.reply,
+          repostCount: safeCounts.repost,
+          likeCount: safeCounts.like,
+          parentPostId: parentId,
+          quotedPostId: quoteId,
+          insertedAt: insertedAt || new Date().toISOString(),
+          addVideoIcon: addVideoIconForPost,
 
-        postType: savedPostType as any,
-        meta: savedMeta,
-      };
+          postType: savedPostType as any,
+          meta: savedMeta,
+        };
 
-      await upsertPost(base as any);
-      router.back();
-      return;
-    }
+        await upsertPost(base as any);
+        router.back();
+        return;
+      }
 
-    // CREATE: reply/quote => single post
-    if (!isStandaloneCreate) {
-      const postedAtIso = new Date().toISOString();
+      // CREATE: reply/quote => single post
+      if (!isStandaloneCreate) {
+        const postedAtIso = new Date().toISOString();
 
-      const base: Post & { addVideoIcon?: boolean; insertedAt?: string } = {
-        id: makeId("po"),
-        scenarioId: sid,
-        authorProfileId: safeAuthorId,
-        text: (threadTexts[0] ?? "").trim(),
-        createdAt: postedAtIso,
-        imageUrls: postImageUrls,
-        replyCount: safeCounts.reply,
-        repostCount: safeCounts.repost,
-        likeCount: safeCounts.like,
-        parentPostId: parentId,
-        quotedPostId: quoteId,
-        insertedAt: postedAtIso,
-        addVideoIcon: addVideoIconForPost,
+        const baseText = (threadTexts[0] ?? "").trim();
+        const text = savedPostType === "roll" ? `${baseText}${rollLine}` : baseText;
 
-        postType: savedPostType as any,
-        meta: savedMeta,
-      };
+        const base: Post & { addVideoIcon?: boolean; insertedAt?: string } = {
+          id: makeId("po"),
+          scenarioId: sid,
+          authorProfileId: safeAuthorId,
+          text,
+          createdAt: postedAtIso,
+          imageUrls: postImageUrls,
+          replyCount: safeCounts.reply,
+          repostCount: safeCounts.repost,
+          likeCount: safeCounts.like,
+          parentPostId: parentId,
+          quotedPostId: quoteId,
+          insertedAt: postedAtIso,
+          addVideoIcon: addVideoIconForPost,
 
-      await upsertPost(base as any);
+          postType: savedPostType as any,
+          meta: savedMeta,
+        };
+
+        await upsertPost(base as any);
+        await setSelectedProfileId(sid, safeAuthorId);
+        if (fxPromise) await fxPromise;
+        router.back();
+        return;
+      }
+
+      // CREATE: thread => chain as replies
+      const baseTime = new Date();
+      const insertedAtBaseIso = baseTime.toISOString();
+      let prevId: string | undefined;
+
+      for (let i = 0; i < threadTexts.length; i++) {
+        const id = makeId("po");
+        const createdAt = new Date(baseTime.getTime() + i * 1000).toISOString();
+
+        const baseText = threadTexts[i].trim();
+        const text = i === 0 && savedPostType === "roll" ? `${baseText}${rollLine}` : baseText;
+
+        const post: Post & { addVideoIcon?: boolean; insertedAt?: string } = {
+          id,
+          scenarioId: sid,
+          authorProfileId: safeAuthorId,
+          text,
+          createdAt,
+          imageUrls: i === 0 ? postImageUrls : [],
+          replyCount: i === 0 ? safeCounts.reply : 0,
+          repostCount: i === 0 ? safeCounts.repost : 0,
+          likeCount: i === 0 ? safeCounts.like : 0,
+          parentPostId: i === 0 ? undefined : prevId,
+          quotedPostId: undefined,
+          insertedAt: insertedAtBaseIso,
+          addVideoIcon: i === 0 ? addVideoIconForPost : false,
+
+          // only on the first thread item
+          postType: i === 0 ? (savedPostType as any) : undefined,
+          meta: i === 0 ? savedMeta : undefined,
+        };
+
+        await upsertPost(post as any);
+        prevId = id;
+      }
+
       await setSelectedProfileId(sid, safeAuthorId);
+      if (fxPromise) await fxPromise;
       router.back();
-      return;
+    } finally {
+      setPosting(false);
+      setPostingRoll(null);
     }
-
-    // CREATE: thread => chain as replies
-    const baseTime = new Date();
-    const insertedAtBaseIso = baseTime.toISOString();
-    let prevId: string | undefined;
-
-    for (let i = 0; i < threadTexts.length; i++) {
-      const id = makeId("po");
-      const createdAt = new Date(baseTime.getTime() + i * 1000).toISOString();
-
-      const post: Post & { addVideoIcon?: boolean; insertedAt?: string } = {
-        id,
-        scenarioId: sid,
-        authorProfileId: safeAuthorId,
-        text: threadTexts[i].trim(),
-        createdAt,
-        imageUrls: i === 0 ? postImageUrls : [],
-        replyCount: i === 0 ? safeCounts.reply : 0,
-        repostCount: i === 0 ? safeCounts.repost : 0,
-        likeCount: i === 0 ? safeCounts.like : 0,
-        parentPostId: i === 0 ? undefined : prevId,
-        quotedPostId: undefined,
-        insertedAt: insertedAtBaseIso,
-        addVideoIcon: i === 0 ? addVideoIconForPost : false,
-
-        // only on the first thread item
-        postType: i === 0 ? (savedPostType as any) : undefined,
-        meta: i === 0 ? savedMeta : undefined,
-      };
-
-      await upsertPost(post as any);
-      prevId = id;
-    }
-
-    await setSelectedProfileId(sid, safeAuthorId);
-    router.back();
   }, [
     canPost,
+    posting,
     ensureAuthorValid,
     buildSafeCounts,
     imageUrls,
@@ -530,6 +567,8 @@ export default function CreatePostModal() {
   return (
     <SafeAreaView edges={["top"]} style={{ flex: 1, backgroundColor: colors.background }}>
       <ThemedView style={[styles.screen, { backgroundColor: colors.background }]}>
+        {posting && postingRoll ? <DiceRollOverlay visible={true} colors={colors as any} finalValue={postingRoll} /> : null}
+
         {picking ? (
           <View style={styles.overlay} pointerEvents="auto">
             <ActivityIndicator size="large" color="#fff" />
@@ -675,6 +714,10 @@ export default function CreatePostModal() {
       </ThemedView>
     </SafeAreaView>
   );
+}
+
+function sleep(ms: number) {
+  return new Promise<void>((resolve) => setTimeout(resolve, ms));
 }
 
 const styles = StyleSheet.create({
