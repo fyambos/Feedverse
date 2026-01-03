@@ -123,6 +123,7 @@ type AppDataApi = {
   // actions
   setSelectedProfileId: (scenarioId: string, profileId: string | null) => Promise<void>;
   upsertProfile: (p: Profile) => Promise<void>;
+  deleteProfileCascade: (scenarioId: string, profileId: string) => Promise<{ ok: true } | { ok: false; error: string }>;
   upsertPost: (p: Post) => Promise<void>;
   deletePost: (postId: string) => Promise<void>;
 
@@ -504,6 +505,137 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         });
 
         setState({ isReady: true, db: next as any });
+      },
+
+      deleteProfileCascade: async (scenarioId: string, profileId: string) => {
+        const sid = String(scenarioId ?? "").trim();
+        const pid = String(profileId ?? "").trim();
+        if (!sid) return { ok: false, error: "scenarioId is required" };
+        if (!pid) return { ok: false, error: "profileId is required" };
+
+        const now = new Date().toISOString();
+
+        const nextDb = await updateDb((prev) => {
+          const existing = prev.profiles?.[pid] as any;
+          if (!existing) return prev;
+
+          // Safety: only delete within the provided scenario.
+          if (String(existing.scenarioId ?? "") !== sid) return prev;
+
+          const profiles = { ...prev.profiles } as any;
+          const posts = { ...prev.posts } as any;
+          const reposts = { ...((prev as any).reposts ?? {}) } as any;
+          const sheets = { ...((prev as any).sheets ?? {}) } as any;
+
+          // 1) Remove authored posts (and remember which got removed)
+          const deletedPostIds = new Set<string>();
+          for (const k of Object.keys(posts)) {
+            const p = posts[k];
+            if (String(p?.authorProfileId ?? "") === pid) {
+              deletedPostIds.add(String(k));
+              delete posts[k];
+            }
+          }
+
+          // 2) Remove this profile's likes and adjust like counts for remaining posts
+          const likedByThisProfile = ((existing as any).likedPostIds ?? []).map(String).filter(Boolean);
+          for (const likedPostId of likedByThisProfile) {
+            if (deletedPostIds.has(likedPostId)) continue;
+            const post = posts[likedPostId];
+            if (!post) continue;
+            posts[likedPostId] = {
+              ...post,
+              likeCount: Math.max(0, Number((post as any).likeCount ?? 0) - 1),
+              updatedAt: now,
+            };
+          }
+
+          // 3) Remove reposts made by this profile and adjust repost counts for remaining posts
+          const repostedPostIdsByThisProfile = new Set<string>();
+          for (const k of Object.keys(reposts)) {
+            const r = reposts[k];
+            if (String(r?.profileId ?? "") === pid) {
+              repostedPostIdsByThisProfile.add(String(r?.postId ?? ""));
+              delete reposts[k];
+            }
+          }
+          for (const repostedPostId of repostedPostIdsByThisProfile) {
+            if (!repostedPostId) continue;
+            if (deletedPostIds.has(repostedPostId)) continue;
+            const post = posts[repostedPostId];
+            if (!post) continue;
+            posts[repostedPostId] = {
+              ...post,
+              repostCount: Math.max(0, Number((post as any).repostCount ?? 0) - 1),
+              updatedAt: now,
+            };
+          }
+
+          // 4) Remove any reposts referencing posts we deleted
+          for (const k of Object.keys(reposts)) {
+            const r = reposts[k];
+            const targetPostId = String(r?.postId ?? "");
+            if (deletedPostIds.has(targetPostId)) delete reposts[k];
+          }
+
+          // 5) Remove deleted posts from everyone else's likedPostIds to avoid ghosts
+          if (deletedPostIds.size > 0) {
+            for (const k of Object.keys(profiles)) {
+              if (String(k) === pid) continue;
+              const pr = profiles[k];
+              const liked = ((pr as any)?.likedPostIds ?? []).map(String).filter(Boolean);
+              if (!liked.length) continue;
+              const nextLiked = liked.filter((id: string) => !deletedPostIds.has(String(id)));
+              if (nextLiked.length !== liked.length) {
+                profiles[k] = { ...pr, likedPostIds: nextLiked, updatedAt: now };
+              }
+            }
+          }
+
+          // 6) Remove from pinned list for this scenario
+          const scenarios = { ...prev.scenarios } as any;
+          const scenario = scenarios[sid];
+          if (scenario && deletedPostIds.size > 0) {
+            const prevSettings = (((scenario as any).settings ?? {}) as Record<string, any>);
+            const prevPinned = Array.isArray(prevSettings.pinnedPostIds)
+              ? prevSettings.pinnedPostIds.map(String).filter(Boolean)
+              : [];
+
+            const nextPinned = prevPinned.filter((id: string) => !deletedPostIds.has(String(id)));
+            if (nextPinned.length !== prevPinned.length) {
+              scenarios[sid] = {
+                ...scenario,
+                settings: { ...prevSettings, pinnedPostIds: nextPinned },
+                updatedAt: now,
+              };
+            }
+          }
+
+          // 7) Remove character sheet for this profile
+          if (sheets[pid]) delete sheets[pid];
+
+          // 8) Remove profile itself
+          delete profiles[pid];
+
+          // 9) If selected profile is deleted, clear it
+          const selectedProfileByScenario = { ...((prev as any).selectedProfileByScenario ?? {}) };
+          if (String(selectedProfileByScenario?.[sid] ?? "") === pid) {
+            selectedProfileByScenario[sid] = null;
+          }
+
+          return {
+            ...prev,
+            profiles,
+            posts,
+            reposts,
+            sheets,
+            scenarios,
+            selectedProfileByScenario,
+          };
+        });
+
+        setState({ isReady: true, db: nextDb as any });
+        return { ok: true };
       },
 
       upsertPost: async (p) => {

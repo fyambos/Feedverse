@@ -342,7 +342,6 @@ const allProfiles = React.useMemo<Profile[]>(() => {
 
       const res = await adoptPublicProfile?.({ scenarioId: sid, profileId: pid, userId: uid });
       if (!res || !res.ok) {
-        // no Alert; keep it simple and let user cancel/try again
         return;
       }
 

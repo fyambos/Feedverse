@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import {
   Alert,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -56,7 +57,7 @@ export default function CreateProfileModal() {
   const colors = Colors[scheme];
 
   const { userId } = useAuth();
-  const { getProfileById, upsertProfile, listProfilesForScenario } = useAppData();
+  const { getProfileById, upsertProfile, listProfilesForScenario, deleteProfileCascade } = useAppData();
 
   const existing = useMemo(() => {
     if (!isEdit || !profileId) return null;
@@ -65,6 +66,12 @@ export default function CreateProfileModal() {
 
   // only the owner can change the "Shared" flag
   const isOwner = !existing || String(existing.ownerUserId) === String(userId);
+
+  // only the owner can delete the profile
+  const canDelete = Boolean(existing && String(existing.ownerUserId) === String(userId));
+
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  const closeConfirmDelete = () => setConfirmDeleteOpen(false);
   
   // when editing, existing can load/refresh after first render => keep form in sync
   useEffect(() => {
@@ -227,6 +234,27 @@ export default function CreateProfileModal() {
     }
   };
 
+  const onConfirmDelete = async () => {
+    if (!existing) return;
+    if (!canDelete) return;
+    if (submitting) return;
+
+    setSubmitting(true);
+    try {
+      const res = await deleteProfileCascade(String(sid), String(existing.id));
+      if (!res || !res.ok) {
+        Alert.alert("Delete failed", String((res as any)?.error ?? "Could not delete profile."));
+        return;
+      }
+      closeConfirmDelete();
+      router.back();
+    } catch {
+      Alert.alert("Delete failed", "Could not delete profile.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   /* -------------------------------------------------------------------------- */
   /* Render                                                                     */
   /* -------------------------------------------------------------------------- */
@@ -330,7 +358,75 @@ export default function CreateProfileModal() {
               maxLink={PROFILE_LIMITS.MAX_LINK}
               canEditShared={isOwner}
             />
+
+            {isEdit && canDelete ? (
+              <View style={styles.deleteSection}>
+                <Pressable
+                  onPress={() => setConfirmDeleteOpen(true)}
+                  disabled={submitting}
+                  style={({ pressed }) => [
+                    styles.deleteBtn,
+                    {
+                      borderColor: colors.border,
+                      backgroundColor: pressed ? colors.pressed : (colors as any).card,
+                      opacity: submitting ? 0.6 : 1,
+                    },
+                  ]}
+                >
+                  <ThemedText style={styles.deleteText}>Delete profile</ThemedText>
+                </Pressable>
+              </View>
+            ) : null}
           </ScrollView>
+
+          <Modal
+            transparent
+            visible={confirmDeleteOpen}
+            animationType="fade"
+            onRequestClose={closeConfirmDelete}
+          >
+            <Pressable style={styles.confirmBackdrop} onPress={closeConfirmDelete}>
+              <Pressable
+                style={[styles.confirmCard, { backgroundColor: colors.background, borderColor: colors.border }]}
+                onPress={(e) => e?.stopPropagation?.()}
+              >
+                <ThemedText type="defaultSemiBold" style={{ color: colors.text, fontSize: 16 }}>
+                  Delete profile?
+                </ThemedText>
+
+                <ThemedText style={{ color: colors.textSecondary, marginTop: 10 }}>
+                  This will delete all posts, likes, reposts, and messages related to this profile.
+                </ThemedText>
+
+                <View style={styles.confirmBtnsRow}>
+                  <Pressable
+                    onPress={closeConfirmDelete}
+                    style={({ pressed }) => [
+                      styles.confirmBtn,
+                      { borderColor: colors.border, backgroundColor: pressed ? colors.pressed : (colors as any).card },
+                    ]}
+                  >
+                    <ThemedText style={{ color: colors.text, fontWeight: "800" }}>Cancel</ThemedText>
+                  </Pressable>
+
+                  <Pressable
+                    onPress={onConfirmDelete}
+                    disabled={submitting}
+                    style={({ pressed }) => [
+                      styles.confirmBtn,
+                      {
+                        borderColor: colors.border,
+                        backgroundColor: pressed ? colors.pressed : (colors as any).card,
+                        opacity: submitting ? 0.6 : 1,
+                      },
+                    ]}
+                  >
+                    <ThemedText style={{ color: "#ff3b30", fontWeight: "900" }}>Delete</ThemedText>
+                  </Pressable>
+                </View>
+              </Pressable>
+            </Pressable>
+          </Modal>
         </KeyboardAvoidingView>
       </ThemedView>
     </SafeAreaView>
@@ -381,5 +477,47 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 16,
     paddingVertical: 0,
+  },
+
+  deleteSection: {
+    paddingHorizontal: 16,
+    paddingTop: 14,
+  },
+  deleteBtn: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  deleteText: {
+    color: "#ff3b30",
+    fontWeight: "900",
+  },
+
+  confirmBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.35)",
+    justifyContent: "flex-end",
+    padding: 14,
+  },
+  confirmCard: {
+    borderRadius: 18,
+    borderWidth: StyleSheet.hairlineWidth,
+    padding: 14,
+  },
+  confirmBtnsRow: {
+    flexDirection: "row",
+    gap: 10,
+    marginTop: 16,
+  },
+  confirmBtn: {
+    flex: 1,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 999,
+    paddingVertical: 12,
+    alignItems: "center",
+    justifyContent: "center",
   },
 });
