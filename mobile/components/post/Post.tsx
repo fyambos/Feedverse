@@ -1,6 +1,6 @@
 // mobile/components/post/Post.tsx
 import React from "react";
-import { Alert, Pressable, StyleSheet, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import AntDesign from "@expo/vector-icons/AntDesign";
 
@@ -24,7 +24,6 @@ import { useAuth } from "@/context/auth";
 
 import { PostTypeBadge } from "@/components/post/PostTypeBadge";
 import { PostMenu } from "@/components/post/PostMenu";
-import { useSegments } from "expo-router";
 
 export type PostVariant = "feed" | "detail" | "reply";
 
@@ -49,7 +48,7 @@ type Props = {
   isReposted?: boolean;
   onRepost?: () => void | Promise<void>;
 
-  // share 
+  // share
   onShare?: () => void;
 
   repostedByLabel?: string | null;
@@ -149,6 +148,32 @@ export function Post({
 
   const hasDetailCounts = isDetail && (repostCount > 0 || likeCount > 0);
 
+  // menu state
+  const [menuOpen, setMenuOpen] = React.useState(false);
+
+  const handleOpenMenu = () => {
+    if (!canOpenMenu) return;
+    setMenuOpen(true);
+  };
+
+  const onReportPost = () => {
+    // placeholder
+  };
+
+  function openProfile(view?: ProfileViewState) {
+    if (!canNavigate) return;
+    if (!sid || !profile?.id) return;
+
+    const pathname = "/(scenario)/[scenarioId]/(tabs)/home/profile/[profileId]";
+    const params = {
+      scenarioId: sid,
+      profileId: String(profile.id),
+      ...(view ? { view } : {}),
+    };
+
+    router.push({ pathname, params } as any);
+  }
+
   const onReply = () => {
     if (!canNavigate) return;
     if (!sid) return;
@@ -165,18 +190,6 @@ export function Post({
       pathname: "/modal/create-post",
       params: { scenarioId: sid, quotedPostId: String(item.id) },
     } as any);
-  };
-
-  // menu state
-  const [menuOpen, setMenuOpen] = React.useState(false);
-
-  const handleOpenMenu = () => {
-    if (!canOpenMenu) return;
-    setMenuOpen(true);
-  };
-
-  const onReportPost = () => {
-    Alert.alert("Report post", "Coming soon.");
   };
 
   // ===== DETAIL =====
@@ -207,9 +220,7 @@ export function Post({
           scenarioId={canUseGmMenu ? sid : undefined}
           gmProfileId={canUseGmMenu ? gmProfileId ?? undefined : undefined}
           getSheet={canUseGmMenu ? getCharacterSheetByProfileId : undefined}
-          updateSheet={
-            canUseGmMenu ? (profileId, next) => upsertCharacterSheet({ ...next, profileId }) : undefined
-          }
+          updateSheet={canUseGmMenu ? (profileId, next) => upsertCharacterSheet({ ...next, profileId }) : undefined}
           createGmPost={
             canUseGmMenu
               ? ({ scenarioId, text, authorProfileId }) => {
@@ -228,19 +239,10 @@ export function Post({
           }
         />
 
-        <PostBody
-          sid={sid}
-          variant="detail"
-          colors={colors}
-          item={item}
-          addVideoIcon={addVideoIcon}
-          showQuoted={showQuoted}
-        />
+        <PostBody sid={sid} variant="detail" colors={colors} item={item} addVideoIcon={addVideoIcon} showQuoted={showQuoted} />
 
         {showTimestampsPref ? (
-          <ThemedText style={[styles.dateLine, { color: colors.textSecondary }]}>
-            {formatDetailTimestamp(item.createdAt)}
-          </ThemedText>
+          <ThemedText style={[styles.dateLine, { color: colors.textSecondary }]}>{formatDetailTimestamp(item.createdAt)}</ThemedText>
         ) : null}
 
         {hasDetailCounts && (
@@ -250,14 +252,12 @@ export function Post({
             <View style={styles.countsRow}>
               {repostCount > 0 && (
                 <ThemedText style={[styles.countItem, { color: colors.text }]}>
-                  <ThemedText type="defaultSemiBold">{formatCount(repostCount)}</ThemedText>{" "}
-                  {pluralize(repostCount, "Repost")}
+                  <ThemedText type="defaultSemiBold">{formatCount(repostCount)}</ThemedText> {pluralize(repostCount, "Repost")}
                 </ThemedText>
               )}
               {likeCount > 0 && (
                 <ThemedText style={[styles.countItem, { color: colors.text }]}>
-                  <ThemedText type="defaultSemiBold">{formatCount(likeCount)}</ThemedText>{" "}
-                  {pluralize(likeCount, "Like")}
+                  <ThemedText type="defaultSemiBold">{formatCount(likeCount)}</ThemedText> {pluralize(likeCount, "Like")}
                 </ThemedText>
               )}
             </View>
@@ -294,9 +294,7 @@ export function Post({
       {repostedByLabel ? (
         <View style={styles.repostBanner}>
           <AntDesign name="retweet" size={14} color={colors.tint} />
-          <ThemedText style={[styles.repostBannerText, { color: colors.textSecondary }]}>
-            {repostedByLabel}
-          </ThemedText>
+          <ThemedText style={[styles.repostBannerText, { color: colors.textSecondary }]}>{repostedByLabel}</ThemedText>
         </View>
       ) : null}
 
@@ -304,7 +302,7 @@ export function Post({
         <View style={styles.avatarCol}>
           {showThreadLine ? <View style={[styles.threadLine, { backgroundColor: colors.border }]} /> : null}
 
-          <Pressable onPress={() => openProfile()} hitSlop={0} style={styles.avatarPress} disabled={!canNavigate}>
+          <Pressable onPress={() => openProfile()} style={styles.avatarPress} disabled={!canNavigate}>
             <Avatar uri={profile.avatarUrl} size={44} fallbackColor={colors.border} />
           </Pressable>
 
@@ -343,9 +341,7 @@ export function Post({
             scenarioId={canUseGmMenu ? sid : undefined}
             gmProfileId={canUseGmMenu ? gmProfileId ?? undefined : undefined}
             getSheet={canUseGmMenu ? getCharacterSheetByProfileId : undefined}
-            updateSheet={
-              canUseGmMenu ? (profileId, next) => upsertCharacterSheet({ ...next, profileId }) : undefined
-            }
+            updateSheet={canUseGmMenu ? (profileId, next) => upsertCharacterSheet({ ...next, profileId }) : undefined}
             createGmPost={
               canUseGmMenu
                 ? ({ scenarioId, text, authorProfileId }) => {
@@ -387,37 +383,13 @@ export function Post({
               onLike={onLike}
               isReposted={isReposted}
               onRepost={onRepost}
-              onShare={onShare} 
+              onShare={onShare}
             />
           )}
         </View>
       </View>
     </View>
   );
-
-  // inside your component
-  const segments = useSegments();
-
-  function openProfile(view?: ProfileViewState) {
-    if (!canNavigate) {
-      console.warn("[openProfile] blocked: canNavigate = false");
-      return;
-    }
-
-    if (!sid || !profile?.id) {
-      console.warn("[openProfile] missing params", { sid, profileId: profile?.id });
-      return;
-    }
-
-    const pathname = "/(scenario)/[scenarioId]/(tabs)/home/profile/[profileId]";
-    const params = {
-      scenarioId: sid,
-      profileId: String(profile.id),
-      ...(view ? { view } : {}),
-    };
-
-    router.push({ pathname, params } as any);
-  }
 }
 
 const styles = StyleSheet.create({
