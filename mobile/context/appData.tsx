@@ -86,6 +86,11 @@ type AppDataApi = {
     fromUserId: string,
     toUserId: string
   ) => Promise<Scenario | null>;
+  transferProfilesToUser: (args: {
+    scenarioId: string;
+    profileIds: string[];
+    toUserId: string;
+  }) => Promise<{ ok: true; transferred: number; skipped: string[] } | { ok: false; error: string }>;
   leaveScenario: (scenarioId: string, userId: string) => Promise<{ deleted: boolean } | null>;
   deleteScenario: (scenarioId: string, ownerUserId: string) => Promise<boolean>;
   setScenarioMode: (scenarioId: string, mode: "story" | "campaign") => Promise<Scenario | null>;
@@ -108,7 +113,7 @@ type AppDataApi = {
   getSelectedProfileId: (scenarioId: string) => string | null;
 
   // actions
-  setSelectedProfileId: (scenarioId: string, profileId: string) => Promise<void>;
+  setSelectedProfileId: (scenarioId: string, profileId: string | null) => Promise<void>;
   upsertProfile: (p: Profile) => Promise<void>;
   upsertPost: (p: Post) => Promise<void>;
   deletePost: (postId: string) => Promise<void>;
@@ -445,16 +450,22 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       // --- selection
       getSelectedProfileId: (scenarioId) => {
         if (!db) return null;
-        return (db as any).selectedProfileByScenario?.[String(scenarioId)] ?? null;
+        const raw = (db as any).selectedProfileByScenario?.[String(scenarioId)] ?? null;
+        if (raw == null) return null;
+        const v = String(raw);
+        if (!v || v === "null" || v === "undefined") return null;
+        return v;
       },
 
       // --- actions
       setSelectedProfileId: async (scenarioId, profileId) => {
+        const sid = String(scenarioId);
+        const pid = profileId == null ? null : String(profileId);
         const next = await updateDb((prev) => ({
           ...prev,
           selectedProfileByScenario: {
             ...(prev as any).selectedProfileByScenario,
-            [String(scenarioId)]: String(profileId),
+            [sid]: pid,
           },
         }));
         setState({ isReady: true, db: next as any });
@@ -998,6 +1009,84 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
 
         const updated = (nextDb as any)?.scenarios?.[sid] as Scenario | undefined;
         return updated ?? null;
+      },
+
+      transferProfilesToUser: async ({ scenarioId, profileIds, toUserId }) => {
+        const sid = String(scenarioId ?? "").trim();
+        const to = String(toUserId ?? "").trim();
+        const ids = (profileIds ?? []).map(String).filter(Boolean);
+
+        if (!sid) return { ok: false, error: "scenarioId is required" };
+        if (!to) return { ok: false, error: "toUserId is required" };
+        if (ids.length === 0) return { ok: false, error: "profileIds is required" };
+        if (!db) return { ok: false, error: "DB not ready" };
+        if (!auth.isReady) return { ok: false, error: "Auth not ready" };
+        if (!currentUserId) return { ok: false, error: "Not signed in" };
+
+        const scenario = (db as any).scenarios?.[sid];
+        if (!scenario) return { ok: false, error: "Scenario not found" };
+
+        const players: string[] = Array.isArray((scenario as any).playerIds)
+          ? (scenario as any).playerIds.map(String)
+          : [];
+
+        if (!players.includes(to)) return { ok: false, error: "Target user not in scenario" };
+
+        const scenarioOwnerId = String((scenario as any).ownerUserId ?? "");
+        const isScenarioOwner = scenarioOwnerId && scenarioOwnerId === currentUserId;
+
+        const attemptedUnique = Array.from(new Set(ids));
+        const now = new Date().toISOString();
+        const skipped: string[] = [];
+
+        const nextDb = await updateDb((prev) => {
+          const profiles = { ...prev.profiles };
+
+          for (const pid of attemptedUnique) {
+            const existing = profiles[pid];
+            if (!existing) {
+              skipped.push(pid);
+              continue;
+            }
+
+            if (String((existing as any).scenarioId) !== sid) {
+              skipped.push(pid);
+              continue;
+            }
+
+            const ownerId = String((existing as any).ownerUserId ?? "");
+            const canTransfer = ownerId === currentUserId || isScenarioOwner;
+            if (!canTransfer) {
+              skipped.push(pid);
+              continue;
+            }
+
+            if (ownerId === to) continue; // already owned by target
+
+            profiles[pid] = {
+              ...existing,
+              ownerUserId: to,
+              updatedAt: now,
+            } as any;
+          }
+
+          return { ...prev, profiles };
+        });
+
+        setState({ isReady: true, db: nextDb as any });
+
+        // transferred = profiles that ended up owned by `to` and not skipped
+        const skippedSet = new Set(skipped.map(String));
+        let transferred = 0;
+        for (const pid of attemptedUnique) {
+          if (skippedSet.has(pid)) continue;
+          const p = (nextDb as any).profiles?.[pid];
+          if (!p) continue;
+          if (String((p as any).scenarioId) !== sid) continue;
+          if (String((p as any).ownerUserId) === to) transferred += 1;
+        }
+
+        return { ok: true, transferred, skipped };
       },
 
       leaveScenario: async (scenarioId: string, userId: string) => {

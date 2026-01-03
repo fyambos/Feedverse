@@ -536,11 +536,21 @@ const allProfiles = React.useMemo<Profile[]>(() => {
       try {
         const transferredIds = Array.from(selectedIds).map(String);
 
-        await transferProfilesToUser?.({
+        const res = await transferProfilesToUser?.({
           scenarioId: sid,
           profileIds: transferredIds,
           toUserId: toId,
         });
+
+        if (!res) {
+          Alert.alert("Transfer failed", "Transfer API is unavailable.");
+          return;
+        }
+
+        if (!res.ok) {
+          Alert.alert("Transfer failed", res.error ?? "Could not transfer profiles.");
+          return;
+        }
 
         // Close sheets + reset UI FIRST so the modal backdrop can't "freeze" the screen
         // if anything below takes time.
