@@ -19,6 +19,7 @@ const userRepository = new UserRepository();
 
 export const RegisterUserService = async (
   input: RegisterRequest,
+  avatarFile?: Express.Multer.File,
 ): Promise<{ user?: RegisterResponse; errors?: ValidationError[] }> => {
   const { username, email, password_hash, avatar_url } = input;
 
@@ -52,16 +53,19 @@ export const RegisterUserService = async (
   const hashedPassword = await bcrypt.hash(password_hash, 10);
   const nameFormatted = nameFormatting(username);
 
-  const userCreated = await userRepository.create({
-    id: uuid,
-    username: username,
-    name: nameFormatted,
-    email: email,
-    password_hash: hashedPassword,
-    avatar_url: avatar_url,
-    created_at: date,
-    updated_at: date,
-  });
+  const userCreated = await userRepository.create(
+    {
+      id: uuid,
+      username: username,
+      name: nameFormatted,
+      email: email,
+      password_hash: hashedPassword,
+      avatar_url: avatar_url,
+      created_at: date,
+      updated_at: date,
+    },
+    avatar_url,
+  );
 
   const user: RegisterResponse = {
     message: USER_MESSAGES.CREATION_SUCCESS,

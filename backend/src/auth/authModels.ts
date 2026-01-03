@@ -5,7 +5,7 @@ export interface RegisterRequest {
   name: string;
   email: string;
   password_hash: string;
-  avatar_url: string;
+  avatar_url: Express.Multer.File | string;
 }
 
 export interface CreateUserData {
@@ -14,7 +14,7 @@ export interface CreateUserData {
   name: string;
   email: string;
   password_hash: string;
-  avatar_url: string;
+  avatar_url: Express.Multer.File | string;
   created_at: Date;
   updated_at: Date;
 }

@@ -1,4 +1,5 @@
 import { CreateUserData } from "../auth/authModels";
+import { r2Service } from "../config/cloudflare/r2Service";
 import { pool } from "../config/database";
 import { User } from "./userModels";
 
@@ -15,7 +16,15 @@ export class UserRepository {
     return result.rows[0].exists;
   }
 
-  async create(userData: CreateUserData): Promise<User> {
+  async create(
+    userData: CreateUserData,
+    avatarFile?: Express.Multer.File,
+  ): Promise<User> {
+    let finalAvatarUrl = userData.avatar_url;
+
+    if (avatarFile) {
+      finalAvatarUrl = await r2Service.uploadAvatar(avatarFile);
+    }
     const query = `
       INSERT INTO users (id, username, name, email, password_hash, avatar_url, created_at, updated_at)
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
@@ -27,7 +36,7 @@ export class UserRepository {
       userData.name,
       userData.email,
       userData.password_hash,
-      userData.avatar_url,
+      finalAvatarUrl,
       userData.created_at,
       userData.updated_at,
     ]);
