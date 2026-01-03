@@ -1,10 +1,9 @@
-// mobile/app/modal/create-post.tsx
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router, useLocalSearchParams } from "expo-router";
 
-import type { Post } from "@/data/db/schema";
+import type { Post, CharacterSheet } from "@/data/db/schema";
 import { useAppData } from "@/context/appData";
 import { useAuth } from "@/context/auth";
 
@@ -42,6 +41,8 @@ import { RowCard } from "@/components/ui/RowCard";
 import { PostTypePicker } from "@/components/postComposer/PostTypePicker";
 import type { PostType } from "@/lib/campaign/postTypes";
 
+import { UseItemsPicker, type InvItem } from "@/components/postComposer/UseItemsPicker";
+
 type Params = {
   scenarioId: string;
   postId?: string;
@@ -51,6 +52,60 @@ type Params = {
 
 function isTruthyText(s: string) {
   return (s ?? "").trim().length > 0;
+}
+
+function norm(s: any) {
+  return String(s ?? "").trim();
+}
+
+function buildUsedItemsLine(names: string[]) {
+  const uniq = Array.from(new Set(names.map((n) => norm(n)).filter(Boolean)));
+  if (!uniq.length) return "";
+  return `🎒 used: ${uniq.join(", ")}`;
+}
+
+/**
+ * Consume selected items from inventory:
+ * - if qty exists: qty-- ; if 0 => remove; if 1 => keep but remove qty (qty undefined)
+ * - if qty missing: remove (single-use)
+ */
+function consumeInventory(inventory: InvItem[], selectedIds: string[]) {
+  const pick = new Set((selectedIds ?? []).map(String));
+  const next: InvItem[] = [];
+
+  for (const it of Array.isArray(inventory) ? inventory : []) {
+    const id = String(it?.id ?? "");
+    if (!id) continue;
+
+    if (!pick.has(id)) {
+      next.push(it);
+      continue;
+    }
+
+    // selected
+    const q = typeof it.qty === "number" ? Math.max(0, Math.floor(it.qty)) : undefined;
+
+    if (q == null) {
+      // no qty -> consume whole item
+      continue;
+    }
+
+    const newQty = q - 1;
+    if (newQty <= 0) {
+      continue; // remove
+    }
+
+    if (newQty === 1) {
+      // keep one left, but remove qty per your rule
+      next.push({ ...it, qty: undefined });
+      continue;
+    }
+
+    // still multiple left
+    next.push({ ...it, qty: newQty });
+  }
+
+  return next;
 }
 
 export default function CreatePostModal() {
@@ -73,7 +128,11 @@ export default function CreatePostModal() {
     getSelectedProfileId,
     setSelectedProfileId,
     upsertPost,
-  } = useAppData();
+
+    // NEW: inventory comes from character sheet
+    getCharacterSheetByProfileId,
+    upsertCharacterSheet,
+  } = useAppData() as any;
 
   const scenario = useMemo(() => getScenarioById?.(sid) ?? null, [sid, getScenarioById]);
   const isCampaign = scenario?.mode === "campaign";
@@ -85,7 +144,7 @@ export default function CreatePostModal() {
   const selectedId = getSelectedProfileId(sid);
 
   const fallbackOwnedProfileId = useMemo(() => {
-    const mine = listProfilesForScenario(sid).find((p) => String(p.ownerUserId) === String(userId ?? ""));
+    const mine = listProfilesForScenario(sid).find((p: any) => String(p.ownerUserId) === String(userId ?? ""));
     return mine?.id ?? null;
   }, [sid, listProfilesForScenario, userId]);
 
@@ -100,6 +159,61 @@ export default function CreatePostModal() {
     if (!authorProfileId) return null;
     return getProfileById(String(authorProfileId));
   }, [authorProfileId, getProfileById]);
+
+  // -------------------------
+  // Inventory (create-only)
+  // -------------------------
+  const sheet: CharacterSheet | null = useMemo(() => {
+    if (!authorProfileId) return null;
+    return getCharacterSheetByProfileId?.(String(authorProfileId)) ?? null;
+  }, [authorProfileId, getCharacterSheetByProfileId]);
+
+  const [inventory, setInventory] = useState<InvItem[]>([]);
+
+  useEffect(() => {
+    const inv = Array.isArray((sheet as any)?.inventory) ? ((sheet as any).inventory as InvItem[]) : [];
+    setInventory(inv);
+  }, [sheet]);
+
+  const applyUsedItems = useCallback(
+    async (selectedIds: string[]) => {
+      if (isEdit) return; // create-only
+      if (!selectedIds?.length) return;
+
+      const picked = inventory.filter((it) => selectedIds.includes(String(it.id)));
+      const pickedNames = picked.map((it) => it.name);
+
+      // 1) append recap line to first tweet
+      const line = buildUsedItemsLine(pickedNames);
+      if (line) {
+        setThreadTexts((prev) => {
+          const next = [...prev];
+          const base = (next[0] ?? "").trimEnd();
+          next[0] = base.length ? `${base}\n\n${line}` : line;
+          return next;
+        });
+      }
+
+      // 2) consume inventory locally + persist to sheet
+      const nextInv = consumeInventory(inventory, selectedIds);
+      setInventory(nextInv);
+
+      if (!sheet) return;
+
+      try {
+        const nextSheet: CharacterSheet = {
+          ...(sheet as any),
+          inventory: nextInv as any,
+          updatedAt: new Date().toISOString(),
+        };
+
+        await upsertCharacterSheet(nextSheet);
+      } catch {
+        // keep UX smooth; if persistence fails, user can still post
+      }
+    },
+    [isEdit, inventory, sheet, upsertCharacterSheet]
+  );
 
   // thread
   const [threadTexts, setThreadTexts] = useState<string[]>([""]);
@@ -258,7 +372,7 @@ export default function CreatePostModal() {
   }, [quoteId, getPostById]);
 
   const scenarioProfileIds = useMemo(() => {
-    return new Set(listProfilesForScenario(sid).map((p) => String(p.id)));
+    return new Set(listProfilesForScenario(sid).map((p: any) => String(p.id)));
   }, [sid, listProfilesForScenario]);
 
   // hydration
@@ -432,7 +546,6 @@ export default function CreatePostModal() {
       setPosting(true);
       fxPromise = sleep(minFxMs);
     } else {
-      // For non-roll posts, just block double submits.
       setPosting(true);
     }
 
@@ -525,7 +638,6 @@ export default function CreatePostModal() {
           insertedAt: insertedAtBaseIso,
           addVideoIcon: i === 0 ? addVideoIconForPost : false,
 
-          // only on the first thread item
           postType: i === 0 ? (savedPostType as any) : undefined,
           meta: i === 0 ? savedMeta : undefined,
         };
@@ -563,6 +675,8 @@ export default function CreatePostModal() {
     postType,
     meta,
   ]);
+
+  const canUseItems = !isEdit && !!authorProfileId && !!sheet && inventory.length > 0;
 
   return (
     <SafeAreaView edges={["top"]} style={{ flex: 1, backgroundColor: colors.background }}>
@@ -622,6 +736,17 @@ export default function CreatePostModal() {
                   onRemoveThreadItem={removeThreadItem}
                 />
 
+                {/* NEW: use items (create-only) */}
+                <View style={{ marginTop: 10 }}>
+                  <UseItemsPicker
+                    colors={colors as any}
+                    items={inventory}
+                    disabled={!canUseItems}
+                    onConfirm={applyUsedItems}
+                    buttonLabel={canUseItems ? "use item" : !sheet ? "no sheet" : inventory.length ? "unavailable" : "no items"}
+                  />
+                </View>
+
                 <MediaPreview
                   colors={colors}
                   imageUrls={imageUrls}
@@ -646,38 +771,23 @@ export default function CreatePostModal() {
 
             <View style={[styles.softDivider, { backgroundColor: colors.border }]} />
 
-            
-            <ComposerToolbar
-              colors={colors}
-              onTakePhoto={takePhoto}
-              onPickImages={pickImages}
-              onPickVideoThumb={pickVideoThumb}
-            />
+            <ComposerToolbar colors={colors} onTakePhoto={takePhoto} onPickImages={pickImages} onPickVideoThumb={pickVideoThumb} />
 
             {/* Campaign */}
-                {isCampaign ? (
-                  <View style={{ marginLeft: 20, marginRight: 20, gap: 10 }}>
-                    <RowCard label="Post type" colors={colors}>
-                      <PostTypePicker
-                        colors={colors}
-                        value={postType}
-                        onChange={(t) => {
-                          setPostType(t);
-                          // optional: reset meta when switching types
-                          setMeta(undefined);
-                        }}
-                      />
-                    </RowCard>
-
-                    {/* Drop your specific composers here later.
-                       They should call setMeta(...) as user fills fields. */}
-                    {/* {postType === "roll" ? <RollComposer colors={colors} value={meta} onChange={setMeta} /> : null}
-                    {postType === "quest" ? <QuestComposer colors={colors} value={meta} onChange={setMeta} /> : null}
-                    {postType === "combat" ? <CombatComposer colors={colors} value={meta} onChange={setMeta} /> : null}
-                    {postType === "gm" ? <GMComposer colors={colors} value={meta} onChange={setMeta} /> : null}
-                    {postType === "log" ? <LogComposer colors={colors} value={meta} onChange={setMeta} /> : null} */}
-                  </View>
-                ) : null}
+            {isCampaign ? (
+              <View style={{ marginLeft: 20, marginRight: 20, gap: 10 }}>
+                <RowCard label="Post type" colors={colors}>
+                  <PostTypePicker
+                    colors={colors}
+                    value={postType}
+                    onChange={(t) => {
+                      setPostType(t);
+                      setMeta(undefined);
+                    }}
+                  />
+                </RowCard>
+              </View>
+            ) : null}
 
             <PostSettingsSection
               colors={colors}
