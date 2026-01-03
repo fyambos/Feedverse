@@ -7,6 +7,7 @@ import { ThemedText } from "@/components/themed-text";
 import { Avatar } from "@/components/ui/Avatar";
 import type { Profile, Post as DbPost, CharacterSheet as DbCharacterSheet } from "@/data/db/schema";
 import { useAppData } from "@/context/appData";
+import { RpgChipsEditor, type ProfileRpgData } from "@/components/scenario/RpgChipsEditor";
 
 // ---------- Types ----------
 
@@ -152,8 +153,42 @@ function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
 }
 
+
 function deepClone<T>(v: T): T {
   return JSON.parse(JSON.stringify(v));
+}
+
+// ---------- RPG sheet/profile helpers (delegated to RpgChipsEditor types) ----------
+
+function getRpgFromSheet(sheet: any): ProfileRpgData {
+  return {
+    inventory: Array.isArray(sheet?.inventory) ? sheet.inventory : [],
+    equipment: Array.isArray(sheet?.equipment) ? sheet.equipment : [],
+    spells: Array.isArray(sheet?.spells) ? sheet.spells : [],
+    abilities: Array.isArray(sheet?.abilities) ? sheet.abilities : [],
+  };
+}
+
+function setRpgOnSheet(sheet: any, next: ProfileRpgData) {
+  return {
+    ...sheet,
+    inventory: Array.isArray(next?.inventory) ? next.inventory : [],
+    equipment: Array.isArray(next?.equipment) ? next.equipment : [],
+    spells: Array.isArray(next?.spells) ? next.spells : [],
+    abilities: Array.isArray(next?.abilities) ? next.abilities : [],
+  };
+}
+
+// Legacy fallback for non-campaign/legacy profiles
+function getRpgFromProfile(p: any): ProfileRpgData {
+  const src = (p?.settings && typeof p.settings === "object" ? p.settings : {}) as any;
+  const root = (src?.rpg && typeof src.rpg === "object" ? src.rpg : {}) as any;
+  return {
+    inventory: Array.isArray(root?.inventory ?? src?.inventory) ? (root?.inventory ?? src?.inventory) : [],
+    equipment: Array.isArray(root?.equipment ?? src?.equipment) ? (root?.equipment ?? src?.equipment) : [],
+    spells: Array.isArray(root?.spells ?? src?.spells) ? (root?.spells ?? src?.spells) : [],
+    abilities: Array.isArray(root?.abilities ?? src?.abilities) ? (root?.abilities ?? src?.abilities) : [],
+  };
 }
 
 function diffLines(before: any, after: any, handle: string) {
@@ -215,7 +250,58 @@ export function PostMenu({
   createGmPost,
 }: Props) {
   const appData = useAppData();
+  // CharacterSheet helpers from appData
+  const getCharacterSheetByProfileId = (appData as any)?.getCharacterSheetByProfileId;
+  const upsertCharacterSheet = (appData as any)?.upsertCharacterSheet;
   const [pinBusy, setPinBusy] = React.useState(false);
+
+  const [rpgDraft, setRpgDraft] = React.useState<ProfileRpgData>({
+    inventory: [],
+    equipment: [],
+    spells: [],
+    abilities: [],
+  });
+
+  const canEditRpg = Boolean(isCampaign && scenarioId && gmProfileId);
+
+  // Load RPG data when menu opens / target profile changes
+  React.useEffect(() => {
+    if (!visible) return;
+
+    try {
+      const sheet = getCharacterSheetByProfileId?.(profile.id) ?? null;
+      if (sheet) {
+        setRpgDraft(getRpgFromSheet(sheet));
+        return;
+      }
+    } catch {}
+
+    // fallback (non-campaign / legacy)
+    setRpgDraft(getRpgFromProfile(profile));
+  }, [visible, profile.id, getCharacterSheetByProfileId]);
+
+  const persistRpg = React.useCallback(
+    async (nextRpg: ProfileRpgData) => {
+      if (!canEditRpg) return;
+
+      try {
+        const sheet = getCharacterSheetByProfileId?.(profile.id) ?? null;
+        if (!sheet) {
+          Alert.alert("No sheet found", "This profile has no character sheet yet.");
+          return;
+        }
+
+        const nextSheet = setRpgOnSheet(sheet, nextRpg);
+        await upsertCharacterSheet?.(nextSheet);
+
+        // keep local draft in sync
+        setRpgDraft(getRpgFromSheet(nextSheet));
+      } catch (e: any) {
+        Alert.alert("Failed to update", e?.message ?? "Could not save changes.");
+      }
+    },
+    [canEditRpg, getCharacterSheetByProfileId, upsertCharacterSheet, profile.id]
+  );
 
   const insets = useSafeAreaInsets();
   const screenH = Dimensions.get("window").height;
@@ -550,8 +636,37 @@ export function PostMenu({
         emoji: "🏷️",
         items: [{ key: "status_set", emoji: "🏷️", label: "Set status…", onPress: setStatusManually }],
       },
+      {
+        title: "RPG",
+        emoji: "🎒",
+        items: [
+          {
+            key: "rpg_block",
+            render: () => (
+              <RpgChipsEditor
+                colors={colors}
+                value={rpgDraft}
+                editable={canEditRpg}
+                readonlyHint={!canEditRpg ? "only the scenario owner / gms can edit." : undefined}
+                onChange={(next) => {
+                  setRpgDraft(next);
+                  void persistRpg(next);
+                }}
+              />
+            ),
+          },
+        ],
+      },
     ],
-    [draft, colors.border, colors.pressed, colors.text, colors.textSecondary]
+    [
+      draft,
+      rpgDraft,
+      canEditRpg,
+      colors.border,
+      colors.pressed,
+      colors.text,
+      colors.textSecondary,
+    ]
   );
 
   const sections = isCampaign ? GM_SECTIONS : NORMAL_SECTIONS;
@@ -826,4 +941,6 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 12,
   },
+
+
 });

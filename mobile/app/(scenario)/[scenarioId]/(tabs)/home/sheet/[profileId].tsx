@@ -141,12 +141,16 @@ export default function CharacterSheetScreen() {
           {canEditSheet ? (
             <Pressable
               onPress={() => {
-                router.push({ pathname: `/modal/create-sheet`, params: { scenarioId: sid, profileId: pid } } as any);
+                const nextMode = sheet ? "edit" : "create";
+                router.push({
+                  pathname: `/modal/create-sheet`,
+                  params: { scenarioId: sid, profileId: pid, mode: nextMode },
+                } as any);
               }}
               hitSlop={10}
               style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}
             >
-              <Ionicons name="create-outline" size={22} color={colors.text} />
+              <Ionicons name={sheet ? "create-outline" : "add-circle-outline"} size={22} color={colors.text} />
             </Pressable>
           ) : (
             <View style={{ width: 24 }} />
