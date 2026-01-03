@@ -24,7 +24,8 @@
   import { useAppData } from "@/context/appData";
 
   import type { CharacterSheet } from "@/data/db/schema";
-  import { RowCard } from "@/components/ui/RowCard";
+import { RowCard } from "@/components/ui/RowCard";
+import { RpgChipsEditor, type ProfileRpgData } from "@/components/scenario/RpgChipsEditor";
 
   type Params = { scenarioId: string; profileId: string; mode?: "edit" | "create" };
 
@@ -49,6 +50,10 @@
   function readonlyHint(label: string) {
     return `${label} is updated each turn by the GM.`;
   }
+
+  // dev/strictmode + navigation can mount this modal multiple times.
+  // cache by (scenarioId, profileId) to avoid showing the create warning more than once.
+  const __warnedCreateSheetKeys = new Set<string>();
 
   export default function EditSheetModal() {
     const { scenarioId, profileId, mode } = useLocalSearchParams<Params>();
@@ -100,16 +105,16 @@
         if (!isOwner) return false;
 
         // owner-editable fields in EDIT mode
-        if (field === "identity") return true; // name/race/class/alignment (NOT level)
+        if (field === "identity") return true;
         if (field === "background") return true;
         if (field === "publicNotes") return true;
         if (field === "privateNotes") return true;
-        if (field === "abilities") return true;
-        if (field === "spells") return true;
 
-        // NEW: inventory is editable by owner (manual items)
-        if (field === "inventory") return true;
-        if (field === "equipment") return true;
+        // RPG fields are NOT editable in edit mode (for anyone)
+        if (field === "abilities") return false;
+        if (field === "spells") return false;
+        if (field === "inventory") return false;
+        if (field === "equipment") return false;
 
         // gm-only / turns-only
         return false;
@@ -138,20 +143,6 @@
     const [publicNotes, setPublicNotes] = useState(sheet?.publicNotes ?? "");
     const [privateNotes, setPrivateNotes] = useState(sheet?.privateNotes ?? "");
 
-    // abilities/spells as multi-line simple editor (one per line)
-    const abilitiesText = useMemo(() => {
-      const list = (sheet as any)?.abilities ?? [];
-      if (!Array.isArray(list)) return "";
-      return list.map((a: any) => (a?.notes ? `${a.name} — ${a.notes}` : `${a.name}`)).join("\n");
-    }, [sheet]);
-    const spellsText = useMemo(() => {
-      const list = (sheet as any)?.spells ?? [];
-      if (!Array.isArray(list)) return "";
-      return list.map((s: any) => (s?.notes ? `${s.name} — ${s.notes}` : `${s.name}`)).join("\n");
-    }, [sheet]);
-
-    const [abilitiesRaw, setAbilitiesRaw] = useState(abilitiesText);
-    const [spellsRaw, setSpellsRaw] = useState(spellsText);
 
     // GM-only fields (still visible read-only to owner in EDIT mode)
     const [str, setStr] = useState(String(sheet?.stats?.strength ?? ""));
@@ -165,61 +156,39 @@
     const [hpMax, setHpMax] = useState(String(sheet?.hp?.max ?? ""));
     const [status, setStatus] = useState(String((sheet as any)?.status ?? ""));
 
-    const inventoryText = useMemo(() => {
-      const list = (sheet as any)?.inventory ?? [];
-      if (!Array.isArray(list)) return "";
-      return list
-        .map((it: any) => {
-          const qty = it?.qty ? `x${it.qty}` : "";
-          const notes = it?.notes ? `(${it.notes})` : "";
-          return [it?.name, qty, notes].filter(Boolean).join(" ").trim();
-        })
-        .filter(Boolean)
-        .join("\n");
-    }, [sheet]);
+    // RPG chips state (abilities, spells, inventory, equipment)
+    const [rpgValue, setRpgValue] = useState<ProfileRpgData>(() => ({
+      inventory: Array.isArray((sheet as any)?.inventory) ? (sheet as any).inventory : [],
+      equipment: Array.isArray((sheet as any)?.equipment) ? (sheet as any).equipment : [],
+      spells: Array.isArray((sheet as any)?.spells) ? (sheet as any).spells : [],
+      abilities: Array.isArray((sheet as any)?.abilities) ? (sheet as any).abilities : [],
+    }));
 
-    const equipmentText = useMemo(() => {
-      const list = (sheet as any)?.equipment ?? [];
-      if (!Array.isArray(list)) return "";
-      return list
-        .map((it: any) => (it?.notes ? `${it.name} (${it.notes})` : `${it.name}`))
-        .filter(Boolean)
-        .join("\n");
-    }, [sheet]);
-
-    const [inventoryRaw, setInventoryRaw] = useState(inventoryText);
-    const [equipmentRaw, setEquipmentRaw] = useState(equipmentText);
-
-    // CREATE mode warning (show once when the modal opens)
-    const [warnedCreate, setWarnedCreate] = useState(false);
-    useMemo(() => {
-      if (isCreate && !warnedCreate) {
-        setWarnedCreate(true);
-        Alert.alert(
-          "Creating a Character Sheet",
-          "Everything is editable right now. After creation, some fields will be auto-updated by turns and won’t be editable by the owner.",
-          [{ text: "OK" }]
-        );
-      }
-      return null;
-    }, [isCreate, warnedCreate]);
-
-    const parseNamedLines = (raw: string, prefix: string) => {
-      const lines = String(raw ?? "")
-        .split("\n")
-        .map((l) => l.trim())
-        .filter(Boolean);
-
-      return lines.map((line, idx) => {
-        // allow "Name — notes" OR "Name - notes"
-        const sep = line.includes("—") ? "—" : line.includes(" - ") ? " - " : null;
-        if (sep) {
-          const [a, ...rest] = line.split(sep);
-          return { id: `${prefix}_${idx}`, name: a.trim(), notes: rest.join(sep).trim() || undefined };
-        }
-        return { id: `${prefix}_${idx}`, name: line, notes: undefined };
+    // keep in sync if sheet changes (e.g., opening another profile)
+    React.useEffect(() => {
+      setRpgValue({
+        inventory: Array.isArray((sheet as any)?.inventory) ? (sheet as any).inventory : [],
+        equipment: Array.isArray((sheet as any)?.equipment) ? (sheet as any).equipment : [],
+        spells: Array.isArray((sheet as any)?.spells) ? (sheet as any).spells : [],
+        abilities: Array.isArray((sheet as any)?.abilities) ? (sheet as any).abilities : [],
       });
-    };
+    }, [sheet]);
+
+    // CREATE mode warning (show once per (scenario, profile))
+    const createWarnKey = React.useMemo(() => `${sid}::${pid}`, [sid, pid]);
+
+    React.useEffect(() => {
+      if (!isCreate) return;
+      if (__warnedCreateSheetKeys.has(createWarnKey)) return;
+
+      __warnedCreateSheetKeys.add(createWarnKey);
+      Alert.alert(
+        "Creating a Character Sheet",
+        "Everything is editable right now. After creation, some fields will be auto-updated by turns and won’t be editable by the owner.",
+        [{ text: "OK" }]
+      );
+    }, [isCreate, createWarnKey]);
+
 
     const onSave = useCallback(async () => {
       if (!isReady) return;
@@ -265,9 +234,10 @@
         ...(canEdit("publicNotes") ? { publicNotes: String(publicNotes).trim() || undefined } : {}),
         ...(canEdit("privateNotes") ? { privateNotes: String(privateNotes).trim() || undefined } : {}),
 
-        // abilities should be editable (owner + gm in edit; everyone in create)
-        ...(canEdit("abilities") ? { abilities: parseNamedLines(abilitiesRaw, "a") as any } : {}),
-        ...(canEdit("spells") ? { spells: parseNamedLines(spellsRaw, "s") as any } : {}),
+        ...(canEdit("abilities") ? { abilities: rpgValue.abilities as any } : {}),
+        ...(canEdit("spells") ? { spells: rpgValue.spells as any } : {}),
+        ...(canEdit("inventory") ? { inventory: rpgValue.inventory as any } : {}),
+        ...(canEdit("equipment") ? { equipment: rpgValue.equipment as any } : {}),
 
         // gm-only fields (in edit) but editable in create
         ...(canEdit("stats")
@@ -294,27 +264,6 @@
 
         ...(canEdit("status") ? { status: String(status).trim() || undefined } : {}),
 
-        // NEW: inventory should be editable by owner (and GM) in EDIT mode
-        ...(canEdit("inventory")
-          ? {
-              inventory: parseNamedLines(inventoryRaw, "i").map((it: any) => ({
-                id: it.id,
-                name: it.name,
-                notes: it.notes,
-              })) as any,
-            }
-          : {}),
-
-        ...(canEdit("equipment")
-          ? {
-              equipment: parseNamedLines(equipmentRaw, "e").map((it: any) => ({
-                id: it.id,
-                name: it.name,
-                notes: it.notes,
-              })) as any,
-            }
-          : {}),
-
         updatedAt: new Date().toISOString(),
       };
 
@@ -340,8 +289,7 @@
       background,
       publicNotes,
       privateNotes,
-      abilitiesRaw,
-      spellsRaw,
+      rpgValue,
       str,
       dex,
       con,
@@ -351,8 +299,6 @@
       hpCur,
       hpMax,
       status,
-      inventoryRaw,
-      equipmentRaw,
       upsertCharacterSheet,
     ]);
 
@@ -496,44 +442,24 @@
                       />
                     </RowCard>
 
-                    {/* Abilities & Spells */}
-                    <RowCard label="Abilities & Spells" colors={colors}>
-                      <ThemedText style={[styles.subLabel, { color: colors.textSecondary }]}>Abilities (one per line)</ThemedText>
-                      <TextInput
-                        value={abilitiesRaw}
-                        onChangeText={setAbilitiesRaw}
-                        editable={canEdit("abilities")}
-                        placeholder={canEdit("abilities") ? "Sneak Attack — extra damage on advantage" : ""}
-                        placeholderTextColor={colors.textMuted}
-                        multiline
-                        style={[
-                          styles.textarea,
-                          {
-                            color: canEdit("abilities") ? colors.text : colors.textSecondary,
-                            backgroundColor: colors.card,
-                            borderColor: colors.border,
-                            opacity: canEdit("abilities") ? 1 : 0.75,
-                          },
-                        ]}
-                      />
+                    {/* RPG (Abilities, Spells, Inventory, Equipment) */}
+                    <RowCard label="RPG" colors={colors}>
+                      {!(canEdit("inventory") || canEdit("equipment") || canEdit("abilities") || canEdit("spells")) ? (
+                        <ThemedText style={{ color: colors.textSecondary, lineHeight: 18 }}>
+                          only the scenario owner / gms can edit.
+                        </ThemedText>
+                      ) : null}
 
-                      <ThemedText style={[styles.subLabel, { color: colors.textSecondary, marginTop: 10 }]}>Spells (one per line)</ThemedText>
-                      <TextInput
-                        value={spellsRaw}
-                        onChangeText={setSpellsRaw}
-                        editable={canEdit("spells")}
-                        placeholder={canEdit("spells") ? "Cure Wounds" : ""}
-                        placeholderTextColor={colors.textMuted}
-                        multiline
-                        style={[
-                          styles.textarea,
-                          {
-                            color: canEdit("spells") ? colors.text : colors.textSecondary,
-                            backgroundColor: colors.card,
-                            borderColor: colors.border,
-                            opacity: canEdit("spells") ? 1 : 0.75,
-                          },
-                        ]}
+                      <RpgChipsEditor
+                        colors={colors}
+                        value={rpgValue}
+                        onChange={setRpgValue}
+                        editable={isCreate} 
+                        readonlyHint={
+                          !(canEdit("inventory") || canEdit("equipment") || canEdit("abilities") || canEdit("spells"))
+                            ? "only the scenario owner / gms can edit."
+                            : undefined
+                        }
                       />
                     </RowCard>
 
@@ -566,51 +492,6 @@
                       <InputRow label="Status" value={status} onChangeText={setStatus} editable={canEdit("status")} colors={colors} />
                     </RowCard>
 
-                    {/* Inventory (owner editable in edit; all editable in create) */}
-                    <RowCard label="Inventory (Private)" colors={colors}>
-                      {!canEdit("inventory") ? (
-                        <ThemedText style={{ color: colors.textSecondary, lineHeight: 18 }}>
-                          {readonlyHint("Inventory")}
-                        </ThemedText>
-                      ) : null}
-
-                      <TextInput
-                        value={inventoryRaw}
-                        onChangeText={setInventoryRaw}
-                        editable={canEdit("inventory")}
-                        placeholder={canEdit("inventory") ? "Torch x6\nRations x5\nRope (50 ft)" : ""}
-                        placeholderTextColor={colors.textMuted}
-                        multiline
-                        style={[
-                          styles.textarea,
-                          {
-                            color: canEdit("inventory") ? colors.text : colors.textSecondary,
-                            backgroundColor: colors.card,
-                            borderColor: colors.border,
-                            opacity: canEdit("inventory") ? 1 : 0.75,
-                          },
-                        ]}
-                      />
-
-                      <ThemedText style={[styles.subLabel, { color: colors.textSecondary, marginTop: 10 }]}>Equipment</ThemedText>
-                      <TextInput
-                        value={equipmentRaw}
-                        onChangeText={setEquipmentRaw}
-                        editable={canEdit("equipment")}
-                        placeholder={canEdit("equipment") ? "Leather Armor\nShortbow" : ""}
-                        placeholderTextColor={colors.textMuted}
-                        multiline
-                        style={[
-                          styles.textarea,
-                          {
-                            color: canEdit("equipment") ? colors.text : colors.textSecondary,
-                            backgroundColor: colors.card,
-                            borderColor: colors.border,
-                            opacity: canEdit("equipment") ? 1 : 0.75,
-                          },
-                        ]}
-                      />
-                    </RowCard>
 
                     {!!(sheet as any)?.updatedAt ? (
                       <ThemedText style={{ color: colors.textMuted ?? colors.textSecondary, fontSize: 12 }}>
