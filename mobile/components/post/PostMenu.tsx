@@ -179,6 +179,121 @@ function setRpgOnSheet(sheet: any, next: ProfileRpgData) {
   };
 }
 
+function fmtInvItem(it: any): string {
+  const name = typeof it?.name === "string" ? it.name : "";
+  const qty = typeof it?.qty === "number" ? it.qty : undefined;
+  if (!name) return "(unnamed item)";
+  return qty != null ? `${name} ×${qty}` : name;
+}
+
+function fmtNamedItem(it: any): string {
+  const name = typeof it?.name === "string" ? it.name : "";
+  const notes = typeof it?.notes === "string" ? it.notes.trim() : "";
+  if (!name) return "(unnamed)";
+  return notes ? `${name} — ${notes}` : name;
+}
+
+function namedListDiffLines(
+  before: any,
+  after: any,
+  key: "equipment" | "spells" | "abilities",
+  handle: string,
+  verbs: { add: string; remove: string; update: string }
+) {
+  const bArr = Array.isArray(before?.[key]) ? before[key] : [];
+  const aArr = Array.isArray(after?.[key]) ? after[key] : [];
+
+  const bById = new Map<string, any>();
+  const aById = new Map<string, any>();
+
+  for (const it of bArr) {
+    const id = it?.id != null ? String(it.id) : "";
+    if (id) bById.set(id, it);
+  }
+
+  for (const it of aArr) {
+    const id = it?.id != null ? String(it.id) : "";
+    if (id) aById.set(id, it);
+  }
+
+  const prefix = handle ? `@${handle} ` : "";
+  const lines: string[] = [];
+
+  for (const [id, it] of aById) {
+    if (!bById.has(id)) lines.push(`${prefix}${verbs.add} ${fmtNamedItem(it)}`);
+  }
+
+  for (const [id, it] of bById) {
+    if (!aById.has(id)) lines.push(`${prefix}${verbs.remove} ${fmtNamedItem(it)}`);
+  }
+
+  for (const [id, bIt] of bById) {
+    const aIt = aById.get(id);
+    if (!aIt) continue;
+
+    const bStr = fmtNamedItem(bIt);
+    const aStr = fmtNamedItem(aIt);
+    if (bStr !== aStr) lines.push(`${prefix}${verbs.update} ${bStr} → ${aStr}`);
+  }
+
+  return lines;
+}
+
+function inventoryDiffLines(before: any, after: any, handle: string) {
+  const bInv = Array.isArray(before?.inventory) ? before.inventory : [];
+  const aInv = Array.isArray(after?.inventory) ? after.inventory : [];
+
+  const bById = new Map<string, any>();
+  const aById = new Map<string, any>();
+
+  for (const it of bInv) {
+    const id = it?.id != null ? String(it.id) : "";
+    if (id) bById.set(id, it);
+  }
+
+  for (const it of aInv) {
+    const id = it?.id != null ? String(it.id) : "";
+    if (id) aById.set(id, it);
+  }
+
+  const prefix = handle ? `@${handle} ` : "";
+  const lines: string[] = [];
+
+  // added
+  for (const [id, it] of aById) {
+    if (!bById.has(id)) lines.push(`🎒obtained ${fmtInvItem(it)}`);
+  }
+
+  // removed
+  for (const [id, it] of bById) {
+    if (!aById.has(id)) lines.push(`🎒lost ${fmtInvItem(it)}`);
+  }
+
+  // edited (same id and name but different qty)
+  for (const [id, bIt] of bById) {
+    const aIt = aById.get(id);
+    if (!aIt) continue;
+    const bName = typeof bIt?.name === "string" ? bIt.name : "";
+    const aName = typeof aIt?.name === "string" ? aIt.name : "";
+    if (bName !== aName) continue;
+    const bQty = typeof bIt?.qty === "number" ? bIt.qty : 1;
+    const aQty = typeof aIt?.qty === "number" ? aIt.qty : 1;
+    if (bQty !== aQty) lines.push(`used ${bName}×${bQty} → ${bName}×${aQty}`);
+  }
+
+  // edited (same id but different name)
+  for (const [id, bIt] of bById) {
+    const aIt = aById.get(id);
+    if (!aIt) continue;
+    const bName = typeof bIt?.name === "string" ? bIt.name : "";
+    const aName = typeof aIt?.name === "string" ? aIt.name : "";
+    if (bName !== aName) lines.push(`updated ${bName} → ${aName}`);
+  }
+
+
+  return lines;
+}
+
 // Legacy fallback for non-campaign/legacy profiles
 function getRpgFromProfile(p: any): ProfileRpgData {
   const src = (p?.settings && typeof p.settings === "object" ? p.settings : {}) as any;
@@ -218,6 +333,32 @@ function diffLines(before: any, after: any, handle: string) {
     if (b !== a) lines.push(`🧬 ${k}: ${b} → ${a}`);
   }
 
+  // RPG (inventory)
+  lines.push(...inventoryDiffLines(before, after, handle));
+
+  // RPG (equipment / spells / abilities)
+  lines.push(
+    ...namedListDiffLines(before, after, "equipment", "", {
+      add: "🛡️equipped",
+      remove: "🛡️unequipped",
+      update: "🛡️updated",
+    })
+  );
+  lines.push(
+    ...namedListDiffLines(before, after, "spells", "", {
+      add: "✨learned spell",
+      remove: "✨forgot spell",
+      update: "✨updated spell",
+    })
+  );
+  lines.push(
+    ...namedListDiffLines(before, after, "abilities", "", {
+      add: "🧠gained trait",
+      remove: "🧠lost trait",
+      update: "🧠updated trait",
+    })
+  );
+
   return lines.join("\n");
 }
 
@@ -229,6 +370,15 @@ function hasAnyDiff(before: any, after: any) {
   for (const k of STAT_KEYS) {
     if (getStat(before, k) !== getStat(after, k)) return true;
   }
+
+  // RPG (inventory)
+  if (inventoryDiffLines(before, after, "").length > 0) return true;
+
+  // RPG (equipment / spells / abilities)
+  if (namedListDiffLines(before, after, "equipment", "", { add: "", remove: "", update: "" }).length > 0) return true;
+  if (namedListDiffLines(before, after, "spells", "", { add: "", remove: "", update: "" }).length > 0) return true;
+  if (namedListDiffLines(before, after, "abilities", "", { add: "", remove: "", update: "" }).length > 0) return true;
+
   return false;
 }
 
@@ -262,6 +412,15 @@ export function PostMenu({
     abilities: [],
   });
 
+  // keep a ref to the latest GM draft so RPG chip saves don't clobber other unsaved edits
+  const draftRef = React.useRef<any | null>(null);
+
+  // Avoid effect churn when AppData provider re-renders and function identities change.
+  const getCharacterSheetByProfileIdRef = React.useRef<any>(getCharacterSheetByProfileId);
+  React.useEffect(() => {
+    getCharacterSheetByProfileIdRef.current = getCharacterSheetByProfileId;
+  }, [getCharacterSheetByProfileId]);
+
   const canEditRpg = Boolean(isCampaign && scenarioId && gmProfileId);
 
   // Load RPG data when menu opens / target profile changes
@@ -269,7 +428,7 @@ export function PostMenu({
     if (!visible) return;
 
     try {
-      const sheet = getCharacterSheetByProfileId?.(profile.id) ?? null;
+      const sheet = getCharacterSheetByProfileIdRef.current?.(profile.id) ?? null;
       if (sheet) {
         setRpgDraft(getRpgFromSheet(sheet));
         return;
@@ -285,22 +444,30 @@ export function PostMenu({
       if (!canEditRpg) return;
 
       try {
-        const sheet = getCharacterSheetByProfileId?.(profile.id) ?? null;
+        const sheet = getCharacterSheetByProfileIdRef.current?.(profile.id) ?? null;
         if (!sheet) {
           Alert.alert("No sheet found", "This profile has no character sheet yet.");
           return;
         }
 
-        const nextSheet = setRpgOnSheet(sheet, nextRpg);
+        // Use the latest local draft as the base (if present) so we don't overwrite
+        // pending HP/level/stats/status changes when saving inventory.
+        const local = draftRef.current;
+        const base = local && typeof local === "object" ? { ...sheet, ...local } : sheet;
+
+        const nextSheet = { ...setRpgOnSheet(base, nextRpg), profileId: String(profile.id) };
         await upsertCharacterSheet?.(nextSheet);
 
         // keep local draft in sync
         setRpgDraft(getRpgFromSheet(nextSheet));
+
+        // also keep GM "done" diff sheet in sync so recap includes items
+        setDraft((prev: any | null) => (prev ? setRpgOnSheet(prev, nextRpg) : prev));
       } catch (e: any) {
         Alert.alert("Failed to update", e?.message ?? "Could not save changes.");
       }
     },
-    [canEditRpg, getCharacterSheetByProfileId, upsertCharacterSheet, profile.id]
+    [canEditRpg, upsertCharacterSheet, profile.id]
   );
 
   const insets = useSafeAreaInsets();
@@ -334,6 +501,15 @@ export function PostMenu({
   const [draft, setDraft] = React.useState<any | null>(null);
 
   React.useEffect(() => {
+    draftRef.current = draft;
+  }, [draft]);
+
+  const getSheetRef = React.useRef<any>(getSheet);
+  React.useEffect(() => {
+    getSheetRef.current = getSheet;
+  }, [getSheet]);
+
+  React.useEffect(() => {
     if (!visible) return;
 
     if (!isCampaign) {
@@ -342,7 +518,7 @@ export function PostMenu({
       return;
     }
 
-    const sheet = getSheet?.(profile.id) ?? null;
+    const sheet = getSheetRef.current?.(profile.id) ?? null;
 
     if (!sheet) {
       originalRef.current = null;
@@ -352,7 +528,7 @@ export function PostMenu({
 
     originalRef.current = deepClone(sheet);
     setDraft(deepClone(sheet));
-  }, [visible, isCampaign, profile.id, getSheet]);
+  }, [visible, isCampaign, profile.id]);
 
   const bumpHp = (delta: number) => {
     if (!draft) return;
@@ -425,7 +601,7 @@ export function PostMenu({
     ]);
   };
 
-  const commitDone = () => {
+  const commitDone = async () => {
     if (!isCampaign) {
       onClose();
       return;
@@ -442,7 +618,7 @@ export function PostMenu({
     }
 
     const before = originalRef.current;
-    const after = draft;
+    const after = setRpgOnSheet(draft, rpgDraft);
 
     if (!hasAnyDiff(before, after)) {
       onClose();
@@ -451,7 +627,12 @@ export function PostMenu({
 
     const nextSheet = { ...after, profileId: profile.id } as DbCharacterSheet;
 
-    updateSheet(profile.id, nextSheet);
+    try {
+      await updateSheet(profile.id, nextSheet);
+    } catch (e: any) {
+      Alert.alert("Failed to save", e?.message ?? "Could not save sheet updates.");
+      return;
+    }
 
     const text = `⚙️ gm update\n\n` + diffLines(before, nextSheet, profile.handle);
 
