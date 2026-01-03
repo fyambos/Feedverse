@@ -1,4 +1,4 @@
-// mobile/app/(scenario)/[scenarioId]/sheet/[profileId].tsx
+// mobile/app/(scenario)/[scenarioId]/home/sheet/[profileId].tsx
 
 import React, { useMemo } from "react";
 import { Pressable, ScrollView, StyleSheet, View } from "react-native";
