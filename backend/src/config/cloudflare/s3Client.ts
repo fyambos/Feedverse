@@ -1,5 +1,5 @@
 import { S3Client, ListObjectsV2Command } from "@aws-sdk/client-s3";
-import { CLOUDFLARE } from "./constants";
+import { CLOUDFLARE } from "../constants";
 
 export const CLOUDFLARE_S3 = new S3Client({
   region: "auto",

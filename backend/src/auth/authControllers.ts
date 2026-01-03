@@ -8,8 +8,11 @@ import {
   USER_MESSAGES,
 } from "../config/constants";
 import { LoginUserService, RegisterUserService } from "./authServices";
+import { upload } from "../config/multer";
 
-export const RegisterController = async (req: Request, res: Response) => {
+export const RegisterController = [
+  upload.single("avatar"),
+  async (req: Request, res: Response) => {
   if (req.method !== HTTP_METHODS.POST) {
     return res
       .status(HTTP_STATUS.BAD_REQUEST)
@@ -18,6 +21,7 @@ export const RegisterController = async (req: Request, res: Response) => {
 
   try {
     const { username, name, email, password_hash, avatar_url } = req.body;
+    const avatarFile = req.file;
 
     const result = await RegisterUserService({
       username,
@@ -25,7 +29,7 @@ export const RegisterController = async (req: Request, res: Response) => {
       email,
       password_hash,
       avatar_url,
-    });
+    }, avatarFile);
 
     if (result.errors) {
       return res.status(HTTP_STATUS.OK).json({
@@ -44,7 +48,7 @@ export const RegisterController = async (req: Request, res: Response) => {
       .json({ error: ERROR_MESSAGES.INTERNAL_SERVER_ERROR });
   }
 };
-
+]
 export const LoginController = async (req: Request, res: Response) => {
   if (req.method !== HTTP_METHODS.POST) {
     return res

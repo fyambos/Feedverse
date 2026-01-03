@@ -4,7 +4,6 @@ import authRouter from "./auth/authRouter";
 import userRouter from "./users/userRouter";
 import { APP_CONFIG } from "./config/constants";
 import { ROUTES_AUTH, ROUTES_USERS } from "./config/constants";
-import { CLOUDFLARE_TEST } from "./config/cloudflare";
 
 const app = express();
 app.use(bodyParser.json());
@@ -17,7 +16,6 @@ const AppStart = async () => {
   console.log(
     `L'application est lançée à l'adresse : ${APP_CONFIG.ENVIRONMENT}:${APP_CONFIG.SERVER_PORT}`,
   );
-  console.log(`Bucket Cloudflare :`, CLOUDFLARE_TEST());
 };
 
 app.listen(APP_CONFIG.SERVER_PORT, AppStart);
