@@ -1993,7 +1993,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         const ids = Array.from(new Set((participantProfileIds ?? []).map(String).map((s) => s.trim()).filter(Boolean)));
 
         if (!sid) return { ok: false, error: "scenarioId is required" };
-        if (ids.length < 2) return { ok: false, error: "participantProfileIds must have 2+ ids" };
+        if (ids.length < 1) return { ok: false, error: "participantProfileIds must have 1+ ids" };
 
         // deterministic id so UI can “open DM with X” without duplicate threads in mock mode
         const convId = makeConversationId(sid, ids);

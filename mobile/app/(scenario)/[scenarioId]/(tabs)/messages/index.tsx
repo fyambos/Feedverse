@@ -1,7 +1,8 @@
 import React, { useMemo } from "react";
-import { FlatList, Pressable, StyleSheet, View } from "react-native";
+import { FlatList, Modal, Pressable, StyleSheet, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams, usePathname } from "expo-router";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
@@ -51,7 +52,18 @@ export default function MessagesScreen() {
   }, [scenarioId, pathname]);
 
   const app = useAppData() as any;
-  const { isReady, db, getSelectedProfileId, listConversationsForScenario, getProfileById } = app;
+  const {
+    isReady,
+    db,
+    getSelectedProfileId,
+    listConversationsForScenario,
+    getProfileById,
+    listProfilesForScenario,
+    getOrCreateConversation,
+  } = app;
+
+  const [composerOpen, setComposerOpen] = React.useState(false);
+  const [picked, setPicked] = React.useState<Set<string>>(() => new Set());
 
   const selectedProfileId: string | null = useMemo(
     () => (sid ? (getSelectedProfileId?.(sid) ?? null) : null),
@@ -66,6 +78,19 @@ export default function MessagesScreen() {
   }, [isReady, sid, selectedProfileId, listConversationsForScenario]);
 
   const messagesMap: Record<string, Message> = ((db as any)?.messages ?? {}) as any;
+
+  const allScenarioProfiles: Profile[] = useMemo(() => {
+    if (!isReady) return [];
+    if (!sid) return [];
+    return (listProfilesForScenario?.(sid) ?? []) as Profile[];
+  }, [isReady, sid, listProfilesForScenario]);
+
+  const pickableProfiles: Profile[] = useMemo(() => {
+    const me = String(selectedProfileId ?? "");
+    return allScenarioProfiles
+      .filter((p) => String((p as any).id ?? "") && String((p as any).id) !== me)
+      .sort((a, b) => String((a as any).displayName ?? "").localeCompare(String((b as any).displayName ?? "")));
+  }, [allScenarioProfiles, selectedProfileId]);
 
   const getLastMessageForConversation = (conversationId: string): Message | null => {
     const cid = String(conversationId);
@@ -100,7 +125,7 @@ export default function MessagesScreen() {
       return { title: "group chat", avatarUrl: null };
     }
 
-    return { title: "conversation", avatarUrl: null };
+    return { title: "you", avatarUrl: null };
   };
 
   if (!isReady) {
@@ -163,30 +188,140 @@ export default function MessagesScreen() {
     );
   }
 
-  if (conversations.length === 0) {
-    return (
-      <ThemedView style={[styles.container, { backgroundColor: colors.background }]}>
-        <View style={styles.center}>
-          <View style={[styles.iconWrap, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Ionicons name="mail-outline" size={28} color={colors.tint} />
-          </View>
+  const togglePicked = (profileId: string) => {
+    const pid = String(profileId);
+    setPicked((prev) => {
+      const next = new Set(prev);
+      if (next.has(pid)) next.delete(pid);
+      else next.add(pid);
+      return next;
+    });
+  };
 
-          <ThemedText style={[styles.title, { color: colors.text }]}>messages</ThemedText>
+  const createConversation = async () => {
+    const base = String(selectedProfileId ?? "");
+    if (!base) return;
 
-          <ThemedText style={[styles.subtitle, { color: colors.textSecondary }]}>
-            your inbox is empty for this profile.
-          </ThemedText>
-        </View>
-      </ThemedView>
-    );
-  }
+    const participantProfileIds = [base, ...Array.from(picked)];
+    const res = await getOrCreateConversation?.({ scenarioId: sid, participantProfileIds });
+    if (!res?.ok) return;
+
+    const conversationId = String(res.conversationId);
+    setComposerOpen(false);
+    setPicked(new Set());
+    router.push({
+      pathname: "/(scenario)/[scenarioId]/(tabs)/messages/[conversationId]",
+      params: { scenarioId: sid, conversationId },
+    } as any);
+  };
 
   return (
     <ThemedView style={[styles.containerList, { backgroundColor: colors.background }]}>
+      <Modal visible={composerOpen} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setComposerOpen(false)}>
+        <SafeAreaView edges={["top", "bottom"]} style={[styles.modal, { backgroundColor: colors.background }]}>
+          <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}
+          >
+            <Pressable
+              onPress={() => {
+                setComposerOpen(false);
+                setPicked(new Set());
+              }}
+              hitSlop={12}
+              style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}
+            >
+              <Ionicons name="close" size={22} color={colors.text} />
+            </Pressable>
+
+            <ThemedText style={[styles.modalTitle, { color: colors.text }]}>new conversation</ThemedText>
+
+            <Pressable
+              onPress={createConversation}
+              hitSlop={12}
+              style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}
+            >
+              <ThemedText style={[styles.modalAction, { color: colors.tint }]}>create</ThemedText>
+            </Pressable>
+          </View>
+
+          <View style={{ paddingHorizontal: 16, paddingTop: 10, paddingBottom: 6 }}>
+            <ThemedText style={[styles.modalSubtitle, { color: colors.textSecondary }]}>
+              pick participants (optional). create with none to DM yourself.
+            </ThemedText>
+          </View>
+
+          <FlatList
+            data={pickableProfiles}
+            keyExtractor={(p) => String((p as any).id)}
+            contentContainerStyle={{ paddingBottom: 20 }}
+            renderItem={({ item }) => {
+              const p = item as Profile;
+              const pid = String((p as any).id);
+              const selected = picked.has(pid);
+              return (
+                <Pressable
+                  onPress={() => togglePicked(pid)}
+                  style={({ pressed }) => [
+                    styles.pickRow,
+                    {
+                      backgroundColor: pressed ? colors.pressed : colors.background,
+                      borderBottomColor: colors.border,
+                    },
+                  ]}
+                >
+                  <Avatar uri={(p as any).avatarUrl ?? null} size={40} fallbackColor={colors.border} />
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <ThemedText style={[styles.pickName, { color: colors.text }]} numberOfLines={1}>
+                      {String((p as any).displayName ?? "profile")}
+                    </ThemedText>
+                    {!!(p as any).handle && (
+                      <ThemedText style={[styles.pickHandle, { color: colors.textSecondary }]} numberOfLines={1}>
+                        @{String((p as any).handle).replace(/^@+/, "")}
+                      </ThemedText>
+                    )}
+                  </View>
+                  <Ionicons
+                    name={selected ? "checkbox" : "square-outline"}
+                    size={22}
+                    color={selected ? colors.tint : colors.textSecondary}
+                  />
+                </Pressable>
+              );
+            }}
+          />
+        </SafeAreaView>
+      </Modal>
+
       <FlatList
         data={conversations}
         keyExtractor={(c) => String((c as any).id)}
-        contentContainerStyle={{ paddingVertical: 10 }}
+        contentContainerStyle={{ paddingBottom: 10 }}
+        ListHeaderComponent={() => {
+          return (
+            <View style={[styles.header, { borderBottomColor: colors.border, backgroundColor: colors.background }]}>
+              <ThemedText style={[styles.headerTitle, { color: colors.text }]}>messages</ThemedText>
+              <Pressable
+                onPress={() => setComposerOpen(true)}
+                hitSlop={12}
+                style={({ pressed }) => [
+                  styles.plus,
+                  {
+                    backgroundColor: pressed ? colors.pressed : colors.card,
+                    borderColor: colors.border,
+                  },
+                ]}
+              >
+                <Ionicons name="add" size={20} color={colors.text} />
+              </Pressable>
+            </View>
+          );
+        }}
+        ListEmptyComponent={() => {
+          return (
+            <View style={styles.emptyWrap}>
+              <ThemedText style={[styles.subtitle, { color: colors.textSecondary }]}>your inbox is empty for this profile.</ThemedText>
+            </View>
+          );
+        }}
         renderItem={({ item }) => {
           const c = item as Conversation;
           const convId = String((c as any).id);
@@ -274,4 +409,47 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
   },
   ctaText: { fontSize: 15, fontWeight: "800" },
+
+  header: {
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  headerTitle: { fontSize: 22, fontWeight: "900" },
+  plus: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  emptyWrap: { paddingHorizontal: 16, paddingTop: 14 },
+
+  modal: { flex: 1 },
+  modalHeader: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  modalTitle: { fontSize: 16, fontWeight: "900" },
+  modalAction: { fontSize: 15, fontWeight: "900" },
+  modalSubtitle: { fontSize: 13, lineHeight: 18 },
+  pickRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  pickName: { fontSize: 15, fontWeight: "900" },
+  pickHandle: { fontSize: 13, marginTop: 2 },
 });
