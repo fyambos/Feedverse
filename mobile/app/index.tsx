@@ -1,6 +1,6 @@
 // mobile/app/index.tsx
 import React, { useMemo, useState } from "react";
-import { StyleSheet, FlatList, Pressable, Image, View, Modal, Alert } from "react-native";
+import { StyleSheet, FlatList, Pressable, Image, View, Modal } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router, Stack } from "expo-router";
@@ -16,6 +16,7 @@ import { useAppData } from "@/context/appData";
 import { TagPill } from "@/components/ui/TagPill";
 
 import { createScenarioIO } from "@/lib/scenarioIO";
+import { Alert } from "@/context/dialog";
 
 const MAX_PLAYERS = 20;
 
@@ -192,6 +193,7 @@ export default function ScenarioListScreen() {
 
   const copyInviteCode = async () => {
     if (!menu.inviteCode) {
+      closeScenarioMenu();
       Alert.alert("No invite code", "This scenario has no invite code.");
       return;
     }
@@ -220,6 +222,7 @@ export default function ScenarioListScreen() {
 
     // owner + others => must transfer ownership first
     if (isOwner && otherPlayersCount > 0) {
+      closeScenarioMenu();
       Alert.alert("You’re the owner", "Transfer ownership before leaving this scenario.");
       return;
     }
@@ -232,13 +235,13 @@ export default function ScenarioListScreen() {
     }
 
     const name = menu.scenarioName ?? "this scenario";
+    closeScenarioMenu();
     Alert.alert("Leave scenario?", `Are you sure you want to leave ${name}?`, [
       { text: "Cancel", style: "cancel" },
       {
         text: "Leave",
         style: "destructive",
         onPress: async () => {
-          closeScenarioMenu();
           try {
             await leaveScenarioApi?.(sid, uid);
           } catch (e: any) {
@@ -260,6 +263,7 @@ export default function ScenarioListScreen() {
 
     const ownerId = String((scenario as any)?.ownerUserId ?? "");
     if (!userId || String(userId) !== ownerId) {
+      closeScenarioMenu();
       Alert.alert("Not allowed", "Only the owner can transfer ownership.");
       return;
     }
@@ -282,11 +286,13 @@ export default function ScenarioListScreen() {
 
     const ownerId = String((scenario as any)?.ownerUserId ?? "");
     if (uid !== ownerId) {
+      closeScenarioMenu();
       Alert.alert("Not allowed", "Only the owner can delete this scenario.");
       return;
     }
 
     const name = menu.scenarioName ?? "this scenario";
+    closeScenarioMenu();
     Alert.alert(
       "Delete scenario?",
       `This will permanently delete ${name} for everyone. This cannot be recovered.`,
@@ -296,7 +302,6 @@ export default function ScenarioListScreen() {
           text: "Delete",
           style: "destructive",
           onPress: async () => {
-            closeScenarioMenu();
             try {
               const ok = await deleteScenarioApi?.(sid, uid);
               if (!ok) Alert.alert("Delete failed", "Could not delete this scenario.");

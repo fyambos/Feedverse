@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
-  Alert,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -21,6 +20,7 @@ import { useColorScheme } from "@/hooks/use-color-scheme";
 
 import { useAuth } from "@/context/auth";
 import { useAppData } from "@/context/appData";
+import { Alert } from "@/context/dialog";
 
 import { ProfileAvatarPicker } from "@/components/profile-edit/ProfileAvatarPicker";
 import { ProfileSettingsSection } from "@/components/profile-edit/ProfileSettingSection";
@@ -70,9 +70,10 @@ export default function CreateProfileModal() {
   // only the owner can delete the profile
   const canDelete = Boolean(existing && String(existing.ownerUserId) === String(userId));
 
-  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
-  const closeConfirmDelete = () => setConfirmDeleteOpen(false);
-  
+  // remove confirm-delete modal state (use Alert.alert instead)
+  // const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  // const closeConfirmDelete = () => setConfirmDeleteOpen(false);
+
   // when editing, existing can load/refresh after first render => keep form in sync
   useEffect(() => {
     if (!existing) return;
@@ -246,7 +247,6 @@ export default function CreateProfileModal() {
         Alert.alert("Delete failed", String((res as any)?.error ?? "Could not delete profile."));
         return;
       }
-      closeConfirmDelete();
       router.back();
     } catch {
       Alert.alert("Delete failed", "Could not delete profile.");
@@ -362,7 +362,25 @@ export default function CreateProfileModal() {
             {isEdit && canDelete ? (
               <View style={styles.deleteSection}>
                 <Pressable
-                  onPress={() => setConfirmDeleteOpen(true)}
+                  onPress={() => {
+                    Alert.alert(
+                      "Delete profile?",
+                      "This will delete all posts, likes, reposts, and messages related to this profile.",
+                      [
+                        {
+                          text: "Cancel",
+                          style: "cancel",
+                          icon: { name: "close-outline", color: colors.textSecondary, size: 18 },
+                        },
+                        {
+                          text: "Delete",
+                          style: "destructive",
+                          icon: { name: "trash-outline", color: "#ff3b30", size: 18 },
+                          onPress: onConfirmDelete,
+                        },
+                      ]
+                    );
+                  }}
                   disabled={submitting}
                   style={({ pressed }) => [
                     styles.deleteBtn,
@@ -379,54 +397,12 @@ export default function CreateProfileModal() {
             ) : null}
           </ScrollView>
 
-          <Modal
-            transparent
-            visible={confirmDeleteOpen}
-            animationType="fade"
-            onRequestClose={closeConfirmDelete}
-          >
-            <Pressable style={styles.confirmBackdrop} onPress={closeConfirmDelete}>
-              <Pressable
-                style={[styles.confirmCard, { backgroundColor: colors.background, borderColor: colors.border }]}
-                onPress={(e) => e?.stopPropagation?.()}
-              >
-                <ThemedText type="defaultSemiBold" style={{ color: colors.text, fontSize: 16 }}>
-                  Delete profile?
-                </ThemedText>
-
-                <ThemedText style={{ color: colors.textSecondary, marginTop: 10 }}>
-                  This will delete all posts, likes, reposts, and messages related to this profile.
-                </ThemedText>
-
-                <View style={styles.confirmBtnsRow}>
-                  <Pressable
-                    onPress={closeConfirmDelete}
-                    style={({ pressed }) => [
-                      styles.confirmBtn,
-                      { borderColor: colors.border, backgroundColor: pressed ? colors.pressed : (colors as any).card },
-                    ]}
-                  >
-                    <ThemedText style={{ color: colors.text, fontWeight: "800" }}>Cancel</ThemedText>
-                  </Pressable>
-
-                  <Pressable
-                    onPress={onConfirmDelete}
-                    disabled={submitting}
-                    style={({ pressed }) => [
-                      styles.confirmBtn,
-                      {
-                        borderColor: colors.border,
-                        backgroundColor: pressed ? colors.pressed : (colors as any).card,
-                        opacity: submitting ? 0.6 : 1,
-                      },
-                    ]}
-                  >
-                    <ThemedText style={{ color: "#ff3b30", fontWeight: "900" }}>Delete</ThemedText>
-                  </Pressable>
-                </View>
-              </Pressable>
-            </Pressable>
+          {/* remove confirm delete Modal */}
+          {/*
+          <Modal transparent visible={confirmDeleteOpen} animationType="fade" onRequestClose={closeConfirmDelete}>
+            ...existing code...
           </Modal>
+          */}
         </KeyboardAvoidingView>
       </ThemedView>
     </SafeAreaView>

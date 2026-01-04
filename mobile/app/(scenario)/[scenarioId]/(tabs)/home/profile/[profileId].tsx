@@ -1,7 +1,7 @@
 // mobile/app/(scenario)/[scenarioId]/profile/[profileId].tsx
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Alert, StyleSheet, View } from "react-native";
+import { ActivityIndicator, StyleSheet, View } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 
@@ -12,6 +12,7 @@ import { useColorScheme } from "@/hooks/use-color-scheme";
 
 import { useAuth } from "@/context/auth";
 import { useAppData } from "@/context/appData";
+import { Alert } from "@/context/dialog";
 
 import { pickAndPersistOneImage } from "@/components/ui/ImagePicker";
 import { Lightbox } from "@/components/media/LightBox";

@@ -1,6 +1,6 @@
 // mobile/app/(scenario)/settings.tsx
 import React, { useEffect, useState } from "react";
-import { Alert, Pressable, StyleSheet, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
 import { Stack, router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -16,6 +16,7 @@ import { useAuth } from "@/context/auth";
 import type { UserSettings } from "@/data/db/schema";
 
 import { ProfileAvatarPicker } from "@/components/profile-edit/ProfileAvatarPicker";
+import { Alert } from "@/context/dialog";
 
 type DarkMode = "light" | "dark" | "system";
 
@@ -61,10 +62,26 @@ export default function UserSettingsScreen() {
 
   const pickTheme = () => {
     Alert.alert("Theme", "Choose appearance", [
-      { text: "System", onPress: () => setDraft((p) => ({ ...p, darkMode: "system" })) },
-      { text: "Light", onPress: () => setDraft((p) => ({ ...p, darkMode: "light" })) },
-      { text: "Dark", onPress: () => setDraft((p) => ({ ...p, darkMode: "dark" })) },
-      { text: "Cancel", style: "cancel" },
+      {
+        text: "System",
+        icon: { name: "phone-portrait-outline", color: colors.icon, size: 18 },
+        onPress: () => setDraft((p) => ({ ...p, darkMode: "system" })),
+      },
+      {
+        text: "Light",
+        icon: { name: "sunny-outline", color: colors.icon, size: 18 },
+        onPress: () => setDraft((p) => ({ ...p, darkMode: "light" })),
+      },
+      {
+        text: "Dark",
+        icon: { name: "moon-outline", color: colors.icon, size: 18 },
+        onPress: () => setDraft((p) => ({ ...p, darkMode: "dark" })),
+      },
+      {
+        text: "Cancel",
+        style: "cancel",
+        icon: { name: "close-outline", color: colors.textSecondary, size: 18 },
+      },
     ]);
   };
 

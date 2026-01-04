@@ -1,7 +1,6 @@
 // mobile/app/modal/create-scenario.tsx
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Alert,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -24,6 +23,7 @@ import { useColorScheme } from "@/hooks/use-color-scheme";
 
 import { useAuth } from "@/context/auth";
 import { useAppData } from "@/context/appData";
+import { Alert } from "@/context/dialog";
 
 import type { Scenario, Profile } from "@/data/db/schema";
 import { RowCard } from "@/components/ui/RowCard";

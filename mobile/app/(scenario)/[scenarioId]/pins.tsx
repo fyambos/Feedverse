@@ -1,6 +1,6 @@
 // mobile/app/(scenario)/pins.tsx
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Pressable, StyleSheet, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import DraggableFlatList, { RenderItemParams } from "react-native-draggable-flatlist";
@@ -16,6 +16,8 @@ import { useAuth } from "@/context/auth";
 
 import { Avatar } from "@/components/ui/Avatar";
 import { Post as PostCard } from "@/components/post/Post";
+
+import { Alert } from "@/context/dialog";
 
 type PinRow = {
   id: string; // postId

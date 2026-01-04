@@ -1,4 +1,4 @@
-import { Alert } from "react-native";
+import { Alert } from "@/context/dialog";
 import * as ImagePicker from "expo-image-picker";
 import { persistToAppStorage } from "@/lib/media/imagePersist";
 

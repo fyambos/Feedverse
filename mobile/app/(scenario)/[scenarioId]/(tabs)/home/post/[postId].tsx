@@ -1,7 +1,7 @@
 // mobile/app/(scenario)/[scenarioId]/(tabs)/home/post/[postId].tsx
 
 import React, { useCallback, useMemo, useRef, useState } from "react";
-import { Alert, Dimensions, FlatList, Pressable, StyleSheet, View } from "react-native";
+import { Dimensions, FlatList, Pressable, StyleSheet, View } from "react-native";
 import { Stack, useLocalSearchParams, router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -22,6 +22,7 @@ import { canEditPost } from "@/lib/permission";
 
 import * as MediaLibrary from "expo-media-library";
 import { captureRef } from "react-native-view-shot";
+import { Alert } from "@/context/dialog";
 
 export default function PostScreen() {
   const { scenarioId, postId, from } = useLocalSearchParams<{

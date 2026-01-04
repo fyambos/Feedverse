@@ -1,6 +1,6 @@
 // mobile/app/modal/select-profile.tsx
 import React from "react";
-import { FlatList, Image, Pressable, StyleSheet, View, Modal, Alert } from "react-native";
+import { FlatList, Image, Pressable, StyleSheet, View, Modal } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -10,6 +10,7 @@ import { useColorScheme } from "@/hooks/use-color-scheme";
 import { Colors } from "@/constants/theme";
 import { useAppData } from "@/context/appData";
 import { useAuth } from "@/context/auth";
+import { Alert } from "@/context/dialog";
 
 import type { Profile } from "@/data/db/schema";
 import { canEditProfile } from "@/lib/permission";

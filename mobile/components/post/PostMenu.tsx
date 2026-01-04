@@ -1,12 +1,13 @@
 // mobile/components/post/PostMenu.tsx
 import React from "react";
-import { Alert, Dimensions, Modal, Pressable, StyleSheet, View, ScrollView } from "react-native";
+import { Dimensions, Modal, Pressable, StyleSheet, View, ScrollView } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ThemedText } from "@/components/themed-text";
 import { Avatar } from "@/components/ui/Avatar";
 import type { Profile, Post as DbPost, CharacterSheet as DbCharacterSheet } from "@/data/db/schema";
 import { useAppData } from "@/context/appData";
+import { Alert } from "@/context/dialog";
 import { RpgChipsEditor, type ProfileRpgData } from "@/components/scenario/RpgChipsEditor";
 
 // ---------- Types ----------
@@ -578,36 +579,20 @@ export function PostMenu({
 
     const current = getStatus(draft) || "";
 
-    // iOS: Alert.prompt exists
-    const anyAlert = Alert as any;
-    if (typeof anyAlert.prompt === "function") {
-      anyAlert.prompt(
-        "Set status",
-        "Type a status (ex: ok, down, stunned, bleeding...)",
-        [
-          { text: "Cancel", style: "cancel" },
-          {
-            text: "Clear",
-            style: "destructive",
-            onPress: () => setDraft(setStatus(draft, "")),
-          },
-          {
-            text: "Save",
-            onPress: (value?: string) => setDraft(setStatus(draft, String(value ?? "").trim())),
-          },
-        ],
-        "plain-text",
-        current
-      );
-      return;
-    }
-
-    // Android fallback (no prompt): quick preset + clear
-    Alert.alert("Set status", current ? `Current: ${current}` : "Current: —", [
-      { text: "Cancel", style: "cancel" },
-      { text: "Clear", style: "destructive", onPress: () => setDraft(setStatus(draft, "")) },
-      { text: "OK", onPress: () => {} },
-    ]);
+    Alert.prompt(
+      "Set status",
+      "Type a status (ex: ok, down, stunned, bleeding...)",
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Clear", style: "destructive", onPress: () => setDraft(setStatus(draft, "")) },
+        {
+          text: "Save",
+          onPress: (value?: string) => setDraft(setStatus(draft, String(value ?? "").trim())),
+        },
+      ],
+      "plain-text",
+      current
+    );
   };
 
   const commitDone = async () => {

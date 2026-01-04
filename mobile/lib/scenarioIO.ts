@@ -1,4 +1,4 @@
-import { Alert } from "react-native";
+import { Alert } from "@/context/dialog";
 
 type DefaultIO = {
   includeProfiles: boolean;

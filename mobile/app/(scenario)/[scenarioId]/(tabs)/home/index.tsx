@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { FlatList, StyleSheet, View, Pressable, ActivityIndicator, Image, Alert } from "react-native";
+import { FlatList, StyleSheet, View, Pressable, ActivityIndicator, Image } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -16,6 +16,7 @@ import { SwipeableRow } from "@/components/ui/SwipeableRow";
 import { canEditPost } from "@/lib/permission";
 import { Avatar } from "@/components/ui/Avatar";
 import { createScenarioIO } from "@/lib/scenarioIO";
+import { Alert } from "@/context/dialog";
 
 type Cursor = string | null;
 const PAGE_SIZE = 12;

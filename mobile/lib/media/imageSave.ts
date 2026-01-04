@@ -1,8 +1,9 @@
 // mobile/lib/media/imageSave.ts
-import { Alert, Platform } from "react-native";
+import { Platform } from "react-native";
 import * as MediaLibrary from "expo-media-library";
 import * as Sharing from "expo-sharing";
 import * as FileSystem from "expo-file-system/legacy";
+import { Alert } from "@/context/dialog";
 
 export async function saveImageToDevice(uri: string) {
   try {
