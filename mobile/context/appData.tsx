@@ -1,5 +1,6 @@
 // mobile/context/appData.tsx
 import React from "react";
+import { v4 as uuidv4 } from "uuid";
 import type {
   DbV5,
   Post,
@@ -2166,7 +2167,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         if (!body) return { ok: false, error: "Message is empty" };
 
         const now = new Date().toISOString();
-        const messageId = `m_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+        const messageId = uuidv4();
 
         const nextDb = await updateDb((prev) => {
           const conversations = { ...((prev as any).conversations ?? {}) } as Record<string, Conversation>;
@@ -2183,6 +2184,8 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
             senderProfileId: from,
             text: body,
             createdAt: now,
+            updatedAt: now,
+            editedAt: undefined,
           };
 
           conversations[cid] = { ...conv, lastMessageAt: now, updatedAt: now };
@@ -2203,35 +2206,41 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
 
         const nextDb = await updateDb((prev) => {
           const messages = { ...((prev as any).messages ?? {}) } as Record<string, Message>;
-          const conversations = { ...((prev as any).conversations ?? {}) } as Record<string, Conversation>;
 
           const existing = messages[mid];
           if (!existing) return prev;
           if (String((existing as any).scenarioId ?? "") !== sid) return prev;
 
+          const now = new Date().toISOString();
           const patched: any = { ...existing };
+
+          let changed = false;
 
           if (nextText !== undefined) {
             const body = nextText.trim();
             if (!body) return prev;
-            patched.text = body;
+            if (String((existing as any).text ?? "") !== body) {
+              patched.text = body;
+              changed = true;
+            }
           }
 
           if (nextSender !== undefined) {
             const from = nextSender.trim();
             if (!from) return prev;
-            patched.senderProfileId = from;
+            if (String((existing as any).senderProfileId ?? "") !== from) {
+              patched.senderProfileId = from;
+              changed = true;
+            }
           }
 
+          if (!changed) return prev;
+
+          patched.updatedAt = now;
+          patched.editedAt = now;
           messages[mid] = patched;
 
-          const cid = String((existing as any).conversationId ?? "");
-          const conv = conversations[cid];
-          if (conv && String((conv as any).scenarioId ?? "") === sid) {
-            conversations[cid] = { ...conv, updatedAt: new Date().toISOString() } as any;
-          }
-
-          return { ...(prev as any), conversations, messages };
+          return { ...(prev as any), messages };
         });
 
         setState({ isReady: true, db: nextDb as any });
@@ -2442,8 +2451,8 @@ function sortDescByLastMessageAtThenId(a: Conversation, b: Conversation) {
 }
 
 function makeConversationId(scenarioId: string) {
-  const sid = String(scenarioId);
-  return `c_${sid}_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+  void scenarioId;
+  return uuidv4();
 }
 
 function findConversationIdByExactParticipants(db: DbV5 | null, scenarioId: string, participantProfileIds: string[]) {

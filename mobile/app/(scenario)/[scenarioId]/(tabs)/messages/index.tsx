@@ -10,6 +10,7 @@ import { Colors } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { useAppData } from "@/context/appData";
 import { Avatar } from "@/components/ui/Avatar";
+import { SwipeableRow } from "@/components/ui/SwipeableRow";
 import type { Conversation, Message, Profile } from "@/data/db/schema";
 
 function scenarioIdFromPathname(pathname: string): string {
@@ -65,6 +66,7 @@ export default function MessagesScreen() {
     getOrCreateConversation,
     listSendAsProfilesForScenario,
     deleteConversationCascade,
+    updateConversationParticipants,
   } = app;
 
   const [composerOpen, setComposerOpen] = React.useState(false);
@@ -159,8 +161,14 @@ export default function MessagesScreen() {
   const canManageChatsAsSelected = useMemo(() => {
     const me = String(selectedProfileId ?? "");
     if (!me) return false;
-    return (sendAsCandidates.owned ?? []).some((p) => String((p as any).id ?? "") === me);
+    return [...(sendAsCandidates.owned ?? []), ...(sendAsCandidates.public ?? [])].some(
+      (p) => String((p as any).id ?? "") === me
+    );
   }, [sendAsCandidates, selectedProfileId]);
+
+  const ownedProfileIds = useMemo(() => {
+    return new Set((sendAsCandidates.owned ?? []).map((p) => String((p as any).id ?? "")).filter(Boolean));
+  }, [sendAsCandidates.owned]);
 
   const getLastMessageForConversation = (conversationId: string): Message | null => {
     const cid = String(conversationId);
@@ -419,30 +427,59 @@ export default function MessagesScreen() {
             const last = getLastMessageForConversation(convId);
             const preview = last?.text ? String(last.text) : "";
 
-            return (
+            const parts = Array.isArray((c as any).participantProfileIds)
+              ? (c as any).participantProfileIds.map(String).filter(Boolean)
+              : [];
+            const isGroup = parts.length > 2;
+            const canHardDelete = parts.length > 0 && parts.every((pid: string) => ownedProfileIds.has(String(pid)));
+
+            const onDelete = async () => {
+              if (!canManageChatsAsSelected) return;
+              if (!sid || !selectedProfileId) return;
+
+              try {
+                if (canHardDelete) {
+                  await deleteConversationCascade?.({ scenarioId: sid, conversationId: convId });
+                  return;
+                }
+
+                const nextParts = parts.filter((pid: string) => String(pid) !== String(selectedProfileId));
+                if (nextParts.length === 0) {
+                  await deleteConversationCascade?.({ scenarioId: sid, conversationId: convId });
+                  return;
+                }
+
+                await updateConversationParticipants?.({
+                  scenarioId: sid,
+                  conversationId: convId,
+                  participantProfileIds: nextParts,
+                });
+              } catch {
+                // ignore
+              }
+            };
+
+            const onEdit = () => {
+              if (!sid) return;
+              if (isGroup) {
+                router.push({ pathname: "/modal/edit-groupchat", params: { scenarioId: sid, conversationId: convId } } as any);
+                return;
+              }
+
+              // 1:1 doesn't have editable title/avatar; treat edit as open
+              router.push({
+                pathname: "/(scenario)/[scenarioId]/(tabs)/messages/[conversationId]",
+                params: { scenarioId: sid, conversationId: convId },
+              } as any);
+            };
+
+            const row = (
               <Pressable
                 onPress={() => {
                   router.push({
                     pathname: "/(scenario)/[scenarioId]/(tabs)/messages/[conversationId]",
                     params: { scenarioId: sid, conversationId: convId },
                   } as any);
-                }}
-                onLongPress={() => {
-                  if (!canManageChatsAsSelected) return;
-                  Alert.alert("Chat options", undefined, [
-                    { text: "Cancel", style: "cancel" },
-                    {
-                      text: "Delete chat",
-                      style: "destructive",
-                      onPress: async () => {
-                        try {
-                          await deleteConversationCascade?.({ scenarioId: sid, conversationId: convId });
-                        } catch {
-                          // ignore
-                        }
-                      },
-                    },
-                  ]);
                 }}
                 style={({ pressed }) => [
                   styles.row,
@@ -468,6 +505,29 @@ export default function MessagesScreen() {
                   )}
                 </View>
               </Pressable>
+            );
+
+            return (
+              <SwipeableRow
+                enabled={canManageChatsAsSelected}
+                colors={{ tint: colors.tint, pressed: colors.pressed }}
+                rightThreshold={40}
+                onEdit={onEdit}
+                onDelete={() => {
+                  Alert.alert(
+                    canHardDelete ? "Delete chat?" : "Leave chat?",
+                    canHardDelete
+                      ? "This will remove the chat and its messages."
+                      : "This will remove the chat from this profile only.",
+                    [
+                      { text: "Cancel", style: "cancel" },
+                      { text: canHardDelete ? "Delete" : "Leave", style: "destructive", onPress: onDelete },
+                    ]
+                  );
+                }}
+              >
+                {row}
+              </SwipeableRow>
             );
           }}
         />

@@ -217,6 +217,8 @@ export type Message = {
   senderProfileId: string;
   text: string;
   createdAt: string;
+  updatedAt?: string;
+  editedAt?: string;
 };
 
 export type DbV5 = {
