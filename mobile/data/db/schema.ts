@@ -200,6 +200,11 @@ export type Conversation = {
   id: string;
   scenarioId: string;
   participantProfileIds: string[]; // 1:1 or group
+
+  // group chat customization (optional)
+  title?: string;
+  avatarUrl?: string;
+
   createdAt: string;
   updatedAt?: string;
   lastMessageAt?: string;

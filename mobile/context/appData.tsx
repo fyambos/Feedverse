@@ -246,6 +246,17 @@ type AppDataApi = {
   listConversationsForScenario: (scenarioId: string, profileId: string) => Conversation[];
   listMessagesPage: (args: MessagesPageArgs) => MessagesPageResult;
   upsertConversation: (c: Conversation) => Promise<void>;
+  updateConversationMeta: (args: {
+    scenarioId: string;
+    conversationId: string;
+    title?: string | null;
+    avatarUrl?: string | null;
+  }) => Promise<void>;
+  updateConversationParticipants: (args: {
+    scenarioId: string;
+    conversationId: string;
+    participantProfileIds: string[];
+  }) => Promise<void>;
   sendMessage: (args: {
     scenarioId: string;
     conversationId: string;
@@ -2008,6 +2019,63 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         setState({ isReady: true, db: next as any });
       },
 
+      updateConversationMeta: async ({ scenarioId, conversationId, title, avatarUrl }) => {
+        const sid = String(scenarioId ?? "").trim();
+        const cid = String(conversationId ?? "").trim();
+        if (!sid || !cid) return;
+
+        const next = await updateDb((prev) => {
+          const conversations = { ...((prev as any).conversations ?? {}) } as Record<string, Conversation>;
+          const existing = conversations[cid];
+          if (!existing) return prev;
+          if (String((existing as any).scenarioId ?? "") !== sid) return prev;
+
+          const now = new Date().toISOString();
+
+          const nextTitle = title == null ? undefined : String(title);
+          const nextAvatarUrl = avatarUrl == null ? undefined : String(avatarUrl);
+
+          conversations[cid] = {
+            ...existing,
+            title: nextTitle && nextTitle.trim() ? nextTitle.trim() : undefined,
+            avatarUrl: nextAvatarUrl && nextAvatarUrl.trim() ? nextAvatarUrl.trim() : undefined,
+            updatedAt: now,
+          } as any;
+
+          return { ...(prev as any), conversations };
+        });
+
+        setState({ isReady: true, db: next as any });
+      },
+
+      updateConversationParticipants: async ({ scenarioId, conversationId, participantProfileIds }) => {
+        const sid = String(scenarioId ?? "").trim();
+        const cid = String(conversationId ?? "").trim();
+        const ids = Array.from(new Set((participantProfileIds ?? []).map(String).map((s) => s.trim()).filter(Boolean)));
+
+        if (!sid || !cid) return;
+        if (ids.length < 1) return;
+
+        const next = await updateDb((prev) => {
+          const conversations = { ...((prev as any).conversations ?? {}) } as Record<string, Conversation>;
+          const existing = conversations[cid];
+          if (!existing) return prev;
+          if (String((existing as any).scenarioId ?? "") !== sid) return prev;
+
+          const now = new Date().toISOString();
+
+          conversations[cid] = {
+            ...existing,
+            participantProfileIds: ids,
+            updatedAt: now,
+          } as any;
+
+          return { ...(prev as any), conversations };
+        });
+
+        setState({ isReady: true, db: next as any });
+      },
+
       sendMessage: async ({ scenarioId, conversationId, senderProfileId, text }) => {
         const sid = String(scenarioId ?? "").trim();
         const cid = String(conversationId ?? "").trim();
@@ -2089,8 +2157,9 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         if (!sid) return { ok: false, error: "scenarioId is required" };
         if (ids.length < 1) return { ok: false, error: "participantProfileIds must have 1+ ids" };
 
-        // deterministic id so UI can “open DM with X” without duplicate threads in mock mode
-        const convId = makeConversationId(sid, ids);
+        // Prefer existing conversation with the exact same participant set.
+        const existingId = findConversationIdByExactParticipants(db as any, sid, ids);
+        const convId = existingId ?? makeConversationId(sid);
 
         const now = new Date().toISOString();
 
@@ -2107,13 +2176,6 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
               updatedAt: now,
               lastMessageAt: undefined,
             };
-          } else {
-            // keep it stable, but ensure participants cover current request
-            const merged = Array.from(
-              new Set([...(existing.participantProfileIds ?? []).map(String), ...ids.map(String)])
-            ).sort();
-
-            conversations[convId] = { ...existing, participantProfileIds: merged, updatedAt: now };
           }
 
           return { ...(prev as any), conversations };
@@ -2165,8 +2227,32 @@ function sortDescByLastMessageAtThenId(a: Conversation, b: Conversation) {
   return String(b.id).localeCompare(String(a.id));
 }
 
-function makeConversationId(scenarioId: string, participantProfileIds: string[]) {
+function makeConversationId(scenarioId: string) {
   const sid = String(scenarioId);
-  const ids = (participantProfileIds ?? []).map(String).filter(Boolean).sort();
-  return `c_${sid}_${ids.join("_")}`;
+  return `c_${sid}_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+}
+
+function findConversationIdByExactParticipants(db: DbV5 | null, scenarioId: string, participantProfileIds: string[]) {
+  const sid = String(scenarioId ?? "").trim();
+  const ids = Array.from(new Set((participantProfileIds ?? []).map(String).map((s) => s.trim()).filter(Boolean))).sort();
+  if (!db || !sid || ids.length < 1) return null;
+
+  const map = ((db as any).conversations ?? {}) as Record<string, Conversation>;
+  for (const c of Object.values(map)) {
+    if (String((c as any).scenarioId ?? "") !== sid) continue;
+    const parts = Array.isArray((c as any).participantProfileIds)
+      ? (c as any).participantProfileIds.map(String).filter(Boolean).sort()
+      : [];
+    if (parts.length !== ids.length) continue;
+    let ok = true;
+    for (let i = 0; i < ids.length; i++) {
+      if (String(parts[i]) !== String(ids[i])) {
+        ok = false;
+        break;
+      }
+    }
+    if (ok) return String((c as any).id);
+  }
+
+  return null;
 }

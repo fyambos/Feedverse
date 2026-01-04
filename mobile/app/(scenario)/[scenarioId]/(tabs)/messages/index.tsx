@@ -134,6 +134,15 @@ export default function MessagesScreen() {
   };
 
   const getConversationTitleAndAvatar = (c: Conversation): { title: string; avatarUrl: string | null } => {
+      const customTitle = String((c as any)?.title ?? "").trim();
+      const customAvatar = String((c as any)?.avatarUrl ?? "").trim();
+      if (customTitle || customAvatar) {
+        return {
+          title: customTitle || "group chat",
+          avatarUrl: customAvatar || null,
+        };
+      }
+
     const ids = Array.isArray((c as any).participantProfileIds) ? (c as any).participantProfileIds.map(String) : [];
     const others = ids.filter((id: string) => id && id !== String(selectedProfileId ?? ""));
 

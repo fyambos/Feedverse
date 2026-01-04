@@ -59,12 +59,23 @@ export default function ConversationThreadScreen() {
 
   const title = useMemo(() => {
     if (!conversation) return "conversation";
+    const custom = String((conversation as any)?.title ?? "").trim();
+    if (custom) return custom;
     if (isOneToOne && otherProfileId) {
       const p: Profile | null = getProfileById?.(String(otherProfileId)) ?? null;
       return p?.displayName ? String(p.displayName) : "conversation";
     }
     return "group chat";
   }, [conversation, isOneToOne, otherProfileId, getProfileById]);
+
+  const canEditGroup = !isOneToOne;
+  const groupAvatarUrl = String((conversation as any)?.avatarUrl ?? "").trim() || null;
+
+  const onPressHeader = useCallback(() => {
+    if (!canEditGroup) return;
+    if (!sid || !cid) return;
+    router.push({ pathname: "/modal/edit-groupchat", params: { scenarioId: sid, conversationId: cid } } as any);
+  }, [canEditGroup, sid, cid]);
 
   const [text, setText] = useState<string>("");
   const [sendAsId, setSendAsId] = useState<string | null>(null);
@@ -242,14 +253,24 @@ export default function ConversationThreadScreen() {
             <Ionicons name="chevron-back" size={22} color={colors.text} />
           </Pressable>
 
-          <View style={{ flex: 1, minWidth: 0 }}>
-            <ThemedText style={{ color: colors.text, fontWeight: "900", fontSize: 16 }} numberOfLines={1}>
-              {title}
-            </ThemedText>
-            <ThemedText style={{ color: colors.textSecondary, fontSize: 12 }} numberOfLines={1}>
-              you: {receiverProfile?.displayName ? String(receiverProfile.displayName) : ""}
-            </ThemedText>
-          </View>
+          <Pressable
+            onPress={onPressHeader}
+            disabled={!canEditGroup}
+            style={({ pressed }) => [
+              { flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", gap: 10 },
+              pressed && canEditGroup ? { opacity: 0.75 } : null,
+            ]}
+          >
+            {canEditGroup ? (
+              <Avatar uri={groupAvatarUrl} size={34} fallbackColor={colors.border} />
+            ) : null}
+
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <ThemedText style={{ color: colors.text, fontWeight: "900", fontSize: 16 }} numberOfLines={1}>
+                {title}
+              </ThemedText>
+            </View>
+          </Pressable>
 
           <View style={{ width: 34 }} />
         </View>
