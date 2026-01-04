@@ -14,7 +14,7 @@ const MAX_PASSWORD_LEN = 128;
 export default function LoginScreen() {
   const scheme = useColorScheme() ?? 'light';
   const colors = Colors[scheme];
-  const { signInMock } = useAuth();
+  const { signIn } = useAuth();
 
   const passwordRef = useRef<TextInput>(null);
 
@@ -43,7 +43,11 @@ export default function LoginScreen() {
     const ident = normalizedIdentifier;
     const pw = password;
 
-    await signInMock();
+    const res = await signIn({ identifier: ident, password: pw });
+    if (!res.ok) {
+      alert(res.error);
+      return;
+    }
 
     // Clear sensitive state ASAP
     setPassword('');

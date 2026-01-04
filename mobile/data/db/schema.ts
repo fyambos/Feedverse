@@ -15,6 +15,22 @@ export type User = {
   createdAt: string;
   updatedAt?: string;
   settings?: UserSettings;
+  name?: string;
+  email?: string;
+  passwordHash?: string;
+};
+
+// backend `auth_identities` (OAuth identities linked to a user)
+export type AuthIdentity = {
+  id: string;
+  userId: string;
+  provider: string;
+  providerUserId: string;
+  email?: string;
+  displayName?: string;
+  avatarUrl?: string;
+  createdAt: string;
+  updatedAt?: string;
 };
 
 export type ScenarioTag = {
@@ -26,6 +42,7 @@ export type ScenarioTag = {
 
 export type ScenarioSettings = {
   profileLimitMode?: "per_owner" | "per_scenario";
+  pinnedPostIds?: string[];
 };
 
 export type Scenario = {
@@ -97,6 +114,36 @@ export type GlobalTag = {
   key: string;     // canonical key (lowercase, dash-separated)
   name: string;    // display label (generated from key)
   color: string;   // deterministic + locked
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+// backend `scenario_players` join table
+export type ScenarioPlayer = {
+  scenarioId: string;
+  userId: string;
+};
+
+// backend `selected_profile_by_user_scenario`
+export type SelectedProfileByUserScenario = {
+  userId: string;
+  scenarioId: string;
+  profileId: string;
+  updatedAt: string;
+};
+
+// backend `app_meta`
+export type AppMeta = {
+  key: string;
+  value: any;
+  updatedAt: string;
+};
+
+// backend `scenario_tags` join table (scenario <-> global_tags)
+export type ScenarioTagLink = {
+  scenarioId: string;
+  tagKey: string;
+  createdAt: string;
 };
 
 export type CharacterSheet = {
@@ -135,6 +182,7 @@ export type CharacterSheet = {
   // notes
   publicNotes?: string;
   privateNotes?: string; // visible owner + MJ only
+  createdAt?: string;
   updatedAt?: string;
 };
 
@@ -142,11 +190,21 @@ export type DbV5 = {
   version: 5;
   seededAt: string;
   users: Record<string, User>;
+  /** (auth_identities) */
+  authIdentities?: Record<string, AuthIdentity>; // key = authIdentity.id
   scenarios: Record<string, Scenario>;
+  /** (scenario_players) */
+  scenarioPlayers?: Record<string, ScenarioPlayer>; // key = `${scenarioId}|${userId}`
   profiles: Record<string, Profile>;
   posts: Record<string, Post>;
   reposts: Record<string, Repost>;
   selectedProfileByScenario: Record<string, string>;
+  /** (selected_profile_by_user_scenario) */
+  selectedProfileByUserScenario?: Record<string, SelectedProfileByUserScenario>; // key = `${userId}|${scenarioId}`
   tags: Record<string, GlobalTag>; // key -> tag
+  /** (scenario_tags) */
+  scenarioTags?: Record<string, ScenarioTagLink>; // key = `${scenarioId}|${tagKey}`
   sheets: Record<string, CharacterSheet>; // key = profileId
+  /** (app_meta) */
+  appMeta?: Record<string, AppMeta>; // key = appMeta.key
 };

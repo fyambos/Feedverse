@@ -307,19 +307,15 @@ const allProfiles = React.useMemo<Profile[]>(() => {
         </View>
 
         <View style={styles.right}>
-          {!isSharedFromOther ? (
-            <>
-              {owner?.avatarUrl ? (
-                <Image source={{ uri: owner.avatarUrl }} style={styles.ownerAvatar} />
-              ) : (
-                <View style={[styles.ownerAvatar, { backgroundColor: colors.border }]} />
-              )}
+          {owner?.avatarUrl ? (
+            <Image source={{ uri: owner.avatarUrl }} style={styles.ownerAvatar} />
+          ) : (
+            <View style={[styles.ownerAvatar, { backgroundColor: colors.border }]} />
+          )}
 
-              <ThemedText numberOfLines={1} style={{ fontSize: 12, color: colors.textSecondary }}>
-                {owner?.username ?? "unknown"}
-              </ThemedText>
-            </>
-          ) : null}
+          <ThemedText numberOfLines={1} style={{ fontSize: 12, color: colors.textSecondary }}>
+            {owner?.username ?? "unknown"}
+          </ThemedText>
 
           {selectEnabled && active ? (
             <ThemedText style={{ color: colors.tint, fontWeight: "800", marginLeft: 6 }}>✓</ThemedText>

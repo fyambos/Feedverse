@@ -67,6 +67,9 @@ export async function seedDbIfNeeded(existing: any | null) {
   const users: User[] = MOCK_USERS.map((u) => ({
     id: String(u.id),
     username: String(u.username),
+    name: typeof (u as any).name === "string" ? (u as any).name : undefined,
+    email: typeof (u as any).email === "string" ? (u as any).email : undefined,
+    passwordHash: typeof (u as any).passwordHash === "string" ? (u as any).passwordHash : undefined,
     avatarUrl: String(u.avatarUrl),
     createdAt: String((u as any).createdAt ?? now),
     updatedAt: typeof (u as any).updatedAt === "string" ? (u as any).updatedAt : undefined,

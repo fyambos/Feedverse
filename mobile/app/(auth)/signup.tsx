@@ -16,7 +16,7 @@ const MIN_PASSWORD_LEN = 8;
 export default function SignupScreen() {
   const scheme = useColorScheme() ?? 'light';
   const colors = Colors[scheme];
-  const { signInMock } = useAuth();
+  const { signUp } = useAuth();
 
   const passwordRef = useRef<TextInput>(null);
 
@@ -50,7 +50,11 @@ export default function SignupScreen() {
       return;
     }
 
-    await signInMock();
+    const res = await signUp({ email, password });
+    if (!res.ok) {
+      alert(res.error);
+      return;
+    }
 
     setPassword('');
     setShowPw(false);
