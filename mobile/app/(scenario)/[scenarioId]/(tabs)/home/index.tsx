@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { FlatList, StyleSheet, View, Pressable, ActivityIndicator, Image } from "react-native";
+import { FlatList, StyleSheet, View, Pressable, ActivityIndicator, Image, RefreshControl } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -159,8 +159,10 @@ export default function HomeScreen() {
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
   const loadingLock = useRef(false);
+  const listRef = useRef<FlatList<any> | null>(null);
 
   const loadFirstPage = useCallback(() => {
     if (!isReady) return;
@@ -172,8 +174,25 @@ export default function HomeScreen() {
     setInitialLoading(false);
   }, [isReady, listPostsPage, sid]);
 
+  const onRefresh = useCallback(() => {
+    if (!isReady) return;
+    if (loadingLock.current) return;
+
+    loadingLock.current = true;
+    setRefreshing(true);
+
+    try {
+      listRef.current?.scrollToOffset({ offset: 0, animated: true });
+      loadFirstPage();
+    } finally {
+      setRefreshing(false);
+      loadingLock.current = false;
+    }
+  }, [isReady, loadFirstPage]);
+
   const loadMore = useCallback(() => {
     if (!isReady) return;
+    if (refreshing) return;
     if (!hasMore) return;
     if (loadingLock.current) return;
 
@@ -189,7 +208,7 @@ export default function HomeScreen() {
       setLoadingMore(false);
       loadingLock.current = false;
     }
-  }, [isReady, hasMore, listPostsPage, sid, cursor]);
+  }, [isReady, refreshing, hasMore, listPostsPage, sid, cursor]);
 
   useEffect(() => {
     setItems([]);
@@ -250,11 +269,14 @@ export default function HomeScreen() {
     [deletePost, loadFirstPage]
   );
 
-  const Header = useMemo(() => {
+  // remove:
+  // const insets = useSafeAreaInsets();
+  // const refreshOffset = useMemo(() => insets.top + styles.topbar.height, [insets.top]);
+
+  const TopBar = useMemo(() => {
     return (
       <SafeAreaView edges={["top"]} style={{ backgroundColor: colors.background }}>
         <View style={[styles.topbar, { borderBottomColor: colors.border }]}>
-          {/* Left: avatar -> select profile */}
           <Pressable
             onPress={() =>
               router.push({
@@ -268,7 +290,6 @@ export default function HomeScreen() {
             <Avatar uri={selectedProfile?.avatarUrl ?? null} size={30} fallbackColor={colors.border} />
           </Pressable>
 
-          {/* Center: logo -> menu */}
           <View style={{ flex: 1, alignItems: "center" }}>
             <Pressable
               onPress={openScenarioMenu}
@@ -285,7 +306,6 @@ export default function HomeScreen() {
             </Pressable>
           </View>
 
-          {/* Right spacer for symmetry */}
           <View style={{ width: 30 }} />
         </View>
       </SafeAreaView>
@@ -296,13 +316,24 @@ export default function HomeScreen() {
 
   return (
     <ThemedView style={[styles.container, { backgroundColor: colors.background }]}>
+      {TopBar}
+
       <FlatList
+        ref={(r) => {
+          listRef.current = r;
+        }}
         data={data}
         keyExtractor={(item) => String(item.id)}
         contentContainerStyle={styles.list}
-        ListHeaderComponent={Header}
-        stickyHeaderIndices={[0]}
         ItemSeparatorComponent={() => <View style={[styles.separator, { backgroundColor: colors.border }]} />}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.textSecondary} // iOS
+            colors={[colors.tint]} // Android
+          />
+        }
         onEndReachedThreshold={0.6}
         onEndReached={() => {
           if (!initialLoading) loadMore();

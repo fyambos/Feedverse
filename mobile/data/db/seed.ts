@@ -69,6 +69,8 @@ export async function seedDbIfNeeded(existing: any | null) {
     let changed = !prevLikes || typeof prevLikes !== "object";
 
     // migrate existing likes keys (v1 -> v2)
+    let convertedKeys = 0;
+
     for (const [k, li] of Object.entries(likes)) {
       const sid = String((li as any)?.scenarioId ?? "");
       const pid = String((li as any)?.profileId ?? "");
