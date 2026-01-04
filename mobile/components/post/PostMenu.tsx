@@ -537,6 +537,15 @@ export function PostMenu({
     setDraft(setHp(draft, next));
   };
 
+  const bumpMaxHp = (delta: number) => {
+    if (!draft) return;
+    const nextMax = Math.max(1, getMaxHp(draft) + delta);
+    let next = setMaxHp(draft, nextMax);
+    const nextCurrent = clamp(getHp(next), 0, nextMax);
+    next = setHp(next, nextCurrent);
+    setDraft(next);
+  };
+
   const healToMax = () => {
     if (!draft) return;
     setDraft(setHp(draft, getMaxHp(draft)));
@@ -723,13 +732,65 @@ export function PostMenu({
         title: "HP",
         emoji: "❤️",
         items: [
-          { key: "hp_m5", emoji: "➖", label: "HP −5", onPress: () => bumpHp(-5) },
-          { key: "hp_m1", emoji: "➖", label: "HP −1", onPress: () => bumpHp(-1) },
-          { key: "hp_p1", emoji: "➕", label: "HP +1", onPress: () => bumpHp(1) },
-          { key: "hp_p5", emoji: "➕", label: "HP +5", onPress: () => bumpHp(5) },
-          { key: "hp_full", emoji: "💚", label: "Heal to Max", onPress: healToMax },
-          { key: "hp_down", emoji: "💀", label: "Down / KO (0 HP)", onPress: downToZero },
-          { key: "hp_revive", emoji: "✨", label: "Revive (1 HP)", onPress: reviveToOne },
+          {
+            key: "hp_grid",
+            render: () => {
+              const disabled = !draft;
+
+              const hpActions: Array<{ key: string; emoji: string; label: string; onPress: () => void }> = [
+                { key: "hp_m5", emoji: "➖", label: "HP −5", onPress: () => bumpHp(-5) },
+                { key: "hp_m1", emoji: "➖", label: "HP −1", onPress: () => bumpHp(-1) },
+                { key: "hp_p1", emoji: "➕", label: "HP +1", onPress: () => bumpHp(1) },
+                { key: "hp_p5", emoji: "➕", label: "HP +5", onPress: () => bumpHp(5) },
+              ];
+
+              const maxHpActions: Array<{ key: string; emoji: string; label: string; onPress: () => void }> = [
+                { key: "maxhp_m5", emoji: "➖", label: "Max HP −5", onPress: () => bumpMaxHp(-5) },
+                { key: "maxhp_m1", emoji: "➖", label: "Max HP −1", onPress: () => bumpMaxHp(-1) },
+                { key: "maxhp_p1", emoji: "➕", label: "Max HP +1", onPress: () => bumpMaxHp(1) },
+                { key: "maxhp_p5", emoji: "➕", label: "Max HP +5", onPress: () => bumpMaxHp(5) },
+              ];
+
+              const bottomActions: Array<{ key: string; emoji: string; label: string; onPress: () => void }> = [
+                { key: "hp_full", emoji: "💚", label: "Heal to Max", onPress: healToMax },
+                { key: "hp_down", emoji: "💀", label: "Down / KO (0 HP)", onPress: downToZero },
+                { key: "hp_revive", emoji: "✨", label: "Revive (1 HP)", onPress: reviveToOne },
+              ];
+
+              const renderBtn = (a: { key: string; emoji: string; label: string; onPress: () => void }) => (
+                <Pressable
+                  key={a.key}
+                  onPress={disabled ? undefined : a.onPress}
+                  style={({ pressed }) => [
+                    styles.menuItem,
+                    styles.hpGridBtn,
+                    {
+                      backgroundColor: pressed ? colors.pressed : "transparent",
+                      opacity: disabled ? 0.45 : 1,
+                    },
+                  ]}
+                >
+                  <View style={styles.menuItemRow}>
+                    <ThemedText style={{ fontSize: 16, width: 22, textAlign: "center" }}>{a.emoji}</ThemedText>
+                    <ThemedText style={{ color: colors.text, fontSize: 15, fontWeight: "500", flex: 1 }}>
+                      {a.label}
+                    </ThemedText>
+                  </View>
+                </Pressable>
+              );
+
+              return (
+                <View style={styles.hpGridRoot}>
+                  <View style={styles.hpGridTwoCols}>
+                    <View style={styles.hpGridCol}>{hpActions.map(renderBtn)}</View>
+                    <View style={styles.hpGridCol}>{maxHpActions.map(renderBtn)}</View>
+                  </View>
+
+                  <View style={styles.hpGridBottom}>{bottomActions.map(renderBtn)}</View>
+                </View>
+              );
+            },
+          },
         ],
       },
       {
@@ -1074,6 +1135,29 @@ const styles = StyleSheet.create({
   menuItem: { paddingVertical: 12, paddingHorizontal: 12, borderRadius: 12 },
 
   menuItemRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+
+  hpGridRoot: {
+    gap: 8,
+  },
+
+  hpGridTwoCols: {
+    flexDirection: "row",
+    gap: 8,
+  },
+
+  hpGridCol: {
+    flex: 1,
+    gap: 6,
+  },
+
+  hpGridBottom: {
+    gap: 6,
+  },
+
+  hpGridBtn: {
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+  },
 
   menuDivider: {
     height: StyleSheet.hairlineWidth,
