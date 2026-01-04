@@ -51,7 +51,7 @@ type DialogContextValue = {
       text?: string;
       style?: "default" | "cancel" | "destructive";
       icon?: AppDialogButton["icon"];
-      onPress?: (...args: any[]) => void;
+      onPress?: (value?: string) => void;
     }>;
   }) => Promise<void>;
 };
@@ -61,7 +61,7 @@ const DialogContext = createContext<DialogContextValue | null>(null);
 // --- Imperative bridge (so you can replace `react-native` Alert usage) ---
 type AlertLikeButton = {
   text?: string;
-  onPress?: (...args: any[]) => void;
+  onPress?: (value?: string) => void;
   style?: "default" | "cancel" | "destructive";
   icon?: AppDialogButton["icon"];
 };
@@ -133,14 +133,24 @@ export const Alert = {
       return;
     }
 
-    const finalButtons = (buttons?.length ? buttons : [{ text: "Cancel", style: "cancel" }, { text: "OK" }]).map(
-      (b) => ({
-        text: b.text,
-        style: b.style,
-        icon: b.icon,
-        onPress: b.onPress,
-      })
-    );
+    const fallbackButtons: AlertLikeButton[] = [
+      { text: "Cancel", style: "cancel" },
+      { text: "OK", style: "default" },
+    ];
+
+    const sourceButtons: AlertLikeButton[] = buttons?.length ? buttons : fallbackButtons;
+
+    const finalButtons: Array<{
+      text?: string;
+      style?: "default" | "cancel" | "destructive";
+      icon?: AppDialogButton["icon"];
+      onPress?: (value?: string) => void;
+    }> = sourceButtons.map((b) => ({
+      text: b.text,
+      style: b.style,
+      icon: b.icon,
+      onPress: b.onPress,
+    }));
 
     dialogApi
       .prompt({
@@ -209,6 +219,7 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
             const original = b.onPress as any;
             return {
               ...b,
+              variant: b.variant ?? "default",
               onPress: () => {
                 const value = input ? inputTextRef.current : undefined;
                 close();
@@ -280,7 +291,7 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
         text?: string;
         style?: "default" | "cancel" | "destructive";
         icon?: AppDialogButton["icon"];
-        onPress?: (...args: any[]) => void;
+        onPress?: (value?: string) => void;
       }>;
     }) => {
       await dialog({

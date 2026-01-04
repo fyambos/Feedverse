@@ -8,7 +8,9 @@ import type { Post as DbPost, Profile } from "@/data/db/schema";
 import type { StyleProp, ViewStyle } from "react-native";
 
 import { ThemedText } from "@/components/themed-text";
-import { Post } from "@/components/post/Post";
+import { Avatar } from "@/components/ui/Avatar";
+import { PostHeader } from "@/components/post/PostHeader";
+import { PostBody } from "@/components/post/PostBody";
 
 type ColorsLike = {
   border: string;
@@ -16,6 +18,7 @@ type ColorsLike = {
   pressed: string;
   text: string;
   textSecondary: string;
+  tint?: string;
 };
 
 type Props = {
@@ -76,6 +79,7 @@ export function PostQuoted({ sid, isDetail, quotedPostId, colors }: Props) {
   if (!quoted.payload) return null;
 
   const { post, profile } = quoted.payload;
+  const addVideoIcon = Boolean((post as any).addVideoIcon);
 
   return (
     <Pressable
@@ -83,29 +87,29 @@ export function PostQuoted({ sid, isDetail, quotedPostId, colors }: Props) {
         if (!sid) return;
         router.push({
           pathname: "/(scenario)/[scenarioId]/(tabs)/home/post/[postId]",
-          params: {
-            scenarioId: sid,
-            postId: String(post.id),
-          },
+          params: { scenarioId: sid, postId: String(post.id) },
         } as any);
       }}
-      style={({ pressed }) => [
-        containerStyle,
-        pressed && { backgroundColor: colors.pressed },
-      ]}
+      style={({ pressed }) => [containerStyle, pressed && { backgroundColor: colors.pressed }]}
     >
-      {/* Use the real Post component, but make it quote-safe (no nested quotes, no menu/actions). */}
-      <View style={styles.postWrap} pointerEvents="none">
-        <Post
-          scenarioId={sid}
-          profile={profile}
-          item={post}
-          variant="feed"
-          showActions={false}
-          showThreadLine={false}
-          showMenu={false}
-          showQuoted={false} // stops quote recursion (quote-of-quote)
-        />
+      <View style={styles.inner} pointerEvents="none">
+        <View style={styles.row}>
+          <Avatar uri={profile.avatarUrl} size={36} fallbackColor={colors.border} />
+          <View style={styles.content}>
+            <PostHeader
+              variant="feed"
+              colors={colors as any}
+              profile={profile}
+              createdAtIso={post.createdAt}
+              onOpenProfile={() => {}}
+              onOpenMenu={() => {}}
+              showMenu={false}
+              isInteractive={false}
+              showTimestamps={false}
+            />
+            <PostBody sid={sid} variant="feed" colors={colors} item={post} addVideoIcon={addVideoIcon} />
+          </View>
+        </View>
       </View>
     </Pressable>
   );
@@ -119,7 +123,9 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
 
-  postWrap: { paddingVertical: 6 },
+  inner: { padding: 10 },
+  row: { flexDirection: "row", gap: 10, alignItems: "flex-start" },
+  content: { flex: 1 },
 
   missingInner: {
     flexDirection: "row",

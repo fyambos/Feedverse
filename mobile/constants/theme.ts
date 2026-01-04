@@ -25,6 +25,7 @@ export const Colors = {
     textMuted: '#8B98A5',
 
     pressed: 'rgba(15,20,25,0.06)',
+    modalBackdrop: 'rgba(0,0,0,0.45)',
   },
 
   dark: {
@@ -35,14 +36,15 @@ export const Colors = {
     tabIconDefault: '#71767B',
     tabIconSelected: tintColor,
 
-    surface: '#000000',
-    card: '#000000',
+    surface: '#121214',
+    card: '#121214',
     border: '#2F3336',
 
     textSecondary: '#71767B',
     textMuted: '#71767B',
 
     pressed: 'rgba(231,233,234,0.08)',
+    modalBackdrop: 'rgba(0,0,0,0.62)',
   },
 }
 

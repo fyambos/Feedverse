@@ -17,6 +17,7 @@ import { formatCount, formatDetailTimestamp } from "@/lib/format";
 import { PostActions } from "@/components/post/PostActions";
 import { PostHeader } from "@/components/post/PostHeader";
 import { PostBody } from "@/components/post/PostBody";
+import { PostQuoted } from "@/components/post/PostQuoted";
 
 import { useUserSettings } from "@/hooks/useUserSettings";
 import { useAppData } from "@/context/appData";
@@ -239,7 +240,17 @@ export function Post({
           }
         />
 
-        <PostBody sid={sid} variant="detail" colors={colors} item={item} addVideoIcon={addVideoIcon} showQuoted={showQuoted} />
+        <PostBody
+          sid={sid}
+          variant="detail"
+          colors={colors}
+          item={item}
+          addVideoIcon={addVideoIcon}
+        />
+
+        {showQuoted ? (
+          <PostQuoted sid={sid} isDetail={isDetail} quotedPostId={item.quotedPostId} colors={colors as any} />
+        ) : null}
 
         {showTimestampsPref ? (
           <ThemedText style={[styles.dateLine, { color: colors.textSecondary }]}>{formatDetailTimestamp(item.createdAt)}</ThemedText>
@@ -367,8 +378,11 @@ export function Post({
             item={item}
             isReply={isReply}
             addVideoIcon={addVideoIcon}
-            showQuoted={showQuoted}
           />
+
+          {showQuoted ? (
+            <PostQuoted sid={sid} isDetail={false} quotedPostId={item.quotedPostId} colors={colors as any} />
+          ) : null}
 
           {showActions && (
             <PostActions

@@ -7,7 +7,6 @@ import { router } from "expo-router";
 import { ThemedText } from "@/components/themed-text";
 import { MediaGrid } from "@/components/media/MediaGrid";
 import { Lightbox } from "@/components/media/LightBox";
-import { PostQuoted } from "@/components/post/PostQuoted";
 
 import type { Post as DbPost } from "@/data/db/schema";
 
@@ -32,9 +31,6 @@ type Props = {
   textStyle?: any;
 
   addVideoIcon?: boolean;
-
-  // prevent quote recursion when the post is rendered inside a quote card
-  showQuoted?: boolean;
 };
 
 type TextPart =
@@ -78,7 +74,6 @@ export function PostBody({
   isReply,
   textStyle,
   addVideoIcon,
-  showQuoted = true,
 }: Props) {
   const isDetail = variant === "detail";
 
@@ -213,10 +208,6 @@ export function PostBody({
             allowSave
           />
         </>
-      ) : null}
-
-      {showQuoted ? (
-        <PostQuoted sid={sid} isDetail={isDetail} quotedPostId={item.quotedPostId} colors={colors} />
       ) : null}
     </View>
   );
