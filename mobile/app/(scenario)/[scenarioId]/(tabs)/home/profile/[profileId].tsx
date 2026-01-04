@@ -49,10 +49,11 @@ function BigMessage({
 }
 
 export default function ProfileScreen() {
-  const { scenarioId, profileId, view } = useLocalSearchParams<{
+  const { scenarioId, profileId, view, startDm } = useLocalSearchParams<{
     scenarioId: string;
     profileId: string;
     view?: ProfileViewState;
+    startDm?: string;
   }>();
 
   const scheme = useColorScheme() ?? "light";
@@ -78,6 +79,7 @@ export default function ProfileScreen() {
 
     getScenarioById,
     getCharacterSheetByProfileId,
+    getOrCreateConversation,
   } = useAppData() as any;
 
   const sid = decodeURIComponent(String(scenarioId ?? ""));
@@ -205,6 +207,47 @@ export default function ProfileScreen() {
   const isReactivated = viewState === "reactivated";
   const isMuted = viewState === "muted";
 
+  const startDmRanRef = useRef(false);
+
+  const startDmWithProfile = useCallback(async () => {
+    if (!sid) return;
+    if (!profile) return;
+
+    const me = String(selectedProfileId ?? "").trim();
+    if (!me) {
+      const dest = `/(scenario)/${encodeURIComponent(sid)}/(tabs)/home/profile/${encodeURIComponent(
+        String(profile.id)
+      )}?startDm=1`;
+
+      router.push({
+        pathname: "/modal/select-profile",
+        params: { scenarioId: sid, returnTo: dest, replace: "1" },
+      } as any);
+      return;
+    }
+
+    const other = String(profile.id);
+    const participantProfileIds = [me, other];
+    const res = await getOrCreateConversation?.({ scenarioId: sid, participantProfileIds });
+    if (!res?.ok) return;
+
+    const conversationId = String(res.conversationId);
+    router.push({
+      pathname: "/(scenario)/[scenarioId]/(tabs)/messages",
+      params: { scenarioId: sid, openConversationId: conversationId },
+    } as any);
+  }, [getOrCreateConversation, profile, selectedProfileId, sid]);
+
+  useEffect(() => {
+    if (startDmRanRef.current) return;
+    if (String(startDm ?? "") !== "1") return;
+    if (!selectedProfileId) return;
+
+    startDmRanRef.current = true;
+    router.setParams({ startDm: undefined } as any);
+    startDmWithProfile();
+  }, [selectedProfileId, startDm, startDmWithProfile]);
+
   const showTabs = viewState === "normal" || viewState === "muted";
 
   const [mutedModalOpen, setMutedModalOpen] = useState(false);
@@ -254,6 +297,9 @@ export default function ProfileScreen() {
     }
     return null;
   }, [isBlockedBy, isBlocked, isSuspended, isPrivated, at]);
+
+  const shouldHidePostsAndShowMessage = isBlockedBy || isBlocked || isSuspended || isPrivated;
+  const canShowMessageButton = !shouldHidePostsAndShowMessage && !isDeactivated;
 
   const repostLabelForPost = useCallback(
     (postAuthorProfileId: string, postId: string) => {
@@ -471,6 +517,15 @@ export default function ProfileScreen() {
         editMode={editMode}
         onPressPrimary={onPressPrimary}
         onLongPressPrimary={onLongPressPrimary}
+        secondaryButton={
+          !editMode && canShowMessageButton
+            ? {
+                icon: "mail-outline",
+                onPress: startDmWithProfile,
+                accessibilityLabel: "Message",
+              }
+            : undefined
+        }
         primaryButtonOverride={
           isBlocked
             ? { label: "Blocked", variant: "danger" }
@@ -503,8 +558,6 @@ export default function ProfileScreen() {
       ) : null}
     </View>
   );
-
-  const shouldHidePostsAndShowMessage = isBlockedBy || isBlocked || isSuspended || isPrivated;
 
   // SHOW FAB when:
   // - normal/muted

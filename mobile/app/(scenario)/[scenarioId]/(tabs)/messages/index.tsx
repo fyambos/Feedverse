@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo } from "react";
 import { FlatList, Modal, Pressable, StyleSheet, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams, usePathname } from "expo-router";
@@ -42,7 +42,10 @@ export default function MessagesScreen() {
   const scheme = useColorScheme() ?? "light";
   const colors = Colors[scheme];
 
-  const { scenarioId } = useLocalSearchParams<{ scenarioId: string }>();
+  const { scenarioId, openConversationId } = useLocalSearchParams<{
+    scenarioId: string;
+    openConversationId?: string;
+  }>();
   const pathname = usePathname();
 
   const sid = useMemo(() => {
@@ -69,6 +72,27 @@ export default function MessagesScreen() {
     () => (sid ? (getSelectedProfileId?.(sid) ?? null) : null),
     [sid, getSelectedProfileId]
   );
+
+  const openOnceRef = React.useRef<string | null>(null);
+
+  useEffect(() => {
+    const cid = typeof openConversationId === "string" ? openConversationId.trim() : "";
+    if (!cid) return;
+    if (!isReady) return;
+    if (!sid) return;
+    if (!selectedProfileId) return;
+
+    if (openOnceRef.current === cid) return;
+    openOnceRef.current = cid;
+
+    // clear the param so we don't re-open on re-render
+    router.setParams({ openConversationId: undefined } as any);
+
+    router.push({
+      pathname: "/(scenario)/[scenarioId]/(tabs)/messages/[conversationId]",
+      params: { scenarioId: sid, conversationId: cid },
+    } as any);
+  }, [openConversationId, isReady, sid, selectedProfileId]);
 
   const conversations: Conversation[] = useMemo(() => {
     if (!isReady) return [];
