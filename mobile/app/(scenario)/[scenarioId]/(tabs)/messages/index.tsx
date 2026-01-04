@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo } from "react";
-import { FlatList, Modal, Pressable, StyleSheet, View } from "react-native";
+import { Alert, FlatList, Modal, Pressable, StyleSheet, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams, usePathname } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -63,6 +63,8 @@ export default function MessagesScreen() {
     getProfileById,
     listProfilesForScenario,
     getOrCreateConversation,
+    listSendAsProfilesForScenario,
+    deleteConversationCascade,
   } = app;
 
   const [composerOpen, setComposerOpen] = React.useState(false);
@@ -94,14 +96,44 @@ export default function MessagesScreen() {
     } as any);
   }, [openConversationId, isReady, sid, selectedProfileId]);
 
+  const messagesMap: Record<string, Message> = useMemo(() => ((db as any)?.messages ?? {}) as any, [db]);
+
+  const inboxLastMessageAtByConversationId: Record<string, string> = useMemo(() => {
+    if (!isReady) return {};
+    if (!sid) return {};
+
+    const best: Record<string, string> = {};
+    for (const m of Object.values(messagesMap)) {
+      if (String((m as any).scenarioId ?? "") !== String(sid)) continue;
+      const cid = String((m as any).conversationId ?? "");
+      if (!cid) continue;
+      const t = String((m as any).createdAt ?? "");
+      if (!t) continue;
+      if (!best[cid] || t > best[cid]) best[cid] = t;
+    }
+    return best;
+  }, [isReady, sid, messagesMap]);
+
   const conversations: Conversation[] = useMemo(() => {
     if (!isReady) return [];
     if (!sid) return [];
     if (!selectedProfileId) return [];
-    return (listConversationsForScenario?.(sid, selectedProfileId) ?? []) as Conversation[];
-  }, [isReady, sid, selectedProfileId, listConversationsForScenario]);
 
-  const messagesMap: Record<string, Message> = ((db as any)?.messages ?? {}) as any;
+    const items = (listConversationsForScenario?.(sid, selectedProfileId) ?? []) as Conversation[];
+    return items.slice().sort((a, b) => {
+      const aId = String((a as any).id ?? "");
+      const bId = String((b as any).id ?? "");
+      const aT =
+        inboxLastMessageAtByConversationId[aId] ??
+        String((a as any).lastMessageAt ?? (a as any).updatedAt ?? (a as any).createdAt ?? "");
+      const bT =
+        inboxLastMessageAtByConversationId[bId] ??
+        String((b as any).lastMessageAt ?? (b as any).updatedAt ?? (b as any).createdAt ?? "");
+      const c = String(bT).localeCompare(String(aT));
+      if (c !== 0) return c;
+      return String(bId).localeCompare(String(aId));
+    });
+  }, [isReady, sid, selectedProfileId, listConversationsForScenario, inboxLastMessageAtByConversationId]);
 
   const allScenarioProfiles: Profile[] = useMemo(() => {
     if (!isReady) return [];
@@ -115,6 +147,20 @@ export default function MessagesScreen() {
       .filter((p) => String((p as any).id ?? "") && String((p as any).id) !== me)
       .sort((a, b) => String((a as any).displayName ?? "").localeCompare(String((b as any).displayName ?? "")));
   }, [allScenarioProfiles, selectedProfileId]);
+
+  const sendAsCandidates = useMemo(() => {
+    if (!sid) return { owned: [] as Profile[], public: [] as Profile[] };
+    return (listSendAsProfilesForScenario?.(sid) ?? { owned: [], public: [] }) as {
+      owned: Profile[];
+      public: Profile[];
+    };
+  }, [sid, listSendAsProfilesForScenario]);
+
+  const canManageChatsAsSelected = useMemo(() => {
+    const me = String(selectedProfileId ?? "");
+    if (!me) return false;
+    return (sendAsCandidates.owned ?? []).some((p) => String((p as any).id ?? "") === me);
+  }, [sendAsCandidates, selectedProfileId]);
 
   const getLastMessageForConversation = (conversationId: string): Message | null => {
     const cid = String(conversationId);
@@ -381,6 +427,23 @@ export default function MessagesScreen() {
                     params: { scenarioId: sid, conversationId: convId },
                   } as any);
                 }}
+                onLongPress={() => {
+                  if (!canManageChatsAsSelected) return;
+                  Alert.alert("Chat options", undefined, [
+                    { text: "Cancel", style: "cancel" },
+                    {
+                      text: "Delete chat",
+                      style: "destructive",
+                      onPress: async () => {
+                        try {
+                          await deleteConversationCascade?.({ scenarioId: sid, conversationId: convId });
+                        } catch {
+                          // ignore
+                        }
+                      },
+                    },
+                  ]);
+                }}
                 style={({ pressed }) => [
                   styles.row,
                   {
@@ -404,8 +467,6 @@ export default function MessagesScreen() {
                     </ThemedText>
                   )}
                 </View>
-
-                <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
               </Pressable>
             );
           }}
@@ -430,12 +491,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 12,
     paddingHorizontal: 14,
-    paddingVertical: 12,
+    paddingVertical: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   rowTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10 },
-  rowTitle: { fontSize: 16, fontWeight: "900", flexShrink: 1 },
-  rowSubtitle: { fontSize: 13, marginTop: 2 },
+  rowTitle: { fontSize: 17, fontWeight: "800", flexShrink: 1 },
+  rowSubtitle: { fontSize: 14, marginTop: 1 },
   iconWrap: {
     width: 64,
     height: 64,

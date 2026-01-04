@@ -246,6 +246,7 @@ type AppDataApi = {
   listConversationsForScenario: (scenarioId: string, profileId: string) => Conversation[];
   listMessagesPage: (args: MessagesPageArgs) => MessagesPageResult;
   upsertConversation: (c: Conversation) => Promise<void>;
+  deleteConversationCascade: (args: { scenarioId: string; conversationId: string }) => Promise<void>;
   updateConversationMeta: (args: {
     scenarioId: string;
     conversationId: string;
@@ -263,6 +264,19 @@ type AppDataApi = {
     senderProfileId: string;
     text: string;
   }) => Promise<{ ok: true; messageId: string } | { ok: false; error: string }>;
+
+  updateMessage: (args: {
+    scenarioId: string;
+    messageId: string;
+    text?: string;
+    senderProfileId?: string;
+  }) => Promise<void>;
+  deleteMessage: (args: { scenarioId: string; messageId: string }) => Promise<void>;
+  reorderMessagesInConversation: (args: {
+    scenarioId: string;
+    conversationId: string;
+    orderedMessageIds: string[];
+  }) => Promise<void>;
 
   // helpers for DM UI
   getConversationById: (conversationId: string) => Conversation | null;
@@ -924,6 +938,33 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
 
         await toggleLikePostImpl(sid, sel, poid);
       },
+      deleteConversationCascade: async ({ scenarioId, conversationId }) => {
+        const sid = String(scenarioId ?? "").trim();
+        const cid = String(conversationId ?? "").trim();
+        if (!sid || !cid) return;
+        if (!db) return;
+
+        const next = await updateDb((prev) => {
+          const conversations = { ...((prev as any).conversations ?? {}) } as Record<string, Conversation>;
+          const messages = { ...((prev as any).messages ?? {}) } as Record<string, Message>;
+
+          const existing = conversations[cid];
+          if (!existing) return prev;
+          if (String((existing as any).scenarioId ?? "") !== sid) return prev;
+
+          delete conversations[cid];
+
+          for (const [mid, m] of Object.entries(messages)) {
+            if (String((m as any).scenarioId ?? "") !== sid) continue;
+            if (String((m as any).conversationId ?? "") !== cid) continue;
+            delete messages[mid];
+          }
+
+          return { ...(prev as any), conversations, messages };
+        });
+
+        setState({ isReady: true, db: next as any });
+      },
 
       // --- reposts
       getRepostEventForProfile: (profileId: string, postId: string) => {
@@ -1515,7 +1556,27 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
               if (String(sheet?.scenarioId ?? "") === sid) delete sheets[k];
             }
 
-            return { ...prev, scenarios, profiles, posts, reposts, sheets, selectedProfileByScenario };
+            const conversations = { ...((prev as any).conversations ?? {}) } as Record<string, Conversation>;
+            for (const k of Object.keys(conversations)) {
+              if (String((conversations as any)[k]?.scenarioId ?? "") === sid) delete conversations[k];
+            }
+
+            const messages = { ...((prev as any).messages ?? {}) } as Record<string, Message>;
+            for (const k of Object.keys(messages)) {
+              if (String((messages as any)[k]?.scenarioId ?? "") === sid) delete messages[k];
+            }
+
+            return {
+              ...prev,
+              scenarios,
+              profiles,
+              posts,
+              reposts,
+              sheets,
+              conversations,
+              messages,
+              selectedProfileByScenario,
+            };
           }
 
           // normal user leaving
@@ -1588,7 +1649,27 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
             if (String(sheet?.scenarioId ?? "") === sid) delete sheets[k];
           }
 
-          return { ...prev, scenarios, profiles, posts, reposts, sheets, selectedProfileByScenario };
+          const conversations = { ...((prev as any).conversations ?? {}) } as Record<string, Conversation>;
+          for (const k of Object.keys(conversations)) {
+            if (String((conversations as any)[k]?.scenarioId ?? "") === sid) delete conversations[k];
+          }
+
+          const messages = { ...((prev as any).messages ?? {}) } as Record<string, Message>;
+          for (const k of Object.keys(messages)) {
+            if (String((messages as any)[k]?.scenarioId ?? "") === sid) delete messages[k];
+          }
+
+          return {
+            ...prev,
+            scenarios,
+            profiles,
+            posts,
+            reposts,
+            sheets,
+            conversations,
+            messages,
+            selectedProfileByScenario,
+          };
         });
 
         setState({ isReady: true, db: nextDb as any });
@@ -2111,6 +2192,139 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
 
         setState({ isReady: true, db: nextDb as any });
         return { ok: true, messageId };
+      },
+
+      updateMessage: async ({ scenarioId, messageId, text, senderProfileId }) => {
+        const sid = String(scenarioId ?? "").trim();
+        const mid = String(messageId ?? "").trim();
+        const nextText = text == null ? undefined : String(text);
+        const nextSender = senderProfileId == null ? undefined : String(senderProfileId);
+        if (!sid || !mid) return;
+
+        const nextDb = await updateDb((prev) => {
+          const messages = { ...((prev as any).messages ?? {}) } as Record<string, Message>;
+          const conversations = { ...((prev as any).conversations ?? {}) } as Record<string, Conversation>;
+
+          const existing = messages[mid];
+          if (!existing) return prev;
+          if (String((existing as any).scenarioId ?? "") !== sid) return prev;
+
+          const patched: any = { ...existing };
+
+          if (nextText !== undefined) {
+            const body = nextText.trim();
+            if (!body) return prev;
+            patched.text = body;
+          }
+
+          if (nextSender !== undefined) {
+            const from = nextSender.trim();
+            if (!from) return prev;
+            patched.senderProfileId = from;
+          }
+
+          messages[mid] = patched;
+
+          const cid = String((existing as any).conversationId ?? "");
+          const conv = conversations[cid];
+          if (conv && String((conv as any).scenarioId ?? "") === sid) {
+            conversations[cid] = { ...conv, updatedAt: new Date().toISOString() } as any;
+          }
+
+          return { ...(prev as any), conversations, messages };
+        });
+
+        setState({ isReady: true, db: nextDb as any });
+      },
+
+      deleteMessage: async ({ scenarioId, messageId }) => {
+        const sid = String(scenarioId ?? "").trim();
+        const mid = String(messageId ?? "").trim();
+        if (!sid || !mid) return;
+
+        const nextDb = await updateDb((prev) => {
+          const messages = { ...((prev as any).messages ?? {}) } as Record<string, Message>;
+          const conversations = { ...((prev as any).conversations ?? {}) } as Record<string, Conversation>;
+
+          const existing = messages[mid];
+          if (!existing) return prev;
+          if (String((existing as any).scenarioId ?? "") !== sid) return prev;
+
+          const cid = String((existing as any).conversationId ?? "");
+          delete messages[mid];
+
+          const conv = conversations[cid];
+          if (conv && String((conv as any).scenarioId ?? "") === sid) {
+            let lastMessageAt: string | undefined = undefined;
+            for (const m of Object.values(messages)) {
+              if (String((m as any).scenarioId ?? "") !== sid) continue;
+              if (String((m as any).conversationId ?? "") !== cid) continue;
+              const createdAt = String((m as any).createdAt ?? "");
+              if (!createdAt) continue;
+              if (!lastMessageAt || createdAt.localeCompare(lastMessageAt) > 0) lastMessageAt = createdAt;
+            }
+
+            conversations[cid] = {
+              ...conv,
+              lastMessageAt,
+              updatedAt: new Date().toISOString(),
+            } as any;
+          }
+
+          return { ...(prev as any), conversations, messages };
+        });
+
+        setState({ isReady: true, db: nextDb as any });
+      },
+
+      reorderMessagesInConversation: async ({ scenarioId, conversationId, orderedMessageIds }) => {
+        const sid = String(scenarioId ?? "").trim();
+        const cid = String(conversationId ?? "").trim();
+        const ids = (orderedMessageIds ?? []).map(String).map((s) => s.trim()).filter(Boolean);
+        if (!sid || !cid) return;
+        if (ids.length < 2) return;
+
+        const nextDb = await updateDb((prev) => {
+          const messages = { ...((prev as any).messages ?? {}) } as Record<string, Message>;
+          const conversations = { ...((prev as any).conversations ?? {}) } as Record<string, Conversation>;
+
+          // validate ids belong to this conversation
+          const existing: Message[] = [];
+          for (const mid of ids) {
+            const m = messages[mid];
+            if (!m) return prev;
+            if (String((m as any).scenarioId ?? "") !== sid) return prev;
+            if (String((m as any).conversationId ?? "") !== cid) return prev;
+            existing.push(m);
+          }
+
+          // choose a stable starting timestamp near the earliest existing message
+          let startMs: number | null = null;
+          for (const m of existing) {
+            const ms = Date.parse(String((m as any).createdAt ?? ""));
+            if (!Number.isFinite(ms)) continue;
+            startMs = startMs == null ? ms : Math.min(startMs, ms);
+          }
+          if (startMs == null) startMs = Date.now();
+
+          // rewrite createdAt to match new order (1s spacing)
+          for (let i = 0; i < ids.length; i++) {
+            const mid = ids[i];
+            const m = messages[mid];
+            if (!m) continue;
+            messages[mid] = { ...m, createdAt: new Date(startMs + i * 1000).toISOString() };
+          }
+
+          const conv = conversations[cid];
+          if (conv && String((conv as any).scenarioId ?? "") === sid) {
+            const lastMessageAt = new Date(startMs + (ids.length - 1) * 1000).toISOString();
+            conversations[cid] = { ...conv, lastMessageAt, updatedAt: new Date().toISOString() } as any;
+          }
+
+          return { ...(prev as any), conversations, messages };
+        });
+
+        setState({ isReady: true, db: nextDb as any });
       },
 
       // ===== DM helpers (for your “send as” UX) =====
