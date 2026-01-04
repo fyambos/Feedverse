@@ -114,7 +114,13 @@ export function PostActions({
     Alert.alert("Coming soon", `${feature} is not available yet.`);
   };
 
-  const likeColor = isLiked ? "#ff2d55" : colors.icon;
+  // Optimistic UI: update instantly on press even if parent FlatList row is memoized.
+  const [likedLocal, setLikedLocal] = React.useState<boolean>(!!isLiked);
+  React.useEffect(() => {
+    setLikedLocal(!!isLiked);
+  }, [isLiked]);
+
+  const likeColor = likedLocal ? "#ff2d55" : colors.icon;
 
   const burstScale = likeBurst.interpolate({
     inputRange: [0, 1],
@@ -240,8 +246,9 @@ export function PostActions({
         <View style={styles.action}>
           <Pressable
             onPress={() => {
-              const goingToLiked = !isLiked;
+              const goingToLiked = !likedLocal;
               likePop(goingToLiked);
+              setLikedLocal(goingToLiked);
 
               if (onLike) onLike();
               else comingSoon("Liking");
@@ -266,7 +273,7 @@ export function PostActions({
               />
 
               <Animated.View style={{ transform: [{ scale: likeScale }] }}>
-                <Ionicons name={isLiked ? "heart" : "heart-outline"} size={22} color={likeColor} />
+                <Ionicons name={likedLocal ? "heart" : "heart-outline"} size={22} color={likeColor} />
               </Animated.View>
             </View>
           </Pressable>

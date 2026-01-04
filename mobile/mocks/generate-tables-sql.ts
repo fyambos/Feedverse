@@ -231,11 +231,7 @@ for (const p of MOCK_PROFILES) {
         p.link ? sqlString(p.link) : sqlNull(),
         Number.isFinite(p.followerCount) ? String(p.followerCount) : "0",
         Number.isFinite(p.followingCount) ? String(p.followingCount) : "0",
-        (p.likedPostIds && p.likedPostIds.length > 0)
-          ? `ARRAY[${p.likedPostIds
-              .map((postId) => `seed_uuid(${sqlString("posts")}, ${sqlString(postId)})`)
-              .join(", ")}]::uuid[]`
-          : `ARRAY[]::uuid[]`,
+        `ARRAY[]::uuid[]`, // likes are table-backed now; keep column empty for compatibility
         sqlTimestamptz(p.createdAt),
         sqlTimestamptz(p.updatedAt),
       ].join(", ") +

@@ -305,7 +305,7 @@ export default function ProfileScreen() {
     setCursor(page.nextCursor);
     setHasMore(!!page.nextCursor);
     setInitialLoading(false);
-  }, [isReady, profile, listProfileFeedPage, sid, activeTab]);
+  }, [isReady, profile, listProfileFeedPage, sid, activeTab, pid, selectedProfileId]);
 
   const loadMore = useCallback(() => {
     if (!isReady || !profile) return;

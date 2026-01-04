@@ -58,7 +58,7 @@ export function AppDialogModal({
   const colors = Colors[scheme];
 
   const pressedRowBg = colors.pressed;
-  const backdropBg = (colors as any).modalBackdrop ?? "rgba(0,0,0,0.45)"; // fallback only if theme not updated
+  const backdropBg = colors.modalBackdrop;
 
   // backdrop padding = 24 left + 24 right
   const available = Math.max(0, screenWidth - 48);

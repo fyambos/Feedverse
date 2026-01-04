@@ -7,7 +7,7 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { Alert as RNAlert } from "react-native";
+import { Alert as RNAlert, type TextInputProps } from "react-native";
 import { AppDialogButton, AppDialogModal } from "@/components/ui/AppDialogModal";
 
 type AlertOptions = {
@@ -31,7 +31,7 @@ type DialogOptions = {
   input?: {
     placeholder?: string;
     defaultValue?: string;
-    keyboardType?: any;
+    keyboardType?: TextInputProps["keyboardType"];
     secureTextEntry?: boolean;
   };
 };
@@ -46,7 +46,7 @@ type DialogContextValue = {
     defaultValue?: string;
     placeholder?: string;
     secureTextEntry?: boolean;
-    keyboardType?: any;
+    keyboardType?: TextInputProps["keyboardType"];
     buttons: Array<{
       text?: string;
       style?: "default" | "cancel" | "destructive";
@@ -79,7 +79,7 @@ function mapAlertButtons(buttons?: AlertLikeButton[]): AppDialogButton[] {
     text: b.text ?? "OK",
     variant:
       b.style === "cancel" ? "cancel" : b.style === "destructive" ? "destructive" : "default",
-    onPress: () => (b.onPress as any)?.(),
+    onPress: () => b.onPress?.(),
     icon: b.icon,
   }));
 }
@@ -125,7 +125,7 @@ export const Alert = {
     buttons?: AlertLikeButton[],
     type?: "plain-text" | "secure-text" | "login-password",
     defaultValue?: string,
-    keyboardType?: any
+    keyboardType?: TextInputProps["keyboardType"]
   ) => {
     if (!dialogApi) {
       // fallback (dev safety)
@@ -286,7 +286,7 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
       defaultValue?: string;
       placeholder?: string;
       secureTextEntry?: boolean;
-      keyboardType?: any;
+      keyboardType?: TextInputProps["keyboardType"];
       buttons: Array<{
         text?: string;
         style?: "default" | "cancel" | "destructive";

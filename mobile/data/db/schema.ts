@@ -79,7 +79,6 @@ export type Profile = {
   createdAt: string;
   updatedAt?: string;
   isPrivate?: boolean;
-  likedPostIds?: string[];
 };
 
 export type Post = {
@@ -186,6 +185,17 @@ export type CharacterSheet = {
   updatedAt?: string;
 };
 
+export type Like = {
+  id: string;          // e.g. `li_${Date.now()}_${...}` or `${profileId}:${postId}`
+  scenarioId: string;
+  postId: string;
+  profileId: string;   // who liked
+  createdAt: string;
+};
+
+// NOTE: migrate away from Profile.likedPostIds (legacy)
+// export type Profile = { ... likedPostIds?: string[] ... } // remove when you’re ready
+
 export type DbV5 = {
   version: 5;
   seededAt: string;
@@ -198,6 +208,7 @@ export type DbV5 = {
   profiles: Record<string, Profile>;
   posts: Record<string, Post>;
   reposts: Record<string, Repost>;
+  likes?: Record<string, Like>; // key = `${scenarioId}|${profileId}|${postId}` (scenario-scoped)
   selectedProfileByScenario: Record<string, string>;
   /** (selected_profile_by_user_scenario) */
   selectedProfileByUserScenario?: Record<string, SelectedProfileByUserScenario>; // key = `${userId}|${scenarioId}`

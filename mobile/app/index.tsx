@@ -326,7 +326,7 @@ export default function ScenarioListScreen() {
 
   const ScenarioMenuSheet = () => (
     <Modal transparent visible={menu.open} animationType="fade" onRequestClose={closeScenarioMenu}>
-      <Pressable style={styles.menuBackdrop} onPress={closeScenarioMenu}>
+      <Pressable style={[styles.menuBackdrop, { backgroundColor: colors.modalBackdrop }]} onPress={closeScenarioMenu}>
         <Pressable
           style={[styles.menuSheet, { backgroundColor: colors.background, borderColor: colors.border }]}
           onPress={(e) => e?.stopPropagation?.()}
@@ -440,7 +440,7 @@ export default function ScenarioListScreen() {
 
     return (
       <Modal transparent visible={transfer.open} animationType="fade" onRequestClose={closeTransfer}>
-        <Pressable style={styles.menuBackdrop} onPress={closeTransfer}>
+        <Pressable style={[styles.menuBackdrop, { backgroundColor: colors.modalBackdrop }]} onPress={closeTransfer}>
           <Pressable
             style={[styles.menuSheet, { backgroundColor: colors.background, borderColor: colors.border }]}
             onPress={(e) => e?.stopPropagation?.()}
@@ -534,7 +534,7 @@ export default function ScenarioListScreen() {
 
     return (
       <Modal transparent visible={confirm.open} animationType="fade" onRequestClose={closeConfirm}>
-        <Pressable style={styles.menuBackdrop} onPress={closeConfirm}>
+        <Pressable style={[styles.menuBackdrop, { backgroundColor: colors.modalBackdrop }]} onPress={closeConfirm}>
           <Pressable
             style={[styles.confirmCard, { backgroundColor: colors.background, borderColor: colors.border }]}
             onPress={(e) => e?.stopPropagation?.()}
@@ -873,7 +873,10 @@ const styles = StyleSheet.create({
   topBarActions: { gap: 6 },
   topBarTitle: { fontSize: 18 },
 
-  menuBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.35)", justifyContent: "flex-end" },
+  menuBackdrop: {
+    flex: 1,
+    justifyContent: "flex-end",
+  },
   menuSheet: {
     borderTopLeftRadius: 18,
     borderTopRightRadius: 18,

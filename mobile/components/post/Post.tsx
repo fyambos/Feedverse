@@ -90,7 +90,6 @@ export function Post({
 
   isLiked = false,
   onLike,
-
   isReposted = false,
   onRepost,
 
@@ -118,7 +117,7 @@ export function Post({
   const postType = (item as any).postType as PostType | undefined;
 
   const appData = useAppData() as any;
-  const { getSelectedProfileId, getCharacterSheetByProfileId, upsertCharacterSheet, upsertPost } = appData;
+  const { getSelectedProfileId, getCharacterSheetByProfileId, upsertCharacterSheet, upsertPost, toggleLike } = appData;
 
   const { userId, currentUser } = useAuth();
   const currentUserId: string | null = userId ?? currentUser?.id ?? null;
@@ -287,7 +286,10 @@ export function Post({
             onReply={onReply}
             onQuote={onQuote}
             isLiked={isLiked}
-            onLike={onLike}
+            onLike={() => {
+              if (onLike) return onLike();
+              void toggleLike?.(String(sid), String(item.id));
+            }}
             isReposted={isReposted}
             onRepost={onRepost}
             onShare={onShare}
@@ -394,7 +396,10 @@ export function Post({
               onReply={onReply}
               onQuote={onQuote}
               isLiked={isLiked}
-              onLike={onLike}
+              onLike={() => {
+                if (onLike) return onLike();
+                void toggleLike?.(String(sid), String(item.id));
+              }}
               isReposted={isReposted}
               onRepost={onRepost}
               onShare={onShare}

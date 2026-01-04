@@ -1,6 +1,6 @@
 // mobile/context/appData.tsx
 import React from "react";
-import type { DbV5, Post, Profile, Scenario, Repost, ScenarioTag, CharacterSheet } from "@/data/db/schema";
+import type { DbV5, Post, Profile, Scenario, Repost, ScenarioTag, CharacterSheet, Like } from "@/data/db/schema";
 import { readDb, updateDb, writeDb } from "@/data/db/storage";
 import { seedDbIfNeeded } from "@/data/db/seed";
 import { buildGlobalTagFromKey } from "@/lib/tags";
@@ -97,7 +97,7 @@ type AppDataApi = {
     scenarioId: string;
     profileId: string;
     userId: string;
-  }) => Promise<{ ok: true } | { ok: false; error: string }>;
+  }) => Promise<{ ok: true } | { ok: false, error: string }>;
 
   leaveScenario: (scenarioId: string, userId: string) => Promise<{ deleted: boolean } | null>;
   deleteScenario: (scenarioId: string, ownerUserId: string) => Promise<boolean>;
@@ -130,6 +130,10 @@ type AppDataApi = {
   // likes
   toggleLike: (scenarioId: string, postId: string) => Promise<void>;
   isPostLikedBySelectedProfile: (scenarioId: string, postId: string) => boolean;
+  // --- added like helpers ---
+  isPostLikedByProfile: (profileId: string, postId: string) => boolean;
+  listLikedPostIdsForProfile: (scenarioId: string, profileId: string) => string[];
+  toggleLikePost: (scenarioId: string, profileId: string, postId: string) => Promise<{ ok: boolean; liked: boolean }>;
 
   // reposts
   toggleRepost: (scenarioId: string, postId: string) => Promise<void>;
@@ -197,7 +201,7 @@ type AppDataApi = {
           };
         };
       }
-    | { ok: false; error: string }
+    | { ok: false, error: string }
   >;
 
   // scenario settings
@@ -304,6 +308,72 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
   const currentUserId = String(auth.userId ?? "");
 
   const api = React.useMemo<AppDataApi>(() => {
+    const toggleLikePostImpl: AppDataApi["toggleLikePost"] = async (scenarioId, profileId, postId) => {
+      const sid = String(scenarioId ?? "").trim();
+      const pid = String(profileId ?? "").trim();
+      const poid = String(postId ?? "").trim();
+      if (!sid || !pid || !poid) {
+        return { ok: false, liked: false };
+      }
+
+      const now = new Date().toISOString();
+
+      const nextDb = await updateDb((prev) => {
+        const likes = { ...((prev as any).likes ?? {}) } as Record<string, Like>;
+        const posts = { ...prev.posts };
+
+        const post = posts[poid];
+        if (!post) {
+          return prev;
+        }
+
+        // ✅ ensure callers don't accidentally like across scenarios
+        if (String((post as any).scenarioId ?? "") !== sid) {
+          return prev;
+        }
+
+        const k2 = likeKeyV2(sid, pid, poid);
+        const k1 = likeKeyV1(pid, poid);
+
+        const already =
+          Boolean(likes[k2]) ||
+          (Boolean(likes[k1]) && String((likes[k1] as any)?.scenarioId ?? "") === sid);
+
+        if (likes[k2]) delete likes[k2];
+        if (likes[k1] && String((likes[k1] as any)?.scenarioId ?? "") === sid) delete likes[k1];
+
+        if (!already) {
+          likes[k2] = {
+            id: makeLikeId(),
+            scenarioId: sid,
+            profileId: pid,
+            postId: poid,
+            createdAt: now,
+          } as Like;
+        }
+
+        posts[poid] = {
+          ...post,
+          likeCount: Math.max(0, Number((post as any).likeCount ?? 0) + (already ? -1 : 1)),
+          updatedAt: now,
+        } as any;
+
+        return { ...prev, likes, posts };
+      });
+
+      setState({ isReady: true, db: nextDb as any });
+
+      const likesMap = (nextDb as any)?.likes ?? {};
+      const k2 = likeKeyV2(sid, pid, poid);
+      const k1 = likeKeyV1(pid, poid);
+
+      const liked =
+        Boolean(likesMap[k2]) ||
+        (Boolean(likesMap[k1]) && String(likesMap[k1]?.scenarioId ?? "") === sid);
+
+      return { ok: true, liked };
+    };
+
     return {
       // --- profiles
       getProfileById: (id) => (db ? db.profiles[String(id)] ?? null : null),
@@ -370,9 +440,6 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         const posts = Object.values(db.posts).filter((p) => p.scenarioId === sid);
         const authoredPosts = posts.filter((p) => String(p.authorProfileId) === pid);
 
-        const profile = db.profiles[pid];
-        const likedSet = new Set<string>((profile?.likedPostIds ?? []).map(String));
-
         const repostEvents = Object.values((db as any).reposts ?? {}).filter(
           (r: any) => String(r.scenarioId) === sid && String(r.profileId) === pid
         );
@@ -430,9 +497,22 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         }
 
         if (tab === "likes") {
-          for (const p of posts) {
-            if (!likedSet.has(String(p.id))) continue;
-            items.push({ kind: "post", post: p, activityAt: String(p.createdAt) });
+          const likeEvents = Object.values(getLikesMap(db))
+            .filter((v) => String((v as any).scenarioId) === String(scenarioId) && String((v as any).profileId) === String(profileId))
+            .sort((a: any, b: any) => {
+              const c = String(b.createdAt).localeCompare(String(a.createdAt));
+              if (c !== 0) return c;
+              return String(b.postId).localeCompare(String(a.postId));
+            });
+
+          for (const li of likeEvents) {
+            const post = db.posts[String((li as any).postId)];
+            if (!post) continue;
+            items.push({
+              kind: "post",
+              post,
+              activityAt: String((li as any).createdAt),
+            });
           }
         }
 
@@ -518,16 +598,14 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         const nextDb = await updateDb((prev) => {
           const existing = prev.profiles?.[pid] as any;
           if (!existing) return prev;
-
-          // Safety: only delete within the provided scenario.
           if (String(existing.scenarioId ?? "") !== sid) return prev;
 
           const profiles = { ...prev.profiles } as any;
           const posts = { ...prev.posts } as any;
           const reposts = { ...((prev as any).reposts ?? {}) } as any;
           const sheets = { ...((prev as any).sheets ?? {}) } as any;
+          const likes = { ...((prev as any).likes ?? {}) } as Record<string, Like>;
 
-          // 1) Remove authored posts (and remember which got removed)
           const deletedPostIds = new Set<string>();
           for (const k of Object.keys(posts)) {
             const p = posts[k];
@@ -537,17 +615,32 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
             }
           }
 
-          // 2) Remove this profile's likes and adjust like counts for remaining posts
-          const likedByThisProfile = ((existing as any).likedPostIds ?? []).map(String).filter(Boolean);
-          for (const likedPostId of likedByThisProfile) {
-            if (deletedPostIds.has(likedPostId)) continue;
-            const post = posts[likedPostId];
-            if (!post) continue;
-            posts[likedPostId] = {
-              ...post,
-              likeCount: Math.max(0, Number((post as any).likeCount ?? 0) - 1),
-              updatedAt: now,
-            };
+          // 2) Remove likes made by this profile + decrement likeCount for remaining posts
+          for (const k of Object.keys(likes)) {
+            const li = likes[k];
+            if (String((li as any)?.profileId ?? "") !== pid) continue;
+
+            const likedPostId = String((li as any)?.postId ?? "");
+            if (likedPostId && !deletedPostIds.has(likedPostId)) {
+              const post = posts[likedPostId];
+              if (post) {
+                posts[likedPostId] = {
+                  ...post,
+                  likeCount: Math.max(0, Number((post as any).likeCount ?? 0) - 1),
+                  updatedAt: now,
+                };
+              }
+            }
+
+            delete likes[k];
+          }
+
+          // remove likes referencing posts we deleted (from anyone)
+          if (deletedPostIds.size > 0) {
+            for (const k of Object.keys(likes)) {
+              const li = likes[k];
+              if (deletedPostIds.has(String((li as any)?.postId ?? ""))) delete likes[k];
+            }
           }
 
           // 3) Remove reposts made by this profile and adjust repost counts for remaining posts
@@ -576,20 +669,6 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
             const r = reposts[k];
             const targetPostId = String(r?.postId ?? "");
             if (deletedPostIds.has(targetPostId)) delete reposts[k];
-          }
-
-          // 5) Remove deleted posts from everyone else's likedPostIds to avoid ghosts
-          if (deletedPostIds.size > 0) {
-            for (const k of Object.keys(profiles)) {
-              if (String(k) === pid) continue;
-              const pr = profiles[k];
-              const liked = ((pr as any)?.likedPostIds ?? []).map(String).filter(Boolean);
-              if (!liked.length) continue;
-              const nextLiked = liked.filter((id: string) => !deletedPostIds.has(String(id)));
-              if (nextLiked.length !== liked.length) {
-                profiles[k] = { ...pr, likedPostIds: nextLiked, updatedAt: now };
-              }
-            }
           }
 
           // 6) Remove from pinned list for this scenario
@@ -629,6 +708,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
             posts,
             reposts,
             sheets,
+            likes,
             scenarios,
             selectedProfileByScenario,
           };
@@ -680,6 +760,11 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
             if (String((reposts as any)[k]?.postId) === id) delete reposts[k];
           }
 
+          const likes = { ...((prev as any).likes ?? {}) };
+          for (const k of Object.keys(likes ?? {})) {
+            if (String((likes as any)[k]?.postId) === id) delete likes[k];
+          }
+
           // also remove from pinned list for its scenario (if present)
           const scenarios = { ...prev.scenarios };
           const removedPostScenarioId = String((prev.posts as any)?.[id]?.scenarioId ?? "");
@@ -701,63 +786,71 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
             }
           }
 
-          return { ...prev, posts, reposts, scenarios };
+          return { ...prev, posts, reposts, likes, scenarios };
         });
 
         setState({ isReady: true, db: next as any });
       },
 
-      // --- likes
+      // --- likes (table-backed) ---
+      isPostLikedByProfile: (profileId: string, postId: string) => {
+        if (!db) return false;
+        const pid = String(profileId);
+        const poid = String(postId);
+        // no scenarioId in signature => scan rows (safe + correct)
+        for (const li of Object.values(getLikesMap(db))) {
+          if (String((li as any)?.profileId ?? "") !== pid) continue;
+          if (String((li as any)?.postId ?? "") !== poid) continue;
+          return true;
+        }
+        return false;
+      },
+
+      listLikedPostIdsForProfile: (scenarioId: string, profileId: string) => {
+        if (!db) return [];
+        const sid = String(scenarioId);
+        const pid = String(profileId);
+
+        const out: string[] = [];
+        for (const li of Object.values(getLikesMap(db))) {
+          if (String((li as any).scenarioId) !== sid) continue;
+          if (String((li as any).profileId) !== pid) continue;
+          out.push(String((li as any).postId));
+        }
+        return out;
+      },
+
       isPostLikedBySelectedProfile: (scenarioId, postId) => {
         if (!db) return false;
-        const sel = (db as any).selectedProfileByScenario?.[String(scenarioId)];
-        if (!sel) return false;
-        const pr = db.profiles[String(sel)];
-        const arr = (pr as any)?.likedPostIds ?? [];
-        return arr.includes(String(postId));
+        const sid = String(scenarioId);
+        const selRaw = (db as any).selectedProfileByScenario?.[sid];
+        const sel = selRaw == null ? "" : String(selRaw);
+        if (!sel || sel === "null" || sel === "undefined") return false;
+
+        const poid = String(postId);
+        const likes = getLikesMap(db);
+
+        const k2 = likeKeyV2(sid, sel, poid);
+        if (likes[k2]) return true;
+
+        const k1 = likeKeyV1(sel, poid);
+        return Boolean(likes[k1]) && String((likes[k1] as any)?.scenarioId ?? "") === sid;
       },
 
+      toggleLikePost: toggleLikePostImpl,
+
       toggleLike: async (scenarioId, postId) => {
+        if (!db) return;
         const sid = String(scenarioId);
-        const pid = String(postId);
+        const poid = String(postId);
 
-        const next = await updateDb((prev) => {
-          const selectedProfileId = (prev as any).selectedProfileByScenario?.[sid];
-          if (!selectedProfileId) return prev;
+        const selRaw = (db as any).selectedProfileByScenario?.[sid];
+        const sel = selRaw == null ? "" : String(selRaw);
+        if (!sel || sel === "null" || sel === "undefined") {
+          return;
+        }
 
-          const liker = prev.profiles[String(selectedProfileId)];
-          const post = prev.posts[pid];
-          if (!liker || !post) return prev;
-
-          const liked = ((liker as any).likedPostIds ?? []).map(String);
-          const already = liked.includes(pid);
-
-          const nextLiked: string[] = already ? liked.filter((x: string) => x !== pid) : [...liked, pid];
-
-          const now = new Date().toISOString();
-
-          return {
-            ...prev,
-            profiles: {
-              ...prev.profiles,
-              [String((liker as any).id)]: {
-                ...liker,
-                likedPostIds: nextLiked,
-                updatedAt: now,
-              } as any,
-            },
-            posts: {
-              ...prev.posts,
-              [pid]: {
-                ...post,
-                likeCount: Math.max(0, ((post as any).likeCount ?? 0) + (already ? -1 : 1)),
-                updatedAt: now,
-              } as any,
-            },
-          };
-        });
-
-        setState({ isReady: true, db: next as any });
+        await toggleLikePostImpl(sid, sel, poid);
       },
 
       // --- reposts
@@ -1720,4 +1813,17 @@ export function useAppData() {
   const v = React.useContext(Ctx);
   if (!v) throw new Error("useAppData must be used within AppDataProvider");
   return v;
+}
+
+function likeKeyV1(profileId: string, postId: string) {
+  return `${String(profileId)}|${String(postId)}`;
+}
+function likeKeyV2(scenarioId: string, profileId: string, postId: string) {
+  return `${String(scenarioId)}|${String(profileId)}|${String(postId)}`;
+}
+function makeLikeId() {
+  return `like_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+function getLikesMap(db: DbV5 | null): Record<string, Like> {
+  return ((db as any)?.likes ?? {}) as Record<string, Like>;
 }

@@ -17,6 +17,7 @@
     "@react-navigation/bottom-tabs": "^7.4.0",
     "@react-navigation/elements": "^2.6.3",
     "@react-navigation/native": "^7.1.8",
+    "bcryptjs": "^2.4.3",
     "expo": "~54.0.30",
     "expo-clipboard": "~8.0.8",
     "expo-constants": "~18.0.12",
@@ -46,12 +47,12 @@
     "react-native-view-shot": "4.0.3",
     "react-native-web": "~0.21.0",
     "react-native-worklets": "0.5.1",
-    "bcryptjs": "^2.4.3",
-    "undefined": "@/components/tab-icon"
+    "undefined": "@/components/tab-icon",
+    "uuid": "^13.0.0"
   },
   "devDependencies": {
-    "@types/react": "~19.1.0",
     "@types/bcryptjs": "^2.4.6",
+    "@types/react": "~19.1.0",
     "eslint": "^9.25.0",
     "eslint-config-expo": "~10.0.0",
     "typescript": "~5.9.2"

@@ -9,6 +9,7 @@ import type {
   ScenarioTag,
   GlobalTag,
   CharacterSheet,
+  Like,
 } from "./schema";
 import { writeDb } from "./storage";
 
@@ -59,7 +60,73 @@ function toIntOrUndef(x: any): number | undefined {
 
 export async function seedDbIfNeeded(existing: any | null) {
   // keep your “don’t reseed” behavior when FORCE_RESEED is false
-  if (!FORCE_RESEED && existing && existing.version === 5) return existing as DbV5;
+  // but ensure likes table exists + migrate legacy Profile.likedPostIds -> db.likes once.
+  if (!FORCE_RESEED && existing && existing.version === 5) {
+    const prev = existing as any;
+    const prevLikes = ((prev as any).likes ?? null) as Record<string, Like> | null;
+    const likes: Record<string, Like> = prevLikes && typeof prevLikes === "object" ? { ...prevLikes } : {};
+
+    let changed = !prevLikes || typeof prevLikes !== "object";
+
+    // migrate existing likes keys (v1 -> v2)
+    for (const [k, li] of Object.entries(likes)) {
+      const sid = String((li as any)?.scenarioId ?? "");
+      const pid = String((li as any)?.profileId ?? "");
+      const postId = String((li as any)?.postId ?? "");
+      if (!sid || !pid || !postId) continue;
+      const k2 = `${sid}|${pid}|${postId}`;
+      if (k === k2) continue;
+      if (!likes[k2]) likes[k2] = li;
+      delete likes[k];
+      convertedKeys += 1;
+      changed = true;
+    }
+
+    let migratedFromLikedPostIds = 0;
+
+    // migrate legacy likedPostIds if present
+    const profiles = { ...(prev.profiles ?? {}) } as Record<string, any>;
+    const posts = { ...(prev.posts ?? {}) } as Record<string, any>;
+    const now = new Date().toISOString();
+
+    for (const p of Object.values(profiles)) {
+      const profileId = String(p?.id ?? "");
+      const likedPostIds = Array.isArray(p?.likedPostIds) ? p.likedPostIds.map(String).filter(Boolean) : [];
+      if (!profileId || likedPostIds.length === 0) continue;
+
+      for (const postId of likedPostIds) {
+        const post = posts[postId];
+        const scenarioId = String(post?.scenarioId ?? p?.scenarioId ?? "");
+        if (!scenarioId) continue;
+
+        const key = `${scenarioId}|${profileId}|${postId}`;
+        if (likes[key]) continue;
+
+        likes[key] = {
+          id: `like_migrated_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+          scenarioId,
+          profileId,
+          postId,
+          createdAt: String(post?.updatedAt ?? post?.createdAt ?? now),
+        };
+        migratedFromLikedPostIds += 1;
+        changed = true;
+      }
+
+      if (p?.likedPostIds) {
+        delete p.likedPostIds;
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      const next: DbV5 = { ...(prev as any), version: 5, likes, profiles } as any;
+      await writeDb(next);
+      return next;
+    }
+
+    return existing as DbV5;
+  }
 
   const now = nowIso();
 
@@ -107,7 +174,7 @@ export async function seedDbIfNeeded(existing: any | null) {
       createdAt,
       updatedAt: typeof (p as any).updatedAt === "string" ? (p as any).updatedAt : undefined,
 
-      likedPostIds: Array.isArray((p as any).likedPostIds) ? (p as any).likedPostIds.map(String) : [],
+      // likedPostIds: Array.isArray((p as any).likedPostIds) ? (p as any).likedPostIds.map(String) : [],
     };
   });
 
@@ -334,6 +401,7 @@ export async function seedDbIfNeeded(existing: any | null) {
     tags: globalTags,
     sheets,
     selectedProfileByScenario: {},
+    likes: {}, // init likes table (DbV5 stays v5; no migration)
   };
 
   await writeDb(db);
