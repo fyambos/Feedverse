@@ -10,6 +10,8 @@ import type {
   GlobalTag,
   CharacterSheet,
   Like,
+  Conversation,
+  Message,
 } from "./schema";
 import { writeDb } from "./storage";
 
@@ -18,6 +20,7 @@ import { MOCK_PROFILES } from "@/mocks/profiles";
 import { MOCK_USERS } from "@/mocks/users";
 import { MOCK_SCENARIOS } from "@/mocks/scenarios";
 import { MOCK_SHEETS } from "@/mocks/sheets";
+import { MOCK_CONVERSATIONS, MOCK_MESSAGES } from "@/mocks/messages";
 import { tagKeyFromInput, buildGlobalTagFromKey } from "@/lib/tags";
 
 /**
@@ -130,6 +133,13 @@ export async function seedDbIfNeeded(existing: any | null) {
 
     if (!prevConversations || typeof prevConversations !== "object") changed = true;
     if (!prevMessages || typeof prevMessages !== "object") changed = true;
+
+    // If DM tables exist but are empty (feature just landed), seed mocks once.
+    if (Object.keys(conversations).length === 0 && Object.keys(messages).length === 0) {
+      for (const c of MOCK_CONVERSATIONS as Conversation[]) conversations[String(c.id)] = c;
+      for (const m of MOCK_MESSAGES as Message[]) messages[String(m.id)] = m;
+      changed = true;
+    }
 
     if (changed) {
       const next: DbV5 = { ...(prev as any), version: 5, likes, profiles, conversations, messages } as any;
@@ -416,8 +426,8 @@ export async function seedDbIfNeeded(existing: any | null) {
     likes: {},
 
     // DM
-    conversations: {},
-    messages: {},
+    conversations: toRecord(MOCK_CONVERSATIONS),
+    messages: toRecord(MOCK_MESSAGES),
   };
 
   await writeDb(db);

@@ -93,6 +93,8 @@ export default function TabLayout() {
   const app = useAppData() as any;
   const { isReady, db, getSelectedProfileId } = app;
 
+  const seedKey = useMemo(() => String((db as any)?.seededAt ?? ""), [db]);
+
   const selectedProfileId = useMemo(
     () => (sid ? getSelectedProfileId?.(sid) ?? null : null),
     [getSelectedProfileId, sid]
@@ -106,11 +108,12 @@ export default function TabLayout() {
     // do NOT gate while a modal is open
     if (pathname.startsWith("/modal")) return;
 
-    // run ONCE per scenario
-    if (gateRanRef.current === sid) return;
+    // run ONCE per scenario seed (re-run after reseed)
+    const gateKey = `${sid}|${seedKey}`;
+    if (gateRanRef.current === gateKey) return;
 
     if (selectedProfileId) {
-      gateRanRef.current = sid;
+      gateRanRef.current = gateKey;
       return;
     }
 
@@ -121,7 +124,7 @@ export default function TabLayout() {
       return String(p?.scenarioId) === sid && String(p?.ownerUserId) === uid;
     });
 
-    gateRanRef.current = sid; // lock BEFORE navigating
+    gateRanRef.current = gateKey; // lock BEFORE navigating
 
     if (hasAnyProfileInScenario) {
       router.replace({
@@ -134,7 +137,7 @@ export default function TabLayout() {
         params: { scenarioId: sid, mode: "create", forced: "1" },
       } as any);
     }
-  }, [isReady, sid, selectedProfileId, userId, db, pathname]);
+  }, [isReady, sid, seedKey, selectedProfileId, userId, db, pathname]);
 
   return (
     <Tabs
@@ -142,6 +145,7 @@ export default function TabLayout() {
         tabBarActiveTintColor: colors.tint,
         headerShown: false,
         tabBarButton: HapticTab,
+        tabBarShowLabel: false,
       }}
     >
       <Tabs.Screen

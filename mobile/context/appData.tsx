@@ -243,6 +243,14 @@ type AppDataApi = {
     senderProfileId: string;
     text: string;
   }) => Promise<{ ok: true; messageId: string } | { ok: false; error: string }>;
+
+  // helpers for DM UI
+  getConversationById: (conversationId: string) => Conversation | null;
+  getOrCreateConversation: (args: {
+    scenarioId: string;
+    participantProfileIds: string[];
+  }) => Promise<{ ok: true; conversationId: string } | { ok: false, error: string }>;
+  listSendAsProfilesForScenario: (scenarioId: string) => { owned: Profile[]; public: Profile[] };
 };
 
 const Ctx = React.createContext<(AppDataState & AppDataApi) | null>(null);
@@ -1278,7 +1286,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
 
         const ownerId = String((existing as any).ownerUserId ?? "");
         if (ownerId === uid) return { ok: false, error: "You already own this profile" };
-        if (!existing.isPublic) return { ok: false, error: "Profile is not shared" };
+        if (!existing.isPublic) return { ok: false, error: "Profile not shared" };
 
         const now = new Date().toISOString();
 
@@ -1942,6 +1950,84 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         setState({ isReady: true, db: nextDb as any });
         return { ok: true, messageId };
       },
+
+      // ===== DM helpers (for your “send as” UX) =====
+      getConversationById: (conversationId: string) => {
+        if (!db) return null;
+        const id = String(conversationId ?? "").trim();
+        if (!id) return null;
+        return (((db as any).conversations ?? {}) as Record<string, Conversation>)[id] ?? null;
+      },
+
+      listSendAsProfilesForScenario: (scenarioId: string) => {
+        if (!db) return { owned: [], public: [] };
+
+        const sid = String(scenarioId ?? "").trim();
+        const uid = String(currentUserId ?? "").trim();
+        if (!sid) return { owned: [], public: [] };
+
+        const owned: Profile[] = [];
+        const pub: Profile[] = [];
+
+        for (const p of Object.values(db.profiles ?? {})) {
+          if (String((p as any).scenarioId ?? "") !== sid) continue;
+
+          const ownerUserId = String((p as any).ownerUserId ?? "");
+          const isPublic = Boolean((p as any).isPublic);
+
+          if (uid && ownerUserId === uid) owned.push(p);
+          else if (isPublic) pub.push(p);
+        }
+
+        const byName = (a: Profile, b: Profile) =>
+          String((a as any).displayName ?? "").localeCompare(String((b as any).displayName ?? ""));
+
+        owned.sort(byName);
+        pub.sort(byName);
+
+        return { owned, public: pub };
+      },
+
+      getOrCreateConversation: async ({ scenarioId, participantProfileIds }) => {
+        const sid = String(scenarioId ?? "").trim();
+        const ids = Array.from(new Set((participantProfileIds ?? []).map(String).map((s) => s.trim()).filter(Boolean)));
+
+        if (!sid) return { ok: false, error: "scenarioId is required" };
+        if (ids.length < 2) return { ok: false, error: "participantProfileIds must have 2+ ids" };
+
+        // deterministic id so UI can “open DM with X” without duplicate threads in mock mode
+        const convId = makeConversationId(sid, ids);
+
+        const now = new Date().toISOString();
+
+        const next = await updateDb((prev) => {
+          const conversations = { ...((prev as any).conversations ?? {}) } as Record<string, Conversation>;
+          const existing = conversations[convId];
+
+          if (!existing) {
+            conversations[convId] = {
+              id: convId,
+              scenarioId: sid,
+              participantProfileIds: ids.slice().sort(),
+              createdAt: now,
+              updatedAt: now,
+              lastMessageAt: undefined,
+            };
+          } else {
+            // keep it stable, but ensure participants cover current request
+            const merged = Array.from(
+              new Set([...(existing.participantProfileIds ?? []).map(String), ...ids.map(String)])
+            ).sort();
+
+            conversations[convId] = { ...existing, participantProfileIds: merged, updatedAt: now };
+          }
+
+          return { ...(prev as any), conversations };
+        });
+
+        setState({ isReady: true, db: next as any });
+        return { ok: true, conversationId: convId };
+      },
     };
   }, [db, currentUserId, auth.isReady]);
 
@@ -1983,4 +2069,10 @@ function sortDescByLastMessageAtThenId(a: Conversation, b: Conversation) {
   const c = bT.localeCompare(aT);
   if (c !== 0) return c;
   return String(b.id).localeCompare(String(a.id));
+}
+
+function makeConversationId(scenarioId: string, participantProfileIds: string[]) {
+  const sid = String(scenarioId);
+  const ids = (participantProfileIds ?? []).map(String).filter(Boolean).sort();
+  return `c_${sid}_${ids.join("_")}`;
 }
