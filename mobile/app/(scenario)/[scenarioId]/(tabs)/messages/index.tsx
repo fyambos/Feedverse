@@ -154,61 +154,67 @@ export default function MessagesScreen() {
 
   if (!isReady) {
     return (
-      <ThemedView style={[styles.container, { backgroundColor: colors.background }]}>
-        <View style={styles.center}>
-          <View style={[styles.iconWrap, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Ionicons name="mail-outline" size={28} color={colors.tint} />
+      <SafeAreaView edges={["top"]} style={{ flex: 1, backgroundColor: colors.background }}>
+        <ThemedView style={[styles.container, { backgroundColor: colors.background }]}>
+          <View style={styles.center}>
+            <View style={[styles.iconWrap, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <Ionicons name="mail-outline" size={28} color={colors.tint} />
+            </View>
+            <ThemedText style={[styles.title, { color: colors.text }]}>messages</ThemedText>
+            <ThemedText style={[styles.subtitle, { color: colors.textSecondary }]}>loading…</ThemedText>
           </View>
-          <ThemedText style={[styles.title, { color: colors.text }]}>messages</ThemedText>
-          <ThemedText style={[styles.subtitle, { color: colors.textSecondary }]}>loading…</ThemedText>
-        </View>
-      </ThemedView>
+        </ThemedView>
+      </SafeAreaView>
     );
   }
 
   if (!sid) {
     return (
-      <ThemedView style={[styles.container, { backgroundColor: colors.background }]}>
-        <View style={styles.center}>
-          <View style={[styles.iconWrap, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Ionicons name="mail-outline" size={28} color={colors.tint} />
+      <SafeAreaView edges={["top"]} style={{ flex: 1, backgroundColor: colors.background }}>
+        <ThemedView style={[styles.container, { backgroundColor: colors.background }]}>
+          <View style={styles.center}>
+            <View style={[styles.iconWrap, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <Ionicons name="mail-outline" size={28} color={colors.tint} />
+            </View>
+            <ThemedText style={[styles.title, { color: colors.text }]}>messages</ThemedText>
+            <ThemedText style={[styles.subtitle, { color: colors.textSecondary }]}>missing scenario id.</ThemedText>
           </View>
-          <ThemedText style={[styles.title, { color: colors.text }]}>messages</ThemedText>
-          <ThemedText style={[styles.subtitle, { color: colors.textSecondary }]}>missing scenario id.</ThemedText>
-        </View>
-      </ThemedView>
+        </ThemedView>
+      </SafeAreaView>
     );
   }
 
   if (!selectedProfileId) {
     return (
-      <ThemedView style={[styles.container, { backgroundColor: colors.background }]}>
-        <View style={styles.center}>
-          <View style={[styles.iconWrap, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Ionicons name="mail-outline" size={28} color={colors.tint} />
-          </View>
-          <ThemedText style={[styles.title, { color: colors.text }]}>messages</ThemedText>
-          <ThemedText style={[styles.subtitle, { color: colors.textSecondary }]}>select a profile to view DMs.</ThemedText>
+      <SafeAreaView edges={["top"]} style={{ flex: 1, backgroundColor: colors.background }}>
+        <ThemedView style={[styles.container, { backgroundColor: colors.background }]}>
+          <View style={styles.center}>
+            <View style={[styles.iconWrap, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <Ionicons name="mail-outline" size={28} color={colors.tint} />
+            </View>
+            <ThemedText style={[styles.title, { color: colors.text }]}>messages</ThemedText>
+            <ThemedText style={[styles.subtitle, { color: colors.textSecondary }]}>select a profile to view DMs.</ThemedText>
 
-          <Pressable
-            onPress={() => {
-              router.push({
-                pathname: "/modal/select-profile",
-                params: { scenarioId: sid },
-              } as any);
-            }}
-            style={({ pressed }) => [
-              styles.cta,
-              {
-                backgroundColor: pressed ? colors.pressed : colors.card,
-                borderColor: colors.border,
-              },
-            ]}
-          >
-            <ThemedText style={[styles.ctaText, { color: colors.text }]}>choose profile</ThemedText>
-          </Pressable>
-        </View>
-      </ThemedView>
+            <Pressable
+              onPress={() => {
+                router.push({
+                  pathname: "/modal/select-profile",
+                  params: { scenarioId: sid },
+                } as any);
+              }}
+              style={({ pressed }) => [
+                styles.cta,
+                {
+                  backgroundColor: pressed ? colors.pressed : colors.card,
+                  borderColor: colors.border,
+                },
+              ]}
+            >
+              <ThemedText style={[styles.ctaText, { color: colors.text }]}>choose profile</ThemedText>
+            </Pressable>
+          </View>
+        </ThemedView>
+      </SafeAreaView>
     );
   }
 
@@ -240,11 +246,16 @@ export default function MessagesScreen() {
   };
 
   return (
-    <ThemedView style={[styles.containerList, { backgroundColor: colors.background }]}>
-      <Modal visible={composerOpen} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setComposerOpen(false)}>
-        <SafeAreaView edges={["top", "bottom"]} style={[styles.modal, { backgroundColor: colors.background }]}>
-          <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}
-          >
+    <SafeAreaView edges={["top"]} style={{ flex: 1, backgroundColor: colors.background }}>
+      <ThemedView style={[styles.containerList, { backgroundColor: colors.background }]}>
+        <Modal
+          visible={composerOpen}
+          animationType="slide"
+          presentationStyle="pageSheet"
+          onRequestClose={() => setComposerOpen(false)}
+        >
+          <SafeAreaView edges={["top", "bottom"]} style={[styles.modal, { backgroundColor: colors.background }]}>
+            <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
             <Pressable
               onPress={() => {
                 setComposerOpen(false);
@@ -273,124 +284,125 @@ export default function MessagesScreen() {
             </ThemedText>
           </View>
 
-          <FlatList
-            data={pickableProfiles}
-            keyExtractor={(p) => String((p as any).id)}
-            contentContainerStyle={{ paddingBottom: 20 }}
-            renderItem={({ item }) => {
-              const p = item as Profile;
-              const pid = String((p as any).id);
-              const selected = picked.has(pid);
-              return (
+            <FlatList
+              data={pickableProfiles}
+              keyExtractor={(p) => String((p as any).id)}
+              contentContainerStyle={{ paddingBottom: 20 }}
+              renderItem={({ item }) => {
+                const p = item as Profile;
+                const pid = String((p as any).id);
+                const selected = picked.has(pid);
+                return (
+                  <Pressable
+                    onPress={() => togglePicked(pid)}
+                    style={({ pressed }) => [
+                      styles.pickRow,
+                      {
+                        backgroundColor: pressed ? colors.pressed : colors.background,
+                        borderBottomColor: colors.border,
+                      },
+                    ]}
+                  >
+                    <Avatar uri={(p as any).avatarUrl ?? null} size={40} fallbackColor={colors.border} />
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <ThemedText style={[styles.pickName, { color: colors.text }]} numberOfLines={1}>
+                        {String((p as any).displayName ?? "profile")}
+                      </ThemedText>
+                      {!!(p as any).handle && (
+                        <ThemedText style={[styles.pickHandle, { color: colors.textSecondary }]} numberOfLines={1}>
+                          @{String((p as any).handle).replace(/^@+/, "")}
+                        </ThemedText>
+                      )}
+                    </View>
+                    <Ionicons
+                      name={selected ? "checkbox" : "square-outline"}
+                      size={22}
+                      color={selected ? colors.tint : colors.textSecondary}
+                    />
+                  </Pressable>
+                );
+              }}
+            />
+          </SafeAreaView>
+        </Modal>
+
+        <FlatList
+          data={conversations}
+          keyExtractor={(c) => String((c as any).id)}
+          contentContainerStyle={{ paddingBottom: 10 }}
+          ListHeaderComponent={() => {
+            return (
+              <View style={[styles.header, { borderBottomColor: colors.border, backgroundColor: colors.background }]}>
+                <ThemedText style={[styles.headerTitle, { color: colors.text }]}>messages</ThemedText>
                 <Pressable
-                  onPress={() => togglePicked(pid)}
+                  onPress={() => setComposerOpen(true)}
+                  hitSlop={12}
                   style={({ pressed }) => [
-                    styles.pickRow,
+                    styles.plus,
                     {
-                      backgroundColor: pressed ? colors.pressed : colors.background,
-                      borderBottomColor: colors.border,
+                      backgroundColor: pressed ? colors.pressed : colors.card,
+                      borderColor: colors.border,
                     },
                   ]}
                 >
-                  <Avatar uri={(p as any).avatarUrl ?? null} size={40} fallbackColor={colors.border} />
-                  <View style={{ flex: 1, minWidth: 0 }}>
-                    <ThemedText style={[styles.pickName, { color: colors.text }]} numberOfLines={1}>
-                      {String((p as any).displayName ?? "profile")}
-                    </ThemedText>
-                    {!!(p as any).handle && (
-                      <ThemedText style={[styles.pickHandle, { color: colors.textSecondary }]} numberOfLines={1}>
-                        @{String((p as any).handle).replace(/^@+/, "")}
-                      </ThemedText>
-                    )}
-                  </View>
-                  <Ionicons
-                    name={selected ? "checkbox" : "square-outline"}
-                    size={22}
-                    color={selected ? colors.tint : colors.textSecondary}
-                  />
+                  <Ionicons name="add" size={20} color={colors.text} />
                 </Pressable>
-              );
-            }}
-          />
-        </SafeAreaView>
-      </Modal>
+              </View>
+            );
+          }}
+          ListEmptyComponent={() => {
+            return (
+              <View style={styles.emptyWrap}>
+                <ThemedText style={[styles.subtitle, { color: colors.textSecondary }]}>your inbox is empty for this profile.</ThemedText>
+              </View>
+            );
+          }}
+          renderItem={({ item }) => {
+            const c = item as Conversation;
+            const convId = String((c as any).id);
+            const meta = getConversationTitleAndAvatar(c);
+            const last = getLastMessageForConversation(convId);
+            const preview = last?.text ? String(last.text) : "";
 
-      <FlatList
-        data={conversations}
-        keyExtractor={(c) => String((c as any).id)}
-        contentContainerStyle={{ paddingBottom: 10 }}
-        ListHeaderComponent={() => {
-          return (
-            <View style={[styles.header, { borderBottomColor: colors.border, backgroundColor: colors.background }]}>
-              <ThemedText style={[styles.headerTitle, { color: colors.text }]}>messages</ThemedText>
+            return (
               <Pressable
-                onPress={() => setComposerOpen(true)}
-                hitSlop={12}
+                onPress={() => {
+                  router.push({
+                    pathname: "/(scenario)/[scenarioId]/(tabs)/messages/[conversationId]",
+                    params: { scenarioId: sid, conversationId: convId },
+                  } as any);
+                }}
                 style={({ pressed }) => [
-                  styles.plus,
+                  styles.row,
                   {
-                    backgroundColor: pressed ? colors.pressed : colors.card,
-                    borderColor: colors.border,
+                    backgroundColor: pressed ? colors.pressed : colors.background,
+                    borderBottomColor: colors.border,
                   },
                 ]}
               >
-                <Ionicons name="add" size={20} color={colors.text} />
-              </Pressable>
-            </View>
-          );
-        }}
-        ListEmptyComponent={() => {
-          return (
-            <View style={styles.emptyWrap}>
-              <ThemedText style={[styles.subtitle, { color: colors.textSecondary }]}>your inbox is empty for this profile.</ThemedText>
-            </View>
-          );
-        }}
-        renderItem={({ item }) => {
-          const c = item as Conversation;
-          const convId = String((c as any).id);
-          const meta = getConversationTitleAndAvatar(c);
-          const last = getLastMessageForConversation(convId);
-          const preview = last?.text ? String(last.text) : "";
+                <Avatar uri={meta.avatarUrl} size={42} fallbackColor={colors.border} />
 
-          return (
-            <Pressable
-              onPress={() => {
-                router.push({
-                  pathname: "/(scenario)/[scenarioId]/(tabs)/messages/[conversationId]",
-                  params: { scenarioId: sid, conversationId: convId },
-                } as any);
-              }}
-              style={({ pressed }) => [
-                styles.row,
-                {
-                  backgroundColor: pressed ? colors.pressed : colors.background,
-                  borderBottomColor: colors.border,
-                },
-              ]}
-            >
-              <Avatar uri={meta.avatarUrl} size={42} fallbackColor={colors.border} />
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <View style={styles.rowTop}>
+                    <ThemedText style={[styles.rowTitle, { color: colors.text }]} numberOfLines={1}>
+                      {meta.title}
+                    </ThemedText>
+                  </View>
 
-              <View style={{ flex: 1, minWidth: 0 }}>
-                <View style={styles.rowTop}>
-                  <ThemedText style={[styles.rowTitle, { color: colors.text }]} numberOfLines={1}>
-                    {meta.title}
-                  </ThemedText>
+                  {!!preview && (
+                    <ThemedText style={[styles.rowSubtitle, { color: colors.textSecondary }]} numberOfLines={1}>
+                      {preview}
+                    </ThemedText>
+                  )}
                 </View>
 
-                {!!preview && (
-                  <ThemedText style={[styles.rowSubtitle, { color: colors.textSecondary }]} numberOfLines={1}>
-                    {preview}
-                  </ThemedText>
-                )}
-              </View>
-
-              <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
-            </Pressable>
-          );
-        }}
-      />
-    </ThemedView>
+                <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
+              </Pressable>
+            );
+          }}
+        />
+      </ThemedView>
+    </SafeAreaView>
   );
 }
 

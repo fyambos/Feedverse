@@ -1,5 +1,5 @@
 // mobile/lib/importExport/exportTypes.ts
-import type { Scenario, Profile, Post, Repost, CharacterSheet } from "@/data/db/schema";
+import type { Scenario, Profile, Post, Repost, CharacterSheet, Like } from "@/data/db/schema";
 
 export type ScenarioExportBundleV1 = {
   version: 1;
@@ -12,5 +12,6 @@ export type ScenarioExportBundleV1 = {
   profiles?: Profile[];
   posts?: Post[];
   reposts?: Repost[];
+  likes?: Like[];
   sheets?: CharacterSheet[];
 };

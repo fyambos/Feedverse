@@ -1,7 +1,7 @@
 // mobile/lib/importExport/exportScenarioBundle.ts
 import type { DbV5, ScenarioExportScope } from "./exportUiTypes";
 import type { ScenarioExportBundleV1 } from "./exportTypes";
-import type { CharacterSheet, Post, Profile, Repost, Scenario } from "@/data/db/schema";
+import type { CharacterSheet, Like, Post, Profile, Repost, Scenario } from "@/data/db/schema";
 
 export function buildScenarioExportBundleV1(db: DbV5, scenarioId: string, scope: ScenarioExportScope): ScenarioExportBundleV1 {
   const sid = String(scenarioId);
@@ -56,6 +56,20 @@ export function buildScenarioExportBundleV1(db: DbV5, scenarioId: string, scope:
           && postIdSet.has(String((r as any).postId)))
       : [];
 
+  // likes: only those with profile+post included
+  const likesMap = (db as any).likes ?? {};
+  const allLikes = Object.values(likesMap) as Like[];
+
+  const likes: Like[] =
+    scope.includePosts && scope.includeProfiles
+      ? allLikes.filter(
+          (l) =>
+            String((l as any).scenarioId) === sid &&
+            profileIdSet.has(String((l as any).profileId)) &&
+            postIdSet.has(String((l as any).postId))
+        )
+      : [];
+
   // sheets: only those for included profiles
   const sheetsMap = (db as any).sheets ?? {};
   const allSheets = Object.values(sheetsMap) as CharacterSheet[];
@@ -72,6 +86,7 @@ export function buildScenarioExportBundleV1(db: DbV5, scenarioId: string, scope:
     ...(scope.includeProfiles ? { profiles } : {}),
     ...(scope.includePosts && scope.includeProfiles ? { posts: cleanedPosts } : {}),
     ...(scope.includeReposts && scope.includePosts && scope.includeProfiles ? { reposts } : {}),
+    ...(scope.includePosts && scope.includeProfiles ? { likes } : {}),
     ...(scope.includeSheets && scope.includeProfiles ? { sheets } : {}),
   };
 

@@ -351,6 +351,14 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
   const auth = useAuth();
   const currentUserId = String(auth.userId ?? "");
 
+  const importPickCacheRef = React.useRef<null | {
+    pickedAtMs: number;
+    raw: any;
+    jsonBytes: number;
+    fileName?: string;
+    uri?: string;
+  }>(null);
+
   const api = React.useMemo<AppDataApi>(() => {
     const toggleLikePostImpl: AppDataApi["toggleLikePost"] = async (scenarioId, profileId, postId) => {
       const sid = String(scenarioId ?? "").trim();
@@ -1719,7 +1727,23 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         if (!auth.isReady) return { ok: false, error: "Auth not ready" };
         if (!currentUserId) return { ok: false, error: "Not signed in" };
 
-        const picked = await pickScenarioExportJson();
+        const now = Date.now();
+        const cachedOk =
+          importPickCacheRef.current && now - importPickCacheRef.current.pickedAtMs < 30_000;
+
+        const picked = cachedOk
+          ? {
+              ok: true as const,
+              raw: importPickCacheRef.current!.raw,
+              jsonBytes: importPickCacheRef.current!.jsonBytes,
+              fileName: importPickCacheRef.current!.fileName,
+              uri: importPickCacheRef.current!.uri,
+            }
+          : await pickScenarioExportJson();
+
+        // prevent accidental reuse
+        importPickCacheRef.current = null;
+
         if (!picked.ok) return picked;
 
         const res = importScenarioFromJson(picked.raw, {
@@ -1783,6 +1807,14 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
 
         const picked = await pickScenarioExportJson();
         if (!picked.ok) return picked;
+
+        importPickCacheRef.current = {
+          pickedAtMs: Date.now(),
+          raw: picked.raw,
+          jsonBytes: picked.jsonBytes,
+          fileName: picked.fileName,
+          uri: picked.uri,
+        };
 
         const res = importScenarioFromJson(picked.raw, {
           db,

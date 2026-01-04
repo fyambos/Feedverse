@@ -1,4 +1,9 @@
 import { Alert } from "@/context/dialog";
+import { InteractionManager } from "react-native";
+
+async function waitForInteractions() {
+  await new Promise<void>((resolve) => InteractionManager.runAfterInteractions(() => resolve()));
+}
 
 type DefaultIO = {
   includeProfiles: boolean;
@@ -46,6 +51,9 @@ export function createScenarioIO({
     }
 
     void (async () => {
+      // iOS: ensure any menu/dialog dismissal finishes before we present the document picker.
+      await waitForInteractions();
+
       const preview = await previewImportScenarioFromFile(DEFAULT_IO);
       if (!preview?.ok) {
         Alert.alert("Import failed", preview?.error ?? "Could not import.");
@@ -83,20 +91,24 @@ export function createScenarioIO({
           text: "Import",
           style: "destructive",
           onPress: () => {
-            void (async () => {
-              const res = await importScenarioFromFile(DEFAULT_IO);
-              if (!res?.ok) {
-                Alert.alert("Import failed", res?.error ?? "Could not import.");
-                return;
-              }
+            // Give iOS a moment to dismiss the preview dialog before we do any
+            // native presentation (document picker may re-open for final import).
+            setTimeout(() => {
+              void (async () => {
+                const res = await importScenarioFromFile(DEFAULT_IO);
+                if (!res?.ok) {
+                  Alert.alert("Import failed", res?.error ?? "Could not import.");
+                  return;
+                }
 
-              Alert.alert(
-                "Imported!",
-                `scenario created: ${res.scenarioId}\nprofiles: ${res.importedProfiles}\nposts: ${res.importedPosts}`
-              );
+                Alert.alert(
+                  "Imported!",
+                  `scenario created: ${res.scenarioId}\nprofiles: ${res.importedProfiles}\nposts: ${res.importedPosts}`
+                );
 
-              if (onImportedNavigate) onImportedNavigate(String(res.scenarioId));
-            })();
+                if (onImportedNavigate) onImportedNavigate(String(res.scenarioId));
+              })();
+            }, 350);
           },
         },
       ]);
@@ -104,72 +116,94 @@ export function createScenarioIO({
   };
 
   const exportAllProfiles = async (scenarioId: string) => {
-    if (!isReady) {
-      Alert.alert("Not ready", "Please wait for the app to finish loading.");
-      return;
+    try {
+      if (!isReady) {
+        Alert.alert("Not ready", "Please wait for the app to finish loading.");
+        return;
+      }
+
+      // Ensure any dialog animations fully finish before we try to present native sheets.
+      await waitForInteractions();
+
+      const sid = String(scenarioId ?? "").trim();
+      if (!sid) return;
+
+      const res = await exportScenarioToFile({
+        scenarioId: sid,
+        ...DEFAULT_IO,
+        profileIds: undefined, // all
+      });
+
+      if (!res?.ok) {
+        Alert.alert("Export failed", res?.error ?? "Could not export.");
+        return;
+      }
+
+      setTimeout(() => {
+        Alert.alert(
+          "Exported!",
+          `file: ${res.filename}\nprofiles: ${res.counts.profiles}\nposts: ${res.counts.posts}\nreposts: ${res.counts.reposts}\nsheets: ${res.counts.sheets}`
+        );
+      }, 50);
+    } catch (e: any) {
+      setTimeout(() => {
+        Alert.alert("Export failed", String(e?.message ?? e ?? "Unknown error"));
+      }, 50);
     }
-
-    const sid = String(scenarioId ?? "").trim();
-    if (!sid) return;
-
-    const res = await exportScenarioToFile({
-      scenarioId: sid,
-      ...DEFAULT_IO,
-      profileIds: undefined, // all
-    });
-
-    if (!res?.ok) {
-      Alert.alert("Export failed", res?.error ?? "Could not export.");
-      return;
-    }
-
-    Alert.alert(
-      "Exported!",
-      `file: ${res.filename}\nprofiles: ${res.counts.profiles}\nposts: ${res.counts.posts}\nreposts: ${res.counts.reposts}\nsheets: ${res.counts.sheets}`
-    );
   };
 
   const exportMyUserOnly = async (scenarioId: string) => {
-    if (!isReady) {
-      Alert.alert("Not ready", "Please wait for the app to finish loading.");
-      return;
+    try {
+      if (!isReady) {
+        Alert.alert("Not ready", "Please wait for the app to finish loading.");
+        return;
+      }
+
+      // Ensure any dialog animations fully finish before we try to present native sheets.
+      await waitForInteractions();
+
+      const sid = String(scenarioId ?? "").trim();
+      if (!sid) return;
+
+      const uid = String(userId ?? "").trim();
+      if (!uid) {
+        Alert.alert("Not logged in", "Please log in first.");
+        return;
+      }
+
+      const profilesMap = db?.profiles ?? {};
+      const myProfileIds = Object.values(profilesMap)
+        .filter((p: any) => String(p?.scenarioId) === sid && String(p?.ownerUserId) === uid)
+        .map((p: any) => String(p?.id))
+        .filter(Boolean);
+
+      if (!myProfileIds.length) {
+        Alert.alert("Nothing to export", "You don’t own any profiles in this scenario.");
+        return;
+      }
+
+      const res = await exportScenarioToFile({
+        scenarioId: sid,
+        ...DEFAULT_IO,
+        profileIds: myProfileIds,
+      });
+
+      if (!res?.ok) {
+        Alert.alert("Export failed", res?.error ?? "Could not export.");
+        return;
+      }
+
+      setTimeout(() => {
+        Alert.alert(
+          "Exported!",
+          `file: ${res.filename}\nprofiles: ${res.counts.profiles}\nposts: ${res.counts.posts}\nreposts: ${res.counts.reposts}\nsheets: ${res.counts.sheets}`
+        );
+      }, 50);
+    } catch (e: any) {
+      setTimeout(() => {
+        Alert.alert("Export failed", String(e?.message ?? e ?? "Unknown error"));
+      }, 50);
     }
-
-    const sid = String(scenarioId ?? "").trim();
-    if (!sid) return;
-
-    const uid = String(userId ?? "").trim();
-    if (!uid) {
-      Alert.alert("Not logged in", "Please log in first.");
-      return;
-    }
-
-    const profilesMap = db?.profiles ?? {};
-    const myProfileIds = Object.values(profilesMap)
-      .filter((p: any) => String(p?.scenarioId) === sid && String(p?.ownerUserId) === uid)
-      .map((p: any) => String(p?.id))
-      .filter(Boolean);
-
-    if (!myProfileIds.length) {
-      Alert.alert("Nothing to export", "You don’t own any profiles in this scenario.");
-      return;
-    }
-
-    const res = await exportScenarioToFile({
-      scenarioId: sid,
-      ...DEFAULT_IO,
-      profileIds: myProfileIds,
-    });
-
-    if (!res?.ok) {
-      Alert.alert("Export failed", res?.error ?? "Could not export.");
-      return;
-    }
-
-    Alert.alert(
-      "Exported!",
-      `file: ${res.filename}\nprofiles: ${res.counts.profiles}\nposts: ${res.counts.posts}\nreposts: ${res.counts.reposts}\nsheets: ${res.counts.sheets}`
-    );
   };
 
   const openExportChoice = (scenarioId: string, opts?: { onBeforeOpen?: () => void }) => {
@@ -183,11 +217,17 @@ export function createScenarioIO({
     // useful for closing your sheet BEFORE showing the choice Alert
     opts?.onBeforeOpen?.();
 
-    Alert.alert("Export", "What do you want to export?", [
-      { text: "All profiles", onPress: () => void exportAllProfiles(sid) },
-      { text: "Only my user", onPress: () => void exportMyUserOnly(sid) },
-      { text: "Cancel", style: "cancel" },
-    ]);
+    // Defer opening the next modal until the current one is fully dismissed.
+    // This avoids iOS modal-presentation races where the share sheet / next dialog silently fails to appear.
+    setTimeout(() => {
+      Alert.alert("Export", "What do you want to export?", [
+        // iOS will sometimes no-op native sheet presentation if we start work
+        // while the dialog is still dismissing. Give it a small delay.
+        { text: "All profiles", onPress: () => setTimeout(() => void exportAllProfiles(sid), 350) },
+        { text: "Only my user", onPress: () => setTimeout(() => void exportMyUserOnly(sid), 350) },
+        { text: "Cancel", style: "cancel" },
+      ]);
+    }, 0);
   };
 
   return {

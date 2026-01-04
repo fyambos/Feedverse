@@ -37,6 +37,7 @@ import {
 
 import { pickAndPersistOneImage } from "@/components/ui/ImagePicker";
 import { MAX_OWNED_PROFILES_PER_USER, MAX_TOTAL_PROFILES_PER_SCENARIO } from "@/lib/rules";
+import { generateInviteCode } from "@/lib/inviteCode";
 
 /* -------------------------------------------------------------------------- */
 /* Limits                                                                      */
@@ -55,12 +56,6 @@ type Params = { scenarioId?: string };
 
 function makeId(prefix: string) {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-}
-
-// 8 chars, uppercase
-function generateInviteCode() {
-  const raw = Math.random().toString(36).slice(2, 10).toUpperCase();
-  return raw.replace(/[^A-Z0-9]/g, "A").slice(0, 8);
 }
 
 // tags: letters/numbers/spaces only (no special chars)

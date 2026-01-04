@@ -1,6 +1,7 @@
 // mobile/lib/importExport/importScenario.ts
-import type { DbV5, Scenario, Profile, Post, Repost, CharacterSheet, ScenarioTag, GlobalTag } from "@/data/db/schema";
+import type { DbV5, Scenario, Profile, Post, Repost, CharacterSheet, ScenarioTag, GlobalTag, Like } from "@/data/db/schema";
 import { MAX_OWNED_PROFILES_PER_USER, MAX_TOTAL_PROFILES_PER_SCENARIO } from "@/lib/rules";
+import { generateInviteCode } from "@/lib/inviteCode";
 import { validateScenarioExportBundleV1, isValidHandleAlnum } from "./validateScenarioExport";
 import type { ScenarioExportBundleV1 } from "./exportTypes";
 import { buildGlobalTagFromKey } from "@/lib/tags";
@@ -176,7 +177,10 @@ export function importScenarioFromJson(raw: any, opts: ImportOptions): ImportRes
         ownerUserId: String(currentUserId),
         playerIds: Array.from(new Set([String(currentUserId), ...(incomingScenario.playerIds ?? []).map(String)])),
         tags: scenarioTags,
-        createdAt: incomingScenario.createdAt || nowIso(),
+        inviteCode: generateInviteCode(),
+        // Treat an import as a newly created local scenario so it appears at the top
+        // of the scenario list (which sorts by createdAt).
+        createdAt: nowIso(),
         updatedAt: nowIso(),
       };
 
@@ -214,10 +218,23 @@ export function importScenarioFromJson(raw: any, opts: ImportOptions): ImportRes
 
   const profileIdMap = new Map<string, string>();
   const importedProfiles: Profile[] = [];
+  const legacyLikedPostIdsByOldProfileId = new Map<string, string[]>();
 
   for (const p of profilesToImport) {
+    const pAny = p as any;
+    const oldProfileId = String(pAny?.id ?? "");
+
     const newId = genId("pr");
-    profileIdMap.set(String(p.id), newId);
+    profileIdMap.set(oldProfileId, newId);
+
+    // Back-compat: older exports may still have Profile.likedPostIds
+    const legacyLikedPostIds = Array.isArray(pAny?.likedPostIds) ? pAny.likedPostIds.map(String).filter(Boolean) : [];
+    if (legacyLikedPostIds.length > 0) {
+      legacyLikedPostIdsByOldProfileId.set(oldProfileId, legacyLikedPostIds);
+    }
+
+    // Strip legacy field so it doesn't get persisted back onto profiles
+    const { likedPostIds: _ignoredLikedPostIds, ...pWithoutLegacyLikes } = pAny ?? {};
 
     const baseHandle = normalizeHandle(p.handle);
     const { handle: uniqueHandle, renamedFrom } = makeUniqueHandle(baseHandle, takenHandlesLower, 32);
@@ -229,15 +246,13 @@ export function importScenarioFromJson(raw: any, opts: ImportOptions): ImportRes
     }
 
     importedProfiles.push({
-      ...p,
+      ...(pWithoutLegacyLikes as Profile),
       id: newId,
       scenarioId: targetScenarioId,
       ownerUserId: String(currentUserId), // ignore export owner
       handle: uniqueHandle,
       createdAt: p.createdAt || nowIso(),
       updatedAt: nowIso(),
-      // likedPostIds: optional — safe to keep, but they won't match imported post ids anyway
-      likedPostIds: [], // <- recommended to clear on import
     });
   }
 
@@ -281,6 +296,60 @@ export function importScenarioFromJson(raw: any, opts: ImportOptions): ImportRes
       parentPostId: newParent,
       quotedPostId: newQuoted,
     };
+  }
+
+  // 8.5) import likes (legacy) -> DbV5.likes
+  // Likes only make sense if we imported posts and profiles, since we remap ids.
+  const importedLikes: Like[] = [];
+  if (opts.includeProfiles && opts.includePosts) {
+    const seenLikeKeys = new Set<string>();
+
+    // Preferred: v1 bundles that include likes explicitly
+    const incomingLikes = Array.isArray((bundle as any)?.likes) ? ((bundle as any).likes as any[]) : [];
+    for (const l of incomingLikes) {
+      const oldProfileId = String((l as any)?.profileId ?? "");
+      const oldPostId = String((l as any)?.postId ?? "");
+      if (!oldProfileId || !oldPostId) continue;
+
+      const newProfileId = profileIdMap.get(oldProfileId);
+      const newPostId = postIdMap.get(oldPostId);
+      if (!newProfileId || !newPostId) continue;
+
+      const key = `${targetScenarioId}|${newProfileId}|${newPostId}`;
+      if (seenLikeKeys.has(key)) continue;
+      seenLikeKeys.add(key);
+
+      const createdAt = typeof (l as any)?.createdAt === "string" ? String((l as any).createdAt) : nowIso();
+      importedLikes.push({
+        id: key,
+        scenarioId: targetScenarioId,
+        profileId: newProfileId,
+        postId: newPostId,
+        createdAt,
+      });
+    }
+
+    for (const [oldProfileId, oldLikedPostIds] of legacyLikedPostIdsByOldProfileId.entries()) {
+      const newProfileId = profileIdMap.get(String(oldProfileId));
+      if (!newProfileId) continue;
+
+      for (const oldPostId of oldLikedPostIds) {
+        const newPostId = postIdMap.get(String(oldPostId));
+        if (!newPostId) continue;
+
+        const key = `${targetScenarioId}|${newProfileId}|${newPostId}`;
+        if (seenLikeKeys.has(key)) continue;
+        seenLikeKeys.add(key);
+
+        importedLikes.push({
+          id: key,
+          scenarioId: targetScenarioId,
+          profileId: newProfileId,
+          postId: newPostId,
+          createdAt: nowIso(),
+        });
+      }
+    }
   }
 
   // 9) import reposts (your db uses key = `${profileId}|${postId}`)
@@ -347,6 +416,10 @@ export function importScenarioFromJson(raw: any, opts: ImportOptions): ImportRes
     reposts: {
       ...(db.reposts ?? {}),
       ...Object.fromEntries(importedReposts.map((r) => [String(r.id), r])),
+    },
+    likes: {
+      ...(db.likes ?? {}),
+      ...Object.fromEntries(importedLikes.map((l) => [String(l.id), l])),
     },
     sheets: {
       ...(db.sheets ?? {}),

@@ -4,6 +4,7 @@ import type {
   Profile,
   Post,
   Repost,
+  Like,
   CharacterSheet,
 } from "@/data/db/schema";
 import type { ScenarioExportBundleV1 } from "./exportTypes";
@@ -17,6 +18,7 @@ const DEFAULT_LIMITS = {
   maxProfiles: 500,
   maxPosts: 50_000,
   maxReposts: 50_000,
+  maxLikes: 100_000,
   maxSheets: 500,
 
   // text limits (tune)
@@ -264,6 +266,30 @@ function validateReposts(arr: any, scenarioId: string): ValidateResult<Repost[] 
   return { ok: true, value: arr as Repost[] };
 }
 
+function validateLikes(arr: any, scenarioId: string): ValidateResult<Like[] | undefined> {
+  if (arr === undefined) return { ok: true, value: undefined };
+  if (!Array.isArray(arr)) return { ok: false, error: "likes must be an array" };
+  if (arr.length > DEFAULT_LIMITS.maxLikes) {
+    return { ok: false, error: `too many likes (max ${DEFAULT_LIMITS.maxLikes})` };
+  }
+
+  for (const [i, l] of arr.entries()) {
+    if (!isObj(l)) return { ok: false, error: `likes[${i}] must be object` };
+    const requiredStr = ["id", "scenarioId", "profileId", "postId", "createdAt"];
+    for (const k of requiredStr) {
+      if (!isString(l[k])) return { ok: false, error: `likes[${i}].${k} must be string` };
+    }
+    if (String(l.scenarioId) !== String(scenarioId)) {
+      return { ok: false, error: `likes[${i}].scenarioId mismatch` };
+    }
+    if (!isIsoish(String(l.createdAt))) {
+      return { ok: false, error: `likes[${i}].createdAt must look like ISO string` };
+    }
+  }
+
+  return { ok: true, value: arr as Like[] };
+}
+
 function validateSheets(arr: any, scenarioId: string): ValidateResult<CharacterSheet[] | undefined> {
   if (arr === undefined) return { ok: true, value: undefined };
   if (!Array.isArray(arr)) return { ok: false, error: "sheets must be an array" };
@@ -360,6 +386,9 @@ export function validateScenarioExportBundleV1(
   const reposts = validateReposts(raw.reposts, scenarioId);
   if (!reposts.ok) return reposts as any;
 
+  const likes = validateLikes(raw.likes, scenarioId);
+  if (!likes.ok) return likes as any;
+
   const sheets = validateSheets(raw.sheets, scenarioId);
   if (!sheets.ok) return sheets as any;
 
@@ -390,6 +419,16 @@ export function validateScenarioExportBundleV1(
     }
   }
 
+  // likes reference profileId + postId
+  for (const l of likes.value ?? []) {
+    if (!profileIdSet.has(String(l.profileId))) {
+      return { ok: false, error: `like ${String(l.id)} references missing profileId` };
+    }
+    if (!postIdSet.has(String(l.postId))) {
+      return { ok: false, error: `like ${String(l.id)} references missing postId` };
+    }
+  }
+
   // sheets reference profileId
   for (const s of sheets.value ?? []) {
     if (!profileIdSet.has(String(s.profileId))) {
@@ -404,6 +443,7 @@ export function validateScenarioExportBundleV1(
     profiles: profiles.value,
     posts: posts.value,
     reposts: reposts.value,
+    likes: likes.value,
     sheets: sheets.value,
   };
 

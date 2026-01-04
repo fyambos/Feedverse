@@ -75,7 +75,7 @@ export default function HomeScreen() {
       exportScenarioToFile,
       onImportedNavigate: (newScenarioId: string) => {
         router.replace({
-          pathname: "/(scenario)/[scenarioId]",
+          pathname: "/(scenario)/[scenarioId]/(tabs)/home",
           params: { scenarioId: newScenarioId },
         } as any);
       },
@@ -218,6 +218,13 @@ export default function HomeScreen() {
 
     if (isReady) loadFirstPage();
   }, [sid, isReady, loadFirstPage]);
+
+  useEffect(() => {
+    // If we navigate to a different scenarioId (e.g. after import), reset scroll.
+    requestAnimationFrame(() => {
+      listRef.current?.scrollToOffset({ offset: 0, animated: false });
+    });
+  }, [sid]);
 
   const navLock = useRef(false);
 

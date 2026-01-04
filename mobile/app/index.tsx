@@ -1,10 +1,11 @@
 // mobile/app/index.tsx
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useRef, useState, useCallback } from "react";
 import { StyleSheet, FlatList, Pressable, Image, View, Modal } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router, Stack } from "expo-router";
 import * as Clipboard from "expo-clipboard";
+import { useFocusEffect } from "@react-navigation/native";
 
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
@@ -62,8 +63,8 @@ export default function ScenarioListScreen() {
       importScenarioFromFile,
       exportScenarioToFile,
       onImportedNavigate: (scenarioId) => {
-        router.replace({
-          pathname: "/(scenario)/[scenarioId]",
+        router.push({
+          pathname: "/(scenario)/[scenarioId]/(tabs)/home",
           params: { scenarioId },
         } as any);
       },
@@ -135,6 +136,18 @@ export default function ScenarioListScreen() {
         return bTime - aTime;
       });
   }, [isReady, listScenarios, userId]);
+
+  const listRef = useRef<FlatList<any> | null>(null);
+
+  // When returning to this screen (e.g. after import), jump to top.
+  useFocusEffect(
+    useCallback(() => {
+      requestAnimationFrame(() => {
+        listRef.current?.scrollToOffset({ offset: 0, animated: false });
+      });
+      return () => void 0;
+    }, [])
+  );
 
   const openScenario = (scenarioId: string) => {
     const sid = String(scenarioId ?? "").trim();
@@ -675,6 +688,7 @@ export default function ScenarioListScreen() {
         </View>
 
         <FlatList
+          ref={listRef}
           data={scenarios}
           keyExtractor={(item) => String(item.id)}
           contentContainerStyle={styles.list}
