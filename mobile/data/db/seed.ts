@@ -59,8 +59,6 @@ function toIntOrUndef(x: any): number | undefined {
 }
 
 export async function seedDbIfNeeded(existing: any | null) {
-  // keep your “don’t reseed” behavior when FORCE_RESEED is false
-  // but ensure likes table exists + migrate legacy Profile.likedPostIds -> db.likes once.
   if (!FORCE_RESEED && existing && existing.version === 5) {
     const prev = existing as any;
     const prevLikes = ((prev as any).likes ?? null) as Record<string, Like> | null;
@@ -121,8 +119,20 @@ export async function seedDbIfNeeded(existing: any | null) {
       }
     }
 
+    // ensure DM tables exist
+    const prevConversations = (prev as any).conversations ?? null;
+    const prevMessages = (prev as any).messages ?? null;
+
+    const conversations =
+      prevConversations && typeof prevConversations === "object" ? { ...prevConversations } : {};
+    const messages =
+      prevMessages && typeof prevMessages === "object" ? { ...prevMessages } : {};
+
+    if (!prevConversations || typeof prevConversations !== "object") changed = true;
+    if (!prevMessages || typeof prevMessages !== "object") changed = true;
+
     if (changed) {
-      const next: DbV5 = { ...(prev as any), version: 5, likes, profiles } as any;
+      const next: DbV5 = { ...(prev as any), version: 5, likes, profiles, conversations, messages } as any;
       await writeDb(next);
       return next;
     }
@@ -403,7 +413,11 @@ export async function seedDbIfNeeded(existing: any | null) {
     tags: globalTags,
     sheets,
     selectedProfileByScenario: {},
-    likes: {}, // init likes table (DbV5 stays v5; no migration)
+    likes: {},
+
+    // DM
+    conversations: {},
+    messages: {},
   };
 
   await writeDb(db);

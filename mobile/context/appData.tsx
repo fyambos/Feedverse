@@ -1,6 +1,17 @@
 // mobile/context/appData.tsx
 import React from "react";
-import type { DbV5, Post, Profile, Scenario, Repost, ScenarioTag, CharacterSheet, Like } from "@/data/db/schema";
+import type {
+  DbV5,
+  Post,
+  Profile,
+  Scenario,
+  Repost,
+  ScenarioTag,
+  CharacterSheet,
+  Like,
+  Conversation,
+  Message,
+} from "@/data/db/schema";
 import { readDb, updateDb, writeDb } from "@/data/db/storage";
 import { seedDbIfNeeded } from "@/data/db/seed";
 import { buildGlobalTagFromKey } from "@/lib/tags";
@@ -70,6 +81,20 @@ export type GmApplySheetUpdateResult = {
   postId: string;
   updatedProfileIds: string[];
   summaryText: string;
+};
+
+type MessageCursor = string; // `${createdAt}|${id}`
+
+type MessagesPageArgs = {
+  scenarioId: string;
+  conversationId: string;
+  limit?: number;
+  cursor?: MessageCursor | null;
+};
+
+type MessagesPageResult = {
+  items: Message[];
+  nextCursor: MessageCursor | null;
 };
 
 type AppDataApi = {
@@ -207,6 +232,17 @@ type AppDataApi = {
   // scenario settings
   getScenarioSettings: (scenarioId: string) => any;
   updateScenarioSettings: (scenarioId: string, patch: any) => Promise<void>;
+
+  // ===== DMs =====
+  listConversationsForScenario: (scenarioId: string, profileId: string) => Conversation[];
+  listMessagesPage: (args: MessagesPageArgs) => MessagesPageResult;
+  upsertConversation: (c: Conversation) => Promise<void>;
+  sendMessage: (args: {
+    scenarioId: string;
+    conversationId: string;
+    senderProfileId: string;
+    text: string;
+  }) => Promise<{ ok: true; messageId: string } | { ok: false; error: string }>;
 };
 
 const Ctx = React.createContext<(AppDataState & AppDataApi) | null>(null);
@@ -1803,6 +1839,109 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
 
         setState({ isReady: true, db: nextDb as any });
       },
+
+      // ===== DMs =====
+      listConversationsForScenario: (scenarioId: string, profileId: string) => {
+        if (!db) return [];
+        const sid = String(scenarioId);
+        const pid = String(profileId);
+        const map = ((db as any).conversations ?? {}) as Record<string, Conversation>;
+
+        return Object.values(map)
+          .filter((c) => String((c as any).scenarioId) === sid)
+          .filter((c) => Array.isArray((c as any).participantProfileIds) && (c as any).participantProfileIds.map(String).includes(pid))
+          .sort(sortDescByLastMessageAtThenId);
+      },
+
+      listMessagesPage: ({ scenarioId, conversationId, limit = 30, cursor }: MessagesPageArgs) => {
+        if (!db) return { items: [], nextCursor: null };
+        const sid = String(scenarioId);
+        const cid = String(conversationId);
+        const map = ((db as any).messages ?? {}) as Record<string, Message>;
+
+        let items = Object.values(map).filter(
+          (m) => String((m as any).scenarioId) === sid && String((m as any).conversationId) === cid
+        );
+
+        items.sort(sortAscByCreatedAtThenIdGeneric);
+
+        let startIndex = 0;
+        if (cursor) {
+          const idx = items.findIndex((m) => makeMessageCursor(m) === cursor);
+          startIndex = idx >= 0 ? idx + 1 : 0;
+        }
+
+        const page = items.slice(startIndex, startIndex + limit);
+        const next = page.length === limit ? makeMessageCursor(page[page.length - 1]) : null;
+
+        return { items: page, nextCursor: next };
+      },
+
+      upsertConversation: async (c: Conversation) => {
+        const convId = String((c as any).id ?? "").trim();
+        const sid = String((c as any).scenarioId ?? "").trim();
+        if (!convId || !sid) return;
+
+        const now = new Date().toISOString();
+
+        const next = await updateDb((prev) => {
+          const conversations = { ...((prev as any).conversations ?? {}) } as Record<string, Conversation>;
+          const existing = conversations[convId];
+
+          conversations[convId] = {
+            ...(existing ?? {}),
+            ...c,
+            id: convId,
+            scenarioId: sid,
+            participantProfileIds: Array.isArray((c as any).participantProfileIds)
+              ? (c as any).participantProfileIds.map(String).filter(Boolean)
+              : ((existing as any)?.participantProfileIds ?? []),
+            createdAt: (existing as any)?.createdAt ?? (c as any).createdAt ?? now,
+            updatedAt: now,
+          };
+
+          return { ...(prev as any), conversations };
+        });
+
+        setState({ isReady: true, db: next as any });
+      },
+
+      sendMessage: async ({ scenarioId, conversationId, senderProfileId, text }) => {
+        const sid = String(scenarioId ?? "").trim();
+        const cid = String(conversationId ?? "").trim();
+        const from = String(senderProfileId ?? "").trim();
+        const body = String(text ?? "").trim();
+        if (!sid || !cid || !from) return { ok: false, error: "Missing ids" };
+        if (!body) return { ok: false, error: "Message is empty" };
+
+        const now = new Date().toISOString();
+        const messageId = `m_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+
+        const nextDb = await updateDb((prev) => {
+          const conversations = { ...((prev as any).conversations ?? {}) } as Record<string, Conversation>;
+          const messages = { ...((prev as any).messages ?? {}) } as Record<string, Message>;
+
+          const conv = conversations[cid];
+          if (!conv) return prev;
+          if (String((conv as any).scenarioId ?? "") !== sid) return prev;
+
+          messages[messageId] = {
+            id: messageId,
+            scenarioId: sid,
+            conversationId: cid,
+            senderProfileId: from,
+            text: body,
+            createdAt: now,
+          };
+
+          conversations[cid] = { ...conv, lastMessageAt: now, updatedAt: now };
+
+          return { ...(prev as any), conversations, messages };
+        });
+
+        setState({ isReady: true, db: nextDb as any });
+        return { ok: true, messageId };
+      },
     };
   }, [db, currentUserId, auth.isReady]);
 
@@ -1826,4 +1965,22 @@ function makeLikeId() {
 }
 function getLikesMap(db: DbV5 | null): Record<string, Like> {
   return ((db as any)?.likes ?? {}) as Record<string, Like>;
+}
+
+function makeMessageCursor(m: Message): MessageCursor {
+  return `${String((m as any).createdAt ?? "")}|${String((m as any).id ?? "")}`;
+}
+
+function sortAscByCreatedAtThenIdGeneric(a: { createdAt: string; id: string }, b: { createdAt: string; id: string }) {
+  const c = String(a.createdAt).localeCompare(String(b.createdAt));
+  if (c !== 0) return c;
+  return String(a.id).localeCompare(String(b.id));
+}
+
+function sortDescByLastMessageAtThenId(a: Conversation, b: Conversation) {
+  const aT = String((a as any).lastMessageAt ?? (a as any).updatedAt ?? (a as any).createdAt ?? "");
+  const bT = String((b as any).lastMessageAt ?? (b as any).updatedAt ?? (b as any).createdAt ?? "");
+  const c = bT.localeCompare(aT);
+  if (c !== 0) return c;
+  return String(b.id).localeCompare(String(a.id));
 }

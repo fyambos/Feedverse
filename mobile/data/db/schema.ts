@@ -196,6 +196,24 @@ export type Like = {
 // NOTE: migrate away from Profile.likedPostIds (legacy)
 // export type Profile = { ... likedPostIds?: string[] ... } // remove when you’re ready
 
+export type Conversation = {
+  id: string;
+  scenarioId: string;
+  participantProfileIds: string[]; // 1:1 or group
+  createdAt: string;
+  updatedAt?: string;
+  lastMessageAt?: string;
+};
+
+export type Message = {
+  id: string;
+  scenarioId: string;
+  conversationId: string;
+  senderProfileId: string;
+  text: string;
+  createdAt: string;
+};
+
 export type DbV5 = {
   version: 5;
   seededAt: string;
@@ -218,4 +236,8 @@ export type DbV5 = {
   sheets: Record<string, CharacterSheet>; // key = profileId
   /** (app_meta) */
   appMeta?: Record<string, AppMeta>; // key = appMeta.key
+  /** DM conversations (local/mock + can be swapped for real backend later) */
+  conversations?: Record<string, Conversation>; // key = conversation.id
+  /** DM messages */
+  messages?: Record<string, Message>; // key = message.id
 };
