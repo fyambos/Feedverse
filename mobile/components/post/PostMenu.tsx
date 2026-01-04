@@ -1,6 +1,6 @@
 // mobile/components/post/PostMenu.tsx
 import React from "react";
-import { Dimensions, Modal, Pressable, StyleSheet, View, ScrollView } from "react-native";
+import { Alert as RNAlert, Dimensions, InteractionManager, Modal, Pressable, StyleSheet, View, ScrollView, Platform } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ThemedText } from "@/components/themed-text";
@@ -50,8 +50,8 @@ type Props = {
   scenarioId?: string;
   gmProfileId?: string; // who posts the recap
   getSheet?: (profileId: string) => DbCharacterSheet | null;
-  updateSheet?: (profileId: string, next: DbCharacterSheet) => void;
-  createGmPost?: (payload: { scenarioId: string; text: string; authorProfileId: string }) => void;
+  updateSheet?: (profileId: string, next: DbCharacterSheet) => void | Promise<void>;
+  createGmPost?: (payload: { scenarioId: string; text: string; authorProfileId: string }) => void | Promise<void>;
 };
 
 type MenuItem = {
@@ -403,7 +403,6 @@ export function PostMenu({
   const appData = useAppData();
   // CharacterSheet helpers from appData
   const getCharacterSheetByProfileId = (appData as any)?.getCharacterSheetByProfileId;
-  const upsertCharacterSheet = (appData as any)?.upsertCharacterSheet;
   const [pinBusy, setPinBusy] = React.useState(false);
 
   const [rpgDraft, setRpgDraft] = React.useState<ProfileRpgData>({
@@ -412,6 +411,11 @@ export function PostMenu({
     spells: [],
     abilities: [],
   });
+
+  const rpgDraftRef = React.useRef<ProfileRpgData>(rpgDraft);
+  React.useEffect(() => {
+    rpgDraftRef.current = rpgDraft;
+  }, [rpgDraft]);
 
   // keep a ref to the latest GM draft so RPG chip saves don't clobber other unsaved edits
   const draftRef = React.useRef<any | null>(null);
@@ -438,37 +442,18 @@ export function PostMenu({
 
     // fallback (non-campaign / legacy)
     setRpgDraft(getRpgFromProfile(profile));
-  }, [visible, profile.id, getCharacterSheetByProfileId]);
+  }, [visible, profile.id]);
 
   const persistRpg = React.useCallback(
-    async (nextRpg: ProfileRpgData) => {
+    (nextRpg: ProfileRpgData) => {
       if (!canEditRpg) return;
 
-      try {
-        const sheet = getCharacterSheetByProfileIdRef.current?.(profile.id) ?? null;
-        if (!sheet) {
-          Alert.alert("No sheet found", "This profile has no character sheet yet.");
-          return;
-        }
-
-        // Use the latest local draft as the base (if present) so we don't overwrite
-        // pending HP/level/stats/status changes when saving inventory.
-        const local = draftRef.current;
-        const base = local && typeof local === "object" ? { ...sheet, ...local } : sheet;
-
-        const nextSheet = { ...setRpgOnSheet(base, nextRpg), profileId: String(profile.id) };
-        await upsertCharacterSheet?.(nextSheet);
-
-        // keep local draft in sync
-        setRpgDraft(getRpgFromSheet(nextSheet));
-
-        // also keep GM "done" diff sheet in sync so recap includes items
-        setDraft((prev: any | null) => (prev ? setRpgOnSheet(prev, nextRpg) : prev));
-      } catch (e: any) {
-        Alert.alert("Failed to update", e?.message ?? "Could not save changes.");
-      }
+      // IMPORTANT: do NOT write to AsyncStorage on every RPG change.
+      // updateDb() stringifies the entire DB and can freeze the UI on iOS.
+      // We keep RPG edits local and persist once when the GM taps "done".
+      setDraft((prev: any | null) => (prev ? setRpgOnSheet(prev, nextRpg) : prev));
     },
-    [canEditRpg, upsertCharacterSheet, profile.id]
+    [canEditRpg]
   );
 
   const insets = useSafeAreaInsets();
@@ -579,20 +564,25 @@ export function PostMenu({
 
     const current = getStatus(draft) || "";
 
-    Alert.prompt(
-      "Set status",
-      "Type a status (ex: ok, down, stunned, bleeding...)",
-      [
-        { text: "Cancel", style: "cancel" },
-        { text: "Clear", style: "destructive", onPress: () => setDraft(setStatus(draft, "")) },
-        {
-          text: "Save",
-          onPress: (value?: string) => setDraft(setStatus(draft, String(value ?? "").trim())),
-        },
-      ],
-      "plain-text",
-      current
-    );
+    const title = "Set status";
+    const message = "Type a status (ex: ok, down, stunned, bleeding...)";
+    const buttons = [
+      { text: "Cancel", style: "cancel" as const },
+      { text: "Clear", style: "destructive" as const, onPress: () => setDraft(setStatus(draft, "")) },
+      {
+        text: "Save",
+        onPress: (value?: string) => setDraft(setStatus(draft, String(value ?? "").trim())),
+      },
+    ];
+
+    // iOS: use native prompt to avoid nested custom modal conflicts.
+    if (Platform.OS === "ios") {
+      RNAlert.prompt(title, message, buttons as any, "plain-text", current);
+      return;
+    }
+
+    // Android: use our custom dialog prompt (RN prompt is iOS-only)
+    Alert.prompt(title, message, buttons as any, "plain-text", current);
   };
 
   const commitDone = async () => {
@@ -601,18 +591,35 @@ export function PostMenu({
       return;
     }
 
-    if (!scenarioId || !gmProfileId || !updateSheet || !createGmPost) {
-      Alert.alert("GM actions not wired", "Missing scenarioId / gmProfileId / updateSheet / createGmPost.");
+    const gmCommitSheetAndPostText = (appData as any)?.gmCommitSheetAndPostText as
+      | undefined
+      | ((args: {
+          scenarioId: string;
+          gmProfileId: string;
+          targetProfileId: string;
+          nextSheet: DbCharacterSheet;
+          postText: string;
+        }) => Promise<{ postId: string }>);
+
+    if (!scenarioId || !gmProfileId || (!gmCommitSheetAndPostText && (!updateSheet || !createGmPost))) {
+      Alert.alert(
+        "GM actions not wired",
+        "Missing scenarioId / gmProfileId (and updateSheet+createGmPost, or gmCommitSheetAndPostText)."
+      );
       return;
     }
 
-    if (!draft || !originalRef.current) {
+    // Use refs so we don't miss last-millisecond edits (delete -> Done).
+    const latestDraft = draftRef.current ?? draft;
+    const latestRpgDraft = rpgDraftRef.current;
+
+    if (!latestDraft || !originalRef.current) {
       Alert.alert("No sheet found", "This profile has no character sheet yet.");
       return;
     }
 
     const before = originalRef.current;
-    const after = setRpgOnSheet(draft, rpgDraft);
+    const after = setRpgOnSheet(latestDraft, latestRpgDraft);
 
     if (!hasAnyDiff(before, after)) {
       onClose();
@@ -621,22 +628,35 @@ export function PostMenu({
 
     const nextSheet = { ...after, profileId: profile.id } as DbCharacterSheet;
 
-    try {
-      await updateSheet(profile.id, nextSheet);
-    } catch (e: any) {
-      Alert.alert("Failed to save", e?.message ?? "Could not save sheet updates.");
-      return;
-    }
-
     const text = `⚙️ gm update\n\n` + diffLines(before, nextSheet, profile.handle);
 
-    createGmPost({
-      scenarioId: String(scenarioId),
-      authorProfileId: String(gmProfileId),
-      text,
-    });
-
+    // Close first so the dismiss animation isn't competing with a full-DB write.
     onClose();
+
+    try {
+      await new Promise<void>((resolve) => {
+        InteractionManager.runAfterInteractions(() => resolve());
+      });
+
+      if (gmCommitSheetAndPostText) {
+        await gmCommitSheetAndPostText({
+          scenarioId: String(scenarioId),
+          gmProfileId: String(gmProfileId),
+          targetProfileId: String(profile.id),
+          nextSheet,
+          postText: text,
+        });
+      } else {
+        await updateSheet!(profile.id, nextSheet);
+        await createGmPost!({
+          scenarioId: String(scenarioId),
+          authorProfileId: String(gmProfileId),
+          text,
+        });
+      }
+    } catch (e: any) {
+      Alert.alert("Failed to save", e?.message ?? "Could not save sheet updates.");
+    }
   };
 
   // pinned state (your DB uses isPinned + pinOrder)
@@ -877,7 +897,7 @@ export function PostMenu({
                 readonlyHint={!canEditRpg ? "only the scenario owner / gms can edit." : undefined}
                 onChange={(next) => {
                   setRpgDraft(next);
-                  void persistRpg(next);
+                  persistRpg(next);
                 }}
               />
             ),

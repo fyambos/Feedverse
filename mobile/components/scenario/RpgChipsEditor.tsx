@@ -2,6 +2,7 @@
 
 import React from "react";
 import {
+  Alert as RNAlert,
   Modal,
   Platform,
   Pressable,
@@ -222,7 +223,7 @@ export function RpgChipsEditor({ colors, value, onChange, editable = false, read
 
     const name = norm(editorName);
     if (!name) {
-      Alert.alert("Missing name", "Please type a name.");
+      (Platform.OS === "ios" ? RNAlert : Alert).alert("Missing name", "Please type a name.");
       return;
     }
 
@@ -246,6 +247,25 @@ export function RpgChipsEditor({ colors, value, onChange, editable = false, read
   const deleteEditor = React.useCallback(() => {
     if (!editable) return;
 
+    if (Platform.OS === "ios") {
+      RNAlert.alert("Remove", "Delete this item?", [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => {
+            if (editorKind === "inventory") removeInvItemById(editorId);
+            if (editorKind === "equipment") removeNamedById("equipment", editorId);
+            if (editorKind === "spells") removeNamedById("spells", editorId);
+            if (editorKind === "abilities") removeNamedById("abilities", editorId);
+            closeEditor();
+          },
+        },
+      ]);
+      return;
+    }
+
+    // Android: keep our custom modal UX
     Alert.alert("Remove", "Delete this item?", [
       { text: "Cancel", style: "cancel" },
       {

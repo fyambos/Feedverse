@@ -180,6 +180,15 @@ type AppDataApi = {
   // GM helper
   gmApplySheetUpdate: (args: GmApplySheetUpdateArgs) => Promise<GmApplySheetUpdateResult>;
 
+  // GM helper: commit a full sheet update and a custom GM post in a single DB write
+  gmCommitSheetAndPostText: (args: {
+    scenarioId: string;
+    gmProfileId: string;
+    targetProfileId: string;
+    nextSheet: CharacterSheet;
+    postText: string;
+  }) => Promise<{ postId: string }>;
+
   // import/export
   importScenarioFromFile: (args: {
     includeProfiles: boolean;
@@ -1719,6 +1728,59 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
 
         // NOTE: summaryText / updatedProfileIds were set inside updateDb closure
         return { postId, updatedProfileIds, summaryText };
+      },
+
+      // GM: write an exact sheet + custom post text in a single update
+      gmCommitSheetAndPostText: async ({ scenarioId, gmProfileId, targetProfileId, nextSheet, postText }) => {
+        const sid = String(scenarioId ?? "").trim();
+        const gmId = String(gmProfileId ?? "").trim();
+        const pid = String(targetProfileId ?? "").trim();
+
+        if (!sid) throw new Error("gmCommitSheetAndPostText: scenarioId is required");
+        if (!gmId) throw new Error("gmCommitSheetAndPostText: gmProfileId is required");
+        if (!pid) throw new Error("gmCommitSheetAndPostText: targetProfileId is required");
+
+        const now = new Date().toISOString();
+        const postId = `gm_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+
+        const nextDb = await updateDb((prev) => {
+          const prevSheets = { ...((prev as any).sheets ?? {}) } as Record<string, CharacterSheet>;
+          const existing = (prevSheets as any)[pid] ?? ({ profileId: pid, scenarioId: sid } as any);
+
+          const createdAt = (existing as any)?.createdAt ?? now;
+
+          const savedSheet: CharacterSheet = {
+            ...(existing ?? {}),
+            ...(nextSheet ?? {}),
+            profileId: pid,
+            scenarioId: sid,
+            createdAt,
+            updatedAt: now,
+          } as any;
+
+          prevSheets[pid] = savedSheet as any;
+
+          const newPost: Post = {
+            id: postId,
+            scenarioId: sid,
+            authorProfileId: gmId,
+            text: String(postText ?? ""),
+            createdAt: now,
+            insertedAt: now,
+          } as any;
+
+          return {
+            ...prev,
+            sheets: prevSheets as any,
+            posts: {
+              ...prev.posts,
+              [postId]: newPost as any,
+            },
+          };
+        });
+
+        setState({ isReady: true, db: nextDb as any });
+        return { postId };
       },
 
       // --- import/export
