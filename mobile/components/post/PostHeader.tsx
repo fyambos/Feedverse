@@ -21,6 +21,7 @@ type Props = {
 
   profile: Profile;
   createdAtIso: string;
+  refreshTick?: number;
 
   isReply?: boolean;
   replyingToHandle?: string;
@@ -39,6 +40,7 @@ export function PostHeader({
   colors,
   profile,
   createdAtIso,
+  refreshTick,
   isReply,
   replyingToHandle,
   onOpenProfile,
@@ -51,6 +53,8 @@ export function PostHeader({
   const showRelative = !isDetail;
 
   const showLock = Boolean((profile as any)?.isPrivate);
+  const rel = React.useMemo(() => formatRelativeTime(createdAtIso), [createdAtIso, refreshTick]);
+  const wrapperKey = `${String(refreshTick ?? "")}::${createdAtIso}`;
 
   const LockIcon = showLock ? (
     <Fontisto
@@ -63,7 +67,7 @@ export function PostHeader({
 
   if (isDetail) {
     return (
-      <View style={styles.detailHeaderRow}>
+      <View key={wrapperKey} style={styles.detailHeaderRow}>
         <View style={styles.detailHeaderLeft}>
           <Pressable onPress={onOpenProfile} hitSlop={0} style={styles.avatarPress}>
             <Avatar uri={profile.avatarUrl} size={48} fallbackColor={colors.border} />
@@ -104,7 +108,7 @@ export function PostHeader({
 
   // feed / reply header
   return (
-    <View style={styles.headerRow}>
+    <View key={wrapperKey} style={styles.headerRow}>
       <View style={styles.headerBlockLeft}>
         <View style={styles.headerNameRow}>
           <Pressable onPress={onOpenProfile} hitSlop={0} style={styles.inlinePress}>
@@ -119,7 +123,7 @@ export function PostHeader({
           <Pressable onPress={onOpenProfile} hitSlop={0} style={styles.inlinePress}>
             <ThemedText style={[styles.handleInline, { color: colors.textSecondary }]} numberOfLines={1}>
               @{profile.handle}
-              {showRelative && showTimestamps ? ` · ${formatRelativeTime(createdAtIso)}` : ""}
+              {showRelative && showTimestamps ? ` · ${rel}` : ""}
             </ThemedText>
           </Pressable>
         </View>

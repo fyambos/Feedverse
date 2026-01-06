@@ -32,6 +32,7 @@ type Props = {
   scenarioId: string;
   profile: Profile;
   item: DbPost;
+  refreshTick?: number;
   variant?: PostVariant;
   replyingTo?: string;
   showActions?: boolean;
@@ -79,6 +80,7 @@ export function Post({
   scenarioId,
   profile,
   item,
+  refreshTick,
   variant = "feed",
   replyingTo,
   showActions = true,
@@ -201,6 +203,7 @@ export function Post({
           colors={colors}
           profile={profile}
           createdAtIso={item.createdAt}
+          refreshTick={refreshTick}
           onOpenProfile={() => openProfile()}
           onOpenMenu={handleOpenMenu}
           showMenu={showMenu}
@@ -333,6 +336,7 @@ export function Post({
             colors={colors}
             profile={profile}
             createdAtIso={item.createdAt}
+            refreshTick={refreshTick}
             isReply={isReply}
             replyingToHandle={replyingToHandle}
             onOpenProfile={() => openProfile()}

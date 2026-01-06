@@ -216,6 +216,8 @@ export type Message = {
   conversationId: string;
   senderProfileId: string;
   text: string;
+  kind?: string;
+  imageUrls?: string[];
   createdAt: string;
   updatedAt?: string;
   editedAt?: string;
@@ -247,4 +249,6 @@ export type DbV5 = {
   conversations?: Record<string, Conversation>; // key = conversation.id
   /** DM messages */
   messages?: Record<string, Message>; // key = message.id
+  /** User-selected conversation by scenario **/
+  selectedConversationByScenario?: Record<string, string>; // key = scenarioId, value = conversationId
 };

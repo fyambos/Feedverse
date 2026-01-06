@@ -9,6 +9,17 @@ import {
 } from "../config/constants";
 import { LoginUserService, RegisterUserService } from "./authServices";
 import { upload } from "../config/multer";
+import type { RegisterResponse } from "./authModels";
+
+function signAuthToken(payload: unknown) {
+  const expiresIn = String(AUTH.EXPIRATION_TIME ?? "").trim();
+  if (!expiresIn || expiresIn.toLowerCase() === "none") {
+    return jwt.sign(payload as any, AUTH.SECRET_KEY);
+  }
+  // `expiresIn` accepts "1h", "30d", etc. When sourced from env it is a plain string,
+  // so we cast for TypeScript (jsonwebtoken validates at runtime).
+  return jwt.sign(payload as any, AUTH.SECRET_KEY, { expiresIn: expiresIn as any });
+}
 
 export const RegisterController = [
   upload.single("avatar"),
@@ -40,9 +51,19 @@ export const RegisterController = [
         });
       }
 
+      const createdUser = (result.user as RegisterResponse | undefined)?.User;
+      if (!createdUser) {
+        return res
+          .status(HTTP_STATUS.INTERNAL_SERVER_ERROR)
+          .json({ error: ERROR_MESSAGES.INTERNAL_SERVER_ERROR });
+      }
+
+      const token = signAuthToken({ user: createdUser });
+
       res.status(HTTP_STATUS.CREATED).json({
         message: USER_MESSAGES.CREATION_SUCCESS,
-        user: result.user,
+        token,
+        user: createdUser,
       });
     } catch (error: unknown) {
       console.error("Erreur lors de l'inscription:", error);
@@ -61,9 +82,12 @@ export const LoginController = async (req: Request, res: Response) => {
   }
 
   try {
-    const { email, password_hash } = req.body;
+    const identifier = String(
+      req.body?.identifier ?? req.body?.email ?? req.body?.username ?? "",
+    ).trim();
+    const password_hash = req.body?.password_hash;
 
-    const result = await LoginUserService({ email, password_hash });
+    const result = await LoginUserService({ email: identifier, password_hash });
 
     if (result?.error) {
       return res.status(HTTP_STATUS.UNAUTHORIZED).json({
@@ -73,13 +97,11 @@ export const LoginController = async (req: Request, res: Response) => {
       });
     }
 
-    const token = jwt.sign({ user: result?.user }, AUTH.SECRET_KEY, {
-      expiresIn: AUTH.EXPIRATION_TIME,
-    });
+    const signed = signAuthToken({ user: result?.user });
 
     res.status(HTTP_STATUS.OK).json({
       message: USER_MESSAGES.LOGIN_SUCCESS,
-      token: token,
+      token: signed,
       user: result?.user,
     });
   } catch (error: unknown) {
@@ -90,6 +112,6 @@ export const LoginController = async (req: Request, res: Response) => {
   }
 };
 
-export const ProtectedController = async (res: Response) => {
-  res.status(HTTP_STATUS.OK).json(`Accès à la route protégé !`);
+export const ProtectedController = async (_req: Request, res: Response) => {
+  res.status(HTTP_STATUS.OK).json("Accès à la route protégé !");
 };

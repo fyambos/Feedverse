@@ -103,8 +103,11 @@ export default function HomeScreen() {
         text: "Profile",
         onPress: () => {
           if (!profileId) {
-            Alert.alert("No profile selected", "Select a profile first.");
-            return;
+            router.push({
+                    pathname: "/modal/select-profile",
+                    params: { scenarioId: sid },
+                  } as any);
+                  return;
           }
           router.push({
             pathname: "/(scenario)/[scenarioId]/home/profile/[profileId]",
@@ -160,6 +163,7 @@ export default function HomeScreen() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [refreshTick, setRefreshTick] = useState<number>(() => Date.now());
 
   const loadingLock = useRef(false);
   const listRef = useRef<FlatList<any> | null>(null);
@@ -184,6 +188,10 @@ export default function HomeScreen() {
     try {
       listRef.current?.scrollToOffset({ offset: 0, animated: true });
       loadFirstPage();
+      // bump a tick so FlatList re-renders items (updates relative timestamps)
+      setRefreshTick(Date.now());
+      // shallow-clone current items to ensure rows receive new object references
+      setItems((prev) => prev.map((it) => ({ ...(it as any) })));
     } finally {
       setRefreshing(false);
       loadingLock.current = false;
@@ -284,18 +292,32 @@ export default function HomeScreen() {
     return (
       <SafeAreaView edges={["top"]} style={{ backgroundColor: colors.background }}>
         <View style={[styles.topbar, { borderBottomColor: colors.border }]}>
-          <Pressable
-            onPress={() =>
-              router.push({
-                pathname: "/modal/select-profile",
-                params: { scenarioId: sid },
-              } as any)
-            }
-            hitSlop={12}
-            style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}
-          >
-            <Avatar uri={selectedProfile?.avatarUrl ?? null} size={30} fallbackColor={colors.border} />
-          </Pressable>
+            <Pressable
+              onPress={() =>
+                router.push({
+                  pathname: "/modal/select-profile",
+                  params: { scenarioId: sid },
+                } as any)
+              }
+              onLongPress={() => {
+                const pid = selectedProfile?.id ? String(selectedProfile.id) : null;
+                if (!pid) {
+                  router.push({
+                    pathname: "/modal/select-profile",
+                    params: { scenarioId: sid },
+                  } as any);
+                  return;
+                }
+                router.push({
+                  pathname: "/(scenario)/[scenarioId]/(tabs)/home/profile/[profileId]",
+                  params: { scenarioId: sid, profileId: pid },
+                } as any);
+              }}
+              hitSlop={12}
+              style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}
+            >
+              <Avatar uri={selectedProfile?.avatarUrl ?? null} size={30} fallbackColor={colors.border} />
+            </Pressable>
 
           <View style={{ flex: 1, alignItems: "center" }}>
             <Pressable
@@ -331,6 +353,7 @@ export default function HomeScreen() {
         }}
         data={data}
         keyExtractor={(item) => String(item.id)}
+        extraData={refreshTick}
         contentContainerStyle={styles.list}
         ItemSeparatorComponent={() => <View style={[styles.separator, { backgroundColor: colors.border }]} />}
         refreshControl={
@@ -369,6 +392,7 @@ export default function HomeScreen() {
                 scenarioId={sid}
                 profile={profile as any}
                 item={item as any}
+                refreshTick={refreshTick}
                 variant="feed"
                 showActions
                 isLiked={liked}
@@ -381,6 +405,7 @@ export default function HomeScreen() {
 
           return (
             <SwipeableRow
+              key={`${postId}::${refreshTick}`}
               enabled={canEdit}
               colors={colors}
               rightThreshold={24}

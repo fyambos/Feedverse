@@ -54,6 +54,11 @@ export default function SelectProfileModal() {
 
   const usersMap = (db as any)?.users ?? {};
 
+
+  const looksLikeUuid = (v?: string | null) => {
+    if (!v) return false;
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(v));
+  };
   const [tab, setTab] = React.useState<TabKey>("mine");
   const [mode, setMode] = React.useState<ViewMode>("tabs");
 
@@ -91,9 +96,29 @@ export default function SelectProfileModal() {
 
     const uid = String(userId ?? "");
 
-    return players
+        return players
       .filter((pid) => pid && pid !== uid)
-      .map((pid) => usersMap[String(pid)] ?? { id: pid, username: pid, avatarUrl: "" });
+      .map((pid) => {
+        const uid2 = String(pid);
+        const user = usersMap[uid2];
+        if (user) return { ...user, avatarUrl: user.avatarUrl ?? undefined } as any;
+        try {
+          const profiles = (db as any)?.profiles ?? {};
+          for (const p of Object.values(profiles)) {
+            if (String((p as any).ownerUserId ?? "") !== uid2) continue;
+            if (String((p as any).scenarioId ?? "") !== sid) continue;
+            return {
+              id: uid2,
+              username: undefined,
+              avatarUrl: String((p as any).avatarUrl ?? "") || undefined,
+            } as any;
+          }
+        } catch {
+          // ignore
+        }
+
+        return { id: uid2, username: undefined, avatarUrl: undefined } as any;
+      });
   }, [scenario, usersMap, userId]);
 
   const profileLimitMode: ProfileLimitMode = React.useMemo(() => {
@@ -211,7 +236,8 @@ const allProfiles = React.useMemo<Profile[]>(() => {
     const checked = selectedIds.has(id);
 
     const isSharedFromOther = !!item.isPublic && String(item.ownerUserId) !== String(userId);
-    const owner = usersMap[String(item.ownerUserId)] ?? null;
+    const ownerId = String(item.ownerUserId ?? "");
+    const owner = ownerId ? (usersMap[ownerId] ?? null) : null;
 
     const canEditThis = canEditProfile({
       profile: item,
@@ -229,8 +255,18 @@ const allProfiles = React.useMemo<Profile[]>(() => {
             return;
           }
 
-          // shared profile from someone else => adopt flow (confirm modal)
+          // shared profile from someone else
           if (isSharedFromOther) {
+            // If the owner is still in the scenario, just select the profile (no adopt)
+            const ownerId = String(item.ownerUserId ?? "");
+            const scenarioPlayerIds = Array.isArray((scenario as any)?.playerIds)
+              ? (scenario as any).playerIds.map(String)
+              : [];
+            if (ownerId && scenarioPlayerIds.includes(ownerId)) {
+              await finishSelection(String(item.id));
+              return;
+            }
+            // Otherwise, allow adoption
             setAdopt({ open: true, profileId: id });
             return;
           }
@@ -308,16 +344,24 @@ const allProfiles = React.useMemo<Profile[]>(() => {
         </View>
 
         <View style={styles.right}>
-          {owner?.avatarUrl ? (
-            <Image source={{ uri: owner.avatarUrl }} style={styles.ownerAvatar} />
-          ) : (
-            <View style={[styles.ownerAvatar, { backgroundColor: colors.border }]} />
-          )}
-
-          <ThemedText numberOfLines={1} style={{ fontSize: 12, color: colors.textSecondary }}>
-            {owner?.username ?? "unknown"}
-          </ThemedText>
-
+          {owner ? (
+            <>
+              {owner.avatarUrl ? (
+                <Image source={{ uri: owner.avatarUrl ?? undefined }} style={styles.ownerAvatar} />
+              ) : (
+                <View style={[styles.ownerAvatar, { backgroundColor: colors.border }]} />
+              )}
+                <ThemedText numberOfLines={1} style={{ fontSize: 12, color: colors.textSecondary }}>
+                  {(() => {
+                    const uname = owner.username ?? "";
+                    if (!uname || looksLikeUuid(uname)) {
+                      return item.displayName ? String(item.displayName) : "Unknown";
+                    }
+                    return uname;
+                  })()}
+                </ThemedText>
+            </>
+          ) : null}
           {selectEnabled && active ? (
             <ThemedText style={{ color: colors.tint, fontWeight: "800", marginLeft: 6 }}>✓</ThemedText>
           ) : null}
@@ -565,7 +609,15 @@ const allProfiles = React.useMemo<Profile[]>(() => {
                 keyExtractor={(u: any) => String(u.id)}
                 contentContainerStyle={{ paddingHorizontal: 8, paddingBottom: 8 }}
                 renderItem={({ item }: any) => {
-                  const label = item?.username ? `@${String(item.username)}` : String(item.id);
+                  const uid3 = String(item?.id ?? "");
+                  const userRow = (db as any)?.users?.[uid3];
+                  const unameRow = userRow?.username ? String(userRow.username) : "";
+                  const unameItem = item?.username ? String(item.username) : "";
+                  const label = unameRow && !looksLikeUuid(unameRow)
+                    ? `@${unameRow}`
+                    : unameItem && !looksLikeUuid(unameItem)
+                      ? `@${unameItem}`
+                      : "Unknown";
 
                   return (
                     <Pressable
@@ -575,9 +627,11 @@ const allProfiles = React.useMemo<Profile[]>(() => {
                         { backgroundColor: pressed ? colors.pressed : "transparent", borderColor: colors.border },
                       ]}
                     >
-                      {item?.avatarUrl ? (
+                      {(
+                        (db as any)?.users?.[String(item?.id ?? "")]?.avatarUrl || item?.avatarUrl
+                      ) ? (
                         <Image
-                          source={{ uri: String(item.avatarUrl ?? "") }}
+                          source={{ uri: String(((db as any)?.users?.[String(item?.id ?? "")]?.avatarUrl) ?? item?.avatarUrl ?? "") }}
                           style={[styles.transferAvatar, { borderColor: colors.border }]}
                         />
                       ) : (
@@ -617,7 +671,7 @@ const allProfiles = React.useMemo<Profile[]>(() => {
 
     const toId = String(confirmTransfer.toUserId ?? "");
     const target = usersMap[toId];
-    const label = target?.username ? `@${String(target.username)}` : toId;
+    const label = target?.username ? `@${String(target.username)}` : "Unknown";
 
     const onConfirm = async () => {
       if (!toId) return;

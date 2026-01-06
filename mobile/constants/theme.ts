@@ -19,6 +19,7 @@ export const Colors = {
 
     surface: '#FFFFFF',
     card: '#FFFFFF',
+    message: '#E5E5EA',
     border: '#d4d7d8',
 
     textSecondary: '#536471',
@@ -38,6 +39,7 @@ export const Colors = {
 
     surface: '#121214',
     card: '#121214',
+    message: '#2F3336',
     border: '#2F3336',
 
     textSecondary: '#71767B',

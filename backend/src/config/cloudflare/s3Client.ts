@@ -13,12 +13,16 @@ export const CLOUDFLARE_S3 = new S3Client({
 export const CLOUDFLARE_TEST = async () => {
   try {
     if (!CLOUDFLARE.PUBLIC_URL) {
-      console.warn("⚠️ R2_PUBLIC_URL non définie");
+      console.warn("⚠️ R2_PUBLIC_URL undefined");
+    }
+
+    if (!CLOUDFLARE.BUCKET) {
+      console.warn("⚠️ R2_BUCKET undefined");
     }
 
     const res = await CLOUDFLARE_S3.send(
       new ListObjectsV2Command({
-        Bucket: CLOUDFLARE.PUBLIC_URL,
+        Bucket: CLOUDFLARE.BUCKET,
         MaxKeys: 5,
       }),
     );

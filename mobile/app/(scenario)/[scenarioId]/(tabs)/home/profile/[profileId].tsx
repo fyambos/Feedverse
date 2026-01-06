@@ -229,7 +229,10 @@ export default function ProfileScreen() {
     const other = String(profile.id);
     const participantProfileIds = [me, other];
     const res = await getOrCreateConversation?.({ scenarioId: sid, participantProfileIds });
-    if (!res?.ok) return;
+    if (!res?.ok) {
+      Alert.alert("Could not create DM", res?.error || "Unknown error");
+      return;
+    }
 
     const conversationId = String(res.conversationId);
     router.push({

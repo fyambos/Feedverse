@@ -13,11 +13,14 @@ import * as bcrypt from "bcryptjs";
 import type { User, UserSettings } from "@/data/db/schema";
 import { readDb, updateDb } from "@/data/db/storage"; 
 import { seedDbIfNeeded } from "@/data/db/seed";
+import { apiFetch, setAuthInvalidationHandler } from "@/lib/apiClient";
+import { Alert } from "@/context/dialog";
 
 type AuthState = {
   isReady: boolean;
   isLoggedIn: boolean;
   userId: string | null;
+  token: string | null;
 
   // current user (cached for UI convenience)
   currentUser: User | null;
@@ -32,6 +35,11 @@ type AuthState = {
   }) => Promise<{ ok: true } | { ok: false; error: string }>;
   signOut: () => Promise<void>;
 
+  fetchWithAuth: (
+    path: string,
+    init?: RequestInit,
+  ) => Promise<{ ok: boolean; status: number; json: any; text: string }>;
+
   refreshCurrentUser: () => Promise<void>;
   updateUserSettings: (settings: UserSettings) => Promise<void>;
   updateUserAvatar: (avatarUrl?: string | null) => Promise<void>;
@@ -40,6 +48,7 @@ type AuthState = {
 const AuthContext = createContext<AuthState | null>(null);
 
 const KEY = "feedverse.auth.userId";
+const TOKEN_KEY = "feedverse.auth.token";
 const DEV_USER_ID = "u14";
 
 const BCRYPT_ROUNDS = 10;
@@ -87,6 +96,26 @@ function isProbablyEmail(input: string) {
   return /@/.test(input);
 }
 
+function apiBaseUrl() {
+  const raw = String(process.env.EXPO_PUBLIC_API_BASE_URL ?? "").trim();
+  return raw.replace(/\/$/, "");
+}
+
+function mapBackendUserToLocal(u: any): User {
+  const now = nowIso();
+  const id = String(u?.id ?? "");
+  return {
+    id,
+    username: String(u?.username ?? "user"),
+    name: u?.name ? String(u.name) : undefined,
+    email: u?.email ? String(u.email) : undefined,
+    avatarUrl: String(u?.avatar_url ?? u?.avatarUrl ?? "") || `https://i.pravatar.cc/150?u=${encodeURIComponent(id || now)}`,
+    createdAt: u?.created_at ? new Date(u.created_at).toISOString() : now,
+    updatedAt: u?.updated_at ? new Date(u.updated_at).toISOString() : now,
+    settings: {},
+  };
+}
+
 function newLocalId(prefix: string) {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -109,13 +138,35 @@ function usernameFromEmail(email: string) {
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [authReady, setAuthReady] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
+  const [token, setToken] = useState<string | null>(null);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const authInvalidatedRef = React.useRef(false);
 
   // hydrate stored auth id once
   useEffect(() => {
     (async () => {
       const storedUserId = await AsyncStorage.getItem(KEY);
+      const storedToken = await AsyncStorage.getItem(TOKEN_KEY);
+
+      const baseUrl = apiBaseUrl();
+
+      // If backend mode is configured, we require a token.
+      // Otherwise the app can appear "logged in" locally but silently skip server writes.
+      if (baseUrl && storedUserId && !storedToken) {
+        await AsyncStorage.removeItem(KEY);
+        setUserId(null);
+        setToken(null);
+        setAuthReady(true);
+        try {
+          Alert.alert("Session expired", "Please sign in again.");
+        } catch {
+          // ignore
+        }
+        return;
+      }
+
       setUserId(storedUserId);
+      setToken(storedToken);
       setAuthReady(true);
     })();
   }, []);
@@ -151,6 +202,91 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     []
   );
 
+  const setSessionToken = useCallback(async (nextToken: string | null) => {
+    setToken(nextToken);
+    if (nextToken) await AsyncStorage.setItem(TOKEN_KEY, nextToken);
+    else await AsyncStorage.removeItem(TOKEN_KEY);
+
+    // New token means we can show session-expired again next time.
+    authInvalidatedRef.current = false;
+  }, []);
+
+  const fetchWithAuth = useCallback(
+    async (path: string, init?: RequestInit) => {
+      const res = await apiFetch({ path, token, init });
+      return res;
+    },
+    [token]
+  );
+
+  // If backend auth is enabled, refresh /users/profile and keep local user record in sync.
+  useEffect(() => {
+    if (!authReady) return;
+    if (!userId || !token) return;
+    if (!apiBaseUrl()) return;
+
+    let cancelled = false;
+
+    (async () => {
+      let res:
+        | { ok: boolean; status: number; json: any; text: string }
+        | null = null;
+      try {
+        res = await fetchWithAuth("/users/profile");
+      } catch {
+        // Backend is offline / network error.
+        return;
+      }
+      if (cancelled) return;
+
+      // If the token is no longer valid, force re-login.
+      if (res && (res.status === 401 || (res.status === 403 && /token de connexion invalide|invalide ou expir/i.test(String(res.text ?? ""))))) {
+        await AsyncStorage.removeItem(KEY);
+        await AsyncStorage.removeItem(TOKEN_KEY);
+        setUserId(null);
+        setToken(null);
+        setCurrentUser(null);
+        return;
+      }
+
+      if (!res || !res.ok || !res.json) return;
+
+      const backendUser = res.json;
+      const uid = String(backendUser?.id ?? "").trim();
+      if (!uid) return;
+
+      const localUser = mapBackendUserToLocal(backendUser);
+      await updateDb((prev) => {
+        const existing = (prev as any).users?.[uid];
+        return {
+          ...prev,
+          users: {
+            ...(prev as any).users,
+            [uid]: {
+              ...(existing ?? {}),
+              ...localUser,
+              id: uid,
+            },
+          },
+        };
+      });
+
+      // keep currentUser fresh if this is the active user
+      if (String(userId) === uid) {
+        try {
+          const db = await readDb();
+          setCurrentUser((db as any)?.users?.[uid] ?? null);
+        } catch {
+          // ignore
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authReady, userId, token, fetchWithAuth]);
+
   // keep currentUser in sync when userId changes
   useEffect(() => {
     if (!authReady) return;
@@ -172,10 +308,56 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signIn = useCallback(
     async (args: { identifier: string; password: string }) => {
+      const baseUrl = apiBaseUrl();
       const ident = normalizeIdentifier(args.identifier);
       const pw = String(args.password ?? "");
       if (!ident) return { ok: false as const, error: "Missing identifier." };
       if (!pw) return { ok: false as const, error: "Missing password." };
+
+      if (baseUrl) {
+        try {
+          const res = await apiFetch({
+            path: "/auth/login",
+            init: {
+              method: "POST",
+              body: JSON.stringify({ email: ident, password_hash: pw }),
+            },
+          });
+
+          const json = res.json;
+          if (!res.ok) return { ok: false as const, error: String(json?.message ?? "Login failed.") };
+
+          const nextToken = String(json?.token ?? "").trim();
+          const user = json?.user;
+          const uid = String(user?.id ?? "").trim();
+          if (!nextToken || !uid) {
+            return { ok: false as const, error: "Login response missing token or user." };
+          }
+
+          await ensureDbReady();
+          const localUser = mapBackendUserToLocal(user);
+          await updateDb((prev) => {
+            const existing = (prev as any).users?.[uid];
+            return {
+              ...prev,
+              users: {
+                ...(prev as any).users,
+                [uid]: {
+                  ...(existing ?? {}),
+                  ...localUser,
+                  id: uid,
+                },
+              },
+            };
+          });
+
+          await setSessionToken(nextToken);
+          await setSessionUserId(uid);
+          return { ok: true as const };
+        } catch {
+          return { ok: false as const, error: "Unable to reach server." };
+        }
+      }
 
       await ensureDbReady();
 
@@ -229,17 +411,86 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await setSessionUserId(String(matched.id));
       return { ok: true as const };
     },
-    [ensureDbReady, setSessionUserId]
+    [ensureDbReady, setSessionUserId, setSessionToken]
   );
 
   const signUp = useCallback(
     async (args: { email: string; password: string; username?: string; name?: string }) => {
+      const baseUrl = apiBaseUrl();
       const email = normalizeIdentifier(args.email);
       const pw = String(args.password ?? "");
       if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
         return { ok: false as const, error: "Please enter a valid email address." };
       }
       if (!pw) return { ok: false as const, error: "Missing password." };
+
+      if (baseUrl) {
+        try {
+          const res = await apiFetch({
+            path: "/auth/register",
+            init: {
+              method: "POST",
+              body: JSON.stringify({
+                email,
+                password_hash: pw,
+                username: String(args.username ?? usernameFromEmail(email)),
+                name: String(args.name ?? ""),
+                avatar_url: "",
+              }),
+            },
+          });
+
+          const json = res.json;
+          if (!res.ok) {
+            if (Array.isArray(json?.errors) && json.errors.length > 0) {
+              const msg = String(json.errors?.[0]?.message ?? "Sign up failed.");
+              return { ok: false as const, error: msg };
+            }
+            return {
+              ok: false as const,
+              error: String(json?.error ?? json?.message ?? "Sign up failed."),
+            };
+          }
+
+          if (Array.isArray(json?.errors) && json.errors.length > 0) {
+            const msg = String(json.errors?.[0]?.message ?? "Sign up failed.");
+            return { ok: false as const, error: msg };
+          }
+
+          // server returns token+user; if not, fall back to login
+          const nextToken = String(json?.token ?? "").trim();
+          const user = json?.user;
+          const uid = String(user?.id ?? "").trim();
+
+          if (nextToken && uid) {
+            await ensureDbReady();
+            const localUser = mapBackendUserToLocal(user);
+            await updateDb((prev) => {
+              const existing = (prev as any).users?.[uid];
+              return {
+                ...prev,
+                users: {
+                  ...(prev as any).users,
+                  [uid]: {
+                    ...(existing ?? {}),
+                    ...localUser,
+                    id: uid,
+                  },
+                },
+              };
+            });
+
+            await setSessionToken(nextToken);
+            await setSessionUserId(uid);
+            return { ok: true as const };
+          }
+
+          // fallback: login
+          return await signIn({ identifier: email, password: pw });
+        } catch {
+          return { ok: false as const, error: "Unable to reach server." };
+        }
+      }
 
       await ensureDbReady();
       const db = await readDb();
@@ -289,14 +540,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await setSessionUserId(id);
       return { ok: true as const };
     },
-    [ensureDbReady, setSessionUserId]
+    [ensureDbReady, setSessionUserId, setSessionToken, signIn]
   );
 
   const signOut = useCallback(async () => {
     setUserId(null);
+    setToken(null);
     setCurrentUser(null);
     await AsyncStorage.removeItem(KEY);
+    await AsyncStorage.removeItem(TOKEN_KEY);
+    authInvalidatedRef.current = false;
   }, []);
+
+  // Global handler: on any 401/403 from authenticated apiFetch, force sign-out.
+  useEffect(() => {
+    setAuthInvalidationHandler(async () => {
+      if (authInvalidatedRef.current) return;
+      authInvalidatedRef.current = true;
+      await signOut();
+      Alert.alert("Session expired", "Please sign in again.");
+    });
+
+    return () => {
+      setAuthInvalidationHandler(null);
+    };
+  }, [signOut]);
 
   const updateUserSettings = useCallback(
     async (settings: UserSettings) => {
@@ -337,6 +605,43 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const id = String(userId);
       const now = new Date().toISOString();
 
+      // Backend mode: if avatarUrl is a local file uri, upload it and persist the returned public URL.
+      const baseUrl = apiBaseUrl();
+      const t = String(token ?? "").trim();
+      const raw = avatarUrl == null ? null : String(avatarUrl);
+      const looksLocalFile = !!raw && !/^https?:\/\//i.test(raw);
+
+      if (baseUrl && t && looksLocalFile) {
+        const form = new FormData();
+        const name = `avatar_${id}_${Date.now()}.jpg`;
+
+        // React Native expects { uri, name, type }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        form.append("avatar", { uri: raw, name, type: "image/jpeg" } as any);
+
+        const res = await apiFetch({
+          path: "/users/avatar",
+          token: t,
+          init: {
+            method: "POST",
+            body: form as any,
+          },
+        });
+
+        if (!res.ok) {
+          const msg =
+            typeof (res.json as any)?.error === "string"
+              ? String((res.json as any).error)
+              : typeof res.text === "string" && res.text.trim().length
+                ? res.text
+                : `Upload failed (HTTP ${res.status})`;
+          throw new Error(msg);
+        }
+
+        const uploadedUrl = String((res.json as any)?.avatarUrl ?? "").trim();
+        if (uploadedUrl) avatarUrl = uploadedUrl;
+      }
+
       const nextDb = await updateDb((prev) => {
         const existing = (prev as any).users?.[id];
         if (!existing) return prev;
@@ -356,7 +661,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       setCurrentUser((nextDb as any)?.users?.[id] ?? null);
     },
-    [userId]
+    [userId, token]
   );
 
   const value = useMemo<AuthState>(
@@ -365,6 +670,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       isReady: authReady,
       isLoggedIn: !!userId,
       userId,
+      token,
 
       currentUser,
 
@@ -372,6 +678,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       signIn,
       signUp,
       signOut,
+
+      fetchWithAuth,
 
       refreshCurrentUser,
       updateUserSettings,
@@ -380,11 +688,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [
       authReady,
       userId,
+      token,
       currentUser,
       signInMock,
       signIn,
       signUp,
       signOut,
+      fetchWithAuth,
       refreshCurrentUser,
       updateUserSettings,
       updateUserAvatar,

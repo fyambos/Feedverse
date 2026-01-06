@@ -12,17 +12,21 @@ export const authMiddleware = async (
     const token = req.header(AUTH.HEADER_NAME)?.replace(AUTH.BEARER_PREFIX, "");
 
     if (!token) {
-      throw new Error();
+      return res.status(HTTP_STATUS.UNAUTHORIZED).send(AUTH.MISSING_TOKEN);
     }
 
-    jwt.verify(token, AUTH.SECRET_KEY, (err: unknown, user: User) => {
-      if (err)
-        return res.status(HTTP_STATUS.FORBIDDEN).send(AUTH.INVALID_TOKEN);
-      req.user = user;
+    jwt.verify(token, AUTH.SECRET_KEY, (err: unknown, decoded: unknown) => {
+      if (err) return res.status(HTTP_STATUS.FORBIDDEN).send(AUTH.INVALID_TOKEN);
+
+      const payload = decoded as { user?: User } | null;
+      if (!payload?.user) return res.status(HTTP_STATUS.FORBIDDEN).send(AUTH.INVALID_TOKEN);
+
+      req.user = payload.user;
       next();
     });
   } catch (err: unknown) {
-    console.error("Erreur authentification : ", err);
-    res.status(HTTP_STATUS.UNAUTHORIZED).send(AUTH.UNAUTHORIZED_ACCESS);
+    const msg = err instanceof Error ? err.message : "";
+    console.error("Erreur authentification :", msg || "unknown");
+    return res.status(HTTP_STATUS.UNAUTHORIZED).send(AUTH.UNAUTHORIZED_ACCESS);
   }
 };

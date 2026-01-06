@@ -41,3 +41,6 @@ app-example
 # generated native folders
 /ios
 /android
+
+# Firebase admin SDK private key
+feedverse-510bc-firebase-adminsdk-fbsvc-c067f69184.json

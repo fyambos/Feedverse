@@ -1,0 +1,16 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "curl:ping-8080",
+			"type": "shell",
+			"command": "bash",
+			"args": [
+				"-lc",
+				"cd backend && curl -sS -D - http://localhost:8080/scenarios -o /dev/null || true"
+			],
+			"isBackground": false,
+			"problemMatcher": []
+		}
+	]
+}

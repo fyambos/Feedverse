@@ -5,9 +5,24 @@ import { pool } from "../config/database";
 import { User } from "./userModels";
 
 export class UserRepository {
+  async getAvatarUrl(userId: string): Promise<string | null> {
+    const query = "SELECT avatar_url FROM users WHERE id = $1";
+    const result = await pool.query(query, [userId]);
+    const row = result.rows[0];
+    if (!row) return null;
+    const v = row.avatar_url;
+    return v == null ? null : String(v);
+  }
+
   async findByEmail(email: string): Promise<User | null> {
     const query = "SELECT * FROM users WHERE email = $1";
     const result = await pool.query(query, [email]);
+    return result.rows[0] || null;
+  }
+
+  async findByUsername(username: string): Promise<User | null> {
+    const query = "SELECT * FROM users WHERE username = $1";
+    const result = await pool.query(query, [username]);
     return result.rows[0] || null;
   }
 
@@ -61,5 +76,12 @@ export class UserRepository {
     const query = "SELECT * FROM users WHERE google_id = $1";
     const result = await pool.query(query, [googleId]);
     return result.rows[0] || null;
+  }
+
+  async findByIds(ids: string[]): Promise<User[]> {
+    if (!Array.isArray(ids) || ids.length === 0) return [];
+    const query = `SELECT id, username, avatar_url, created_at, updated_at FROM users WHERE id = ANY($1)`;
+    const result = await pool.query(query, [ids]);
+    return result.rows || [];
   }
 }

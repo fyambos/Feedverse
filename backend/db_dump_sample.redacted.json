@@ -1,0 +1,2224 @@
+{
+  "generatedAt": "2026-01-05T10:58:42.854Z",
+  "dbInfo": {
+    "db": "neondb",
+    "usr": "neondb_owner",
+    "now_utc": "2026-01-05T09:58:42.875Z"
+  },
+  "tables": {
+    "public.app_meta": {
+      "count": "0",
+      "sample": [],
+      "error": null
+    },
+    "public.auth_identities": {
+      "count": "0",
+      "sample": [],
+      "error": null
+    },
+    "public.character_sheets": {
+      "count": "7",
+      "sample": [
+        {
+          "profile_id": "30f7bccf-791a-2ff4-67a3-3470e7b8e076",
+          "name": "Elyra",
+          "race": "Half-Elf",
+          "class": "Rogue",
+          "level": 3,
+          "alignment": "Chaotic Neutral",
+          "background": "Elyra was once a street urchin, surviving through wit and agility. She discovered a talent for thievery and deception, leading her to become a skilled rogue. Now, she seeks fortune and adventure, always looking for the next big score.",
+          "strength": 8,
+          "dexterity": 16,
+          "constitution": 12,
+          "intelligence": 13,
+          "wisdom": 14,
+          "charisma": 11,
+          "hp_current": 19,
+          "hp_max": 19,
+          "hp_temp": null,
+          "status": "ok",
+          "inventory": [
+            {
+              "id": "i_lockpicks",
+              "name": "Lockpicks"
+            },
+            {
+              "id": "i_dagger",
+              "qty": 2,
+              "name": "Dagger"
+            },
+            {
+              "id": "i_rope",
+              "name": "Rope",
+              "notes": "50 ft"
+            }
+          ],
+          "equipment": [
+            {
+              "id": "e_leather",
+              "name": "Leather Armor"
+            },
+            {
+              "id": "e_shortbow",
+              "name": "Shortbow"
+            }
+          ],
+          "spells": [],
+          "abilities": [
+            {
+              "id": "a_sneak",
+              "name": "Sneak Attack",
+              "notes": "extra damage on advantage"
+            }
+          ],
+          "public_notes": "fast hands, faster mouth.",
+          "private_notes": "the bell sound feels familiar. hate that.",
+          "created_at": "2025-12-29T08:30:00.000Z",
+          "updated_at": "2025-12-29T08:30:00.000Z"
+        },
+        {
+          "profile_id": "936754eb-bc52-5b99-c0eb-11edad64720f",
+          "name": "Brom Stone",
+          "race": "Dwarf",
+          "class": "Fighter",
+          "level": 3,
+          "alignment": "Lawful Neutral",
+          "background": "Brom hails from a long line of warriors and has trained in the art of combat since childhood. Known for his unwavering loyalty and strong sense of duty, Brom is a stalwart protector of his friends. He wields his battleaxe with precision and strength, ready to face any challenge head-on.",
+          "strength": 16,
+          "dexterity": 10,
+          "constitution": 15,
+          "intelligence": 9,
+          "wisdom": 12,
+          "charisma": 10,
+          "hp_current": 28,
+          "hp_max": 28,
+          "hp_temp": null,
+          "status": "ok",
+          "inventory": [
+            {
+              "id": "i_torch",
+              "qty": 6,
+              "name": "Torch"
+            },
+            {
+              "id": "i_rations",
+              "qty": 5,
+              "name": "Rations"
+            },
+            {
+              "id": "i_hammer",
+              "name": "Small Hammer"
+            }
+          ],
+          "equipment": [
+            {
+              "id": "e_chain",
+              "name": "Chain Shirt"
+            },
+            {
+              "id": "e_axe",
+              "name": "Battleaxe"
+            }
+          ],
+          "spells": [],
+          "abilities": [
+            {
+              "id": "a_secondwind",
+              "name": "Second Wind",
+              "notes": "self-heal once per rest"
+            }
+          ],
+          "public_notes": "if it looks like a trap, it’s a door in disguise.",
+          "private_notes": "won’t admit it, but i miss the quiet of barracks.",
+          "created_at": "2025-12-29T08:30:00.000Z",
+          "updated_at": "2025-12-29T08:30:00.000Z"
+        },
+        {
+          "profile_id": "082e9ae4-c474-f6c3-3c60-f4ea9ddaee31",
+          "name": "Mira",
+          "race": "Human",
+          "class": "Cleric",
+          "level": 3,
+          "alignment": "Neutral Good",
+          "background": "Mira grew up in a small village where she was drawn to the teachings of a benevolent deity. Her compassionate nature and desire to help others led her to become a cleric. Mira uses her divine magic to heal and protect her allies, often serving as the moral compass of the group.",
+          "strength": 10,
+          "dexterity": 12,
+          "constitution": 13,
+          "intelligence": 11,
+          "wisdom": 16,
+          "charisma": 12,
+          "hp_current": 22,
+          "hp_max": 22,
+          "hp_temp": null,
+          "status": "ok",
+          "inventory": [
+            {
+              "id": "i_incense",
+              "name": "Incense"
+            },
+            {
+              "id": "i_herbs",
+              "qty": 3,
+              "name": "Healing Herbs"
+            },
+            {
+              "id": "i_journal",
+              "name": "Prayer Journal"
+            }
+          ],
+          "equipment": [
+            {
+              "id": "e_mace",
+              "name": "Mace"
+            },
+            {
+              "id": "e_shield",
+              "name": "Shield"
+            }
+          ],
+          "spells": [
+            {
+              "id": "s_curewounds",
+              "name": "Cure Wounds"
+            },
+            {
+              "id": "s_bless",
+              "name": "Bless"
+            },
+            {
+              "id": "s_guidingbolt",
+              "name": "Guiding Bolt"
+            }
+          ],
+          "abilities": [],
+          "public_notes": "gentle voice, sharp boundaries.",
+          "private_notes": "ashford chapel is involved. i can feel it.",
+          "created_at": "2025-12-29T08:30:00.000Z",
+          "updated_at": "2025-12-29T08:30:00.000Z"
+        },
+        {
+          "profile_id": "dcc6a354-b671-02a5-84a7-b88f51afe82d",
+          "name": "Riven",
+          "race": "Human",
+          "class": "Ranger",
+          "level": 3,
+          "alignment": "Neutral",
+          "background": "Riven worked as a tracker for caravans until the road started swallowing people whole. He follows patterns the way others follow faith—quietly, obsessively, and with very little mercy for coincidence.",
+          "strength": 12,
+          "dexterity": 15,
+          "constitution": 13,
+          "intelligence": 10,
+          "wisdom": 14,
+          "charisma": 9,
+          "hp_current": 24,
+          "hp_max": 24,
+          "hp_temp": null,
+          "status": "ok",
+          "inventory": [
+            {
+              "id": "i_map",
+              "name": "Marked Map",
+              "notes": "old bridge routes"
+            },
+            {
+              "id": "i_trapwire",
+              "qty": 2,
+              "name": "Trap Wire"
+            }
+          ],
+          "equipment": [
+            {
+              "id": "e_leather",
+              "name": "Leather Armor"
+            },
+            {
+              "id": "e_longbow",
+              "name": "Longbow"
+            }
+          ],
+          "spells": [],
+          "abilities": [
+            {
+              "id": "a_huntersmark",
+              "name": "Hunter’s Mark",
+              "notes": "extra damage on focus target"
+            }
+          ],
+          "public_notes": "doesn’t miss. doesn’t explain.",
+          "private_notes": "the ledger already has my name. dated tomorrow.",
+          "created_at": "2025-12-29T08:30:00.000Z",
+          "updated_at": "2025-12-29T08:30:00.000Z"
+        },
+        {
+          "profile_id": "d9bd9569-0fdd-5873-fa6d-4c5d64fd9dea",
+          "name": "Sera Vale",
+          "race": "Tiefling",
+          "class": "Warlock",
+          "level": 3,
+          "alignment": "Chaotic Neutral",
+          "background": "Sera signed a pact she insists was a ‘negotiation’. Her patron doesn’t speak often—only when she’s about to do something irreversible. She likes it that way.",
+          "strength": 8,
+          "dexterity": 13,
+          "constitution": 12,
+          "intelligence": 14,
+          "wisdom": 10,
+          "charisma": 16,
+          "hp_current": 20,
+          "hp_max": 20,
+          "hp_temp": null,
+          "status": "ok",
+          "inventory": [
+            {
+              "id": "i_seal",
+              "name": "Wax Seal",
+              "notes": "unknown crest"
+            },
+            {
+              "id": "i_ink",
+              "name": "Black Ink",
+              "notes": "smells like iron"
+            }
+          ],
+          "equipment": [
+            {
+              "id": "e_cloak",
+              "name": "Charred Cloak"
+            },
+            {
+              "id": "e_dagger",
+              "name": "Dagger"
+            }
+          ],
+          "spells": [
+            {
+              "id": "s_eldritchblast",
+              "name": "Eldritch Blast"
+            }
+          ],
+          "abilities": [
+            {
+              "id": "a_hex",
+              "name": "Hex",
+              "notes": "curse + focus damage"
+            }
+          ],
+          "public_notes": "smiles when it’s a bad idea.",
+          "private_notes": "my patron wants the ledger. hasn’t explained why.",
+          "created_at": "2025-12-29T08:30:00.000Z",
+          "updated_at": "2025-12-29T08:30:00.000Z"
+        },
+        {
+          "profile_id": "60c1df3f-de41-9177-83d1-3f26bda2715f",
+          "name": "Ioren",
+          "race": "Elf",
+          "class": "Wizard",
+          "level": 3,
+          "alignment": "Lawful Neutral",
+          "background": "Ioren studied record-magic: contracts, names, rules. He believes most curses are just poorly documented laws. He wants to read the ledger like a statute—and rewrite it if needed.",
+          "strength": 7,
+          "dexterity": 12,
+          "constitution": 11,
+          "intelligence": 16,
+          "wisdom": 13,
+          "charisma": 10,
+          "hp_current": 18,
+          "hp_max": 18,
+          "hp_temp": null,
+          "status": "ok",
+          "inventory": [
+            {
+              "id": "i_quill",
+              "name": "Silver Quill"
+            },
+            {
+              "id": "i_scroll",
+              "name": "Scroll Case",
+              "notes": "sealed"
+            }
+          ],
+          "equipment": [
+            {
+              "id": "e_robe",
+              "name": "Travel Robes"
+            },
+            {
+              "id": "e_staff",
+              "name": "Oak Staff"
+            }
+          ],
+          "spells": [
+            {
+              "id": "s_magicmissile",
+              "name": "Magic Missile"
+            },
+            {
+              "id": "s_shield",
+              "name": "Shield"
+            }
+          ],
+          "abilities": [
+            {
+              "id": "a_ritual",
+              "name": "Ritual Casting",
+              "notes": "slow but precise"
+            }
+          ],
+          "public_notes": "calls disasters ‘interesting’.",
+          "private_notes": "if the ledger is alive, it can be negotiated with. i think.",
+          "created_at": "2025-12-29T08:30:00.000Z",
+          "updated_at": "2025-12-29T08:30:00.000Z"
+        },
+        {
+          "profile_id": "024816e4-e21e-41d0-0da4-f0efe5f333c8",
+          "name": "Winter",
+          "race": "Human",
+          "class": "Cleric",
+          "level": 3,
+          "alignment": "Neutral Good",
+          "background": "Winter learned healing the hard way: too late, too often. She’s here because the ledger’s ‘debts’ look like prophecy—and prophecy tends to demand blood as payment.",
+          "strength": 9,
+          "dexterity": 11,
+          "constitution": 13,
+          "intelligence": 12,
+          "wisdom": 16,
+          "charisma": 12,
+          "hp_current": 22,
+          "hp_max": 22,
+          "hp_temp": null,
+          "status": "ok",
+          "inventory": [
+            {
+              "id": "i_salt",
+              "name": "Salt Pouch"
+            },
+            {
+              "id": "i_charm",
+              "name": "Small Charm",
+              "notes": "chapel token"
+            }
+          ],
+          "equipment": [
+            {
+              "id": "e_mace",
+              "name": "Mace"
+            },
+            {
+              "id": "e_shield",
+              "name": "Shield"
+            }
+          ],
+          "spells": [
+            {
+              "id": "s_curewounds",
+              "name": "Cure Wounds"
+            },
+            {
+              "id": "s_bless",
+              "name": "Bless"
+            }
+          ],
+          "abilities": [],
+          "public_notes": "gentle voice, hard limits.",
+          "private_notes": "i’ve seen the ledger handwriting before. i shouldn’t have.",
+          "created_at": "2025-12-29T08:30:00.000Z",
+          "updated_at": "2025-12-29T08:30:00.000Z"
+        }
+      ],
+      "error": null
+    },
+    "public.conversation_participants": {
+      "count": "0",
+      "sample": [],
+      "error": null
+    },
+    "public.conversations": {
+      "count": "0",
+      "sample": [],
+      "error": null
+    },
+    "public.global_tags": {
+      "count": "14",
+      "sample": [
+        {
+          "key": "college",
+          "name": "College",
+          "color": "#ffc65cff",
+          "created_at": "2024-06-01T00:00:00.000Z",
+          "updated_at": "2024-06-01T00:00:00.000Z"
+        },
+        {
+          "key": "romcom",
+          "name": "Romcom",
+          "color": "#fd92d0ff",
+          "created_at": "2024-06-01T00:00:00.000Z",
+          "updated_at": "2024-06-01T00:00:00.000Z"
+        },
+        {
+          "key": "group chat",
+          "name": "Group Chat",
+          "color": "#83fad3ff",
+          "created_at": "2024-06-01T00:00:00.000Z",
+          "updated_at": "2024-06-01T00:00:00.000Z"
+        },
+        {
+          "key": "politics",
+          "name": "Politics",
+          "color": "#9db7ffff",
+          "created_at": "2024-06-01T00:00:00.000Z",
+          "updated_at": "2024-06-01T00:00:00.000Z"
+        },
+        {
+          "key": "royalty",
+          "name": "Royalty",
+          "color": "#d8b4feff",
+          "created_at": "2024-06-01T00:00:00.000Z",
+          "updated_at": "2024-06-01T00:00:00.000Z"
+        },
+        {
+          "key": "drama",
+          "name": "Drama",
+          "color": "#ff8aaeff",
+          "created_at": "2024-06-01T00:00:00.000Z",
+          "updated_at": "2024-06-01T00:00:00.000Z"
+        },
+        {
+          "key": "mafia",
+          "name": "Mafia",
+          "color": "#111827ff",
+          "created_at": "2024-06-01T00:00:00.000Z",
+          "updated_at": "2024-06-01T00:00:00.000Z"
+        },
+        {
+          "key": "heist",
+          "name": "Heist",
+          "color": "#f59e0bff",
+          "created_at": "2024-06-01T00:00:00.000Z",
+          "updated_at": "2024-06-01T00:00:00.000Z"
+        },
+        {
+          "key": "action",
+          "name": "Action",
+          "color": "#22c55eff",
+          "created_at": "2024-06-01T00:00:00.000Z",
+          "updated_at": "2024-06-01T00:00:00.000Z"
+        },
+        {
+          "key": "fantasy",
+          "name": "Fantasy",
+          "color": "#7c83fdff",
+          "created_at": "2024-06-01T00:00:00.000Z",
+          "updated_at": "2024-06-01T00:00:00.000Z"
+        },
+        {
+          "key": "campaign",
+          "name": "Campaign",
+          "color": "#34d399ff",
+          "created_at": "2024-06-01T00:00:00.000Z",
+          "updated_at": "2024-06-01T00:00:00.000Z"
+        },
+        {
+          "key": "rp",
+          "name": "RP",
+          "color": "#f472b6ff",
+          "created_at": "2024-06-01T00:00:00.000Z",
+          "updated_at": "2024-06-01T00:00:00.000Z"
+        },
+        {
+          "key": "mystery",
+          "name": "Mystery",
+          "color": "#60a5faff",
+          "created_at": "2024-06-01T00:00:00.000Z",
+          "updated_at": "2024-06-01T00:00:00.000Z"
+        },
+        {
+          "key": "adventure",
+          "name": "Adventure",
+          "color": "#000",
+          "created_at": "2026-01-04T21:49:15.522Z",
+          "updated_at": null
+        }
+      ],
+      "error": null
+    },
+    "public.likes": {
+      "count": "0",
+      "sample": [],
+      "error": null
+    },
+    "public.messages": {
+      "count": "0",
+      "sample": [],
+      "error": null
+    },
+    "public.posts": {
+      "count": "43",
+      "sample": [
+        {
+          "id": "2ad1a7c2-ee48-a99f-37fb-b0cfb49cbea6",
+          "scenario_id": "8417f906-a9ff-7b1e-42a9-9f1648177ba9",
+          "author_profile_id": "78611b10-4675-deb1-638b-16af43fda84c",
+          "text": "first day back and i already lost my student card. again.",
+          "image_urls": null,
+          "reply_count": 2,
+          "repost_count": 1,
+          "like_count": 34,
+          "parent_post_id": null,
+          "quoted_post_id": null,
+          "created_at": "2025-12-20T09:12:00.000Z",
+          "updated_at": null,
+          "inserted_at": "2025-12-20T09:12:05.000Z",
+          "post_type": "rp",
+          "meta": null,
+          "is_pinned": false,
+          "pin_order": null
+        },
+        {
+          "id": "72554e9c-a890-c381-1050-3825e28f6d7b",
+          "scenario_id": "8417f906-a9ff-7b1e-42a9-9f1648177ba9",
+          "author_profile_id": "f2542fd5-120c-b623-1e5f-c680dbc942e1",
+          "text": "if you see someone running with a lanyard… no you didn’t.",
+          "image_urls": null,
+          "reply_count": 1,
+          "repost_count": 4,
+          "like_count": 210,
+          "parent_post_id": null,
+          "quoted_post_id": "2ad1a7c2-ee48-a99f-37fb-b0cfb49cbea6",
+          "created_at": "2025-12-20T09:18:00.000Z",
+          "updated_at": null,
+          "inserted_at": "2025-12-20T09:18:10.000Z",
+          "post_type": "rp",
+          "meta": null,
+          "is_pinned": false,
+          "pin_order": null
+        },
+        {
+          "id": "c6fc37f0-e0c5-bf3d-a249-892884c4ab9c",
+          "scenario_id": "8417f906-a9ff-7b1e-42a9-9f1648177ba9",
+          "author_profile_id": "5a50a714-007d-6e96-22b5-553e164fc49b",
+          "text": "who schedules an 8am lab and why do they still have a job",
+          "image_urls": null,
+          "reply_count": 0,
+          "repost_count": 0,
+          "like_count": 12,
+          "parent_post_id": null,
+          "quoted_post_id": null,
+          "created_at": "2025-12-20T06:58:00.000Z",
+          "updated_at": null,
+          "inserted_at": "2025-12-20T06:58:15.000Z",
+          "post_type": "rp",
+          "meta": null,
+          "is_pinned": false,
+          "pin_order": null
+        },
+        {
+          "id": "82b86d04-8dc1-8660-43fc-a0e324802f6a",
+          "scenario_id": "8417f906-a9ff-7b1e-42a9-9f1648177ba9",
+          "author_profile_id": "53dd99a8-d267-4e88-415a-5b76a0ab6748",
+          "text": "this has become a personality trait.",
+          "image_urls": null,
+          "reply_count": 0,
+          "repost_count": 0,
+          "like_count": 40,
+          "parent_post_id": "2ad1a7c2-ee48-a99f-37fb-b0cfb49cbea6",
+          "quoted_post_id": null,
+          "created_at": "2025-12-20T09:21:00.000Z",
+          "updated_at": null,
+          "inserted_at": "2025-12-20T09:21:05.000Z",
+          "post_type": "rp",
+          "meta": null,
+          "is_pinned": false,
+          "pin_order": null
+        },
+        {
+          "id": "3182cd93-d190-dc45-9312-a0eb030be382",
+          "scenario_id": "8417f906-a9ff-7b1e-42a9-9f1648177ba9",
+          "author_profile_id": "5a50a714-007d-6e96-22b5-553e164fc49b",
+          "text": "you lose everything except confidence",
+          "image_urls": null,
+          "reply_count": 0,
+          "repost_count": 0,
+          "like_count": 55,
+          "parent_post_id": "2ad1a7c2-ee48-a99f-37fb-b0cfb49cbea6",
+          "quoted_post_id": null,
+          "created_at": "2025-12-20T09:22:00.000Z",
+          "updated_at": null,
+          "inserted_at": "2025-12-20T09:22:10.000Z",
+          "post_type": "rp",
+          "meta": null,
+          "is_pinned": false,
+          "pin_order": null
+        },
+        {
+          "id": "96ecfbef-1dda-5489-56fd-d0b40e81f05d",
+          "scenario_id": "8417f906-a9ff-7b1e-42a9-9f1648177ba9",
+          "author_profile_id": "78611b10-4675-deb1-638b-16af43fda84c",
+          "text": "give it back. i will pay in emotional support.",
+          "image_urls": null,
+          "reply_count": 0,
+          "repost_count": 0,
+          "like_count": 78,
+          "parent_post_id": "72554e9c-a890-c381-1050-3825e28f6d7b",
+          "quoted_post_id": null,
+          "created_at": "2025-12-20T09:24:00.000Z",
+          "updated_at": null,
+          "inserted_at": "2025-12-20T09:24:15.000Z",
+          "post_type": "rp",
+          "meta": null,
+          "is_pinned": false,
+          "pin_order": null
+        },
+        {
+          "id": "aaee3257-d33e-3870-9334-f099380b0e3f",
+          "scenario_id": "e964b9e7-7a0d-bf9a-c3d5-c93c74fd50fe",
+          "author_profile_id": "6cb0e141-f797-d5cb-ab91-de4d13ca3313",
+          "text": "first day of training. they said it would be ‘light’. it was a lie.",
+          "image_urls": null,
+          "reply_count": 2,
+          "repost_count": 2,
+          "like_count": 98,
+          "parent_post_id": null,
+          "quoted_post_id": null,
+          "created_at": "2025-12-21T15:10:00.000Z",
+          "updated_at": null,
+          "inserted_at": "2025-12-21T15:10:05.000Z",
+          "post_type": "rp",
+          "meta": null,
+          "is_pinned": false,
+          "pin_order": null
+        },
+        {
+          "id": "d42e2eec-900c-176a-3033-4ab4ae1c73d7",
+          "scenario_id": "e964b9e7-7a0d-bf9a-c3d5-c93c74fd50fe",
+          "author_profile_id": "24fdc961-d59d-4c90-ea37-086b01bd81af",
+          "text": "why is everyone acting like sprinting at full speed is a warm-up",
+          "image_urls": null,
+          "reply_count": 1,
+          "repost_count": 0,
+          "like_count": 62,
+          "parent_post_id": null,
+          "quoted_post_id": null,
+          "created_at": "2025-12-21T15:14:00.000Z",
+          "updated_at": null,
+          "inserted_at": "2025-12-21T15:14:10.000Z",
+          "post_type": "rp",
+          "meta": null,
+          "is_pinned": false,
+          "pin_order": null
+        },
+        {
+          "id": "fcc19b5a-1795-6573-d553-d43487d6f6ba",
+          "scenario_id": "e964b9e7-7a0d-bf9a-c3d5-c93c74fd50fe",
+          "author_profile_id": "510f2559-e78d-b36f-e51b-2b6411f5e2f5",
+          "text": "it’s not hard. you’re just dramatic.",
+          "image_urls": null,
+          "reply_count": 0,
+          "repost_count": 3,
+          "like_count": 140,
+          "parent_post_id": null,
+          "quoted_post_id": "aaee3257-d33e-3870-9334-f099380b0e3f",
+          "created_at": "2025-12-21T15:18:00.000Z",
+          "updated_at": null,
+          "inserted_at": "2025-12-21T15:18:15.000Z",
+          "post_type": "rp",
+          "meta": null,
+          "is_pinned": false,
+          "pin_order": null
+        },
+        {
+          "id": "db5e3e73-cc68-b6f0-0523-1acb9c2eaefd",
+          "scenario_id": "e964b9e7-7a0d-bf9a-c3d5-c93c74fd50fe",
+          "author_profile_id": "4ddc0321-3e0f-9ba0-3ddb-688545f38620",
+          "text": "wait for day 3. then complain.",
+          "image_urls": null,
+          "reply_count": 0,
+          "repost_count": 0,
+          "like_count": 80,
+          "parent_post_id": "aaee3257-d33e-3870-9334-f099380b0e3f",
+          "quoted_post_id": null,
+          "created_at": "2025-12-21T15:20:00.000Z",
+          "updated_at": null,
+          "inserted_at": "2025-12-21T15:20:05.000Z",
+          "post_type": "rp",
+          "meta": null,
+          "is_pinned": false,
+          "pin_order": null
+        },
+        {
+          "id": "ac01fa70-f63f-1c2f-6159-198e0e9416c0",
+          "scenario_id": "e964b9e7-7a0d-bf9a-c3d5-c93c74fd50fe",
+          "author_profile_id": "24fdc961-d59d-4c90-ea37-086b01bd81af",
+          "text": "day 3?? i was hoping to be dead by day 2",
+          "image_urls": null,
+          "reply_count": 0,
+          "repost_count": 0,
+          "like_count": 100,
+          "parent_post_id": "aaee3257-d33e-3870-9334-f099380b0e3f",
+          "quoted_post_id": null,
+          "created_at": "2025-12-21T15:22:00.000Z",
+          "updated_at": null,
+          "inserted_at": "2025-12-21T15:22:10.000Z",
+          "post_type": "rp",
+          "meta": null,
+          "is_pinned": false,
+          "pin_order": null
+        },
+        {
+          "id": "1c23dcee-8eb8-e757-e1d9-b83a5fd64802",
+          "scenario_id": "e964b9e7-7a0d-bf9a-c3d5-c93c74fd50fe",
+          "author_profile_id": "6cb0e141-f797-d5cb-ab91-de4d13ca3313",
+          "text": "you’re doing amazing sweetie (you’re not).",
+          "image_urls": null,
+          "reply_count": 0,
+          "repost_count": 0,
+          "like_count": 120,
+          "parent_post_id": "d42e2eec-900c-176a-3033-4ab4ae1c73d7",
+          "quoted_post_id": null,
+          "created_at": "2025-12-21T15:25:00.000Z",
+          "updated_at": null,
+          "inserted_at": "2025-12-21T15:25:15.000Z",
+          "post_type": "rp",
+          "meta": null,
+          "is_pinned": false,
+          "pin_order": null
+        },
+        {
+          "id": "f5b50e71-4b43-1f00-b136-0c64066ce217",
+          "scenario_id": "e964b9e7-7a0d-bf9a-c3d5-c93c74fd50fe",
+          "author_profile_id": "e39e4a03-5d90-e29e-93a8-ca08e6869f83",
+          "text": "i thought this would be easier than my last job.",
+          "image_urls": null,
+          "reply_count": 0,
+          "repost_count": 1,
+          "like_count": 45,
+          "parent_post_id": null,
+          "quoted_post_id": "fcc19b5a-1795-6573-d553-d43487d6f6ba",
+          "created_at": "2025-12-21T16:00:00.000Z",
+          "updated_at": null,
+          "inserted_at": "2025-12-21T16:00:20.000Z",
+          "post_type": "rp",
+          "meta": null,
+          "is_pinned": false,
+          "pin_order": null
+        },
+        {
+          "id": "a0208929-59ba-2663-bba4-04ef4c7fa82f",
+          "scenario_id": "e964b9e7-7a0d-bf9a-c3d5-c93c74fd50fe",
+          "author_profile_id": "e39e4a03-5d90-e29e-93a8-ca08e6869f83",
+          "text": "you're dramatic",
+          "image_urls": null,
+          "reply_count": 0,
+          "repost_count": 1,
+          "like_count": 45,
+          "parent_post_id": null,
+          "quoted_post_id": "fcc19b5a-1795-6573-d553-d43487d6f6ba",
+          "created_at": "2025-12-21T16:00:00.000Z",
+          "updated_at": null,
+          "inserted_at": "2025-12-21T16:00:25.000Z",
+          "post_type": "rp",
+          "meta": null,
+          "is_pinned": false,
+          "pin_order": null
+        },
+        {
+          "id": "9891a179-1103-869a-df2f-7b303c895164",
+          "scenario_id": "b2c6cb0d-57d3-c111-d40d-7cde14d50ce6",
+          "author_profile_id": "471e239d-4339-8fae-8ad3-f0f933d8ee7a",
+          "text": "📌 campaign rules\n\n• rolls are public.\n• say what you attempt, then roll.\n• criticals: d20 = crit success, d1 = crit fail.\n• keep OOC in DMs (OOC tab).\n• be kind. we can be dramatic in-character, not to each other.",
+          "image_urls": null,
+          "reply_count": 0,
+          "repost_count": 0,
+          "like_count": 0,
+          "parent_post_id": null,
+          "quoted_post_id": null,
+          "created_at": "2025-12-29T08:00:00.000Z",
+          "updated_at": null,
+          "inserted_at": "2025-12-29T08:00:02.000Z",
+          "post_type": "gm",
+          "meta": null,
+          "is_pinned": true,
+          "pin_order": 1
+        },
+        {
+          "id": "f0839aca-549d-b004-5477-0c996327ada1",
+          "scenario_id": "b2c6cb0d-57d3-c111-d40d-7cde14d50ce6",
+          "author_profile_id": "471e239d-4339-8fae-8ad3-f0f933d8ee7a",
+          "text": "📌 intro\n\nthe fallen realm has started whispering again.\ncaravans vanish near the old road. a bell rings in ruins with no tower.\nyou arrive in ashford, a town pretending it’s not scared.",
+          "image_urls": null,
+          "reply_count": 0,
+          "repost_count": 0,
+          "like_count": 0,
+          "parent_post_id": null,
+          "quoted_post_id": null,
+          "created_at": "2025-12-29T08:05:00.000Z",
+          "updated_at": null,
+          "inserted_at": "2025-12-29T08:05:03.000Z",
+          "post_type": "gm",
+          "meta": null,
+          "is_pinned": true,
+          "pin_order": 2
+        },
+        {
+          "id": "ca0838e6-f046-0386-f07c-a1990ad07b80",
+          "scenario_id": "b2c6cb0d-57d3-c111-d40d-7cde14d50ce6",
+          "author_profile_id": "471e239d-4339-8fae-8ad3-f0f933d8ee7a",
+          "text": "📌 quest board\n\n1) missing caravan — last seen near the old bridge.\n2) the bell in the ruins — it rings at dusk.\n3) ashford chapel — someone keeps leaving coins soaked in saltwater.\n\nreply with what you take + any preparation.",
+          "image_urls": null,
+          "reply_count": 0,
+          "repost_count": 0,
+          "like_count": 0,
+          "parent_post_id": null,
+          "quoted_post_id": null,
+          "created_at": "2025-12-29T08:10:00.000Z",
+          "updated_at": null,
+          "inserted_at": "2025-12-29T08:10:03.000Z",
+          "post_type": "quest",
+          "meta": {
+            "quests": [
+              {
+                "id": "q1",
+                "title": "missing caravan",
+                "status": "open"
+              },
+              {
+                "id": "q2",
+                "title": "the bell in the ruins",
+                "status": "open"
+              },
+              {
+                "id": "q3",
+                "title": "ashford chapel",
+                "status": "open"
+              }
+            ]
+          },
+          "is_pinned": true,
+          "pin_order": 3
+        },
+        {
+          "id": "16802812-bcae-eb8d-b90b-6e5832b82bab",
+          "scenario_id": "b2c6cb0d-57d3-c111-d40d-7cde14d50ce6",
+          "author_profile_id": "b22bacee-ae3c-9fe0-e019-4b0b08a302f6",
+          "text": "session log — day 1\n• party meets in ashford.\n• town rumors: missing caravan + bell in ruins.\n• you decide to investigate the old bridge first.",
+          "image_urls": null,
+          "reply_count": 0,
+          "repost_count": 0,
+          "like_count": 0,
+          "parent_post_id": null,
+          "quoted_post_id": null,
+          "created_at": "2025-12-29T09:00:00.000Z",
+          "updated_at": null,
+          "inserted_at": "2025-12-29T09:00:05.000Z",
+          "post_type": "log",
+          "meta": null,
+          "is_pinned": false,
+          "pin_order": null
+        },
+        {
+          "id": "baaf8854-3b8b-f8f7-b349-395a3ca7e9cf",
+          "scenario_id": "b2c6cb0d-57d3-c111-d40d-7cde14d50ce6",
+          "author_profile_id": "30f7bccf-791a-2ff4-67a3-3470e7b8e076",
+          "text": "elyra slides into the inn like she belongs there, hood half-up, eyes already counting exits.\n\"who’s paying?\" she asks, like it’s a joke. it isn’t.",
+          "image_urls": null,
+          "reply_count": 2,
+          "repost_count": 0,
+          "like_count": 7,
+          "parent_post_id": null,
+          "quoted_post_id": null,
+          "created_at": "2025-12-29T09:05:00.000Z",
+          "updated_at": null,
+          "inserted_at": "2025-12-29T09:05:04.000Z",
+          "post_type": "rp",
+          "meta": null,
+          "is_pinned": false,
+          "pin_order": null
+        },
+        {
+          "id": "2cc655f5-5092-10d4-9966-21857564dc94",
+          "scenario_id": "b2c6cb0d-57d3-c111-d40d-7cde14d50ce6",
+          "author_profile_id": "936754eb-bc52-5b99-c0eb-11edad64720f",
+          "text": "brom drops onto the nearest chair with the confidence of a man who has never been politely asked to leave.\n\"i’ll pay. but if anyone lies to me, i’m breaking the chair first.\"",
+          "image_urls": null,
+          "reply_count": 0,
+          "repost_count": 0,
+          "like_count": 5,
+          "parent_post_id": "baaf8854-3b8b-f8f7-b349-395a3ca7e9cf",
+          "quoted_post_id": null,
+          "created_at": "2025-12-29T09:06:30.000Z",
+          "updated_at": null,
+          "inserted_at": "2025-12-29T09:06:33.000Z",
+          "post_type": "rp",
+          "meta": null,
+          "is_pinned": false,
+          "pin_order": null
+        },
+        {
+          "id": "75485ab7-b8af-fcb3-7056-369c80c0b1e8",
+          "scenario_id": "b2c6cb0d-57d3-c111-d40d-7cde14d50ce6",
+          "author_profile_id": "082e9ae4-c474-f6c3-3c60-f4ea9ddaee31",
+          "text": "mira sets her holy symbol on the table like it’s an invitation and a warning.\n\"we can afford honesty. we can’t afford panic.\"",
+          "image_urls": null,
+          "reply_count": 0,
+          "repost_count": 0,
+          "like_count": 6,
+          "parent_post_id": "baaf8854-3b8b-f8f7-b349-395a3ca7e9cf",
+          "quoted_post_id": null,
+          "created_at": "2025-12-29T09:07:10.000Z",
+          "updated_at": null,
+          "inserted_at": "2025-12-29T09:07:13.000Z",
+          "post_type": "rp",
+          "meta": null,
+          "is_pinned": false,
+          "pin_order": null
+        },
+        {
+          "id": "f3556509-0f71-d365-b763-aa2916c553b3",
+          "scenario_id": "b2c6cb0d-57d3-c111-d40d-7cde14d50ce6",
+          "author_profile_id": "30f7bccf-791a-2ff4-67a3-3470e7b8e076",
+          "text": "i want to listen for anything… wrong. whispers, patterns, whatever the room is hiding.",
+          "image_urls": null,
+          "reply_count": 0,
+          "repost_count": 0,
+          "like_count": 0,
+          "parent_post_id": null,
+          "quoted_post_id": null,
+          "created_at": "2025-12-29T09:10:00.000Z",
+          "updated_at": null,
+          "inserted_at": "2025-12-29T09:10:02.000Z",
+          "post_type": "roll",
+          "meta": {
+            "dice": "d20",
+            "stat": "wisdom",
+            "text": "perception — scanning the inn for signals",
+            "type": "roll",
+            "total": 19,
+            "result": "success",
+            "baseRoll": 17,
+            "modifier": 2,
+            "profileId": "pr_cmp_elyra"
+          },
+          "is_pinned": false,
+          "pin_order": null
+        },
+        {
+          "id": "0cfb1a2e-17f5-efd7-bc44-17347dead3c0",
+          "scenario_id": "b2c6cb0d-57d3-c111-d40d-7cde14d50ce6",
+          "author_profile_id": "936754eb-bc52-5b99-c0eb-11edad64720f",
+          "text": "i’m checking the innkeeper’s story for holes. i’ve met ‘honest’ men before.",
+          "image_urls": null,
+          "reply_count": 0,
+          "repost_count": 0,
+          "like_count": 0,
+          "parent_post_id": null,
+          "quoted_post_id": null,
+          "created_at": "2025-12-29T09:11:00.000Z",
+          "updated_at": null,
+          "inserted_at": "2025-12-29T09:11:03.000Z",
+          "post_type": "roll",
+          "meta": {
+            "dice": "d20",
+            "stat": "wisdom",
+            "text": "insight — reading the innkeeper",
+            "type": "roll",
+            "total": 5,
+            "result": "fail",
+            "baseRoll": 4,
+            "modifier": 1,
+            "profileId": "pr_cmp_brom"
+          },
+          "is_pinned": false,
+          "pin_order": null
+        },
+        {
+          "id": "954094b7-d800-171d-30b5-363723c22bc5",
+          "scenario_id": "b2c6cb0d-57d3-c111-d40d-7cde14d50ce6",
+          "author_profile_id": "471e239d-4339-8fae-8ad3-f0f933d8ee7a",
+          "text": "quest update: missing caravan — you head for the old bridge at first light.",
+          "image_urls": null,
+          "reply_count": 0,
+          "repost_count": 0,
+          "like_count": 0,
+          "parent_post_id": null,
+          "quoted_post_id": null,
+          "created_at": "2025-12-29T09:20:00.000Z",
+          "updated_at": null,
+          "inserted_at": "2025-12-29T09:20:04.000Z",
+          "post_type": "quest",
+          "meta": {
+            "status": "active",
+            "questId": "q1",
+            "objective": "reach the old bridge + search for tracks"
+          },
+          "is_pinned": false,
+          "pin_order": null
+        },
+        {
+          "id": "bc1474a6-387f-f27e-82d6-a7d7e07c8978",
+          "scenario_id": "b2c6cb0d-57d3-c111-d40d-7cde14d50ce6",
+          "author_profile_id": "b22bacee-ae3c-9fe0-e019-4b0b08a302f6",
+          "text": "combat — roadside ambush\na shape detaches from the trees. then another.\nroll initiative.",
+          "image_urls": null,
+          "reply_count": 0,
+          "repost_count": 0,
+          "like_count": 0,
+          "parent_post_id": null,
+          "quoted_post_id": null,
+          "created_at": "2025-12-29T10:00:00.000Z",
+          "updated_at": null,
+          "inserted_at": "2025-12-29T10:00:03.000Z",
+          "post_type": "combat",
+          "meta": {
+            "phase": "initiative",
+            "enemies": [
+              {
+                "id": "en_1",
+                "name": "grave-gnawed bandit"
+              },
+              {
+                "id": "en_2",
+                "name": "grave-gnawed bandit"
+              }
+            ],
+            "encounterId": "e1"
+          },
+          "is_pinned": false,
+          "pin_order": null
+        }
+      ],
+      "error": null
+    },
+    "public.profiles": {
+      "count": "26",
+      "sample": [
+        {
+          "id": "78611b10-4675-deb1-638b-16af43fda84c",
+          "scenario_id": "8417f906-a9ff-7b1e-42a9-9f1648177ba9",
+          "owner_user_id": "80c9371f-789e-ebf2-e4cd-c7cbaaf02de7",
+          "display_name": "jinnie",
+          "handle": "jiniret",
+          "avatar_url": "https://i.pravatar.cc/200?img=47",
+          "header_url": null,
+          "bio": "dance major menace",
+          "is_public": true,
+          "is_private": false,
+          "joined_date": null,
+          "location": null,
+          "link": null,
+          "follower_count": 0,
+          "following_count": 0,
+          "created_at": "2023-01-15T10:00:00.000Z",
+          "updated_at": "2023-02-20T12:00:00.000Z"
+        },
+        {
+          "id": "f2542fd5-120c-b623-1e5f-c680dbc942e1",
+          "scenario_id": "8417f906-a9ff-7b1e-42a9-9f1648177ba9",
+          "owner_user_id": "e4b91eac-4202-c1ac-0d5a-d97897cc9d8a",
+          "display_name": "minho",
+          "handle": "leenosaurus",
+          "avatar_url": "https://i.pravatar.cc/200?img=14",
+          "header_url": null,
+          "bio": "i know where the snacks are",
+          "is_public": false,
+          "is_private": false,
+          "joined_date": null,
+          "location": null,
+          "link": null,
+          "follower_count": 0,
+          "following_count": 0,
+          "created_at": "2023-01-15T10:00:00.000Z",
+          "updated_at": "2023-02-20T12:00:00.000Z"
+        },
+        {
+          "id": "53dd99a8-d267-4e88-415a-5b76a0ab6748",
+          "scenario_id": "8417f906-a9ff-7b1e-42a9-9f1648177ba9",
+          "owner_user_id": "06bbc383-a3da-ba70-c0e8-f95abf34358e",
+          "display_name": "jisung",
+          "handle": "therealhan",
+          "avatar_url": "https://i.pravatar.cc/200?img=22",
+          "header_url": null,
+          "bio": "unhinged but helpful",
+          "is_public": false,
+          "is_private": false,
+          "joined_date": null,
+          "location": null,
+          "link": null,
+          "follower_count": 0,
+          "following_count": 0,
+          "created_at": "2023-01-15T10:00:00.000Z",
+          "updated_at": "2023-02-20T12:00:00.000Z"
+        },
+        {
+          "id": "c11581b2-6e15-16b9-0b13-dd6837c631b7",
+          "scenario_id": "1ceb20c1-9b46-07d4-6d53-47000b9547d2",
+          "owner_user_id": "bde913c2-0086-8e2a-e378-93ec37868541",
+          "display_name": "prince hj",
+          "handle": "crownrebellion",
+          "avatar_url": "https://i.pravatar.cc/200?img=9",
+          "header_url": null,
+          "bio": null,
+          "is_public": false,
+          "is_private": false,
+          "joined_date": null,
+          "location": null,
+          "link": null,
+          "follower_count": 0,
+          "following_count": 0,
+          "created_at": "2023-01-15T10:00:00.000Z",
+          "updated_at": "2023-02-20T12:00:00.000Z"
+        },
+        {
+          "id": "0cc242b7-281e-851f-468b-83f7804c4db8",
+          "scenario_id": "1ceb20c1-9b46-07d4-6d53-47000b9547d2",
+          "owner_user_id": "20135118-40f0-56cf-fe77-e836d77e6f9f",
+          "display_name": "seungmin",
+          "handle": "protocolmin",
+          "avatar_url": "https://i.pravatar.cc/200?img=21",
+          "header_url": null,
+          "bio": null,
+          "is_public": false,
+          "is_private": false,
+          "joined_date": null,
+          "location": null,
+          "link": null,
+          "follower_count": 0,
+          "following_count": 0,
+          "created_at": "2023-01-15T10:00:00.000Z",
+          "updated_at": "2023-02-20T12:00:00.000Z"
+        },
+        {
+          "id": "6c05fb5c-5697-c079-e009-4d613f8ea486",
+          "scenario_id": "1ceb20c1-9b46-07d4-6d53-47000b9547d2",
+          "owner_user_id": "20135118-40f0-56cf-fe77-e836d77e6f9f",
+          "display_name": "linda",
+          "handle": "chamberaid",
+          "avatar_url": "https://i.pravatar.cc/200?img=28",
+          "header_url": null,
+          "bio": null,
+          "is_public": false,
+          "is_private": false,
+          "joined_date": null,
+          "location": null,
+          "link": null,
+          "follower_count": 0,
+          "following_count": 0,
+          "created_at": "2023-01-15T10:00:00.000Z",
+          "updated_at": "2023-02-20T12:00:00.000Z"
+        },
+        {
+          "id": "6cb0e141-f797-d5cb-ab91-de4d13ca3313",
+          "scenario_id": "e964b9e7-7a0d-bf9a-c3d5-c93c74fd50fe",
+          "owner_user_id": "e082d20a-1467-26f6-4cf7-094dbdb9b625",
+          "display_name": "hwangjin",
+          "handle": "jiniret",
+          "avatar_url": "https://i.pravatar.cc/200?img=19",
+          "header_url": null,
+          "bio": null,
+          "is_public": false,
+          "is_private": false,
+          "joined_date": null,
+          "location": null,
+          "link": null,
+          "follower_count": 0,
+          "following_count": 0,
+          "created_at": "2023-01-15T10:00:00.000Z",
+          "updated_at": "2023-02-20T12:00:00.000Z"
+        },
+        {
+          "id": "510f2559-e78d-b36f-e51b-2b6411f5e2f5",
+          "scenario_id": "e964b9e7-7a0d-bf9a-c3d5-c93c74fd50fe",
+          "owner_user_id": "f86d64cb-e092-8c6e-4b10-70d5ffe3837d",
+          "display_name": "changbin",
+          "handle": "bullalpha",
+          "avatar_url": "https://i.pravatar.cc/200?img=37",
+          "header_url": null,
+          "bio": null,
+          "is_public": false,
+          "is_private": false,
+          "joined_date": null,
+          "location": null,
+          "link": null,
+          "follower_count": 0,
+          "following_count": 0,
+          "created_at": "2023-01-15T10:00:00.000Z",
+          "updated_at": "2023-02-20T12:00:00.000Z"
+        },
+        {
+          "id": "4ddc0321-3e0f-9ba0-3ddb-688545f38620",
+          "scenario_id": "e964b9e7-7a0d-bf9a-c3d5-c93c74fd50fe",
+          "owner_user_id": "2b80ddac-1994-02fb-77e3-14ab81dbe648",
+          "display_name": "chan",
+          "handle": "scopezero",
+          "avatar_url": "https://i.pravatar.cc/200?img=41",
+          "header_url": null,
+          "bio": null,
+          "is_public": false,
+          "is_private": false,
+          "joined_date": null,
+          "location": null,
+          "link": null,
+          "follower_count": 0,
+          "following_count": 0,
+          "created_at": "2023-01-15T10:00:00.000Z",
+          "updated_at": "2023-02-20T12:00:00.000Z"
+        },
+        {
+          "id": "24fdc961-d59d-4c90-ea37-086b01bd81af",
+          "scenario_id": "e964b9e7-7a0d-bf9a-c3d5-c93c74fd50fe",
+          "owner_user_id": "9344285f-e8f9-c46f-5112-3ec5521a975f",
+          "display_name": "minho",
+          "handle": "pharmacist",
+          "avatar_url": "https://i.pravatar.cc/200?img=45",
+          "header_url": null,
+          "bio": null,
+          "is_public": false,
+          "is_private": false,
+          "joined_date": null,
+          "location": null,
+          "link": null,
+          "follower_count": 0,
+          "following_count": 0,
+          "created_at": "2023-01-15T10:00:00.000Z",
+          "updated_at": "2023-02-20T12:00:00.000Z"
+        },
+        {
+          "id": "5a50a714-007d-6e96-22b5-553e164fc49b",
+          "scenario_id": "8417f906-a9ff-7b1e-42a9-9f1648177ba9",
+          "owner_user_id": "75262d8b-ba2d-b228-d20b-8f1bb3b70b01",
+          "display_name": "winter",
+          "handle": "bbunnll",
+          "avatar_url": "https://i.pravatar.cc/150?img=15",
+          "header_url": null,
+          "bio": "probably overthinking",
+          "is_public": false,
+          "is_private": false,
+          "joined_date": "2022-09-14T00:00:00.000Z",
+          "location": "Campus",
+          "link": "https://bbunnll.dev",
+          "follower_count": 4301,
+          "following_count": 182,
+          "created_at": "2023-01-15T10:00:00.000Z",
+          "updated_at": "2023-02-20T12:00:00.000Z"
+        },
+        {
+          "id": "576fb6f2-0941-31aa-6519-0ecef6712df6",
+          "scenario_id": "8417f906-a9ff-7b1e-42a9-9f1648177ba9",
+          "owner_user_id": "75262d8b-ba2d-b228-d20b-8f1bb3b70b01",
+          "display_name": "solar",
+          "handle": "solar",
+          "avatar_url": "https://i.pravatar.cc/150?img=20",
+          "header_url": null,
+          "bio": "probably overthinking",
+          "is_public": false,
+          "is_private": false,
+          "joined_date": "2022-09-14T00:00:00.000Z",
+          "location": "Campus",
+          "link": "https://bbunnll.dev",
+          "follower_count": 4301,
+          "following_count": 182,
+          "created_at": "2023-01-15T10:00:00.000Z",
+          "updated_at": "2023-02-20T12:00:00.000Z"
+        },
+        {
+          "id": "110f3b45-6dbc-a027-0bf9-2bd1d625263e",
+          "scenario_id": "8417f906-a9ff-7b1e-42a9-9f1648177ba9",
+          "owner_user_id": "75262d8b-ba2d-b228-d20b-8f1bb3b70b01",
+          "display_name": "admin",
+          "handle": "admin",
+          "avatar_url": "https://i.pravatar.cc/150?img=16",
+          "header_url": null,
+          "bio": null,
+          "is_public": false,
+          "is_private": false,
+          "joined_date": null,
+          "location": null,
+          "link": null,
+          "follower_count": 0,
+          "following_count": 0,
+          "created_at": "2023-01-15T10:00:00.000Z",
+          "updated_at": "2023-02-20T12:00:00.000Z"
+        },
+        {
+          "id": "84993eb6-1f4f-f712-d26a-1841336a39c7",
+          "scenario_id": "1ceb20c1-9b46-07d4-6d53-47000b9547d2",
+          "owner_user_id": "75262d8b-ba2d-b228-d20b-8f1bb3b70b01",
+          "display_name": "winter",
+          "handle": "bbunnll",
+          "avatar_url": "https://i.pravatar.cc/150?img=17",
+          "header_url": null,
+          "bio": null,
+          "is_public": false,
+          "is_private": false,
+          "joined_date": null,
+          "location": null,
+          "link": null,
+          "follower_count": 0,
+          "following_count": 0,
+          "created_at": "2023-01-15T10:00:00.000Z",
+          "updated_at": "2023-02-20T12:00:00.000Z"
+        },
+        {
+          "id": "e39e4a03-5d90-e29e-93a8-ca08e6869f83",
+          "scenario_id": "e964b9e7-7a0d-bf9a-c3d5-c93c74fd50fe",
+          "owner_user_id": "75262d8b-ba2d-b228-d20b-8f1bb3b70b01",
+          "display_name": "winter",
+          "handle": "bbunnll",
+          "avatar_url": "https://i.pravatar.cc/150?img=18",
+          "header_url": null,
+          "bio": null,
+          "is_public": false,
+          "is_private": false,
+          "joined_date": null,
+          "location": null,
+          "link": null,
+          "follower_count": 0,
+          "following_count": 0,
+          "created_at": "2023-01-15T10:00:00.000Z",
+          "updated_at": "2023-02-20T12:00:00.000Z"
+        },
+        {
+          "id": "b22bacee-ae3c-9fe0-e019-4b0b08a302f6",
+          "scenario_id": "b2c6cb0d-57d3-c111-d40d-7cde14d50ce6",
+          "owner_user_id": "75262d8b-ba2d-b228-d20b-8f1bb3b70b01",
+          "display_name": "winter (gm)",
+          "handle": "winterdm",
+          "avatar_url": "https://i.pravatar.cc/200?img=15",
+          "header_url": null,
+          "bio": "gm. i will smile and still make you roll for it.",
+          "is_public": false,
+          "is_private": false,
+          "joined_date": null,
+          "location": null,
+          "link": null,
+          "follower_count": 0,
+          "following_count": 0,
+          "created_at": "2024-06-01T00:00:00.000Z",
+          "updated_at": "2024-06-01T00:00:00.000Z"
+        },
+        {
+          "id": "471e239d-4339-8fae-8ad3-f0f933d8ee7a",
+          "scenario_id": "b2c6cb0d-57d3-c111-d40d-7cde14d50ce6",
+          "owner_user_id": "75262d8b-ba2d-b228-d20b-8f1bb3b70b01",
+          "display_name": "the realm",
+          "handle": "therealm",
+          "avatar_url": "https://i.pravatar.cc/200?img=16",
+          "header_url": null,
+          "bio": "pinned posts • rules • quests • announcements",
+          "is_public": false,
+          "is_private": false,
+          "joined_date": null,
+          "location": null,
+          "link": null,
+          "follower_count": 0,
+          "following_count": 0,
+          "created_at": "2024-06-01T00:00:00.000Z",
+          "updated_at": "2024-06-01T00:00:00.000Z"
+        },
+        {
+          "id": "30f7bccf-791a-2ff4-67a3-3470e7b8e076",
+          "scenario_id": "b2c6cb0d-57d3-c111-d40d-7cde14d50ce6",
+          "owner_user_id": "80c9371f-789e-ebf2-e4cd-c7cbaaf02de7",
+          "display_name": "elyra",
+          "handle": "elyra",
+          "avatar_url": "https://i.pravatar.cc/200?img=47",
+          "header_url": null,
+          "bio": "half-elf rogue. smiling liar.",
+          "is_public": false,
+          "is_private": false,
+          "joined_date": null,
+          "location": null,
+          "link": null,
+          "follower_count": 0,
+          "following_count": 0,
+          "created_at": "2024-06-01T00:00:00.000Z",
+          "updated_at": "2024-06-01T00:00:00.000Z"
+        },
+        {
+          "id": "936754eb-bc52-5b99-c0eb-11edad64720f",
+          "scenario_id": "b2c6cb0d-57d3-c111-d40d-7cde14d50ce6",
+          "owner_user_id": "e4b91eac-4202-c1ac-0d5a-d97897cc9d8a",
+          "display_name": "brom",
+          "handle": "bromstone",
+          "avatar_url": "https://i.pravatar.cc/200?img=14",
+          "header_url": null,
+          "bio": "dwarf fighter. door enthusiast.",
+          "is_public": false,
+          "is_private": false,
+          "joined_date": null,
+          "location": null,
+          "link": null,
+          "follower_count": 0,
+          "following_count": 0,
+          "created_at": "2024-06-01T00:00:00.000Z",
+          "updated_at": "2024-06-01T00:00:00.000Z"
+        },
+        {
+          "id": "082e9ae4-c474-f6c3-3c60-f4ea9ddaee31",
+          "scenario_id": "b2c6cb0d-57d3-c111-d40d-7cde14d50ce6",
+          "owner_user_id": "20135118-40f0-56cf-fe77-e836d77e6f9f",
+          "display_name": "mira",
+          "handle": "miraspark",
+          "avatar_url": "https://i.pravatar.cc/200?img=21",
+          "header_url": null,
+          "bio": "human cleric. professional guilt.",
+          "is_public": false,
+          "is_private": false,
+          "joined_date": null,
+          "location": null,
+          "link": null,
+          "follower_count": 0,
+          "following_count": 0,
+          "created_at": "2024-06-01T00:00:00.000Z",
+          "updated_at": "2024-06-01T00:00:00.000Z"
+        },
+        {
+          "id": "1819c977-e975-de51-1d23-e58c19c84492",
+          "scenario_id": "18183fd8-f92b-f1ed-efac-77f90fdb8d5b",
+          "owner_user_id": "9344285f-e8f9-c46f-5112-3ec5521a975f",
+          "display_name": "minho (gm)",
+          "handle": "minhodm",
+          "avatar_url": "https://i.pravatar.cc/200?img=45",
+          "header_url": null,
+          "bio": "gm. i will let you win emotionally and lose mechanically.",
+          "is_public": false,
+          "is_private": false,
+          "joined_date": null,
+          "location": null,
+          "link": null,
+          "follower_count": 0,
+          "following_count": 0,
+          "created_at": "2024-06-01T00:00:00.000Z",
+          "updated_at": "2024-06-01T00:00:00.000Z"
+        },
+        {
+          "id": "ced1f2e0-d79e-cba8-da6d-61a6df670841",
+          "scenario_id": "18183fd8-f92b-f1ed-efac-77f90fdb8d5b",
+          "owner_user_id": "9344285f-e8f9-c46f-5112-3ec5521a975f",
+          "display_name": "the ledger",
+          "handle": "redledger",
+          "avatar_url": "https://i.pravatar.cc/200?img=16",
+          "header_url": null,
+          "bio": "pinned posts • rules • quests • announcements",
+          "is_public": false,
+          "is_private": false,
+          "joined_date": null,
+          "location": null,
+          "link": null,
+          "follower_count": 0,
+          "following_count": 0,
+          "created_at": "2024-06-01T00:00:00.000Z",
+          "updated_at": "2024-06-01T00:00:00.000Z"
+        },
+        {
+          "id": "dcc6a354-b671-02a5-84a7-b88f51afe82d",
+          "scenario_id": "18183fd8-f92b-f1ed-efac-77f90fdb8d5b",
+          "owner_user_id": "e082d20a-1467-26f6-4cf7-094dbdb9b625",
+          "display_name": "riven",
+          "handle": "riven",
+          "avatar_url": "https://i.pravatar.cc/200?img=19",
+          "header_url": null,
+          "bio": "human ranger. too quiet on purpose.",
+          "is_public": false,
+          "is_private": false,
+          "joined_date": null,
+          "location": null,
+          "link": null,
+          "follower_count": 0,
+          "following_count": 0,
+          "created_at": "2024-06-01T00:00:00.000Z",
+          "updated_at": "2024-06-01T00:00:00.000Z"
+        },
+        {
+          "id": "d9bd9569-0fdd-5873-fa6d-4c5d64fd9dea",
+          "scenario_id": "18183fd8-f92b-f1ed-efac-77f90fdb8d5b",
+          "owner_user_id": "f86d64cb-e092-8c6e-4b10-70d5ffe3837d",
+          "display_name": "sera",
+          "handle": "seravale",
+          "avatar_url": "https://i.pravatar.cc/200?img=37",
+          "header_url": null,
+          "bio": "tiefling warlock. contract enjoyer.",
+          "is_public": false,
+          "is_private": false,
+          "joined_date": null,
+          "location": null,
+          "link": null,
+          "follower_count": 0,
+          "following_count": 0,
+          "created_at": "2024-06-01T00:00:00.000Z",
+          "updated_at": "2024-06-01T00:00:00.000Z"
+        },
+        {
+          "id": "60c1df3f-de41-9177-83d1-3f26bda2715f",
+          "scenario_id": "18183fd8-f92b-f1ed-efac-77f90fdb8d5b",
+          "owner_user_id": "2b80ddac-1994-02fb-77e3-14ab81dbe648",
+          "display_name": "ioren",
+          "handle": "ioren",
+          "avatar_url": "https://i.pravatar.cc/200?img=41",
+          "header_url": null,
+          "bio": "elf wizard. says ‘interesting’ when it’s lethal.",
+          "is_public": false,
+          "is_private": false,
+          "joined_date": null,
+          "location": null,
+          "link": null,
+          "follower_count": 0,
+          "following_count": 0,
+          "created_at": "2024-06-01T00:00:00.000Z",
+          "updated_at": "2024-06-01T00:00:00.000Z"
+        }
+      ],
+      "error": null
+    },
+    "public.reposts": {
+      "count": "0",
+      "sample": [],
+      "error": null
+    },
+    "public.scenario_players": {
+      "count": "25",
+      "sample": [
+        {
+          "scenario_id": "8417f906-a9ff-7b1e-42a9-9f1648177ba9",
+          "user_id": "80c9371f-789e-ebf2-e4cd-c7cbaaf02de7"
+        },
+        {
+          "scenario_id": "8417f906-a9ff-7b1e-42a9-9f1648177ba9",
+          "user_id": "e4b91eac-4202-c1ac-0d5a-d97897cc9d8a"
+        },
+        {
+          "scenario_id": "8417f906-a9ff-7b1e-42a9-9f1648177ba9",
+          "user_id": "75262d8b-ba2d-b228-d20b-8f1bb3b70b01"
+        },
+        {
+          "scenario_id": "8417f906-a9ff-7b1e-42a9-9f1648177ba9",
+          "user_id": "06bbc383-a3da-ba70-c0e8-f95abf34358e"
+        },
+        {
+          "scenario_id": "1ceb20c1-9b46-07d4-6d53-47000b9547d2",
+          "user_id": "bde913c2-0086-8e2a-e378-93ec37868541"
+        },
+        {
+          "scenario_id": "1ceb20c1-9b46-07d4-6d53-47000b9547d2",
+          "user_id": "20135118-40f0-56cf-fe77-e836d77e6f9f"
+        },
+        {
+          "scenario_id": "1ceb20c1-9b46-07d4-6d53-47000b9547d2",
+          "user_id": "75262d8b-ba2d-b228-d20b-8f1bb3b70b01"
+        },
+        {
+          "scenario_id": "e964b9e7-7a0d-bf9a-c3d5-c93c74fd50fe",
+          "user_id": "e082d20a-1467-26f6-4cf7-094dbdb9b625"
+        },
+        {
+          "scenario_id": "e964b9e7-7a0d-bf9a-c3d5-c93c74fd50fe",
+          "user_id": "9344285f-e8f9-c46f-5112-3ec5521a975f"
+        },
+        {
+          "scenario_id": "e964b9e7-7a0d-bf9a-c3d5-c93c74fd50fe",
+          "user_id": "f86d64cb-e092-8c6e-4b10-70d5ffe3837d"
+        },
+        {
+          "scenario_id": "e964b9e7-7a0d-bf9a-c3d5-c93c74fd50fe",
+          "user_id": "2b80ddac-1994-02fb-77e3-14ab81dbe648"
+        },
+        {
+          "scenario_id": "e964b9e7-7a0d-bf9a-c3d5-c93c74fd50fe",
+          "user_id": "75262d8b-ba2d-b228-d20b-8f1bb3b70b01"
+        },
+        {
+          "scenario_id": "b2c6cb0d-57d3-c111-d40d-7cde14d50ce6",
+          "user_id": "75262d8b-ba2d-b228-d20b-8f1bb3b70b01"
+        },
+        {
+          "scenario_id": "b2c6cb0d-57d3-c111-d40d-7cde14d50ce6",
+          "user_id": "80c9371f-789e-ebf2-e4cd-c7cbaaf02de7"
+        },
+        {
+          "scenario_id": "b2c6cb0d-57d3-c111-d40d-7cde14d50ce6",
+          "user_id": "e4b91eac-4202-c1ac-0d5a-d97897cc9d8a"
+        },
+        {
+          "scenario_id": "b2c6cb0d-57d3-c111-d40d-7cde14d50ce6",
+          "user_id": "20135118-40f0-56cf-fe77-e836d77e6f9f"
+        },
+        {
+          "scenario_id": "18183fd8-f92b-f1ed-efac-77f90fdb8d5b",
+          "user_id": "9344285f-e8f9-c46f-5112-3ec5521a975f"
+        },
+        {
+          "scenario_id": "18183fd8-f92b-f1ed-efac-77f90fdb8d5b",
+          "user_id": "e082d20a-1467-26f6-4cf7-094dbdb9b625"
+        },
+        {
+          "scenario_id": "18183fd8-f92b-f1ed-efac-77f90fdb8d5b",
+          "user_id": "f86d64cb-e092-8c6e-4b10-70d5ffe3837d"
+        },
+        {
+          "scenario_id": "18183fd8-f92b-f1ed-efac-77f90fdb8d5b",
+          "user_id": "2b80ddac-1994-02fb-77e3-14ab81dbe648"
+        },
+        {
+          "scenario_id": "18183fd8-f92b-f1ed-efac-77f90fdb8d5b",
+          "user_id": "75262d8b-ba2d-b228-d20b-8f1bb3b70b01"
+        },
+        {
+          "scenario_id": "18183fd8-f92b-f1ed-efac-77f90fdb8d5b",
+          "user_id": "2d87a830-95e5-4637-ba8a-f1435cc977f9"
+        },
+        {
+          "scenario_id": "9d2e9249-2de3-4001-89f5-490e14c0f4d2",
+          "user_id": "e2727077-104d-42c4-910b-d6fd9bd0b1ee"
+        },
+        {
+          "scenario_id": "85f772f0-ec71-4f57-bf36-ffe7bd9fa552",
+          "user_id": "e2727077-104d-42c4-910b-d6fd9bd0b1ee"
+        },
+        {
+          "scenario_id": "7dda82b9-04e4-4478-b577-804d536fb730",
+          "user_id": "dd4e2950-ee02-4dba-bb28-de2447032497"
+        }
+      ],
+      "error": null
+    },
+    "public.scenario_tags": {
+      "count": "16",
+      "sample": [
+        {
+          "scenario_id": "8417f906-a9ff-7b1e-42a9-9f1648177ba9",
+          "tag_key": "college",
+          "created_at": "2024-06-01T00:00:00.000Z"
+        },
+        {
+          "scenario_id": "8417f906-a9ff-7b1e-42a9-9f1648177ba9",
+          "tag_key": "romcom",
+          "created_at": "2024-06-01T00:00:00.000Z"
+        },
+        {
+          "scenario_id": "8417f906-a9ff-7b1e-42a9-9f1648177ba9",
+          "tag_key": "group chat",
+          "created_at": "2024-06-01T00:00:00.000Z"
+        },
+        {
+          "scenario_id": "1ceb20c1-9b46-07d4-6d53-47000b9547d2",
+          "tag_key": "politics",
+          "created_at": "2024-06-01T00:00:00.000Z"
+        },
+        {
+          "scenario_id": "1ceb20c1-9b46-07d4-6d53-47000b9547d2",
+          "tag_key": "royalty",
+          "created_at": "2024-06-01T00:00:00.000Z"
+        },
+        {
+          "scenario_id": "1ceb20c1-9b46-07d4-6d53-47000b9547d2",
+          "tag_key": "drama",
+          "created_at": "2024-06-01T00:00:00.000Z"
+        },
+        {
+          "scenario_id": "e964b9e7-7a0d-bf9a-c3d5-c93c74fd50fe",
+          "tag_key": "mafia",
+          "created_at": "2024-06-01T00:00:00.000Z"
+        },
+        {
+          "scenario_id": "e964b9e7-7a0d-bf9a-c3d5-c93c74fd50fe",
+          "tag_key": "heist",
+          "created_at": "2024-06-01T00:00:00.000Z"
+        },
+        {
+          "scenario_id": "e964b9e7-7a0d-bf9a-c3d5-c93c74fd50fe",
+          "tag_key": "action",
+          "created_at": "2024-06-01T00:00:00.000Z"
+        },
+        {
+          "scenario_id": "b2c6cb0d-57d3-c111-d40d-7cde14d50ce6",
+          "tag_key": "fantasy",
+          "created_at": "2024-06-01T00:00:00.000Z"
+        },
+        {
+          "scenario_id": "b2c6cb0d-57d3-c111-d40d-7cde14d50ce6",
+          "tag_key": "campaign",
+          "created_at": "2024-06-01T00:00:00.000Z"
+        },
+        {
+          "scenario_id": "b2c6cb0d-57d3-c111-d40d-7cde14d50ce6",
+          "tag_key": "rp",
+          "created_at": "2024-06-01T00:00:00.000Z"
+        },
+        {
+          "scenario_id": "18183fd8-f92b-f1ed-efac-77f90fdb8d5b",
+          "tag_key": "fantasy",
+          "created_at": "2024-06-01T00:00:00.000Z"
+        },
+        {
+          "scenario_id": "18183fd8-f92b-f1ed-efac-77f90fdb8d5b",
+          "tag_key": "campaign",
+          "created_at": "2024-06-01T00:00:00.000Z"
+        },
+        {
+          "scenario_id": "18183fd8-f92b-f1ed-efac-77f90fdb8d5b",
+          "tag_key": "mystery",
+          "created_at": "2024-06-01T00:00:00.000Z"
+        },
+        {
+          "scenario_id": "9d2e9249-2de3-4001-89f5-490e14c0f4d2",
+          "tag_key": "adventure",
+          "created_at": "2026-01-04T21:49:15.522Z"
+        }
+      ],
+      "error": null
+    },
+    "public.scenarios": {
+      "count": "8",
+      "sample": [
+        {
+          "id": "8417f906-a9ff-7b1e-42a9-9f1648177ba9",
+          "name": "K-pop College AU",
+          "cover": "https://loremflickr.com/800/400/university",
+          "created_at": "2024-06-01T00:00:00.000Z",
+          "updated_at": "2024-06-01T00:00:00.000Z",
+          "invite_code": "KPOP2024",
+          "owner_user_id": "75262d8b-ba2d-b228-d20b-8f1bb3b70b01",
+          "description": "slice-of-life college AU with chaotic group chats, fake dating tension, and too many greenhouse shifts.",
+          "mode": "story",
+          "gm_user_ids": [
+            "75262d8b-ba2d-b228-d20b-8f1bb3b70b01"
+          ],
+          "settings": {}
+        },
+        {
+          "id": "1ceb20c1-9b46-07d4-6d53-47000b9547d2",
+          "name": "Modern Royalty AU",
+          "cover": "https://loremflickr.com/800/400/royalty",
+          "created_at": "2024-06-01T00:00:00.000Z",
+          "updated_at": "2024-06-01T00:00:00.000Z",
+          "invite_code": "ROYAL2024",
+          "owner_user_id": "75262d8b-ba2d-b228-d20b-8f1bb3b70b01",
+          "description": "modern monarchy politics, PR disasters, reform vs. tradition, and one heir who hates ceremonies.",
+          "mode": "story",
+          "gm_user_ids": [
+            "75262d8b-ba2d-b228-d20b-8f1bb3b70b01"
+          ],
+          "settings": {}
+        },
+        {
+          "id": "e964b9e7-7a0d-bf9a-c3d5-c93c74fd50fe",
+          "name": "Mafia Heist AU",
+          "cover": "https://loremflickr.com/800/400/mafia",
+          "created_at": "2024-06-01T00:00:00.000Z",
+          "updated_at": "2024-06-01T00:00:00.000Z",
+          "invite_code": "MAFIA2024",
+          "owner_user_id": "9344285f-e8f9-c46f-5112-3ec5521a975f",
+          "description": "rival crews, debt, street racing, dirty jobs, and loyalty that looks a lot like possession.",
+          "mode": "story",
+          "gm_user_ids": [
+            "9344285f-e8f9-c46f-5112-3ec5521a975f"
+          ],
+          "settings": {}
+        },
+        {
+          "id": "b2c6cb0d-57d3-c111-d40d-7cde14d50ce6",
+          "name": "Echoes of the Fallen Realm",
+          "cover": "https://loremflickr.com/800/400/fantasy,dragon",
+          "created_at": "2024-06-01T00:00:00.000Z",
+          "updated_at": "2024-06-01T00:00:00.000Z",
+          "invite_code": "ECHOES2024",
+          "owner_user_id": "75262d8b-ba2d-b228-d20b-8f1bb3b70b01",
+          "description": "a text-based fantasy campaign where ancient ruins, broken oaths, and forgotten gods resurface. choices matter, rolls are public, and the realm remembers everything.",
+          "mode": "campaign",
+          "gm_user_ids": [
+            "75262d8b-ba2d-b228-d20b-8f1bb3b70b01"
+          ],
+          "settings": {}
+        },
+        {
+          "id": "18183fd8-f92b-f1ed-efac-77f90fdb8d5b",
+          "name": "Ashford Hollow: The Red Ledger",
+          "cover": "https://loremflickr.com/800/400/fantasy,forest,ruins",
+          "created_at": "2024-06-01T00:00:00.000Z",
+          "updated_at": "2024-06-01T00:00:00.000Z",
+          "invite_code": "ASHFORD24",
+          "owner_user_id": "9344285f-e8f9-c46f-5112-3ec5521a975f",
+          "description": "a campaign of cursed contracts, missing pilgrims, and a town that keeps rewriting its own history. oaths bind harder than chains, and the ledger always balances.",
+          "mode": "campaign",
+          "gm_user_ids": [
+            "9344285f-e8f9-c46f-5112-3ec5521a975f"
+          ],
+          "settings": {}
+        },
+        {
+          "id": "9d2e9249-2de3-4001-89f5-490e14c0f4d2",
+          "name": "Smoke Scenario",
+          "cover": "https://example.com/cover.png",
+          "created_at": "2026-01-04T21:49:15.522Z",
+          "updated_at": null,
+          "invite_code": "SMOKE2026",
+          "owner_user_id": "e2727077-104d-42c4-910b-d6fd9bd0b1ee",
+          "description": "smoke test",
+          "mode": "story",
+          "gm_user_ids": [
+            "e2727077-104d-42c4-910b-d6fd9bd0b1ee"
+          ],
+          "settings": {
+            "profileLimitMode": "per_owner"
+          }
+        },
+        {
+          "id": "85f772f0-ec71-4f57-bf36-ffe7bd9fa552",
+          "name": "Quick Test",
+          "cover": "https://example.com/x.png",
+          "created_at": "2026-01-04T22:17:24.219Z",
+          "updated_at": "2026-01-04T22:30:56.941Z",
+          "invite_code": "QT2026",
+          "owner_user_id": "e2727077-104d-42c4-910b-d6fd9bd0b1ee",
+          "description": null,
+          "mode": "campaign",
+          "gm_user_ids": [
+            "e2727077-104d-42c4-910b-d6fd9bd0b1ee"
+          ],
+          "settings": {}
+        },
+        {
+          "id": "7dda82b9-04e4-4478-b577-804d536fb730",
+          "name": "Profiles API Smoke",
+          "cover": "https://media.istockphoto.com/id/985915172/fr/vectoriel/%C3%A9checs-de-checker-vecteur-abstrait-sans-soudure.jpg?s=612x612&w=0&k=20&c=4BLWcNYZe9uykbirGZHc2_0zZC0pIIKS4Tvt19oj8TQ=",
+          "created_at": "2026-01-04T23:52:58.347Z",
+          "updated_at": null,
+          "invite_code": "SMOKEMK0E0577C5K0",
+          "owner_user_id": "dd4e2950-ee02-4dba-bb28-de2447032497",
+          "description": null,
+          "mode": "story",
+          "gm_user_ids": [
+            "dd4e2950-ee02-4dba-bb28-de2447032497"
+          ],
+          "settings": {}
+        }
+      ],
+      "error": null
+    },
+    "public.selected_profile_by_user_scenario": {
+      "count": "0",
+      "sample": [],
+      "error": null
+    },
+    "public.users": {
+      "count": "27",
+      "sample": [
+        {
+          "id": "3e796f85-1340-485b-a04c-846f279ef944",
+          "username": "Sobmay",
+          "avatar_url": "https://i.scdn.co/image/ab6761610000e5eb7d4e246f8c54be347e06bffe",
+          "settings": {},
+          "created_at": "2025-12-27T17:04:54.807Z",
+          "updated_at": "2025-12-27T17:04:54.807Z",
+          "name": "sobmay",
+          "email": "sobmaynevets@yopmail.com",
+          "password_hash": "[REDACTED]"
+        },
+        {
+          "id": "b585fbcd-e33f-5426-e3cb-34b6dc29c67a",
+          "username": "winter",
+          "avatar_url": "https://i.pravatar.cc/200?img=12",
+          "settings": {
+            "darkMode": "system",
+            "showTimestamps": true
+          },
+          "created_at": "2023-01-15T10:00:00.000Z",
+          "updated_at": "2023-02-20T12:00:00.000Z",
+          "name": "Winter",
+          "email": "winter@feedverse.test",
+          "password_hash": "[REDACTED]"
+        },
+        {
+          "id": "d6162d5d-6c99-d419-0361-145bb84cc5d3",
+          "username": "alex",
+          "avatar_url": "https://i.pravatar.cc/200?img=32",
+          "settings": {
+            "darkMode": "system",
+            "showTimestamps": true
+          },
+          "created_at": "2023-01-15T10:00:00.000Z",
+          "updated_at": "2023-02-20T12:00:00.000Z",
+          "name": "Alex",
+          "email": "alex@feedverse.test",
+          "password_hash": "[REDACTED]"
+        },
+        {
+          "id": "c64c87f5-1091-32a0-f621-92ea755732b5",
+          "username": "mika",
+          "avatar_url": "https://i.pravatar.cc/200?img=10",
+          "settings": {
+            "darkMode": "system",
+            "showTimestamps": true
+          },
+          "created_at": "2023-01-15T10:00:00.000Z",
+          "updated_at": "2023-02-20T12:00:00.000Z",
+          "name": "Mika",
+          "email": "mika@feedverse.test",
+          "password_hash": "[REDACTED]"
+        },
+        {
+          "id": "aba16bcc-20cd-70f1-cb36-00a9c8e6f3b1",
+          "username": "jordan",
+          "avatar_url": "https://i.pravatar.cc/200?img=8",
+          "settings": {
+            "darkMode": "system",
+            "showTimestamps": true
+          },
+          "created_at": "2023-01-15T10:00:00.000Z",
+          "updated_at": "2023-02-20T12:00:00.000Z",
+          "name": "Jordan",
+          "email": "jordan@feedverse.test",
+          "password_hash": "[REDACTED]"
+        },
+        {
+          "id": "80c9371f-789e-ebf2-e4cd-c7cbaaf02de7",
+          "username": "hyunjin",
+          "avatar_url": "https://i.pravatar.cc/200?img=1",
+          "settings": {
+            "darkMode": "system",
+            "showTimestamps": true
+          },
+          "created_at": "2023-01-15T10:00:00.000Z",
+          "updated_at": "2023-02-20T12:00:00.000Z",
+          "name": "Hyunjin",
+          "email": "hyunjin@feedverse.test",
+          "password_hash": "[REDACTED]"
+        },
+        {
+          "id": "06bbc383-a3da-ba70-c0e8-f95abf34358e",
+          "username": "felix",
+          "avatar_url": "https://i.pravatar.cc/200?img=2",
+          "settings": {
+            "darkMode": "system",
+            "showTimestamps": true
+          },
+          "created_at": "2023-01-15T10:00:00.000Z",
+          "updated_at": "2023-02-20T12:00:00.000Z",
+          "name": "Felix",
+          "email": "felix@feedverse.test",
+          "password_hash": "[REDACTED]"
+        },
+        {
+          "id": "e4b91eac-4202-c1ac-0d5a-d97897cc9d8a",
+          "username": "minho",
+          "avatar_url": "https://i.pravatar.cc/200?img=3",
+          "settings": {
+            "darkMode": "system",
+            "showTimestamps": true
+          },
+          "created_at": "2023-01-15T10:00:00.000Z",
+          "updated_at": "2023-02-20T12:00:00.000Z",
+          "name": "Minho",
+          "email": "minho@feedverse.test",
+          "password_hash": "[REDACTED]"
+        },
+        {
+          "id": "bde913c2-0086-8e2a-e378-93ec37868541",
+          "username": "prince",
+          "avatar_url": "https://i.pravatar.cc/200?img=4",
+          "settings": {
+            "darkMode": "system",
+            "showTimestamps": true
+          },
+          "created_at": "2023-01-15T10:00:00.000Z",
+          "updated_at": "2023-02-20T12:00:00.000Z",
+          "name": "Prince",
+          "email": "prince@feedverse.test",
+          "password_hash": "[REDACTED]"
+        },
+        {
+          "id": "20135118-40f0-56cf-fe77-e836d77e6f9f",
+          "username": "butler",
+          "avatar_url": "https://i.pravatar.cc/200?img=5",
+          "settings": {
+            "darkMode": "system",
+            "showTimestamps": true
+          },
+          "created_at": "2023-01-15T10:00:00.000Z",
+          "updated_at": "2023-02-20T12:00:00.000Z",
+          "name": "Butler",
+          "email": "butler@feedverse.test",
+          "password_hash": "[REDACTED]"
+        },
+        {
+          "id": "f86d64cb-e092-8c6e-4b10-70d5ffe3837d",
+          "username": "boss",
+          "avatar_url": "https://i.pravatar.cc/200?img=6",
+          "settings": {
+            "darkMode": "system",
+            "showTimestamps": true
+          },
+          "created_at": "2023-01-15T10:00:00.000Z",
+          "updated_at": "2023-02-20T12:00:00.000Z",
+          "name": "Boss",
+          "email": "boss@feedverse.test",
+          "password_hash": "[REDACTED]"
+        },
+        {
+          "id": "2b80ddac-1994-02fb-77e3-14ab81dbe648",
+          "username": "sniper",
+          "avatar_url": "https://i.pravatar.cc/200?img=7",
+          "settings": {
+            "darkMode": "system",
+            "showTimestamps": true
+          },
+          "created_at": "2023-01-15T10:00:00.000Z",
+          "updated_at": "2023-02-20T12:00:00.000Z",
+          "name": "Sniper",
+          "email": "sniper@feedverse.test",
+          "password_hash": "[REDACTED]"
+        },
+        {
+          "id": "e082d20a-1467-26f6-4cf7-094dbdb9b625",
+          "username": "driver",
+          "avatar_url": "https://i.pravatar.cc/200?img=8",
+          "settings": {
+            "darkMode": "system",
+            "showTimestamps": true
+          },
+          "created_at": "2023-01-15T10:00:00.000Z",
+          "updated_at": "2023-02-20T12:00:00.000Z",
+          "name": "Driver",
+          "email": "driver@feedverse.test",
+          "password_hash": "[REDACTED]"
+        },
+        {
+          "id": "9344285f-e8f9-c46f-5112-3ec5521a975f",
+          "username": "fixer",
+          "avatar_url": "https://i.pravatar.cc/200?img=9",
+          "settings": {
+            "darkMode": "system",
+            "showTimestamps": true
+          },
+          "created_at": "2023-01-15T10:00:00.000Z",
+          "updated_at": "2023-02-20T12:00:00.000Z",
+          "name": "Fixer",
+          "email": "fixer@feedverse.test",
+          "password_hash": "[REDACTED]"
+        },
+        {
+          "id": "75262d8b-ba2d-b228-d20b-8f1bb3b70b01",
+          "username": "admin",
+          "avatar_url": "https://i.pravatar.cc/150?img=14",
+          "settings": {
+            "darkMode": "system",
+            "showTimestamps": true
+          },
+          "created_at": "2023-01-15T10:00:00.000Z",
+          "updated_at": "2023-02-20T12:00:00.000Z",
+          "name": "Admin",
+          "email": "admin@feedverse.test",
+          "password_hash": "[REDACTED]"
+        },
+        {
+          "id": "7c49b711-7766-473d-9739-39844c3a9020",
+          "username": "marian",
+          "avatar_url": "",
+          "settings": {},
+          "created_at": "2026-01-04T19:28:19.823Z",
+          "updated_at": "2026-01-04T19:28:19.823Z",
+          "name": "marian",
+          "email": "marian@example.com",
+          "password_hash": "[REDACTED]"
+        },
+        {
+          "id": "c9335e78-8619-4987-9b5c-0370b4328baa",
+          "username": "copilot_test",
+          "avatar_url": "",
+          "settings": {},
+          "created_at": "2026-01-04T19:30:36.651Z",
+          "updated_at": "2026-01-04T19:30:36.651Z",
+          "name": "copilottest",
+          "email": "copilot_test@example.com",
+          "password_hash": "[REDACTED]"
+        },
+        {
+          "id": "1a634f1a-8754-45f7-a26b-3ea329cb9598",
+          "username": "copilot_test2",
+          "avatar_url": "",
+          "settings": {},
+          "created_at": "2026-01-04T19:32:35.319Z",
+          "updated_at": "2026-01-04T19:32:35.319Z",
+          "name": "copilottest2",
+          "email": "copilot_test2@example.com",
+          "password_hash": "[REDACTED]"
+        },
+        {
+          "id": "de7b8c43-ebf3-479a-b010-ae4ed9aa3ae0",
+          "username": "mark",
+          "avatar_url": "",
+          "settings": {},
+          "created_at": "2026-01-04T19:46:27.768Z",
+          "updated_at": "2026-01-04T19:46:27.768Z",
+          "name": "mark",
+          "email": "mark@mark.com",
+          "password_hash": "[REDACTED]"
+        },
+        {
+          "id": "835b6df1-c9aa-4e29-9889-a789ab89f8dd",
+          "username": "scenariotest1767557667",
+          "avatar_url": "",
+          "settings": {},
+          "created_at": "2026-01-04T20:14:27.645Z",
+          "updated_at": "2026-01-04T20:14:27.645Z",
+          "name": "scenariotest1767557667",
+          "email": "scenariotest_1767557667@example.com",
+          "password_hash": "[REDACTED]"
+        },
+        {
+          "id": "342f2d1a-fc0c-44a8-92ee-194d76c460d1",
+          "username": "winter2",
+          "avatar_url": "",
+          "settings": {},
+          "created_at": "2026-01-04T20:17:20.880Z",
+          "updated_at": "2026-01-04T20:17:20.880Z",
+          "name": "winter2",
+          "email": "winter_dupe_1767557840@example.com",
+          "password_hash": "[REDACTED]"
+        },
+        {
+          "id": "170503ff-f499-4131-b0e5-e9bdc6f22729",
+          "username": "join_tester_1767558242",
+          "avatar_url": "",
+          "settings": {},
+          "created_at": "2026-01-04T20:24:03.010Z",
+          "updated_at": "2026-01-04T20:24:03.010Z",
+          "name": "jointester1767558242",
+          "email": "join_tester_1767558242@example.com",
+          "password_hash": "[REDACTED]"
+        },
+        {
+          "id": "968ad5dc-a5a8-467f-8bcc-f946fa0482f0",
+          "username": "join_tester_1767558264",
+          "avatar_url": "",
+          "settings": {},
+          "created_at": "2026-01-04T20:24:24.473Z",
+          "updated_at": "2026-01-04T20:24:24.473Z",
+          "name": "jointester1767558264",
+          "email": "join_tester_1767558264@example.com",
+          "password_hash": "[REDACTED]"
+        },
+        {
+          "id": "2d87a830-95e5-4637-ba8a-f1435cc977f9",
+          "username": "join_tester_1767558458",
+          "avatar_url": "",
+          "settings": {},
+          "created_at": "2026-01-04T20:27:38.332Z",
+          "updated_at": "2026-01-04T20:27:38.332Z",
+          "name": "jointester1767558458",
+          "email": "join_tester_1767558458@example.com",
+          "password_hash": "[REDACTED]"
+        },
+        {
+          "id": "e2727077-104d-42c4-910b-d6fd9bd0b1ee",
+          "username": "u_a_2026",
+          "avatar_url": "",
+          "settings": {},
+          "created_at": "2026-01-04T21:48:05.153Z",
+          "updated_at": "2026-01-04T21:48:05.153Z",
+          "name": "ua2026",
+          "email": "u_a_2026@example.com",
+          "password_hash": "[REDACTED]"
+        }
+      ],
+      "error": null
+    }
+  }
+}

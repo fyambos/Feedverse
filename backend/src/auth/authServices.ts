@@ -2,7 +2,6 @@ import { v4 as uuidv4 } from "uuid";
 import bcrypt from "bcryptjs";
 import {
   LoginRequest,
-  LoginResponse,
   RegisterRequest,
   RegisterResponse,
   ValidationError,
@@ -19,6 +18,7 @@ import {
   VALIDATION,
 } from "../config/constants";
 import { UserRepository } from "../users/userRepositories";
+import type { User as DbUser } from "../users/userModels";
 
 const userRepository = new UserRepository();
 
@@ -27,6 +27,7 @@ export const RegisterUserService = async (
   avatarFile?: Express.Multer.File,
 ): Promise<{ user?: RegisterResponse; errors?: ValidationError[] }> => {
   const { username, email, password_hash, avatar_url } = input;
+  const usernameNormalized = String(username ?? "").trim();
 
   const errors: ValidationError[] = [];
 
@@ -53,15 +54,31 @@ export const RegisterUserService = async (
     };
   }
 
+  if (usernameNormalized) {
+    const existingByUsername = await userRepository.findByUsername(
+      usernameNormalized,
+    );
+    if (existingByUsername) {
+      return {
+        errors: [
+          {
+            fields: USER_MESSAGES.USERNAME,
+            message: USER_MESSAGES.USERNAME_ALREADY_EXISTS,
+          },
+        ],
+      };
+    }
+  }
+
   const uuid = uuidv4();
   const date = new Date();
   const hashedPassword = await bcrypt.hash(password_hash, 10);
-  const nameFormatted = nameFormatting(username);
+  const nameFormatted = nameFormatting(usernameNormalized);
 
   const userCreated = await userRepository.create(
     {
       id: uuid,
-      username: username,
+      username: usernameNormalized,
       name: nameFormatted,
       email: email,
       password_hash: hashedPassword,
@@ -90,17 +107,24 @@ export const RegisterUserService = async (
 
 export const LoginUserService = async (
   input: LoginRequest,
-): Promise<{ user?: LoginResponse; error?: unknown }> => {
-  const { email, password_hash } = input;
+): Promise<{ user?: Omit<DbUser, "password_hash">; error?: unknown }> => {
+  const identifier = String(input?.email ?? "").trim();
+  const password_hash = String(input?.password_hash ?? "");
 
-  const emailError = validateEmail(email);
   const passwordError = validatePassword(password_hash);
-
-  if (emailError || passwordError) {
+  if (passwordError) {
     return { error: ERROR_MESSAGES.INVALID_EMAIL_OR_PASSWORD };
   }
 
-  const userFetched = await userRepository.findByEmail(email);
+  const isEmail = /@/.test(identifier);
+  if (isEmail) {
+    const emailError = validateEmail(identifier);
+    if (emailError) return { error: ERROR_MESSAGES.INVALID_EMAIL_OR_PASSWORD };
+  }
+
+  const userFetched = isEmail
+    ? await userRepository.findByEmail(identifier)
+    : await userRepository.findByUsername(identifier);
 
   if (!userFetched) {
     return { error: USER_MESSAGES.DOES_NOT_EXISTS };
@@ -114,11 +138,7 @@ export const LoginUserService = async (
     return { error: VALIDATION.INVALID_PASSWORD };
   }
 
-  /*
-  const loginDate = new Date();
-  await userRepository.updateLastLogin(email, loginDate);
-  const { password_hash: _pwd, ...userWithoutPassword } = userFetched;
-
-  return { user: userWithoutPassword as LoginResponse };
-  */
+  const { password_hash: passwordHash, ...userWithoutPassword } = userFetched;
+  void passwordHash;
+  return { user: userWithoutPassword };
 };

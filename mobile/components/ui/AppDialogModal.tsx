@@ -1,6 +1,5 @@
 import React from "react";
 import {
-  Modal,
   Pressable,
   StyleSheet,
   TextInput,
@@ -39,7 +38,6 @@ type Props = {
     secureTextEntry?: boolean;
     autoFocus?: boolean;
   };
-  /** Opt-in; default styling should match your RowCard (neutral card). */
   useGradient?: boolean;
 };
 
@@ -60,12 +58,10 @@ export function AppDialogModal({
   const pressedRowBg = colors.pressed;
   const backdropBg = colors.modalBackdrop;
 
-  // backdrop padding = 24 left + 24 right
   const available = Math.max(0, screenWidth - 48);
-  const targetMax = screenWidth >= 768 ? 520 : 440; // wider on tablets, slightly wider on phones
+  const targetMax = screenWidth >= 768 ? 520 : 440;
   const cardWidth = Math.min(available, targetMax);
 
-  // Optional gradient support (ONLY if explicitly enabled)
   let LinearGradient: any = null;
   if (useGradient) {
     try {
@@ -91,19 +87,13 @@ export function AppDialogModal({
     if (variant === "cancel") {
       return { textColor: colors.text, iconColor: colors.textSecondary };
     }
-    // default: neutral (NOT tint)
     return { textColor: colors.text, iconColor: colors.textSecondary };
   };
 
+  if (!visible) return null;
+
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="fade"
-      presentationStyle="overFullScreen"
-      statusBarTranslucent
-      onRequestClose={onRequestClose}
-    >
+    <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
       <Pressable style={[styles.backdrop, { backgroundColor: backdropBg }]} onPress={onRequestClose}>
         <Pressable onPress={(e) => e?.stopPropagation?.()}>
           <CardContainer
@@ -146,9 +136,7 @@ export function AppDialogModal({
                 bounces={false}
                 showsVerticalScrollIndicator={false}
               >
-                <ThemedText style={[styles.message, { color: colors.text }]}>
-                  {message}
-                </ThemedText>
+                <ThemedText style={[styles.message, { color: colors.text }]}>{message}</ThemedText>
               </ScrollView>
             )}
 
@@ -166,7 +154,7 @@ export function AppDialogModal({
                   {
                     color: colors.text,
                     borderColor: colors.border,
-                    backgroundColor: colors.card, // was colors.background
+                    backgroundColor: colors.card,
                   },
                 ]}
               />
@@ -209,9 +197,7 @@ export function AppDialogModal({
                       />
                     ) : null}
 
-                    <ThemedText style={[styles.actionText, { color: v.textColor }]}>
-                      {b.text}
-                    </ThemedText>
+                    <ThemedText style={[styles.actionText, { color: v.textColor }]}>{b.text}</ThemedText>
                   </Pressable>
                 );
               })}
@@ -219,7 +205,7 @@ export function AppDialogModal({
           </CardContainer>
         </Pressable>
       </Pressable>
-    </Modal>
+    </View>
   );
 }
 

@@ -38,11 +38,12 @@ export default function ScenarioListScreen() {
   const colors = Colors[colorScheme];
   const insets = useSafeAreaInsets();
 
-  const { signOut, userId } = useAuth();
+  const { signOut, userId, token } = useAuth();
   const {
     isReady,
     listScenarios,
     db,
+    syncProfilesForScenario,
     transferScenarioOwnership,
     leaveScenario: leaveScenarioApi,
     deleteScenario: deleteScenarioApi,
@@ -103,6 +104,14 @@ export default function ScenarioListScreen() {
     router.push("/(scenario)/settings" as any);
   };
 
+  const isBackendMode = React.useMemo(() => {
+    const baseUrl = String(process.env.EXPO_PUBLIC_API_BASE_URL ?? "").trim();
+    const t = String(token ?? "").trim();
+    return Boolean(baseUrl && t);
+  }, [token]);
+
+  const isLocalScenarioId = (id: string) => String(id ?? "").startsWith("sc_");
+
   const openScenarioEdit = (scenarioId: string) => {
     router.push({ pathname: "/modal/create-scenario", params: { scenarioId } } as any);
   };
@@ -120,22 +129,43 @@ export default function ScenarioListScreen() {
     const all = listScenarios?.() ?? [];
     const uid = String(userId ?? "").trim();
 
+    const sortNewestFirst = (a: any, b: any) => {
+      // In backend mode, surface server scenarios before local-only ones.
+      if (isBackendMode) {
+        const aLocal = isLocalScenarioId(String(a?.id ?? ""));
+        const bLocal = isLocalScenarioId(String(b?.id ?? ""));
+        if (aLocal !== bLocal) return aLocal ? 1 : -1;
+      }
+
+      const aTime = new Date(a.createdAt ?? 0).getTime();
+      const bTime = new Date(b.createdAt ?? 0).getTime();
+      return bTime - aTime;
+    };
+
     if (!uid) {
-      return all.sort((a: any, b: any) => {
-        const aTime = new Date(a.createdAt ?? 0).getTime();
-        const bTime = new Date(b.createdAt ?? 0).getTime();
-        return bTime - aTime;
-      });
+      return all.sort(sortNewestFirst);
     }
 
     return all
       .filter((s: any) => (s?.playerIds ?? []).map(String).includes(uid))
-      .sort((a: any, b: any) => {
-        const aTime = new Date(a.createdAt ?? 0).getTime();
-        const bTime = new Date(b.createdAt ?? 0).getTime();
-        return bTime - aTime;
-      });
-  }, [isReady, listScenarios, userId]);
+      .sort(sortNewestFirst);
+  }, [isReady, listScenarios, userId, isBackendMode]);
+
+  // Ensure profile data for server scenarios is fetched so participant avatars/users appear.
+  React.useEffect(() => {
+    if (!isReady) return;
+    if (!isBackendMode) return;
+    try {
+      for (const s of scenarios) {
+        const sid = String(s?.id ?? "").trim();
+        if (!sid) continue;
+        // Fire-and-forget; app will merge into local DB when complete
+        void syncProfilesForScenario?.(sid).catch(() => {});
+      }
+    } catch {
+      // ignore
+    }
+  }, [isReady, isBackendMode, scenarios, syncProfilesForScenario]);
 
   const listRef = useRef<FlatList<any> | null>(null);
 
@@ -157,6 +187,20 @@ export default function ScenarioListScreen() {
     const selected = (db as any)?.selectedProfileByScenario?.[sid];
     if (selected) {
       router.push(`/(scenario)/${sid}/home` as any);
+      return;
+    }
+
+    // In backend mode, always go through profile selection.
+    // This triggers a backend sync and avoids treating “not yet synced” as “no profiles exist”.
+    if (isBackendMode) {
+      router.push({
+        pathname: "/modal/select-profile",
+        params: {
+          scenarioId: sid,
+          returnTo: encodeURIComponent(`/(scenario)/${sid}/home`),
+          replace: "1",
+        },
+      } as any);
       return;
     }
 
@@ -694,8 +738,46 @@ export default function ScenarioListScreen() {
           contentContainerStyle={styles.list}
           renderItem={({ item }) => {
             const usersMap = (db as any)?.users ?? {};
-            const players = (item.playerIds ?? [])
-              .map((id: string) => usersMap[String(id)] ?? null)
+            // Start with declared playerIds on the scenario
+            const playerIdSet = new Set<string>((item.playerIds ?? []).map((id: any) => String(id ?? "").trim()).filter(Boolean));
+            // Also include owners of profiles that belong to this scenario (cover cases where playerIds may be incomplete)
+            try {
+              const profiles = (db as any)?.profiles ?? {};
+              for (const p of Object.values(profiles)) {
+                if (String((p as any).scenarioId ?? "") !== String(item.id)) continue;
+                const owner = String((p as any).ownerUserId ?? "").trim();
+                if (owner) playerIdSet.add(owner);
+              }
+            } catch {
+              // ignore
+            }
+
+            const players = Array.from(playerIdSet)
+              .map((id: string) => {
+                const uid = String(id);
+                const user = usersMap[uid];
+                if (user) return user;
+
+                // Fall back to a profile owned by this user in this scenario (prefer displayName/handle)
+                try {
+                  const profiles = (db as any)?.profiles ?? {};
+                  for (const p of Object.values(profiles)) {
+                    if (String((p as any).ownerUserId ?? "") !== uid) continue;
+                    if (String((p as any).scenarioId ?? "") !== String(item.id)) continue;
+                    const display = String((p as any).displayName ?? (p as any).handle ?? "").trim();
+                    return {
+                      id: uid,
+                      username: display || String((p as any).handle ?? uid),
+                      displayName: display || undefined,
+                      avatarUrl: String((p as any).avatarUrl ?? undefined) || undefined,
+                    } as any;
+                  }
+                } catch {
+                  // ignore
+                }
+
+                return { id: uid, username: uid, avatarUrl: undefined };
+              })
               .filter(Boolean);
 
             const inviteCode = item.inviteCode ? String(item.inviteCode) : null;
@@ -763,19 +845,65 @@ export default function ScenarioListScreen() {
 
                   <View style={styles.playersRow}>
                     <View style={styles.avatars}>
-                      {players.slice(0, 4).map((player: any, index: number) => (
-                        <Image
-                          key={String(player!.id)}
-                          source={{ uri: player!.avatarUrl }}
-                          style={[
-                            styles.avatar,
-                            {
-                              marginLeft: index === 0 ? 0 : -8,
-                              borderColor: colors.border,
-                            },
-                          ]}
-                        />
-                      ))}
+                      {players.slice(0, 4).map((player: any, index: number) => {
+                        const pid = String((player as any)?.id ?? "");
+                        const userAvatar = String((player as any)?.avatarUrl ?? "").trim() || null;
+                        let uri: string | null = userAvatar;
+                        if (!uri) {
+                          try {
+                            const profiles = (db as any)?.profiles ?? {};
+                            for (const p of Object.values(profiles)) {
+                              if (String((p as any).ownerUserId ?? "") !== pid) continue;
+                              if (String((p as any).scenarioId ?? "") !== String(item.id)) continue;
+                              const pa = String((p as any).avatarUrl ?? "").trim();
+                              if (pa) {
+                                uri = pa;
+                                break;
+                              }
+                            }
+                          } catch {
+                            // ignore
+                          }
+                        }
+
+                        const displayName = String((player as any)?.username ?? (player as any)?.displayName ?? "").trim();
+                        const initials = displayName
+                          .split(" ")
+                          .map((s) => (s ? s[0] : ""))
+                          .join("")
+                          .slice(0, 2)
+                          .toUpperCase();
+
+                        return uri ? (
+                          <Image
+                            key={pid || String(index)}
+                            source={{ uri }}
+                            style={[
+                              styles.avatar,
+                              {
+                                marginLeft: index === 0 ? 0 : -8,
+                                borderColor: colors.border,
+                              },
+                            ]}
+                          />
+                        ) : (
+                          <View
+                            key={pid || String(index)}
+                            style={[
+                              styles.avatar,
+                              {
+                                marginLeft: index === 0 ? 0 : -8,
+                                borderColor: colors.border,
+                                alignItems: "center",
+                                justifyContent: "center",
+                                backgroundColor: colors.card,
+                              },
+                            ]}
+                          >
+                            <Ionicons name="person" size={14} color={colors.textSecondary} />
+                          </View>
+                        );
+                      })}
                     </View>
 
                     <ThemedText style={[styles.playerCount, { color: colors.textMuted }]}>

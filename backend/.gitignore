@@ -141,4 +141,8 @@ vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
 
+# Expo files
 PROMPT.md
+
+# Firebase admin SDK private key
+feedverse-510bc-firebase-adminsdk-fbsvc-c067f69184.json

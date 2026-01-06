@@ -2,7 +2,7 @@ import dotenv from "dotenv";
 dotenv.config();
 
 // ============================================================================
-// BASE DE DONNÉES
+// DATABASE
 // ============================================================================
 
 export const DATABASE_URL = process.env.DATABASE_URL;
@@ -15,7 +15,7 @@ export const DATABASE_NAME = process.env.DB_NAME;
 export const DATABASE_SSL_MODE = Boolean(process.env.DB_SSLMODE);
 
 // ============================================================================
-// CLOUDFLARE
+// CLOUDFLARE / R2
 // ============================================================================
 
 export const CLOUDFLARE = {
@@ -29,7 +29,7 @@ export const CLOUDFLARE = {
 } as const;
 
 // ============================================================================
-// CODES DE STATUT HTTP
+// HTTP STATUS CODES
 // ============================================================================
 
 export const HTTP_STATUS = {
@@ -44,7 +44,7 @@ export const HTTP_STATUS = {
 } as const;
 
 // ============================================================================
-// MÉTHODES HTTP
+// HTTP METHODS
 // ============================================================================
 
 export const HTTP_METHODS = {
@@ -56,84 +56,89 @@ export const HTTP_METHODS = {
 } as const;
 
 // ============================================================================
-// AUTHENTIFICATION & TOKENS
+// AUTHENTICATION & TOKENS
 // ============================================================================
 
 export const AUTH = {
   BEARER_PREFIX: "Bearer ",
   HEADER_NAME: "Authorization",
   // Messages
-  INVALID_TOKEN: "Token de connexion invalide ou expiré",
-  UNAUTHORIZED_ACCESS: "Accès non autorisé à cette ressource",
-  MISSING_TOKEN: "Token d'authentification manquant",
-  INVALID_CREDENTIALS: "Email ou mot de passe incorrect",
-  EXPIRATION_TIME: "1h",
-  SECRET_KEY: process.env.JWT_SECRET,
+  INVALID_TOKEN: "Invalid or expired authentication token",
+  UNAUTHORIZED_ACCESS: "Unauthorized access to this resource",
+  MISSING_TOKEN: "Missing authentication token",
+  INVALID_CREDENTIALS: "Incorrect email or password",
+  // JWT expiry used when signing new tokens.
+  // - Default: very long-lived tokens for a dev-like UX.
+  // - Set JWT_EXPIRES_IN=none to create tokens without an exp claim (no expiry).
+  // - Any value accepted by jsonwebtoken's `expiresIn` is valid (e.g. "30d", "12h").
+  EXPIRATION_TIME: process.env.JWT_EXPIRES_IN || "365d",
+  SECRET_KEY: process.env.JWT_SECRET || "dev-secret",
 } as const;
 
 // ============================================================================
-// UTILISATEURS
+// USERS
 // ============================================================================
 
 export const USER_MESSAGES = {
-  NOT_FOUND: "Utilisateur introuvable",
-  CREATION_SUCCESS: "Utilisateur créé avec succès",
-  UPDATE_SUCCESS: "Profil mis à jour avec succès",
-  DELETION_SUCCESS: "Compte supprimé avec succès",
+  NOT_FOUND: "User not found",
+  CREATION_SUCCESS: "User created successfully",
+  UPDATE_SUCCESS: "Profile updated successfully",
+  DELETION_SUCCESS: "Account deleted successfully",
   EMAIL: "Email",
-  EMAIL_ALREADY_EXISTS: "Cet email est déjà utilisé",
-  LOGIN_SUCCESS: "Connexion réussie",
-  LOGOUT_SUCCESS: "Déconnexion réussie",
-  PROFILE_UPDATED: "Votre profil a été mis à jour",
-  DOES_NOT_EXISTS: "L'utilisateur n'existe pas",
-  FAILED_FETCH: "Impossible de récupérer les informations utilisateur",
-  UNAUTHORIZED: "Votre email Google n'est pas vérifié",
+  EMAIL_ALREADY_EXISTS: "This email is already in use",
+  USERNAME: "Username",
+  USERNAME_ALREADY_EXISTS: "This username is already in use",
+  LOGIN_SUCCESS: "Login successful",
+  LOGOUT_SUCCESS: "Logout successful",
+  PROFILE_UPDATED: "Your profile has been updated",
+  DOES_NOT_EXISTS: "User does not exist",
+  FAILED_FETCH: "Failed to fetch user information",
+  UNAUTHORIZED: "Your Google email is not verified",
 } as const;
 
 // ============================================================================
-// VALIDATION & FORMAT
+// VALIDATION & FORMATTING
 // ============================================================================
 
 export const VALIDATION = {
-  // Champs requis
-  PHONE_REQUIRED: "Le numéro de téléphone est requis",
-  EMAIL_REQUIRED: "L'adresse email est requise",
-  PASSWORD_REQUIRED: "Le mot de passe est requis",
-  BUSINESS_ID_REQUIRED: "L'identifiant de l'établissement est requis",
-  ENTRY_ID_REQUIRED: "L'identifiant de l'entrée est requis",
-  NAME_REQUIRED: "Le nom est requis",
+  // Required fields
+  PHONE_REQUIRED: "Phone number is required",
+  EMAIL_REQUIRED: "Email address is required",
+  PASSWORD_REQUIRED: "Password is required",
+  BUSINESS_ID_REQUIRED: "Business identifier is required",
+  ENTRY_ID_REQUIRED: "Entry identifier is required",
+  NAME_REQUIRED: "Name is required",
 
-  // Format invalide
+  // Invalid formats
   INVALID_PHONE_FORMAT:
-    "Le format du numéro de téléphone est invalide (format français attendu: +33 ou 0)",
-  INVALID_EMAIL_FORMAT: "Le format de l'adresse email est invalide",
-  INVALID_UUID_FORMAT: "Le format de l'identifiant est invalide",
+    "Invalid phone number format (expected French format: +33 or 0)",
+  INVALID_EMAIL_FORMAT: "Invalid email address format",
+  INVALID_UUID_FORMAT: "Invalid identifier format",
   PASSWORD_TOO_WEAK:
-    "Le mot de passe doit contenir au moins 8 caractères, une majuscule et un chiffre",
-  INVALID_PASSWORD: "Le mot de passe est incorrect",
-  // Autres
-  MIN_LENGTH: "La longueur minimale requise n'est pas atteinte",
-  MAX_LENGTH: "La longueur maximale a été dépassée",
+    "Password must contain at least 8 characters, one uppercase letter and one digit",
+  INVALID_PASSWORD: "Incorrect password",
+  // Others
+  MIN_LENGTH: "Minimum required length not met",
+  MAX_LENGTH: "Maximum length exceeded",
 } as const;
 
 // ============================================================================
-// MESSAGES D'ERREUR GÉNÉRIQUES
+// GENERIC ERROR MESSAGES
 // ============================================================================
 
 export const ERROR_MESSAGES = {
-  INTERNAL_SERVER_ERROR: "Une erreur interne est survenue",
-  INVALID_REQUEST: "Requête invalide",
-  UNKNOWN_ERROR: "Erreur inconnue",
-  DATABASE_ERROR: "Erreur lors de l'accès à la base de données",
-  EXTERNAL_SERVICE_ERROR:
-    "Erreur lors de la communication avec un service externe",
-  TIMEOUT_ERROR: "La requête a dépassé le délai imparti",
-  METHOD_NOT_ALLOWED: "Méthode HTTP non autorisée",
-  INVALID_EMAIL_OR_PASSWORD: "Email ou mot de passe invalide",
-  GOOGLE_AUTH_FAILED: "Authentification Google annulée ou échouée",
-  INVALID_SESSION: "État de session invalide (protection CSRF)",
-  INVALID_CODE: "Code d'autorisation manquant",
-  EXCHANGE_CODE_FAILED: "Échec de l'échange du code d'autorisation",
+  INTERNAL_SERVER_ERROR: "An internal error occurred",
+  INVALID_REQUEST: "Invalid request",
+  UNKNOWN_ERROR: "Unknown error",
+  DATABASE_ERROR: "Database access error",
+  EXTERNAL_SERVICE_ERROR: "Error communicating with external service",
+  TIMEOUT_ERROR: "Request timed out",
+  METHOD_NOT_ALLOWED: "HTTP method not allowed",
+  INVALID_EMAIL_OR_PASSWORD: "Invalid email or password",
+  GOOGLE_AUTH_FAILED: "Google authentication cancelled or failed",
+  INVALID_SESSION: "Invalid session state (CSRF protection)",
+  INVALID_CODE: "Missing authorization code",
+  EXCHANGE_CODE_FAILED: "Failed to exchange authorization code",
 } as const;
 
 // ============================================================================
@@ -171,16 +176,15 @@ export const ASSETS = {
 // ============================================================================
 
 export const TEST_DATA = {
-  // Utilisateur de test
+  // Test user
   TEST_USER_EMAIL: "usertest@yopmail.com",
   TEST_USER_PASSWORD: "@Password1",
   AVATAR_URL:
     "https://i.scdn.co/image/ab6761610000e5eb7d4e246f8c54be347e06bffe",
 
-  // Messages de test
-  TEST_LOGIN_SHOULD_SUCCEED:
-    "Le test devrait connecter l'utilisateur et renvoyer un code 200",
-  TEST_LOGIN_MESSAGE: "L'utilisateur est connecté",
+  // Test messages
+  TEST_LOGIN_SHOULD_SUCCEED: "The test should log in the user and return a 200 status code",
+  TEST_LOGIN_MESSAGE: "User is logged in",
 } as const;
 
 // ============================================================================
@@ -192,7 +196,7 @@ export const APP_CONFIG = {
   SERVER_PORT: process.env.SERVER_PORT,
   TIMEZONE: "Europe/Paris",
   DEFAULT_LOCALE: "fr-FR",
-  MAX_REQUEST_TIMEOUT_MS: 30000,
+  MAX_REQUEST_TIMEOUsT_MS: 30000,
   RATE_LIMIT_WINDOW_MS: 900000, // 15 minutes
   RATE_LIMIT_MAX_REQUESTS: 100,
   EMPTY_STRING: "",

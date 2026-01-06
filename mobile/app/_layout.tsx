@@ -9,6 +9,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { AuthProvider, useAuth } from "@/context/auth";
 import { AppDataProvider } from "@/context/appData";
+import NotificationBanner from "@/components/ui/NotificationBanner";
 import { DialogProvider } from "@/context/dialog";
 import { NavDarkTheme, NavLightTheme } from "@/constants/navigation-theme";
 import { Colors } from "@/constants/theme";
@@ -85,6 +86,7 @@ export default function RootLayout() {
         <AuthProvider>
           <AppDataProvider>
             <AppShell />
+            <NotificationBanner />
           </AppDataProvider>
         </AuthProvider>
       </GestureHandlerRootView>
