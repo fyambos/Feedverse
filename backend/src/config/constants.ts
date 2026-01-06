@@ -91,6 +91,23 @@ export const USER_MESSAGES = {
 } as const;
 
 // ============================================================================
+// SCÉNARIOS
+// ============================================================================
+
+export const SCENARIO_MESSAGES = {
+  NOT_FOUND: "Scénario introuvable",
+  CREATION_SUCCESS: "Scénario créé avec succès",
+  UPDATE_SUCCESS: "Scénario mis à jour avec succès",
+  DELETION_SUCCESS: "Scénario supprimé avec succès",
+  EMAIL: "Email",
+  ALREADY_EXISTS: "Un scénario similaire existe déjà",
+  SCENARIO_UPDATED: "Votre Scénario a été mis à jour",
+  DOES_NOT_EXISTS: "Le cénario n'existe pas",
+  FAILED_FETCH: "Impossible de récupérer les informations du scénario",
+  UNAUTHORIZED: "Votre email Google n'est pas vérifié",
+} as const;
+
+// ============================================================================
 // VALIDATION & FORMAT
 // ============================================================================
 
@@ -196,4 +213,5 @@ export const APP_CONFIG = {
   RATE_LIMIT_WINDOW_MS: 900000, // 15 minutes
   RATE_LIMIT_MAX_REQUESTS: 100,
   EMPTY_STRING: "",
+  NOW: new Date(),
 } as const;
