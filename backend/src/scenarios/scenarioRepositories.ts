@@ -1,3 +1,4 @@
+
 import { pool } from "../config/database";
 import type { ScenarioRow } from "./scenarioModels";
 
@@ -27,6 +28,8 @@ async function getColumns(tableName: string): Promise<ColumnInfo[]> {
   );
   return res.rows ?? [];
 }
+
+
 
 export class ScenarioRepository {
   async listForUser(userId: string): Promise<ScenarioRow[]> {
@@ -677,5 +680,10 @@ export class ScenarioRepository {
       `,
       [scenarioId, userId],
     );
+  }
+
+  async updateCover(scenarioId: string, coverUrl: string): Promise<void> {
+    const query = "UPDATE scenarios SET cover = $1, updated_at = $2 WHERE id = $3";
+    await pool.query(query, [coverUrl, new Date(), scenarioId]);
   }
 }

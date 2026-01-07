@@ -7,7 +7,9 @@ import {
 	LeaveScenarioController,
 	TransferScenarioOwnershipController,
 	UpdateScenarioController,
+	UploadScenarioCoverController,
 } from "./scenarioControllers";
+import { upload } from "../config/multer";
 import {
 	CreateScenarioProfileController,
 	ListScenarioProfilesController,
@@ -42,5 +44,7 @@ scenarioRouter.post(
 	authMiddleware,
 	TransferScenarioOwnershipController,
 );
+scenarioRouter.post("/:id/cover", authMiddleware, upload.single("cover"), UploadScenarioCoverController);
+
 
 export default scenarioRouter;

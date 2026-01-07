@@ -22,6 +22,7 @@ import { Colors } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 
 import { useAuth } from "@/context/auth";
+import { apiFetch } from "@/lib/apiClient";
 import { useAppData } from "@/context/appData";
 import { Alert } from "@/context/dialog";
 
@@ -109,7 +110,7 @@ export default function CreateScenarioModal() {
   const scheme = useColorScheme() ?? "light";
   const colors = Colors[scheme];
 
-  const { userId } = useAuth();
+  const { userId, token } = useAuth();
   const {
     isReady,
     getScenarioById,
@@ -389,7 +390,33 @@ export default function CreateScenarioModal() {
     };
 
     try {
-      await upsertScenario(next);
+      // 1. Create scenario (without uploading cover if it's a local file)
+      let scenarioId = next.id;
+      let coverUrl = String(cover).trim();
+      let uploadedCoverUrl = coverUrl;
+      let isLocalCover = coverUrl && !/^https?:\/\//i.test(coverUrl);
+
+      // Save scenario with empty cover if local file
+      const scenarioToSave = isLocalCover ? { ...next, cover: "" } : next;
+      await upsertScenario(scenarioToSave);
+
+      // 2. If cover is a local file, upload to backend
+      if (isLocalCover && token) {
+        const form = new FormData();
+        form.append("cover", { uri: coverUrl, name: `cover_${scenarioId}.jpg`, type: "image/jpeg" } as any);
+        const res = await apiFetch({
+          path: `/scenarios/${scenarioId}/cover`,
+          token,
+          init: { method: "POST", body: form as any },
+        });
+        if (res.ok && res.json?.coverUrl) {
+          uploadedCoverUrl = String(res.json.coverUrl);
+          // Update scenario with new cover URL
+          await upsertScenario({ ...next, cover: uploadedCoverUrl });
+        } else {
+          Alert.alert("Cover upload failed", res.json?.error || res.text || "Unknown error");
+        }
+      }
       router.back();
     } catch (e: any) {
       Alert.alert("Save failed", e?.message ?? "Could not save scenario.");

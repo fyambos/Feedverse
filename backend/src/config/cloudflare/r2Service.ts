@@ -1,3 +1,4 @@
+
 import { DeleteObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 import { CLOUDFLARE_S3 } from "./s3Client";
 import { CLOUDFLARE } from "../constants";
@@ -107,6 +108,13 @@ export class R2Service {
     const ext = this.inferExtension(file);
     const safeIdx = Number.isFinite(index) ? Math.max(0, Math.floor(index)) : 0;
     const key = `messages/images/${messageId}_${date}_${safeIdx}.${ext}`;
+    return await this.uploadToKey(file, key);
+  }
+
+    async uploadScenarioCover(file: Express.Multer.File, scenarioId: string): Promise<string> {
+    const date = Date.now();
+    const ext = this.inferExtension(file);
+    const key = `scenarios/covers/${scenarioId}_${date}.${ext}`;
     return await this.uploadToKey(file, key);
   }
 }

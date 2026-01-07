@@ -1,3 +1,8 @@
+import { r2Service } from "../config/cloudflare/r2Service";
+import { ScenarioRepository } from "./scenarioRepositories";
+import { pool } from "../config/database";
+
+
 import type { Request, Response } from "express";
 import { HTTP_METHODS, HTTP_STATUS, ERROR_MESSAGES } from "../config/constants";
 import {
@@ -239,4 +244,24 @@ export const TransferScenarioOwnershipController = async (req: Request, res: Res
       .status(HTTP_STATUS.INTERNAL_SERVER_ERROR)
       .json({ error: ERROR_MESSAGES.INTERNAL_SERVER_ERROR });
   }
+
+  // POST /scenarios/:id/cover
+  export const UploadScenarioCoverController = async (req: Request, res: Response) => {
+    if (req.method !== "POST") {
+      return res.status(405).json({ error: "Method not allowed" });
+    }
+    try {
+      const scenarioId = String(req.params.id ?? "").trim();
+      if (!scenarioId) return res.status(400).json({ error: "Missing scenario id" });
+      const file = req.file;
+      if (!file) return res.status(400).json({ error: "No file uploaded" });
+      const coverUrl = await r2Service.uploadScenarioCover(file, scenarioId);
+      // Update scenario cover in DB
+      const repo = new ScenarioRepository();
+      await repo.updateCover(scenarioId, coverUrl);
+      return res.status(200).json({ coverUrl });
+    } catch (error: any) {
+      return res.status(500).json({ error: error?.message || "Failed to upload cover" });
+    }
+  };
 };
