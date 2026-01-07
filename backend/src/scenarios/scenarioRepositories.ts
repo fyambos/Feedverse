@@ -27,7 +27,10 @@ export class ScenarioRepository {
     let finalCoverUrl = scenarioData.cover || APP_CONFIG.EMPTY_STRING;
 
     if (coverFile) {
-      finalCoverUrl = await r2Service.uploadAvatar(coverFile, scenarioData.id);
+      finalCoverUrl = await r2Service.uploadScenarioCover(
+        coverFile,
+        scenarioData.id,
+      );
     }
 
     const query = `

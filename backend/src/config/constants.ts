@@ -26,7 +26,8 @@ export const CLOUDFLARE = {
   PUBLIC_URL: process.env.R2_PUBLIC_URL,
   IMAGES_SIZE: 5 * 1024 * 1024,
   USER_DIR: "users",
-  SCENARIO_DIR: "scenario",
+  SCENARIO_DIR: "scenarios",
+  COVER_DIR: "covers",
 } as const;
 
 // ============================================================================

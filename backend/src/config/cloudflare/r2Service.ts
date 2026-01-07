@@ -32,7 +32,7 @@ export class R2Service {
     const date = Date.now();
     const fileExtension = file.originalname.split(".").pop();
     const fileName = `${userId}_${date}.${fileExtension}`;
-    const key = `${CLOUDFLARE.SCENARIO_DIR}/${fileName}`;
+    const key = `${CLOUDFLARE.SCENARIO_DIR}/${CLOUDFLARE.COVER_DIR}/${fileName}`;
 
     await CLOUDFLARE_S3.send(
       new PutObjectCommand({
