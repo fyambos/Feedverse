@@ -1,0 +1,12 @@
+{
+  "expo": {
+    "extra": {
+      "eas": {
+        "projectId": "49e2c34a-07c4-493d-8e89-00fbbce0852f"
+      }
+    },
+    "android": {
+      "package": "com.fyambos.feedversemobiledev"
+    }
+  }
+}

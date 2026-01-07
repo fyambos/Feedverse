@@ -45,3 +45,9 @@ app-example
 
 # Firebase admin SDK private key
 feedverse-510bc-firebase-adminsdk-fbsvc-c067f69184.json
+
+# Google services files
+*google-services.json
+google-services.json
+*GoogleService-Info.plist
+GoogleService-Info.plist
