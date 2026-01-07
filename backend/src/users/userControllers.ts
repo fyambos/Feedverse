@@ -1,4 +1,15 @@
+// backend/src/users/userControllers.ts
+import { Request, Response } from "express";
+import { User } from "./userModels";
+import { r2Service } from "../config/cloudflare/r2Service";
 import { UserRepository } from "./userRepositories";
+import {
+  ERROR_MESSAGES,
+  HTTP_METHODS,
+  HTTP_STATUS,
+  USER_MESSAGES,
+} from "../config/constants";
+
 
 // PATCH /username
 export const UpdateUsernameController = async (req: Request, res: Response) => {
@@ -27,16 +38,6 @@ export const UpdateUsernameController = async (req: Request, res: Response) => {
     return res.status(500).json({ error: error?.message || "Failed to update username" });
   }
 };
-import { Request, Response } from "express";
-import { User } from "./userModels";
-import { r2Service } from "../config/cloudflare/r2Service";
-import { UserRepository } from "./userRepositories";
-import {
-  ERROR_MESSAGES,
-  HTTP_METHODS,
-  HTTP_STATUS,
-  USER_MESSAGES,
-} from "../config/constants";
 
 export const GetUserProfileController = async (req: Request, res: Response) => {
   if (req.method !== HTTP_METHODS.GET) {

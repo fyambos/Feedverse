@@ -153,7 +153,7 @@ export default function UserSettingsScreen() {
               )}
             </View>
             {usernameError && (
-              <ThemedText style={{ color: colors.error, fontSize: 12, marginTop: 4 }}>{usernameError}</ThemedText>
+              <ThemedText style={{ color: "#d00", fontSize: 12, marginTop: 4 }}>{usernameError}</ThemedText>
             )}
           </RowCard>
 
