@@ -1,7 +1,7 @@
 import { Router } from "express";
 const userRouter = Router();
 
-import { GetUserProfileController, UpdateUserAvatarController, GetUsersByIdsController } from "./userControllers";
+import { GetUserProfileController, UpdateUserAvatarController, GetUsersByIdsController, UpdateUsernameController } from "./userControllers";
 import { authMiddleware } from "../auth/authMiddleware";
 import { ROUTES_USERS } from "../config/constants";
 import { upload } from "../config/multer";
@@ -13,5 +13,8 @@ userRouter.get("/", authMiddleware, GetUsersByIdsController);
 
 // Upload avatar image to Cloudflare R2 and store its public URL in the DB
 userRouter.post("/avatar", authMiddleware, upload.single("avatar"), UpdateUserAvatarController);
+
+// PATCH /username - update username
+userRouter.patch("/username", authMiddleware, UpdateUsernameController);
 
 export default userRouter;

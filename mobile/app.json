@@ -54,6 +54,7 @@
       "reactCompiler": true
     },
     "extra": {
+      "EXPO_PUBLIC_API_BASE_URL": "https://feedverse-production.up.railway.app",
       "router": {},
       "eas": {
         "projectId": "4d2a49b9-b885-447c-8a78-15387e49dd34"

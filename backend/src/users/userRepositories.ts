@@ -1,3 +1,7 @@
+  async updateUsername(userId: string, username: string): Promise<void> {
+    const query = "UPDATE users SET username = $1, updated_at = $2 WHERE id = $3";
+    await pool.query(query, [username, new Date(), userId]);
+  }
 import { CreateUserData } from "../auth/authModels";
 import { r2Service } from "../config/cloudflare/r2Service";
 import { APP_CONFIG } from "../config/constants";

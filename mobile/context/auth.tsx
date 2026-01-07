@@ -43,6 +43,7 @@ type AuthState = {
   refreshCurrentUser: () => Promise<void>;
   updateUserSettings: (settings: UserSettings) => Promise<void>;
   updateUserAvatar: (avatarUrl?: string | null) => Promise<void>;
+  updateUsername: (username: string) => Promise<void>;
 };
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -664,6 +665,51 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [userId, token]
   );
 
+  // Update username via backend
+  const updateUsername = useCallback(
+    async (username: string) => {
+      if (!userId) throw new Error("Not logged in");
+      const baseUrl = apiBaseUrl();
+      const t = String(token ?? "").trim();
+      if (!baseUrl || !t) throw new Error("No backend or token");
+      const res = await apiFetch({
+        path: "/users/username",
+        token: t,
+        init: {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username }),
+        },
+      });
+      if (!res.ok) {
+        const msg = typeof (res.json as any)?.error === "string"
+          ? String((res.json as any).error)
+          : typeof res.text === "string" && res.text.trim().length
+            ? res.text
+            : `Update failed (HTTP ${res.status})`;
+        throw new Error(msg);
+      }
+      // Update local user cache
+      await updateDb((prev) => {
+        const existing = (prev as any).users?.[userId];
+        if (!existing) return prev;
+        return {
+          ...prev,
+          users: {
+            ...(prev as any).users,
+            [userId]: {
+              ...existing,
+              username,
+              updatedAt: new Date().toISOString(),
+            },
+          },
+        };
+      });
+      await refreshCurrentUser();
+    },
+    [userId, token, refreshCurrentUser]
+  );
+
   const value = useMemo<AuthState>(
     () => ({
       // auth is ready when storage hydration is done
@@ -684,6 +730,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       refreshCurrentUser,
       updateUserSettings,
       updateUserAvatar,
+      updateUsername,
     }),
     [
       authReady,
@@ -698,6 +745,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       refreshCurrentUser,
       updateUserSettings,
       updateUserAvatar,
+      updateUsername,
     ]
   );
 

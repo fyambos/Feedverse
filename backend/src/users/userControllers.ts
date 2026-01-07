@@ -1,3 +1,32 @@
+import { UserRepository } from "./userRepositories";
+
+// PATCH /username
+export const UpdateUsernameController = async (req: Request, res: Response) => {
+  if (req.method !== "PATCH") {
+    return res.status(405).json({ error: "Method not allowed" });
+  }
+  try {
+    const user: User = req.user;
+    const userId = String(user?.id ?? "").trim();
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    const { username } = req.body;
+    if (!username || typeof username !== "string" || username.trim().length < 3) {
+      return res.status(400).json({ error: "Invalid username" });
+    }
+    const usernameNormalized = username.trim();
+    const repo = new UserRepository();
+    // Check if username is taken by another user
+    const existing = await repo.findByUsername(usernameNormalized);
+    if (existing && existing.id !== userId) {
+      return res.status(409).json({ error: "Username already in use" });
+    }
+    await repo.updateUsername(userId, usernameNormalized);
+    return res.status(200).json({ username: usernameNormalized });
+  } catch (error: any) {
+    return res.status(500).json({ error: error?.message || "Failed to update username" });
+  }
+};
 import { Request, Response } from "express";
 import { User } from "./userModels";
 import { r2Service } from "../config/cloudflare/r2Service";

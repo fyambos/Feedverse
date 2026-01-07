@@ -1,6 +1,6 @@
 // mobile/app/(scenario)/settings.tsx
 import React, { useEffect, useState } from "react";
-import { Pressable, StyleSheet, View } from "react-native";
+import { Pressable, StyleSheet, View, TextInput } from "react-native";
 import { Stack, router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -13,6 +13,7 @@ import { Colors } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 
 import { useAuth } from "@/context/auth";
+import { useState as useAsyncState } from "react";
 import type { UserSettings } from "@/data/db/schema";
 
 import { ProfileAvatarPicker } from "@/components/profile-edit/ProfileAvatarPicker";
@@ -37,17 +38,21 @@ export default function UserSettingsScreen() {
   const scheme = useColorScheme() ?? "light";
   const colors = Colors[scheme];
 
-  const { userId, currentUser, updateUserSettings, updateUserAvatar } = useAuth();
+  const { userId, currentUser, updateUserSettings, updateUserAvatar, updateUsername } = useAuth();
 
   const user = currentUser ?? null;
 
   const [draft, setDraft] = useState<Required<UserSettings>>(normalizeSettings(user?.settings));
   const [avatarUrl, setAvatarUrl] = useState<string | null>(user?.avatarUrl ?? null);
+  const [username, setUsername] = useState(user?.username ?? "");
+  const [usernameError, setUsernameError] = useState<string | null>(null);
+  const [isSavingUsername, setIsSavingUsername] = useState(false);
 
   // keep draft in sync when user loads / changes
   useEffect(() => {
     setDraft(normalizeSettings(user?.settings));
-  }, [user?.settings]);
+    setUsername(user?.username ?? "");
+  }, [user?.settings, user?.username]);
 
   useEffect(() => {
     setAvatarUrl(user?.avatarUrl ?? null);
@@ -55,6 +60,18 @@ export default function UserSettingsScreen() {
 
   const save = async () => {
     if (!userId) return;
+    if (username !== user?.username) {
+      setIsSavingUsername(true);
+      setUsernameError(null);
+      try {
+        await updateUsername(username);
+      } catch (e: any) {
+        setUsernameError(e?.message || "Could not update username");
+        setIsSavingUsername(false);
+        return;
+      }
+      setIsSavingUsername(false);
+    }
     await updateUserSettings(draft);
     await updateUserAvatar(avatarUrl);
     router.back();
@@ -111,9 +128,33 @@ export default function UserSettingsScreen() {
           {/* USER AVATAR */}
           <ProfileAvatarPicker avatarUrl={avatarUrl} setAvatarUrl={setAvatarUrl} colors={colors} />
 
-          {/* ACCOUNT */}
+          {/* ACCOUNT - Username editing */}
           <RowCard label="Account" colors={colors}>
-            <ThemedText style={{ color: colors.text }}>@{user?.username ?? "unknown"}</ThemedText>
+            <View style={{ flexDirection: "row", alignItems: "center" }}>
+              <TextInput
+                style={{
+                  color: colors.text,
+                  fontSize: 16,
+                  borderBottomWidth: 1,
+                  borderBottomColor: colors.border,
+                  minWidth: 120,
+                  flex: 1,
+                  paddingVertical: 2,
+                }}
+                value={username}
+                onChangeText={setUsername}
+                autoCapitalize="none"
+                autoCorrect={false}
+                placeholder="Username"
+                editable={!isSavingUsername}
+              />
+              {isSavingUsername && (
+                <ThemedText style={{ color: colors.tint, marginLeft: 8 }}>Saving…</ThemedText>
+              )}
+            </View>
+            {usernameError && (
+              <ThemedText style={{ color: colors.error, fontSize: 12, marginTop: 4 }}>{usernameError}</ThemedText>
+            )}
           </RowCard>
 
           {/* SHOW TIMESTAMPS */}
