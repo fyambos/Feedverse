@@ -23,6 +23,7 @@ export const CreateScenarioController = [
       const coverFile = req.file;
 
       const ownerUserId = req.user?.id;
+      req.body.mode = "story";
 
       if (!ownerUserId) {
         return res.status(HTTP_STATUS.UNAUTHORIZED).json({

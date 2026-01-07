@@ -64,7 +64,6 @@ export const HTTP_METHODS = {
 export const AUTH = {
   BEARER_PREFIX: "Bearer ",
   HEADER_NAME: "Authorization",
-  // Messages
   INVALID_TOKEN: "Token de connexion invalide ou expiré",
   UNAUTHORIZED_ACCESS: "Accès non autorisé à cette ressource",
   MISSING_TOKEN: "Token d'authentification manquant",
@@ -101,7 +100,11 @@ export const SCENARIO_MESSAGES = {
   CREATION_SUCCESS: "Scénario créé avec succès",
   UPDATE_SUCCESS: "Scénario mis à jour avec succès",
   DELETION_SUCCESS: "Scénario supprimé avec succès",
-  EMAIL: "Email",
+  NAME: "name",
+  INVITE_CODE: "invite_code",
+  MODE: "mode",
+  DESCRIPTION: "description",
+  INVITE_CODE_ALREADY_EXISTS: "Ce code d'invitation est déjà utilisé",
   ALREADY_EXISTS: "Un scénario similaire existe déjà",
   SCENARIO_UPDATED: "Votre Scénario a été mis à jour",
   DOES_NOT_EXISTS: "Le cénario n'existe pas",
