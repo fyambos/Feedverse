@@ -7,7 +7,7 @@ import {
   HTTP_STATUS,
   USER_MESSAGES,
 } from "../config/constants";
-import { LoginUserService, RegisterUserService } from "./authServices";
+import { LoginService, RegisterService } from "./authServices";
 import { upload } from "../config/multer";
 
 export const RegisterController = [
@@ -23,7 +23,7 @@ export const RegisterController = [
       const { username, name, email, password_hash, avatar_url } = req.body;
       const avatarFile = req.file;
 
-      const result = await RegisterUserService(
+      const result = await RegisterService(
         {
           username,
           name,
@@ -63,30 +63,23 @@ export const LoginController = async (req: Request, res: Response) => {
   try {
     const { email, password_hash } = req.body;
 
-    const result = await LoginUserService({ email, password_hash });
+    const result = await LoginService({
+      email,
+      password_hash,
+    });
 
-    if (result?.error) {
-      return res.status(HTTP_STATUS.UNAUTHORIZED).json({
-        status: ERROR_MESSAGES.INVALID_REQUEST,
-        message: result.error,
-        statusCode: HTTP_STATUS.UNAUTHORIZED,
+    if (result.errors) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        errors: result.errors,
       });
     }
 
-    const token = jwt.sign({ user: result?.user }, AUTH.SECRET_KEY, {
-      expiresIn: AUTH.EXPIRATION_TIME,
-    });
-
-    res.status(HTTP_STATUS.OK).json({
-      message: USER_MESSAGES.LOGIN_SUCCESS,
-      token: token,
-      user: result?.user,
-    });
+    res.status(HTTP_STATUS.OK).json(result.user);
   } catch (error: unknown) {
     console.error("Erreur lors de la connexion:", error);
-    res
-      .status(HTTP_STATUS.INTERNAL_SERVER_ERROR)
-      .json({ error: ERROR_MESSAGES.INTERNAL_SERVER_ERROR });
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      error: ERROR_MESSAGES.INTERNAL_SERVER_ERROR,
+    });
   }
 };
 

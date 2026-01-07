@@ -69,6 +69,7 @@ export const AUTH = {
   MISSING_TOKEN: "Token d'authentification manquant",
   INVALID_CREDENTIALS: "Email ou mot de passe incorrect",
   EXPIRATION_TIME: "1h",
+  TOKEN_EXPIRED: "Token expiré",
   SECRET_KEY: process.env.JWT_SECRET,
 } as const;
 
@@ -82,6 +83,7 @@ export const USER_MESSAGES = {
   UPDATE_SUCCESS: "Profil mis à jour avec succès",
   DELETION_SUCCESS: "Compte supprimé avec succès",
   EMAIL: "Email",
+  PASSWORD: "password_hash",
   EMAIL_ALREADY_EXISTS: "Cet email est déjà utilisé",
   LOGIN_SUCCESS: "Connexion réussie",
   LOGOUT_SUCCESS: "Déconnexion réussie",

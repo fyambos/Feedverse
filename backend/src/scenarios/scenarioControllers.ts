@@ -8,6 +8,7 @@ import {
 } from "../config/constants";
 import { CreateScenarioService } from "./scenarioServices";
 import { upload } from "../config/multer";
+import { User } from "../users/userModels";
 
 export const CreateScenarioController = [
   upload.single("cover"),
@@ -21,8 +22,7 @@ export const CreateScenarioController = [
     try {
       const { name, description, mode, invite_code } = req.body;
       const coverFile = req.file;
-
-      const ownerUserId = req.user?.id;
+      const ownerUserId: string = req.user.id;
       req.body.mode = "story";
 
       if (!ownerUserId) {

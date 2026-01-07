@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from "uuid";
 import bcrypt from "bcryptjs";
 import {
+  JwtTokenPayload,
   LoginRequest,
   LoginResponse,
   RegisterRequest,
@@ -22,7 +23,7 @@ import { ValidationError } from "../utils/models";
 
 const userRepository = new UserRepository();
 
-export const RegisterUserService = async (
+export const RegisterService = async (
   input: RegisterRequest,
   avatarFile?: Express.Multer.File,
 ): Promise<{ user?: RegisterResponse; errors?: ValidationError[] }> => {
@@ -88,37 +89,78 @@ export const RegisterUserService = async (
   return { user };
 };
 
-export const LoginUserService = async (
+import jwt from "jsonwebtoken";
+import { AUTH } from "../config/constants";
+import { User } from "../users/userModels";
+
+export const LoginService = async (
   input: LoginRequest,
-): Promise<{ user?: LoginResponse; error?: unknown }> => {
+): Promise<{ user?: LoginResponse; errors?: ValidationError[] }> => {
   const { email, password_hash } = input;
 
-  const emailError = validateEmail(email);
-  const passwordError = validatePassword(password_hash);
+  // Validation
+  const errors: ValidationError[] = [];
 
-  if (emailError || passwordError) {
-    return { error: ERROR_MESSAGES.INVALID_EMAIL_OR_PASSWORD };
+  const emailError = validateEmail(email);
+  if (emailError) errors.push(emailError);
+
+  const passwordError = validatePassword(password_hash);
+  if (passwordError) errors.push(passwordError);
+
+  if (errors.length > 0) {
+    return { errors };
   }
 
   const userFetched = await userRepository.findByEmail(email);
 
   if (!userFetched) {
-    return { error: USER_MESSAGES.DOES_NOT_EXISTS };
+    return {
+      errors: [
+        {
+          fields: USER_MESSAGES.EMAIL,
+          message: USER_MESSAGES.DOES_NOT_EXISTS,
+        },
+      ],
+    };
   }
 
-  const hashedPassword: string = userFetched.password_hash;
-
-  const isPasswordValid = await bcrypt.compare(password_hash, hashedPassword);
+  const isPasswordValid = await bcrypt.compare(
+    password_hash,
+    userFetched.password_hash,
+  );
 
   if (!isPasswordValid) {
-    return { error: VALIDATION.INVALID_PASSWORD };
+    return {
+      errors: [
+        {
+          fields: USER_MESSAGES.PASSWORD,
+          message: VALIDATION.INVALID_PASSWORD,
+        },
+      ],
+    };
   }
 
-  /*
-  const loginDate = new Date();
-  await userRepository.updateLastLogin(email, loginDate);
+  // const loginDate = APP_CONFIG.NOW;
+  // await userRepository.updateLastLogin(email, loginDate);
+
+  const tokenPayload: JwtTokenPayload = {
+    id: userFetched.id,
+    username: userFetched.username,
+    email: userFetched.email,
+    name: userFetched.name,
+  };
+
+  const token = jwt.sign(tokenPayload, AUTH.SECRET_KEY, {
+    expiresIn: AUTH.EXPIRATION_TIME,
+  });
+
   const { password_hash: _pwd, ...userWithoutPassword } = userFetched;
 
-  return { user: userWithoutPassword as LoginResponse };
-  */
+  const response: LoginResponse = {
+    message: USER_MESSAGES.LOGIN_SUCCESS,
+    token: token,
+    User: userWithoutPassword as User,
+  };
+
+  return { user: response };
 };
