@@ -16,7 +16,6 @@ export interface Scenario {
 
 export interface CreateScenarioRequest {
   name: string;
-  cover: string;
   invite_code: string;
   owner_user_id: string;
   description: string | null;

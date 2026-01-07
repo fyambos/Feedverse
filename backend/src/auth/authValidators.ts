@@ -1,4 +1,4 @@
-import { ValidationError } from "./authModels";
+import { ValidationError } from "../utils/models";
 
 export const validateEmail = (email: string): ValidationError | null => {
   if (

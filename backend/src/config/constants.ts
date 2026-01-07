@@ -107,6 +107,24 @@ export const SCENARIO_MESSAGES = {
   UNAUTHORIZED: "Votre email Google n'est pas vérifié",
 } as const;
 
+export const SCENARIO_VALIDATION_RULES = {
+  NAME: {
+    MIN_LENGTH: 3,
+    MAX_LENGTH: 100,
+  },
+  DESCRIPTION: {
+    MAX_LENGTH: 500,
+  },
+  INVITE_CODE: {
+    MIN_LENGTH: 6,
+    MAX_LENGTH: 20,
+    PATTERN: /^[A-Z0-9]+$/,
+  },
+  MODE: {
+    ALLOWED_VALUES: ["story", "campaign"] as const,
+  },
+};
+
 // ============================================================================
 // VALIDATION & FORMAT
 // ============================================================================
@@ -181,6 +199,16 @@ export const ASSETS = {
   PLACEHOLDER_IMAGE:
     "https://media.istockphoto.com/id/985915172/fr/vectoriel/%C3%A9checs-de-checker-vecteur-abstrait-sans-soudure.jpg?s=612x612&w=0&k=20&c=4BLWcNYZe9uykbirGZHc2_0zZC0pIIKS4Tvt19oj8TQ=",
   APP_LOGO: "https://cdn.waitify.fr/logo.png",
+} as const;
+
+// ============================================================================
+// ROUTES - SCÉNARIOS
+// ============================================================================
+
+export const ROUTES_SCENARIOS = {
+  BASE: "/scenarios",
+  BY_ID: "/:id",
+  CREATE: "/create",
 } as const;
 
 // ============================================================================

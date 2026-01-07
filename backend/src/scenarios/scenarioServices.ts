@@ -1,119 +1,87 @@
 import { v4 as uuidv4 } from "uuid";
-import bcrypt from "bcryptjs";
-import { CreateScenarioRequest, CreateScenarioResponse } from "./scenarioModels";
+import { ValidationError } from "../utils/models";
 import {
-  nameFormatting,
-  validateEmail,
-  validatePassword,
-} from "./authValidators";
-import { APP_CONFIG, ERROR_MESSAGES, SCENARIO_MESSAGES, VALIDATION } from "../config/constants";
-import { ScenarioRepository } from "../scenarios/scenarioRepositories";
-import { ValidationError } from "../auth/authModels";
+  CreateScenarioRequest,
+  CreateScenarioResponse,
+} from "./scenarioModels";
+import {
+  validateScenarioName,
+  validateScenarioDescription,
+  validateInviteCode,
+  validateScenarioMode,
+} from "./scenarioValidators";
+import { APP_CONFIG, SCENARIO_MESSAGES } from "../config/constants";
+import { ScenarioRepository } from "./scenarioRepositories";
 
 const scenarioRepository = new ScenarioRepository();
 
 export const CreateScenarioService = async (
   input: CreateScenarioRequest,
+  ownerUserId: string,
   coverFile?: Express.Multer.File,
-): Promise<{ Scenario?: CreateScenarioResponse; errors?: ValidationError[] }> => {
-  const { name, description, mode, invite_code, cover } = input;
+): Promise<{
+  scenario?: CreateScenarioResponse;
+  errors?: ValidationError[];
+}> => {
+  const { name, description, mode, invite_code } = input;
 
-  // const errors: ValidationError[] = [];
+  const errors: ValidationError[] = [];
 
-  // const emailError = validateEmail(email);
-  // if (emailError) errors.push(emailError);
+  const nameError = validateScenarioName(name);
+  if (nameError) errors.push(nameError);
 
-  // const passwordError = validatePassword(password_hash);
-  // if (passwordError) errors.push(passwordError);
+  const descriptionError = validateScenarioDescription(description);
+  if (descriptionError) errors.push(descriptionError);
 
-  // if (errors.length > 0) {
-  //   return { errors };
-  // }
+  const inviteCodeError = validateInviteCode(invite_code);
+  if (inviteCodeError) errors.push(inviteCodeError);
 
-  // const emailExists = await ScenarioRepository.emailExists(email);
+  const modeError = validateScenarioMode(mode);
+  if (modeError) errors.push(modeError);
 
-  // if (emailExists) {
-  //   return {
-  //     errors: [
-  //       {
-  //         fields: Scenario_MESSAGES.EMAIL,
-  //         message: Scenario_MESSAGES.EMAIL_ALREADY_EXISTS,
-  //       },
-  //     ],
-  //   };
-  // }
+  if (errors.length > 0) {
+    return { errors };
+  }
+
+  const inviteCodeExists = await scenarioRepository.inviteCodeExists(
+    invite_code.toUpperCase(),
+  );
+
+  if (inviteCodeExists) {
+    return {
+      errors: [
+        {
+          fields: "invite_code",
+          message: "Ce code d'invitation est déjà utilisé",
+        },
+      ],
+    };
+  }
 
   const uuid = uuidv4();
-  // const nameFormatted = nameFormatting(Scenarioname);
+  const gmUserIds = mode === "campaign" ? [ownerUserId] : [];
 
-  const scenarioCreated = await ScenarioRepository.create(
+  const scenarioCreated = await scenarioRepository.create(
     {
       id: uuid,
-      name: name,
-      description: description,
+      name: name.trim(),
+      description: description?.trim() || null,
       mode: mode,
-      invite_code: invite_code,
-      owner_user_id: ,
-      gm_user_ids,
-      settings,
-      cover: coverFile || APP_CONFIG.EMPTY_STRING,
+      invite_code: invite_code.toUpperCase(),
+      owner_user_id: ownerUserId,
+      gm_user_ids: gmUserIds,
+      settings: {},
+      cover: APP_CONFIG.EMPTY_STRING,
       created_at: APP_CONFIG.NOW,
-      updated_at: APP_CONFIG.NOW,
+      updated_at: null,
     },
     coverFile,
   );
 
-  const Scenario: CreateScenarioResponse = {
+  const scenario: CreateScenarioResponse = {
     message: SCENARIO_MESSAGES.CREATION_SUCCESS,
-    Scenario: {
-      id: scenarioCreated.id,
-      name: scenarioCreated.name,
-      description: scenarioCreated.description,
-      mode: scenarioCreated.mode,
-      invite_code: scenarioCreated.invite_code,
-      cover: scenarioCreated.cover,
-      owner_user_id,
-      gm_user_ids,
-      settings,
-      created_at: scenarioCreated.created_at,
-      updated_at: scenarioCreated.updated_at,
-    },
+    Scenario: scenarioCreated,
   };
 
-  return { Scenario };
-};
-
-export const LoginScenarioService = async (
-  input: LoginRequest,
-): Promise<{ Scenario?: LoginResponse; error?: unknown }> => {
-  const { email, password_hash } = input;
-
-  const emailError = validateEmail(email);
-  const passwordError = validatePassword(password_hash);
-
-  if (emailError || passwordError) {
-    return { error: ERROR_MESSAGES.INVALID_EMAIL_OR_PASSWORD };
-  }
-
-  const ScenarioFetched = await ScenarioRepository.findByEmail(email);
-
-  if (!ScenarioFetched) {
-    return { error: Scenario_MESSAGES.DOES_NOT_EXISTS };
-  }
-
-  const hashedPassword: string = ScenarioFetched.password_hash;
-
-  const isPasswordValid = await bcrypt.compare(password_hash, hashedPassword);
-
-  if (!isPasswordValid) {
-    return { error: VALIDATION.INVALID_PASSWORD };
-  }
-
-  /*
-  const loginDate = new Date();
-  await ScenarioRepository.updateLastLogin(email, loginDate);
-  const { password_hash: _pwd, ...ScenarioWithoutPassword } = ScenarioFetched;
-
-  return { Scenario: ScenarioWithoutPassword as LoginResponse };
-  */
+  return { scenario };
 };

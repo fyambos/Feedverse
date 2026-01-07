@@ -21,29 +21,38 @@ export class ScenarioRepository {
   }
 
   async create(
-    ScenarioData: CreateScenarioData,
+    scenarioData: CreateScenarioData,
     coverFile?: Express.Multer.File,
   ): Promise<Scenario> {
-    let finalCoverUrl = ScenarioData.cover || APP_CONFIG.EMPTY_STRING;
+    let finalCoverUrl = scenarioData.cover || APP_CONFIG.EMPTY_STRING;
 
     if (coverFile) {
-      finalCoverUrl = await r2Service.uploadAvatar(coverFile, ScenarioData.id);
+      finalCoverUrl = await r2Service.uploadAvatar(coverFile, scenarioData.id);
     }
+
     const query = `
-      INSERT INTO scenarios (id, name, description, mode, cover, created_at, updated_at)
-      VALUES ($1, $2, $3, $4, $5, $6, $7)
+      INSERT INTO scenarios (
+        id, name, description, mode, cover, invite_code,
+        owner_user_id, gm_user_ids, settings, created_at, updated_at
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
       RETURNING *
     `;
+
     const result = await pool.query(query, [
-      ScenarioData.id,
-      ScenarioData.name,
-      ScenarioData.description,
-      ScenarioData.mode,
-      ScenarioData.cover,
+      scenarioData.id,
+      scenarioData.name,
+      scenarioData.description,
+      scenarioData.mode,
       finalCoverUrl,
-      ScenarioData.created_at,
-      ScenarioData.updated_at,
+      scenarioData.invite_code,
+      scenarioData.owner_user_id,
+      scenarioData.gm_user_ids,
+      JSON.stringify(scenarioData.settings),
+      scenarioData.created_at,
+      scenarioData.updated_at,
     ]);
+
     return result.rows[0];
   }
 
@@ -70,5 +79,12 @@ export class ScenarioRepository {
     const query = "DELETE FROM scenarios WHERE id = $1";
     const result = await pool.query(query, [id]);
     return result.rows[0] || null;
+  }
+
+  async inviteCodeExists(inviteCode: string): Promise<boolean> {
+    const query =
+      "SELECT EXISTS(SELECT 1 FROM scenarios WHERE UPPER(invite_code) = UPPER($1))";
+    const result = await pool.query(query, [inviteCode]);
+    return result.rows[0].exists;
   }
 }
