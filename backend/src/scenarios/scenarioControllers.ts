@@ -245,7 +245,9 @@ export const TransferScenarioOwnershipController = async (req: Request, res: Res
       .json({ error: ERROR_MESSAGES.INTERNAL_SERVER_ERROR });
   }
 
-  // POST /scenarios/:id/cover
+ 
+};
+ // POST /scenarios/:id/cover
   export const UploadScenarioCoverController = async (req: Request, res: Response) => {
     if (req.method !== "POST") {
       return res.status(405).json({ error: "Method not allowed" });
@@ -264,4 +266,3 @@ export const TransferScenarioOwnershipController = async (req: Request, res: Res
       return res.status(500).json({ error: error?.message || "Failed to upload cover" });
     }
   };
-};
