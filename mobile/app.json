@@ -9,7 +9,7 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "notification":{
-         "icon":"./assets/images/FeedverseIcon.png",
+         "icon":"./assets/images/FeedverseIcon.png"
       },
     "ios": {
       "supportsTablet": true,
