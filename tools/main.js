@@ -2,6 +2,7 @@
 const { spawn, spawnSync } = require("child_process");
 const os = require("os");
 const path = require("path");
+const readline = require("readline");
 
 function getLocalIp() {
   const nets = os.networkInterfaces();
@@ -13,11 +14,53 @@ function getLocalIp() {
   return "127.0.0.1";
 }
 
+function getPidsUsingPort(port) {
+  try {
+    if (process.platform === "win32") {
+      const out = spawnSync(`netstat -ano -p tcp | findstr :${port}`, { encoding: "utf8", shell: true });
+      if (!out.stdout) return [];
+      const lines = out.stdout.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+      const pids = [];
+      for (const line of lines) {
+        const parts = line.split(/\s+/);
+        const pid = parts[parts.length - 1];
+        if (pid && pid !== "0") pids.push(pid);
+      }
+      return Array.from(new Set(pids));
+    }
+    const out = spawnSync(`lsof -ti tcp:${port}`, { encoding: "utf8", shell: true });
+    if (out.status === 0 && out.stdout.trim()) {
+      return out.stdout.trim().split(/\r?\n/).filter(Boolean);
+    }
+    const out2 = spawnSync(`ss -ltnp`, { encoding: "utf8", shell: true });
+    if (!out2.stdout) return [];
+    const pids = [];
+    for (const line of out2.stdout.split(/\r?\n/)) {
+      if (line.includes(`:${port}`)) {
+        const m = line.match(/pid=(\d+),/);
+        if (m && m[1]) pids.push(m[1]);
+      }
+    }
+    return Array.from(new Set(pids));
+  } catch (e) {
+    return [];
+  }
+}
+
+// (Removed interactive port-kill helpers) use findFreePort instead
+function findFreePort(start = 8080, max = 8200) {
+  for (let p = start; p <= max; p++) {
+    const pids = getPidsUsingPort(p);
+    if (!pids || pids.length === 0) return p;
+  }
+  return null;
+}
+
 function run(cmd, opts = {}) {
-  const sh = spawn("bash", ["-lc", cmd], { stdio: "inherit", ...opts });
+  const child = spawn(cmd, { shell: true, stdio: "inherit", ...opts });
   return new Promise((resolve, reject) => {
-    sh.on("exit", (code) => (code === 0 ? resolve(code) : reject(code)));
-    sh.on("error", reject);
+    child.on("exit", (code) => (code === 0 ? resolve(code) : reject(code)));
+    child.on("error", reject);
   });
 }
 
@@ -71,7 +114,12 @@ async function main() {
   }
 
   const ip = getLocalIp();
-  const backendUrl = `http://${ip}:8080`;
+  const chosenPort = findFreePort(8080, 8200);
+  if (!chosenPort) {
+    console.error("No free port found between 8080 and 8200. Aborting.");
+    process.exit(1);
+  }
+  const backendUrl = `http://${ip}:${chosenPort}`;
 
   console.log("Detected local IP:", ip);
   console.log("Using backend URL:", backendUrl);
@@ -84,14 +132,36 @@ async function main() {
     const expoCmd = `cd ${path.join(process.cwd(), "mobile").replace(/"/g, '\\"')} && EXPO_PUBLIC_API_BASE_URL=\"${backendUrl}\" npx expo start --host lan -c`;
     console.log(`Expo command: ${expoCmd}`);
 
+    const mobileDir = path.join(process.cwd(), "mobile");
     const started = await openExternalTerminal(expoCmd);
     if (!started) {
-      console.log("Failed to open an external terminal; starting Expo in background as fallback.");
-      await run(expoCmd + " > /dev/null 2>&1 &");
+      console.log("Failed to open an external terminal; launching Expo in this terminal and backgrounding the backend.");
+      try {
+        const bg = spawn(`cd backend && npm run start`, {
+          shell: true,
+          detached: true,
+          stdio: "ignore",
+          env: { ...process.env, SERVER_PORT: String(chosenPort) },
+        });
+        bg.unref();
+        console.log("Backend started in background (detached).");
+      } catch (e) {
+        console.warn("Failed to start backend in background:", e && e.message ? e.message : e);
+      }
+
+      await run(`cd ${mobileDir} && npx expo start --host lan -c`, {
+        env: { ...process.env, EXPO_PUBLIC_API_BASE_URL: backendUrl },
+      });
+      process.exit(0);
     }
 
     console.log("Starting backend in foreground (logs shown here). Use Ctrl+C to stop.");
-    const backendProc = spawn("bash", ["-lc", `cd backend && npm run start`], { stdio: "inherit" });
+    // Start backend on the chosen port in foreground
+    const backendProc = spawn(`cd backend && npm run start`, {
+      shell: true,
+      stdio: "inherit",
+      env: { ...process.env, SERVER_PORT: String(chosenPort) },
+    });
     backendProc.on("exit", (code) => process.exit(code ?? 0));
   } catch (e) {
     console.error("Error:", e && e.message ? e.message : e);
