@@ -18,3 +18,13 @@ What it does
 
 Notes
 - Used `--host lan` as well so a device on the same network can connect to the Expo dev server.
+
+What are these branches
+
+- **MVP / GA (initial MVP and final app — General Availability):**
+	- `main`: production branch
+	- `dev`: development branch (merge into `main` when ready for production)
+
+- **Beta:**
+	- `testing`: primary Beta branch; builds are published to iOS and Android. Its code diverges from `main` and will be dropped once the final app is completed.
+	- `beta`: development branch for the Beta; merge into `testing` when ready for Beta builds and shipping them to iOS and Android.

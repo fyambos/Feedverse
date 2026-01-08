@@ -6,7 +6,7 @@ A mobile social network simulation app that enables collaborative co-writing of 
 
 ## Concept
 
-Feedverse is a hybrid platform inspired by **Status** and **Social Maker**, where users create and manage fictional profiles to build immersive social stories together. Each scenario is a shared universe where up to 20 players can interact via posts, messages, and mentions.
+Feedverse is a hybrid platform of **social networks** and **role playing games**, where users create and manage fictional profiles to build immersive social stories together. Each scenario is a shared universe where up to 20 players can interact via posts, messages, and mentions.
 
 ### Key Points
 
@@ -21,6 +21,8 @@ Feedverse is a hybrid platform inspired by **Status** and **Social Maker**, wher
 
 ![React Native](https://img.shields.io/badge/React_Native-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)
 ![Expo](https://img.shields.io/badge/Expo-000020?style=for-the-badge&logo=expo&logoColor=white)
+
+See the getting started guide for install and run instructions: [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md)
 
 ### Backend
 
@@ -148,9 +150,21 @@ Each profile has a permission system allowing the owner to authorize other playe
 - Dark mode / Light mode
 - Advanced search
 
+### Campaign Mode
+
+An optional "Campaign" mode that enables full character sheets for profiles.
+
+- Each sheet includes stats (HP, level, attributes, skills, inventory, etc.).
+- The Game Master (GM) can modify sheets each turn (apply damage/healing, conditions, buffs/debuffs) via a dedicated interface.
+- Updates can be applied individually or in bulk (e.g. "GM: -1 HP to these characters").
+- GM actions can automatically create a summary post in the scenario to notify players of changes.
+- Permissions are enforced server-side: only authorized users (GM and owners according to configuration) may edit a sheet.
+
+This mode supports tabletop-style campaign play by providing character tracking and centralized GM updates.
+
 ## Business Model
 
-(Currently)
+(Not yet implemented)
 
 - Sponsored posts in feeds
 - Featured scenarios in "Explore" tab

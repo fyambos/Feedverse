@@ -1,6 +1,6 @@
 # EAS Push Notification Setup (condensed)
 
-This guide walks through the minimal steps to enable system push notifications for the `mobile` app using FCM (Android) and APNs (iOS) and how to build with EAS.
+This guide walks through the minimal steps to enable system push notifications for the `feedverse` app using FCM (Android) and APNs (iOS) and how to build with EAS.
 
 1) Install tooling
 
