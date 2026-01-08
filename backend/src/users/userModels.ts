@@ -8,6 +8,7 @@ interface User {
   settings: object;
   created_at: Date;
   updated_at: Date;
+  // last_login: Date | null;
 }
 
 interface GetUser {

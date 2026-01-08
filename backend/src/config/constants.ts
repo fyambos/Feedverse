@@ -64,12 +64,12 @@ export const HTTP_METHODS = {
 export const AUTH = {
   BEARER_PREFIX: "Bearer ",
   HEADER_NAME: "Authorization",
-  // Messages
   INVALID_TOKEN: "Token de connexion invalide ou expiré",
   UNAUTHORIZED_ACCESS: "Accès non autorisé à cette ressource",
   MISSING_TOKEN: "Token d'authentification manquant",
   INVALID_CREDENTIALS: "Email ou mot de passe incorrect",
-  EXPIRATION_TIME: "1h",
+  EXPIRATION_TIME: "365d",
+  TOKEN_EXPIRED: "Token expiré",
   SECRET_KEY: process.env.JWT_SECRET,
 } as const;
 
@@ -83,6 +83,7 @@ export const USER_MESSAGES = {
   UPDATE_SUCCESS: "Profil mis à jour avec succès",
   DELETION_SUCCESS: "Compte supprimé avec succès",
   EMAIL: "Email",
+  PASSWORD: "password_hash",
   EMAIL_ALREADY_EXISTS: "Cet email est déjà utilisé",
   LOGIN_SUCCESS: "Connexion réussie",
   LOGOUT_SUCCESS: "Déconnexion réussie",
@@ -101,7 +102,11 @@ export const SCENARIO_MESSAGES = {
   CREATION_SUCCESS: "Scénario créé avec succès",
   UPDATE_SUCCESS: "Scénario mis à jour avec succès",
   DELETION_SUCCESS: "Scénario supprimé avec succès",
-  EMAIL: "Email",
+  NAME: "name",
+  INVITE_CODE: "invite_code",
+  MODE: "mode",
+  DESCRIPTION: "description",
+  INVITE_CODE_ALREADY_EXISTS: "Ce code d'invitation est déjà utilisé",
   ALREADY_EXISTS: "Un scénario similaire existe déjà",
   SCENARIO_UPDATED: "Votre Scénario a été mis à jour",
   DOES_NOT_EXISTS: "Le cénario n'existe pas",

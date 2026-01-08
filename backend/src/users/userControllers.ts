@@ -16,7 +16,7 @@ export const GetUserProfileController = async (req: Request, res: Response) => {
     // Récupération de l'utilisateur via requête client (la requête est de type `Request` de base + étendue avec `User`)
     const user: User = req.user;
 
-    res.status(HTTP_STATUS.OK).send(user);
+    res.status(HTTP_STATUS.OK).json(user);
   } catch (error: unknown) {
     res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
       message: USER_MESSAGES.NOT_FOUND,

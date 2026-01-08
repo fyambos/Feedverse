@@ -10,6 +10,11 @@ export class UserRepository {
     const result = await pool.query(query, [email]);
     return result.rows[0] || null;
   }
+  async findById(id: string): Promise<User | null> {
+    const query = "SELECT * FROM users WHERE id = $1";
+    const result = await pool.query(query, [id]);
+    return result.rows[0] || null;
+  }
 
   async emailExists(email: string): Promise<boolean> {
     const query = "SELECT EXISTS(SELECT 1 FROM users WHERE email = $1)";
@@ -49,7 +54,7 @@ export class UserRepository {
     const query = "UPDATE users SET last_login = $1 WHERE email = $2";
     await pool.query(query, [loginDate, email]);
   }
-*/
+  */
 
   async updateAvatar_url(userId: string, avatar_url: string): Promise<void> {
     const query =

@@ -51,7 +51,7 @@ export const CreateScenarioService = async (
     return {
       errors: [
         {
-          fields: "invite_code",
+          fields: SCENARIO_MESSAGES.INVITE_CODE,
           message: "Ce code d'invitation est déjà utilisé",
         },
       ],

@@ -1,4 +1,5 @@
 import { JwtPayload } from "jsonwebtoken";
+import { User } from "../users/userModels";
 
 export interface RegisterRequest {
   username: string;
@@ -40,16 +41,16 @@ export interface LoginRequest {
 export interface LoginResponse {
   message: string;
   token: string;
-  User: {
-    id: string;
-    email: string;
-    avatar_url: string;
-    created_at: Date;
-    updated_at: Date;
-    // last_login: Date | null;
-  };
+  User: User;
 }
 
 export interface CustomRequest extends Request {
   token: string | JwtPayload;
+}
+
+export interface JwtTokenPayload {
+  id: string;
+  username: string;
+  email: string;
+  name: string;
 }
