@@ -21,7 +21,7 @@ async function scenarioAccess(client: PoolClient, scenarioId: string, userId: st
   `,
     [scenarioId, userId],
   );
-  return res.rowCount > 0;
+  return (res.rowCount ?? 0) > 0;
 }
 
 async function getProfileContext(client: PoolClient, profileId: string) {
