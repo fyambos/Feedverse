@@ -23,7 +23,7 @@ async function scenarioAccess(client: PoolClient, scenarioId: string, userId: st
   `,
     [scenarioId, userId],
   );
-  return res.rowCount > 0;
+  return (res.rowCount ?? 0) > 0;
 }
 
 async function requireOwnedProfileInScenario(client: PoolClient, scenarioId: string, userId: string, profileId: string) {
@@ -38,7 +38,7 @@ async function requireOwnedProfileInScenario(client: PoolClient, scenarioId: str
   `,
     [profileId, scenarioId, userId],
   );
-  return res.rowCount > 0;
+  return (res.rowCount ?? 0) > 0;
 }
 
 async function userCanActAsAuthor(client: PoolClient, scenarioId: string, userId: string, authorProfileId: string) {

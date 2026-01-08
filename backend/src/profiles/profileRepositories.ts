@@ -21,7 +21,7 @@ async function scenarioAccess(client: PoolClient, scenarioId: string, userId: st
   `,
     [scenarioId, userId],
   );
-  return res.rowCount > 0;
+    return (res.rowCount ?? 0) > 0;
 }
 
 async function userInScenario(client: PoolClient, scenarioId: string, userId: string): Promise<boolean> {
@@ -39,7 +39,7 @@ async function handleTaken(client: PoolClient, scenarioId: string, handle: strin
   sql += ` LIMIT 1`;
 
   const res = await client.query(sql, params);
-  return res.rowCount > 0;
+    return (res.rowCount ?? 0) > 0;
 }
 
 export async function listProfilesForScenario(args: {
@@ -440,7 +440,7 @@ async function tableExists(client: PoolClient, name: string): Promise<boolean> {
   `,
     [name],
   );
-  return res.rowCount > 0;
+  return (res.rowCount ?? 0) > 0;
 }
 
 export async function deleteProfileCascade(args: {
@@ -496,7 +496,7 @@ export async function deleteProfileCascade(args: {
     }
 
     const del = await client.query("DELETE FROM profiles WHERE id = $1 AND owner_user_id = $2", [pid, uid]);
-    if (del.rowCount <= 0) {
+      if ((del.rowCount ?? 0) <= 0) {
       await client.query("ROLLBACK");
       return null;
     }
@@ -702,7 +702,7 @@ export async function transferProfiles(args: {
         [to, pid],
       );
 
-      if (upd.rowCount > 0) transferred += 1;
+        if ((upd.rowCount ?? 0) > 0) transferred += 1;
     }
 
     await client.query("COMMIT");

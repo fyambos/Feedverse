@@ -26,7 +26,7 @@ async function scenarioAccess(client: PoolClient, scenarioId: string, userId: st
   `,
     [scenarioId, userId],
   );
-  const ok = res.rowCount > 0;
+  const ok = (res.rowCount ?? 0) > 0;
   return ok;
 }
 
@@ -44,7 +44,7 @@ async function isScenarioOwnerOrGm(client: PoolClient, scenarioId: string, userI
   `,
     [scenarioId, userId],
   );
-  return res.rowCount > 0;
+  return (res.rowCount ?? 0) > 0;
 }
 
 async function userOwnsAnyProfileInConversation(client: PoolClient, conversationId: string, userId: string): Promise<boolean> {
@@ -59,7 +59,7 @@ async function userOwnsAnyProfileInConversation(client: PoolClient, conversation
   `,
     [conversationId, userId],
   );
-  return res.rowCount > 0;
+  return (res.rowCount ?? 0) > 0;
 }
 
 async function validateProfilesInScenario(client: PoolClient, scenarioId: string, profileIds: string[]): Promise<boolean> {
@@ -97,7 +97,7 @@ export async function markConversationMessagesRead(conversationId: string, profi
     `,
       [conversationId, profileId],
     );
-    return result.rowCount;
+    return result.rowCount ?? 0;
   } finally {
     client.release();
   }

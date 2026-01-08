@@ -61,7 +61,7 @@ async function scenarioAccess(client: PoolClient, scenarioId: string, userId: st
   `,
     [scenarioId, userId],
   );
-  return res.rowCount > 0;
+  return (res.rowCount ?? 0) > 0;
 }
 
 async function isScenarioOwnerOrGm(client: PoolClient, scenarioId: string, userId: string): Promise<boolean> {
@@ -78,7 +78,7 @@ async function isScenarioOwnerOrGm(client: PoolClient, scenarioId: string, userI
   `,
     [scenarioId, userId],
   );
-  return res.rowCount > 0;
+  return (res.rowCount ?? 0) > 0;
 }
 
 async function userOwnsAnyProfileInConversation(client: PoolClient, conversationId: string, userId: string): Promise<boolean> {
@@ -93,7 +93,7 @@ async function userOwnsAnyProfileInConversation(client: PoolClient, conversation
   `,
     [conversationId, userId],
   );
-  return res.rowCount > 0;
+  return (res.rowCount ?? 0) > 0;
 }
 
 async function userCanActAsSender(client: PoolClient, scenarioId: string, userId: string, senderProfileId: string): Promise<boolean> {

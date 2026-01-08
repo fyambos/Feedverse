@@ -26,7 +26,7 @@ async function isUserInScenario(scenarioId: string, userId: string): Promise<boo
     `,
       [scenarioId, userId],
     );
-    return res.rowCount > 0;
+    return (res.rowCount ?? 0) > 0;
   } finally {
     client.release();
   }
