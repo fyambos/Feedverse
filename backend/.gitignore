@@ -144,4 +144,4 @@ vite.config.ts.timestamp-*
 PROMPT.md
 
 # Firebase Admin SDK service account key file
-feedverse-510bc-firebase-adminsdk-fbsvc-*.*
+feedverse-*-firebase-adminsdk-*-*.*
