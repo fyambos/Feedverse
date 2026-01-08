@@ -68,7 +68,7 @@ export const AUTH = {
   UNAUTHORIZED_ACCESS: "Accès non autorisé à cette ressource",
   MISSING_TOKEN: "Token d'authentification manquant",
   INVALID_CREDENTIALS: "Email ou mot de passe incorrect",
-  EXPIRATION_TIME: "1h",
+  EXPIRATION_TIME: "365d",
   TOKEN_EXPIRED: "Token expiré",
   SECRET_KEY: process.env.JWT_SECRET,
 } as const;
