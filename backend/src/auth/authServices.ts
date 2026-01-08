@@ -5,7 +5,6 @@ import {
   LoginResponse,
   RegisterRequest,
   RegisterResponse,
-  ValidationError,
 } from "./authModels";
 import {
   nameFormatting,
@@ -19,6 +18,7 @@ import {
   VALIDATION,
 } from "../config/constants";
 import { UserRepository } from "../users/userRepositories";
+import { ValidationError } from "../utils/models";
 
 const userRepository = new UserRepository();
 

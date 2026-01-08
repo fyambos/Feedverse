@@ -32,11 +32,6 @@ export interface RegisterResponse {
   };
 }
 
-export interface ValidationError {
-  fields: string;
-  message: string;
-}
-
 export interface LoginRequest {
   email: string;
   password_hash: string;

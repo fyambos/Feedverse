@@ -26,6 +26,8 @@ export const CLOUDFLARE = {
   PUBLIC_URL: process.env.R2_PUBLIC_URL,
   IMAGES_SIZE: 5 * 1024 * 1024,
   USER_DIR: "users",
+  SCENARIO_DIR: "scenarios",
+  COVER_DIR: "covers",
 } as const;
 
 // ============================================================================
@@ -89,6 +91,41 @@ export const USER_MESSAGES = {
   FAILED_FETCH: "Impossible de récupérer les informations utilisateur",
   UNAUTHORIZED: "Votre email Google n'est pas vérifié",
 } as const;
+
+// ============================================================================
+// SCÉNARIOS
+// ============================================================================
+
+export const SCENARIO_MESSAGES = {
+  NOT_FOUND: "Scénario introuvable",
+  CREATION_SUCCESS: "Scénario créé avec succès",
+  UPDATE_SUCCESS: "Scénario mis à jour avec succès",
+  DELETION_SUCCESS: "Scénario supprimé avec succès",
+  EMAIL: "Email",
+  ALREADY_EXISTS: "Un scénario similaire existe déjà",
+  SCENARIO_UPDATED: "Votre Scénario a été mis à jour",
+  DOES_NOT_EXISTS: "Le cénario n'existe pas",
+  FAILED_FETCH: "Impossible de récupérer les informations du scénario",
+  UNAUTHORIZED: "Votre email Google n'est pas vérifié",
+} as const;
+
+export const SCENARIO_VALIDATION_RULES = {
+  NAME: {
+    MIN_LENGTH: 3,
+    MAX_LENGTH: 100,
+  },
+  DESCRIPTION: {
+    MAX_LENGTH: 500,
+  },
+  INVITE_CODE: {
+    MIN_LENGTH: 6,
+    MAX_LENGTH: 20,
+    PATTERN: /^[A-Z0-9]+$/,
+  },
+  MODE: {
+    ALLOWED_VALUES: ["story", "campaign"] as const,
+  },
+};
 
 // ============================================================================
 // VALIDATION & FORMAT
@@ -167,6 +204,16 @@ export const ASSETS = {
 } as const;
 
 // ============================================================================
+// ROUTES - SCÉNARIOS
+// ============================================================================
+
+export const ROUTES_SCENARIOS = {
+  BASE: "/scenarios",
+  BY_ID: "/:id",
+  CREATE: "/create",
+} as const;
+
+// ============================================================================
 // TESTS
 // ============================================================================
 
@@ -196,4 +243,5 @@ export const APP_CONFIG = {
   RATE_LIMIT_WINDOW_MS: 900000, // 15 minutes
   RATE_LIMIT_MAX_REQUESTS: 100,
   EMPTY_STRING: "",
+  NOW: new Date(),
 } as const;
