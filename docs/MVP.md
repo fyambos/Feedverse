@@ -65,15 +65,19 @@ Auth (minimum)
 
 Users
 - `GET /users/me`
-- `PATCH /users/me` (username, avatar)
+- `PATCH /users/me` (username, avatar, settings)
+- `DELETE /users/me`
+- `GET /users/scenarios` // Liste des scénarios d'un utilisateur
 
 Scenarios & Profiles
-- `GET /scenarios`
-- `POST /scenarios`
+- `GET /scenarios/:id/users` // Liste des utilisateurs d'un scénario
 - `GET /scenarios/:id`
-- `POST /scenarios/:id/profiles`
 - `GET /profiles/:id`
+- `POST /scenarios`
+- `POST /scenarios/:id/profiles`
 - `PATCH /profiles/:id`
+- `PATCH /scenarios/:id/owner` // Transfert de pouvoir
+- `DELETE /scenarios/:id` // HARD delete (en cascade)
 
 Posts & Feed
 - `GET /scenarios/:scenarioId/posts?limit=&cursor=&includeReplies=` — feed (par défaut top-level)
@@ -88,9 +92,6 @@ Likes & Reposts
 - `DELETE /posts/:postId/likes?profileId=...`
 - `POST /posts/:postId/reposts`
 - `DELETE /posts/:postId/reposts?profileId=...`
-
-Media
-- `POST /media/presign` — retourne `uploadUrl` + `fileUrl` (S3 / R2 presign flow)
 
 Notifications
 - `GET /users/me/notifications`
