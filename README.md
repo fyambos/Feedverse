@@ -6,7 +6,7 @@ App mobile de simulation de réseau social qui permet de co-écriture en collabo
 
 ## Concept
 
-Feedverse est une plateforme hybride inspirée de **Status** et **Social Maker**, où les utilisateurs créent et gèrent des profils fictifs pour construire ensemble des histoires sociales immersives. Chaque scénario est un univers partagé où jusqu'à 20 joueurs peuvent interagir via posts, messages et mentions.
+Feedverse est une plateforme hybride de **réseaux sociaux** et **jeu de roles**, où les utilisateurs créent et gèrent des profils fictifs pour construire ensemble des histoires sociales immersives. Chaque scénario est un univers partagé où jusqu'à 20 joueurs peuvent interagir via posts, messages et mentions.
 
 ### Points clés
 
@@ -21,6 +21,8 @@ Feedverse est une plateforme hybride inspirée de **Status** et **Social Maker**
 
 ![React Native](https://img.shields.io/badge/React_Native-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)
 ![Expo](https://img.shields.io/badge/Expo-000020?style=for-the-badge&logo=expo&logoColor=white)
+
+See the getting started guide for install and run instructions: [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md)
 
 ### Backend
 
@@ -147,9 +149,21 @@ Chaque profil dispose d'un système de permissions permettant au propriétaire d
 - Dark mode / Light mode
 - Recherche avancée
 
+### Mode Campagne
+
+Un mode "Campagne" optionnel permettant d'activer des fiches de personnage complètes pour les profils.
+
+- Chaque fiche contient des statistiques (PV, niveau, caractéristiques, compétences, inventaire, etc.).
+- Le Game Master (GM) peut modifier les fiches à chaque tour (appliquer dégâts, soins, états, buffs/debuffs) via une interface dédiée.
+- Les modifications peuvent être appliquées individuellement ou en lot (ex. "GM: -1 PV à ces personnages").
+- Les actions du GM peuvent automatiquement générer un post récapitulatif dans le scénario pour tenir les joueurs informés.
+- Les permissions sont gérées côté backend : seules les personnes autorisées (GM et propriétaires selon configuration) peuvent modifier une fiche.
+
+Ce mode facilite les parties de type campagne / JDR en fournissant un système de suivi des personnages et des mises à jour centralisées par le GM.
+
 ## Modèle économique
 
-(Pour l'instant)
+(Pas encore implémenté)
 
 - Posts sponsorisés dans les feeds
 - Scénarios featured dans l'onglet "Explore"

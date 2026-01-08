@@ -62,7 +62,7 @@ async function main() {
     const out = spawnSync("git", ["rev-parse", "--abbrev-ref", "HEAD"], { encoding: "utf8" });
     const branch = (out.stdout || "").trim();
     if (branch !== "dev") {
-      console.error(`Not on 'dev' branch (current: ${branch}). Please switch to dev.`);
+      console.error(`Not on 'dev' branch (current: ${branch}). Please switch to dev with "git checkout dev"`);
       process.exit(1);
     }
   } catch (e) {
