@@ -1,4 +1,4 @@
-[![fr](https://img.shields.io/badge/lang-en-red.svg)](https://github.com/fyambos/Feedverse/blob/main/README.md)
+[![fr-fr](https://img.shields.io/badge/lang-en-red.svg)](https://github.com/fyambos/Feedverse/blob/main/README.md)
 
 # Feedverse
 
