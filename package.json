@@ -1,0 +1,11 @@
+{
+  "name": "feedverse-root",
+  "private": true,
+  "scripts": {
+    "beta": "node ./tools/beta.js",
+    "beta:backend": "node ./tools/beta.js --no-expo",
+    "testing": "node ./tools/testing.js"
+    ,"dev": "node ./tools/dev.js",
+    "main": "node ./tools/main.js"
+  }
+}

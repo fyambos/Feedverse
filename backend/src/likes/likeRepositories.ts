@@ -23,7 +23,7 @@ async function scenarioAccess(client: PoolClient, scenarioId: string, userId: st
   `,
     [scenarioId, userId],
   );
-  return res.rowCount > 0;
+  return (res.rowCount ?? 0) > 0;
 }
 
 async function requireOwnedProfileInScenario(client: PoolClient, scenarioId: string, userId: string, profileId: string) {
@@ -38,7 +38,7 @@ async function requireOwnedProfileInScenario(client: PoolClient, scenarioId: str
   `,
     [profileId, scenarioId, userId],
   );
-  return res.rowCount > 0;
+  return (res.rowCount ?? 0) > 0;
 }
 
 export async function listLikesForScenario(args: { scenarioId: string; userId: string }): Promise<LikeApi[] | null> {

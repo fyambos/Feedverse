@@ -2,14 +2,18 @@
   "name": "feedverse-api",
   "version": "1.0.0",
   "description": "API de l'application Feedverse",
-  "main": "dist/server.js",
+  "main": "dist/cjs/server.js",
+  "type": "commonjs",
   "scripts": {
-    "start": "tsc && node dist/server.js",
+    "start": "node dist/cjs/server.js",
+    "build:esm": "tsc -p tsconfig.esm.json",
+    "build:cjs": "tsc -p tsconfig.cjs.json",
+    "build": "npm run build:esm && npm run build:cjs",
     "predev": "tsc",
-    "dev": "tsc -w & nodemon -q dist/server.js",
+    "dev": "tsc -w & nodemon -q dist/cjs/server.js",
     "smoke:profile": "node scripts/smokeProfile.mjs",
     "lint": "eslint . --ext .ts",
-    "test": "jest --watch"
+    "test": "jest --config=jest.config.cjs"
   },
   "author": "Les YAMBOS",
   "license": "ISC",

@@ -1,3 +1,5 @@
+[![en](https://img.shields.io/badge/lang-en-red.svg)](https://github.com/fyambos/Feedverse/blob/main/README.en.md)
+
 # Feedverse
 
 App mobile de simulation de réseau social qui permet de co-écriture en collaboration des fictions à travers des scénarios partagés.
