@@ -6,7 +6,8 @@ A mobile social network simulation app that enables collaborative co-writing of 
 
 ## Concept
 
-Feedverse is a hybrid platform inspired by **Status** and **Social Maker**, where users create and manage fictional profiles to build immersive social stories together. Each scenario is a shared universe where up to 20 players can interact via posts, messages, and mentions.
+Feedverse is a hybrid platform of **social networks** and **role playing games**, where users create and manage fictional profiles to build immersive social stories together. Each scenario is a shared universe where up to 20 players can interact via posts, messages, and mentions.
+
 
 ### Key Points
 
