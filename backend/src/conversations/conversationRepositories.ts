@@ -146,6 +146,14 @@ export async function listConversationsForScenario(args: { scenarioId: string; u
     );
     if (profileCheck.rowCount === 0) return null;
 
+    // Enforce visibility: selected profile must be owned by the requester or be public
+    const profileMeta = await client.query(`SELECT owner_user_id, is_public FROM profiles WHERE id = $1 LIMIT 1`, [selectedProfileId]);
+    const p = profileMeta.rows?.[0];
+    if (!p) return null;
+    const ownerMatches = String(p.owner_user_id ?? "") === userId;
+    const isPublic = Boolean(p.is_public);
+    if (!ownerMatches && !isPublic) return null;
+
     // Filter conversations by selectedProfileId participation
     const res = await client.query<ConversationRow>(
       `

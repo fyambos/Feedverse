@@ -14,7 +14,8 @@ messageRouter.get("/conversations/:conversationId/messages", authMiddleware, asy
   const beforeCreatedAt = req.query?.beforeCreatedAt ? String(req.query.beforeCreatedAt) : undefined;
 
   // console.info("[messages] list", { conversationId, userId, limit, beforeCreatedAt });
-  const out = await listMessages({ conversationId, userId, limit, beforeCreatedAt });
+  const selectedProfileId = req.query?.selectedProfileId ? String(req.query.selectedProfileId) : undefined;
+  const out = await listMessages({ conversationId, userId, selectedProfileId, limit, beforeCreatedAt });
   // console.info("[messages] list: resultCount", { conversationId, count: out?.messages?.length ?? 0 });
   if (out == null) return res.status(403).json({ error: "Forbidden" });
 

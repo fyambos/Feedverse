@@ -129,7 +129,7 @@ async function main() {
         if (process.platform === "win32") {
           // Windows: open PowerShell in new window
           // Use cmd start to create a new window and run PowerShell there
-          const winCmd = `cmd /c start powershell -NoExit -Command "cd '${mobileDir}'; $env:EXPO_PUBLIC_API_BASE_URL='${backendUrl}'; npx expo start --host lan"`;
+          const winCmd = `cmd /c start powershell -NoExit -Command "cd '${mobileDir}'; $env:EXPO_PUBLIC_API_BASE_URL='${backendUrl}'; npx expo start --host lan -c"`;
           await run(winCmd);
           console.log("Expo started in a new PowerShell window.");
           return true;
