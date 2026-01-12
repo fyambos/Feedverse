@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FlatList, StyleSheet, View, Pressable, ActivityIndicator, Image, RefreshControl } from "react-native";
-import { router, useLocalSearchParams } from "expo-router";
+import { router, useLocalSearchParams, usePathname } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -21,9 +21,41 @@ import { Alert } from "@/context/dialog";
 type Cursor = string | null;
 const PAGE_SIZE = 12;
 
+function scenarioIdFromPathname(pathname: string): string {
+  const parts = pathname
+    .split("/")
+    .map((p) => p.trim())
+    .filter(Boolean);
+
+  const scenarioIdx = parts.findIndex((p) => p === "(scenario)" || p === "scenario");
+  const candidate =
+    scenarioIdx >= 0
+      ? parts[scenarioIdx + 1]
+      : parts.length > 0
+      ? parts[0]
+      : "";
+
+  const raw = String(candidate ?? "").trim();
+  if (!raw) return "";
+  if (raw === "modal") return "";
+  if (raw.startsWith("(")) return "";
+
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+}
+
 export default function HomeScreen() {
   const { scenarioId } = useLocalSearchParams<{ scenarioId: string }>();
-  const sid = String(scenarioId ?? "");
+  const pathname = usePathname();
+
+  const sid = useMemo(() => {
+    const fromParams = typeof scenarioId === "string" ? scenarioId.trim() : "";
+    if (fromParams) return fromParams;
+    return scenarioIdFromPathname(pathname);
+  }, [scenarioId, pathname]);
 
   const scheme = useColorScheme() ?? "light";
   const colors = Colors[scheme];

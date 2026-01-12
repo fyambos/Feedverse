@@ -425,11 +425,23 @@ useEffect(() => {
     // clear the param so we don't re-open on re-render
     router.setParams({ openConversationId: undefined } as any);
 
-    void markConversationRead(cid);
-    router.push({
-      pathname: "/(scenario)/[scenarioId]/(tabs)/messages/[conversationId]",
-      params: { scenarioId: sid, conversationId: cid },
-    } as any);
+    (async () => {
+      try {
+        // Ensure we have the conversation + at least a page of messages before opening the thread.
+        // This avoids getting stuck on the thread's loading state when launched from a notification.
+        try { await app?.syncConversationsForScenario?.(sid); } catch {}
+        try { await app?.syncMessagesForConversation?.({ scenarioId: sid, conversationId: cid, limit: 60 }); } catch {}
+      } catch {}
+
+      try { await markConversationRead(cid); } catch {}
+
+      try {
+        router.push({
+          pathname: "/(scenario)/[scenarioId]/(tabs)/messages/[conversationId]",
+          params: { scenarioId: sid, conversationId: cid },
+        } as any);
+      } catch {}
+    })();
   }, [openConversationId, isReady, sid, selectedProfileId, markConversationRead]);
 
   const messagesMap: Record<string, Message> = useMemo(() => ((db as any)?.messages ?? {}) as any, [db, messageVersion]);

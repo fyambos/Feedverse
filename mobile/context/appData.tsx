@@ -635,8 +635,29 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
               const data = response?.notification?.request?.content?.data ?? response?.notification?.data ?? {};
               const sid = String(data?.scenarioId ?? data?.scenario_id ?? "");
               const conv = String(data?.conversationId ?? data?.conversation_id ?? "");
+              const targetProfileId = String(data?.profileId ?? data?.profile_id ?? "").trim();
               if (sid && conv) {
-                try { router.push({ pathname: "/(scenario)/[scenarioId]/(tabs)/messages/[conversationId]", params: { scenarioId: sid, conversationId: conv } } as any); } catch {}
+                // If notification is for a specific owned profile, switch selection first.
+                if (targetProfileId) {
+                  try {
+                    void updateDb((prev) => ({
+                      ...(prev as any),
+                      selectedProfileByScenario: {
+                        ...((prev as any).selectedProfileByScenario ?? {}),
+                        [sid]: targetProfileId,
+                      },
+                    })).catch(() => {});
+                  } catch {}
+                }
+                // Navigate via the inbox screen so it can sync state before opening the thread.
+                // Jumping directly to the thread can land on an infinite loading state if the
+                // conversation/messages haven't been synced yet.
+                try {
+                  router.push({
+                    pathname: "/(scenario)/[scenarioId]/(tabs)/messages",
+                    params: { scenarioId: sid, openConversationId: conv },
+                  } as any);
+                } catch {}
               }
             } catch {}
           });
@@ -1455,23 +1476,21 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                                 ? (conv as any).participantProfileIds.map(String).filter(Boolean)
                                 : [];
 
-                              // notify if any participant is owned by current user
-                              const ownedByMe = participantIds.some((pid) => String((profiles?.[pid] as any)?.ownerUserId ?? "") === String(currentUserId ?? ""));
+                              // Only notify for conversations that include at least one profile owned by the current user.
+                              const ownedParticipantIds = participantIds.filter(
+                                (pid) => String((profiles?.[pid] as any)?.ownerUserId ?? "") === String(currentUserId ?? "")
+                              );
 
-                              let shouldNotify = false;
-                              if (ownedByMe) {
-                                shouldNotify = true;
-                              } else {
-                                // if not owned, only notify when the selected profile is one of the participants
-                                if (selectedProfileId && participantIds.includes(String(selectedProfileId))) {
-                                  shouldNotify = true;
-                                }
-                              }
-
-                              // If the user is currently viewing this conversation, skip notification
+                              // If the user is currently viewing this conversation, skip notification.
                               if (viewingConvId && String(viewingConvId) === String(convId)) {
                                 // skip notification when conversation is open
-                              } else if (shouldNotify) {
+                              } else if (ownedParticipantIds.length > 0) {
+                                // Pick the best target profile for navigation (prefer selected profile if it's owned and a participant).
+                                const preferred =
+                                  selectedProfileId && ownedParticipantIds.includes(String(selectedProfileId))
+                                    ? String(selectedProfileId)
+                                    : String(ownedParticipantIds[0]);
+
                                 const title = senderProfile?.displayName ? `DM from ${senderProfile.displayName}` : "New message";
                                 const body = String(m.text ?? "");
                                 const notif = {
@@ -1480,7 +1499,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                                   body: body ? (body.length > 140 ? body.slice(0, 137) + "…" : body) : undefined,
                                   scenarioId: sid,
                                   conversationId: convId,
-                                  data: { conversationId: convId, scenarioId: sid },
+                                  data: { conversationId: convId, scenarioId: sid, profileId: preferred, messageId: mid2 },
                                 } as AppNotification;
                                 void presentNotification(notif);
                               }
