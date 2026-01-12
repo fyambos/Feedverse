@@ -653,10 +653,17 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                 // Jumping directly to the thread can land on an infinite loading state if the
                 // conversation/messages haven't been synced yet.
                 try {
-                  router.push({
-                    pathname: "/(scenario)/[scenarioId]/(tabs)/messages",
-                    params: { scenarioId: sid, openConversationId: conv },
-                  } as any);
+                  // Use replace (not push) so the app's active tab navigator
+                  // becomes the notification's scenario. Avoid dismissAll(): it
+                  // can dispatch POP_TO_TOP when no stack is present.
+                  setTimeout(() => {
+                    try {
+                      router.replace({
+                        pathname: "/(scenario)/[scenarioId]/(tabs)/messages",
+                        params: { scenarioId: sid, openConversationId: conv },
+                      } as any);
+                    } catch {}
+                  }, 0);
                 } catch {}
               }
             } catch {}
@@ -5552,6 +5559,55 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       },
     };
   }, [db, currentUserId, auth.isReady]);
+
+  // Ensure realtime (WS) connections stay active even when the user is on the
+  // scenario list or other screens. Without this, realtime/notifications can
+  // appear to "turn off" until the Messages tab forces a conversations sync.
+  const realtimeBootstrapRef = React.useRef<{ lastAttemptAtByScenario: Record<string, number> }>({
+    lastAttemptAtByScenario: {},
+  });
+
+  React.useEffect(() => {
+    if (!state.isReady || !state.db) return;
+    if (!auth.isReady) return;
+
+    const token = String(auth.token ?? "").trim();
+    const baseUrl = String(process.env.EXPO_PUBLIC_API_BASE_URL ?? "").trim();
+    if (!token || !baseUrl) return;
+    if (typeof WebSocket === "undefined") return;
+
+    const uid = String(auth.userId ?? "").trim();
+    if (!uid) return;
+
+    const scenariosMap = (state.db as any)?.scenarios ?? {};
+    const scenarios = Object.values(scenariosMap) as any[];
+    const nowMs = Date.now();
+
+    for (const s of scenarios) {
+      const sid = String(s?.id ?? "").trim();
+      if (!sid) continue;
+      if (!isUuidLike(sid)) continue;
+
+      const players = Array.isArray(s?.playerIds) ? s.playerIds.map(String).filter(Boolean) : [];
+      if (players.length > 0 && !players.includes(uid)) continue;
+
+      // If there's already a socket (open/connecting), don't spam sync.
+      const existingWs = wsConnectionsRef.current?.[sid] ?? null;
+      if (existingWs && (existingWs as any).readyState != null) {
+        const rs = Number((existingWs as any).readyState);
+        // 0 CONNECTING, 1 OPEN
+        if (rs === 0 || rs === 1) continue;
+      }
+
+      const lastAt = realtimeBootstrapRef.current.lastAttemptAtByScenario[sid] ?? 0;
+      if (nowMs - lastAt < 15_000) continue;
+      realtimeBootstrapRef.current.lastAttemptAtByScenario[sid] = nowMs;
+
+      try {
+        void api.syncConversationsForScenario(sid).catch(() => {});
+      } catch {}
+    }
+  }, [state.isReady, state.db, auth.isReady, auth.token, auth.userId, api, isUuidLike]);
 
   return <Ctx.Provider value={{ ...state, ...api }}>{children}</Ctx.Provider>;
 }
