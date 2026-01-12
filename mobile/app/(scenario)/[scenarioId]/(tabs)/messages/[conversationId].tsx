@@ -37,6 +37,7 @@ import { apiFetch } from "@/lib/apiClient";
 import { pickAndPersistManyImages } from "@/components/ui/ImagePicker";
 import { MediaGrid } from "@/components/media/MediaGrid";
 import { Lightbox } from "@/components/media/LightBox";
+import { formatNetworkError } from "@/lib/networkErrors";
 
 function parsePgTextArrayLiteral(input: string): string[] {
   const s = String(input ?? "").trim();
@@ -771,21 +772,42 @@ export default function ConversationThreadScreen() {
     if (!from) return;
     if (!editAllowedIds.has(from)) return;
 
-    await updateMessage?.({
-      scenarioId: sid,
-      messageId: String(editMessageId),
-      text: body,
-      senderProfileId: from,
-    });
-
-    closeEdit();
+    try {
+      await updateMessage?.({
+        scenarioId: sid,
+        messageId: String(editMessageId),
+        text: body,
+        senderProfileId: from,
+      });
+      closeEdit();
+    } catch (e: any) {
+      const msg = String(e?.message ?? "Could not update message");
+      Alert.alert("Could not update", msg);
+    }
   }, [sid, editMessageId, editText, editSenderId, editAllowedIds, updateMessage, closeEdit]);
 
   const onDeleteEdit = useCallback(async () => {
     if (!sid) return;
     if (!editMessageId) return;
-    await deleteMessage?.({ scenarioId: sid, messageId: String(editMessageId) });
-    closeEdit();
+
+    const mid = String(editMessageId);
+
+    Alert.alert("Delete message?", "This will remove the message.", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await deleteMessage?.({ scenarioId: sid, messageId: mid });
+            closeEdit();
+          } catch (e: any) {
+            const msg = String(e?.message ?? "Could not delete message");
+            Alert.alert("Could not delete", msg);
+          }
+        },
+      },
+    ]);
   }, [sid, editMessageId, deleteMessage, closeEdit]);
 
   const canSwitchOneToOneSender = useMemo(() => {
@@ -865,13 +887,19 @@ export default function ConversationThreadScreen() {
     const imgs = Array.isArray(imageUris) ? imageUris.map(String).filter(Boolean) : [];
     if (!body && imgs.length === 0) return;
 
-    const res = await sendMessage?.({
-      scenarioId: sid,
-      conversationId: cid,
-      senderProfileId: String(sendAsId),
-      text: body,
-      imageUris: imgs,
-    });
+    let res: any;
+    try {
+      res = await sendMessage?.({
+        scenarioId: sid,
+        conversationId: cid,
+        senderProfileId: String(sendAsId),
+        text: body,
+        imageUris: imgs,
+      });
+    } catch (e) {
+      Alert.alert("Could not send", formatNetworkError(e, "Send failed"));
+      return;
+    }
 
     // accept several success shapes: { ok: true }, { messageId }, { message }
     const isSuccess = !!(res && (res.ok === true || (res as any).messageId || (res as any).message));
@@ -968,7 +996,21 @@ export default function ConversationThreadScreen() {
             if (!sid) return;
             const mid = String((item as any).id ?? "");
             if (!mid) return;
-            await deleteMessage?.({ scenarioId: sid, messageId: mid });
+            Alert.alert("Delete message?", "This will remove the message.", [
+              { text: "Cancel", style: "cancel" },
+              {
+                text: "Delete",
+                style: "destructive",
+                onPress: async () => {
+                  try {
+                    await deleteMessage?.({ scenarioId: sid, messageId: mid });
+                  } catch (e: any) {
+                    const msg = String(e?.message ?? "Could not delete message");
+                    Alert.alert("Could not delete", msg);
+                  }
+                },
+              },
+            ]);
           }}
         >
           {sepRow}
@@ -1055,7 +1097,21 @@ export default function ConversationThreadScreen() {
           if (!sid) return;
           const mid = String((item as any).id ?? "");
           if (!mid) return;
-          await deleteMessage?.({ scenarioId: sid, messageId: mid });
+          Alert.alert("Delete message?", "This will remove the message.", [
+            { text: "Cancel", style: "cancel" },
+            {
+              text: "Delete",
+              style: "destructive",
+              onPress: async () => {
+                try {
+                  await deleteMessage?.({ scenarioId: sid, messageId: mid });
+                } catch (e: any) {
+                  const msg = String(e?.message ?? "Could not delete message");
+                  Alert.alert("Could not delete", msg);
+                }
+              },
+            },
+          ]);
         }}
       >
         {row}
@@ -1330,10 +1386,23 @@ export default function ConversationThreadScreen() {
                   return;
                 }
                 try {
-                  await sendMessage?.({ scenarioId: sid, conversationId: cid, senderProfileId: String(sendAsId), text: body, kind: "separator" });
+                  const res = await sendMessage?.({
+                    scenarioId: sid,
+                    conversationId: cid,
+                    senderProfileId: String(sendAsId),
+                    text: body,
+                    kind: "separator",
+                  });
+
+                  const isSuccess = !!(res && (res.ok === true || (res as any).messageId || (res as any).message));
+                  if (!isSuccess) {
+                    Alert.alert("Could not send", String((res as any)?.error ?? "Send failed"));
+                    return;
+                  }
+
                   setText("");
                 } catch (e) {
-                  // ignore
+                  Alert.alert("Could not send", formatNetworkError(e, "Send failed"));
                 }
               }}
               accessibilityRole="button"

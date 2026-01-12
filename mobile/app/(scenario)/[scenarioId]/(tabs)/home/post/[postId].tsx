@@ -69,9 +69,32 @@ export default function PostScreen() {
 
   const onDeletePost = useCallback(
     async (id: string) => {
-      await deletePost(String(id));
+      return new Promise<void>((resolve) => {
+        Alert.alert("Delete post?", "This will remove the post.", [
+          { text: "Cancel", style: "cancel", onPress: () => resolve() },
+          {
+            text: "Delete",
+            style: "destructive",
+            onPress: async () => {
+              try {
+                await deletePost(String(id));
+                // After deletion, go back to where the user came from.
+                try {
+                  if (router.canGoBack?.()) router.back();
+                  else router.replace(fromPath as any);
+                } catch {}
+              } catch (e: any) {
+                const msg = String(e?.message ?? "Could not delete post");
+                Alert.alert("Could not delete", msg);
+              } finally {
+                resolve();
+              }
+            },
+          },
+        ]);
+      });
     },
-    [deletePost]
+    [deletePost, fromPath]
   );
 
   const root = isReady ? getPostById(pid) : null;

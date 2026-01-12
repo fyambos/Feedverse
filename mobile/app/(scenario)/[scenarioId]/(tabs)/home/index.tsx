@@ -310,8 +310,26 @@ export default function HomeScreen() {
 
   const onDeletePost = useCallback(
     async (postId: string) => {
-      await deletePost(postId);
-      loadFirstPage();
+      return new Promise<void>((resolve) => {
+        Alert.alert("Delete post?", "This will remove the post.", [
+          { text: "Cancel", style: "cancel", onPress: () => resolve() },
+          {
+            text: "Delete",
+            style: "destructive",
+            onPress: async () => {
+              try {
+                await deletePost(postId);
+                loadFirstPage();
+              } catch (e: any) {
+                const msg = String(e?.message ?? "Could not delete post");
+                Alert.alert("Could not delete", msg);
+              } finally {
+                resolve();
+              }
+            },
+          },
+        ]);
+      });
     },
     [deletePost, loadFirstPage]
   );

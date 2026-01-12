@@ -2757,13 +2757,15 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         const token = String(auth.token ?? "").trim();
         const baseUrl = String(process.env.EXPO_PUBLIC_API_BASE_URL ?? "").trim();
         if (token && baseUrl) {
-          await apiFetch({
+          const res = await apiFetch({
             path: `/posts/${encodeURIComponent(id)}`,
             token,
             init: { method: "DELETE" },
-          }).catch(() => {
-            // ignore (offline / server error)
           });
+
+          if (!res.ok) {
+            throw new Error((res.json as any)?.error ?? res.text ?? `Delete failed (HTTP ${res.status})`);
+          }
         }
 
         const next = await updateDb((prev) => {

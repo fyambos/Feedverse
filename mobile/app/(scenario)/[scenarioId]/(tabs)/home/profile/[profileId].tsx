@@ -400,8 +400,13 @@ export default function ProfileScreen() {
             text: "Delete",
             style: "destructive",
             onPress: async () => {
-              await deletePost(postId);
-              loadFirstPage();
+              try {
+                await deletePost(postId);
+                loadFirstPage();
+              } catch (e: any) {
+                const msg = String(e?.message ?? "Could not delete post");
+                Alert.alert("Could not delete", msg);
+              }
               resolve();
             },
           },
