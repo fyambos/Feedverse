@@ -1129,10 +1129,15 @@ export default function ConversationThreadScreen() {
           >
             <View style={styles.headerCenterInner}>
               <Pressable
+                onPress={() => {
+                  if (!canEditGroup) return;
+                  onPressHeader();
+                }}
                 onLongPress={() => {
                   // Enter reorder mode when the avatar is long-pressed (GC or DM)
                   setReorderMode(true);
                 }}
+                disabled={!canEditGroup}
                 hitSlop={12}
                 accessibilityRole="button"
                 accessibilityLabel="Reorder messages"
