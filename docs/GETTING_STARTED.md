@@ -52,43 +52,28 @@ To generate a private key file for your service account:
 - Click on the Service Accounts tab.
 - Click Generate New Private Key, then confirm by clicking Generate Key.
 - Securely store the JSON file containing the key (out of the repo).
-- Put the path into .env on the key `GOOGLE_APPLICATION_CREDENTIALS` (if the filepath contains spaces, put the path between quotes).
+- EITHER Create a compact single line service account with `jq -c . /absolute/path/to/feedverse_sa_KEY.json` and paste the output and put it into FIREBASE_SERVICE_ACCOUNT in the .env file as a string.
+- OR you can run `export GOOGLE_APPLICATION_CREDENTIALS=/absolute/path/to/feedverse_sa_KEY.json` to put it in the console's environment variables.
 
 #### Google Services Key (if you are part of the dev team, request the file instead)
 - Still in the settings, go to the General tab.
 - Download the file from there and put it in /mobile.
 
-### Run the backend and the front end
-```bash
-cd ..
-npm run beta
-```
-
-### Scripts (quick reference)
-- `npm run dev` — runs `tools/dev.js` (ensures branch `dev`) and launches Expo pointing to your machine IP, builds and starts backend in foreground.
-- `npm run main` — runs `tools/main.js` (ensures branch `main`) and launches Expo pointing to your machine IP (for now), builds and starts backend in foreground.
-- `npm run beta` — runs `tools/beta.js` (ensures branch `beta`) and launches Expo pointing to your machine IP, builds and starts backend in foreground.
-- `npm run testing` — runs `tools/testing.js` (ensures branch `testing`) and launches Expo using `EXPO_PUBLIC_API_BASE_URL` from `backend/.env` (used for Railway/Beta QA). Builds and starts backend in foreground.
-
-For more info about these branches, see [tools/README.md](../tools/README.md). 
-
-If it fails, run with these commands:
-
-### Run backend locally (manual)
+### Run backend
 ```bash
 cd backend
 # build (TypeScript -> dist)
-npm run build:cjs
-# then run (shows logs in this terminal)
+npm run build:cjs && npm test
+# then run
 npm run start
 ```
 
-### Run mobile locally (manual)
+### Run mobile
+In another terminal
 ```bash
 cd mobile
-# start expo with cleared cache
-npx expo start -c
-# set EXPO_PUBLIC_API_BASE_URL env or pass from tools
+# start expo with cleared cache and your current adress ip
+EXPO_PUBLIC_API_BASE_URL=[your address ip]:8080 npx expo start -c
 # e.g. EXPO_PUBLIC_API_BASE_URL=http://192.168.0.10:8080 npx expo start -c
 ```
 
@@ -103,13 +88,11 @@ npx expo start -c
 - In the EXPO terminal press "s" to turn on Expo Go mode, then "i" to launch on iOS.
 
 ### Notes
-- Metro cache: if you see transformer or stale-bundle errors, restart Expo with `-c`.
 - Native modules: some features (push notifications, device-specific native modules) require a dev client or production builds. Expo Go may not contain all native modules; the app handles many modules with runtime guards.
 - Ports: backend uses port `8080` by default. Ensure nothing else uses that port or change `backend/.env` accordingly.
-- Branch rules: do not merge the `testing` branch into `main` or `dev` unless explicitly intended — `testing` is the Beta publish branch.
+- Branch rules: do not merge the `beta`or `testing` branches into `main` or `dev` — `testing` is the Beta publish branch. `beta`is the dev branch of the Beta, merges into `testing`.
 
 ### Troubleshooting
-- If `npm run beta`/`testing` fails to open an external terminal, the script falls back to launching Expo in the background. You can then open the `mobile` folder and run `npx expo start -c` manually.
 - If backend TypeScript build fails, check `tsconfig.*.json` and run `npm run build:cjs` to surface errors.
 
 ### Contributing & creating branches
