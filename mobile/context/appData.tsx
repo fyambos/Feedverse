@@ -14,7 +14,7 @@ import type {
   Conversation,
   Message,
 } from "@/data/db/schema";
-import { readDb, updateDb, writeDb } from "@/data/db/storage";
+import { readDb, updateDb, writeDb, subscribeDbChanges } from "@/data/db/storage";
 import { seedDbIfNeeded } from "@/data/db/seed";
 import { buildGlobalTagFromKey } from "@/lib/tags";
 import { pickScenarioExportJson } from "@/lib/importExport/importFromFile";
@@ -545,6 +545,16 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       const db = await seedDbIfNeeded(existing);
       setState({ isReady: true, db });
     })();
+  }, []);
+
+  // Keep AppDataProvider state in sync when other modules call `updateDb`.
+  React.useEffect(() => {
+    const unsub = subscribeDbChanges((db) => {
+      try {
+        setState((prev) => ({ isReady: true, db }));
+      } catch {}
+    });
+    return () => unsub();
   }, []);
 
   const db = state.db;
