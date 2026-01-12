@@ -142,6 +142,23 @@ export default function MessagesScreen() {
         const convId = String(msg.conversationId ?? msg.conversation_id ?? "").trim();
         if (convId) {
           app?.syncMessagesForConversation?.({ scenarioId: sid, conversationId: convId, limit: 30 });
+
+          // If the user is currently viewing this conversation, optimistically
+          // clear the unread badge locally and skip the immediate unread API refetch
+          // (the conversation screen should also post the read to the server).
+          try {
+            const viewingConvId = (app?.db as any)?.selectedConversationByScenario?.[sid] ?? null;
+            const selectedPid = (app?.db as any)?.selectedProfileByScenario?.[sid] ?? null;
+            if (viewingConvId && String(viewingConvId) === String(convId) && selectedPid) {
+              setUnreadCounts((prev) => ({ ...(prev ?? {}), [convId]: 0 }));
+              markOptimisticallyRead(convId);
+              setMessageVersion((v) => v + 1);
+              return;
+            } else {
+              // If not viewing, always fetch unread counts from server
+              fetchUnreadCounts();
+            }
+          } catch {}
         }
       } catch {
         // ignore

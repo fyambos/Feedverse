@@ -1,6 +1,6 @@
 // mobile/app/(scenario)/[scenarioId]/(tabs)/messages/[conversationId].tsx
 
-import { subscribeToMessageEvents, subscribeToTypingEvents } from "@/context/appData";
+import { setActiveConversation, subscribeToMessageEvents, subscribeToTypingEvents } from "@/context/appData";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Animated,
@@ -128,6 +128,14 @@ export default function ConversationThreadScreen() {
     deleteMessage,
     reorderMessagesInConversation,
   } = app;
+
+  // Track which conversation is currently active (non-reactive; avoids update loops)
+  useFocusEffect(
+    useCallback(() => {
+      setActiveConversation(sid, cid);
+      return () => setActiveConversation(sid, null);
+    }, [sid, cid])
+  );
 
   // Live message subscription: append new messages for this conversation
   useEffect(() => {

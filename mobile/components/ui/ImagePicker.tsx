@@ -68,7 +68,16 @@ export async function pickAndPersistOneImage(
   // Wait for animations / UI interactions to finish to avoid modal/popup
   // interference on some Android OEMs (e.g., Xiaomi) where a top-layer
   // modal can swallow the native picker intent.
-  await new Promise((r) => InteractionManager.runAfterInteractions(r));
+  await new Promise<void>((resolve) => {
+    const im = InteractionManager as any;
+    if (typeof im?.runAfterInteractions === "function") {
+      im.runAfterInteractions(() => resolve());
+      return;
+    }
+
+    // Fallback if InteractionManager changes/vanishes in a future RN version.
+    requestAnimationFrame(() => resolve());
+  });
 
   try {
     const res = await ImagePicker.launchImageLibraryAsync({

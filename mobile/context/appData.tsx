@@ -25,6 +25,23 @@ import { apiFetch } from "@/lib/apiClient";
 import { buildScenarioExportBundleV1 } from "@/lib/importExport/exportScenarioBundle";
 import { saveAndShareScenarioExport } from "@/lib/importExport/exportScenario";
 
+// Non-reactive tracker for which conversation is currently being viewed.
+// Using a module-level map avoids React state update loops and stays
+// consistent across iOS/Android timings.
+const activeConversationByScenario: Record<string, string | null> = {};
+
+export function setActiveConversation(scenarioId: string, conversationId: string | null) {
+  const sid = String(scenarioId ?? "").trim();
+  if (!sid) return;
+  activeConversationByScenario[sid] = conversationId == null ? null : String(conversationId).trim();
+}
+
+export function getActiveConversation(scenarioId: string): string | null {
+  const sid = String(scenarioId ?? "").trim();
+  if (!sid) return null;
+  return activeConversationByScenario[sid] ?? null;
+}
+
 type AppDataState = {
   isReady: boolean;
   db: DbV5 | null;
@@ -554,7 +571,13 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         setState((prev) => ({ isReady: true, db }));
       } catch {}
     });
-    return () => unsub();
+
+    // Important: React cleanup functions must return void (not a boolean).
+    return () => {
+      try {
+        unsub();
+      } catch {}
+    };
   }, []);
 
   const db = state.db;
@@ -1331,7 +1354,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                 ws.onopen = () => {
                   // no-op for now
                 };
-                ws.onmessage = (ev: any) => {
+                ws.onmessage = async (ev: any) => {
                   try {
                     const d = typeof ev.data === "string" ? JSON.parse(ev.data) : ev.data;
                     const evName = String(d?.event ?? "");
@@ -1385,11 +1408,36 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                         try {
                           const mid2 = String(m.id ?? "");
                           const convId = String(m.conversationId ?? m.conversation_id ?? "");
-                          const dbNow = state?.db ?? null;
-                          const conv = dbNow?.conversations?.[convId] ?? null;
-                          const viewingConvId = dbNow?.selectedConversationByScenario?.[sid] ?? null;
-                          const profiles = dbNow?.profiles ?? {};
-                          const selectedProfileId = dbNow?.selectedProfileByScenario?.[sid] ?? null;
+
+                          // IMPORTANT: use a fresh DB snapshot here (not `state.db`), because
+                          // `state` can be stale across platforms/timings and cause iOS/Android
+                          // to disagree about whether a conversation is currently being viewed.
+                          const dbNow = await readDb();
+
+                          const conv = (dbNow as any)?.conversations?.[convId] ?? null;
+                          const viewingConvId = getActiveConversation(sid);
+                          const profiles = (dbNow as any)?.profiles ?? {};
+                          const selectedProfileId = (dbNow as any)?.selectedProfileByScenario?.[sid] ?? null;
+
+                          // If the user is currently viewing this conversation, mark it read
+                          // immediately (best-effort). Do not mutate unread counters here; the
+                          // inbox screen uses the server unread endpoint.
+                          try {
+                            if (viewingConvId && String(viewingConvId) === String(convId) && selectedProfileId) {
+                              const tokenLocal = String(auth.token ?? "").trim();
+                              if (tokenLocal) {
+                                void apiFetch({
+                                  path: `/conversations/${encodeURIComponent(convId)}/read`,
+                                  token: tokenLocal,
+                                  init: {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({ profileId: String(selectedProfileId) }),
+                                  },
+                                }).catch(() => {});
+                              }
+                            }
+                          } catch {}
 
                           // don't notify for messages missing conversation or when message is from selected profile
                           if (convId && String(m.senderProfileId ?? "") !== String(selectedProfileId ?? "")) {
