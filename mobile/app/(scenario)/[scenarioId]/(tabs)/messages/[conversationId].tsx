@@ -300,9 +300,29 @@ export default function ConversationThreadScreen() {
   }, [isOneToOne, otherProfileId, selectedProfileId]);
 
   const messagesMap: Record<string, Message> = useMemo(() => ((db as any)?.messages ?? {}) as any, [db]);
+  const messageIds: string[] | null = useMemo(() => {
+    const ids = (conversation as any)?.messageIds;
+    if (!Array.isArray(ids)) return null;
+    const out = ids.map(String).map((s: string) => s.trim()).filter(Boolean);
+    return out.length > 0 ? out : null;
+  }, [conversation]);
+
   const messages: Message[] = useMemo(() => {
     if (!isReady) return [];
     if (!sid || !cid) return [];
+
+    // Fast path: use per-conversation id index (avoids scanning all messages).
+    if (messageIds && messageIds.length > 0) {
+      const out: Message[] = [];
+      for (const mid of messageIds) {
+        const m = messagesMap[mid];
+        if (!m) continue;
+        if (String((m as any).scenarioId) !== sid) continue;
+        if (String((m as any).conversationId) !== cid) continue;
+        out.push(m);
+      }
+      return out;
+    }
 
     const out: Message[] = [];
     for (const m of Object.values(messagesMap)) {
@@ -317,7 +337,7 @@ export default function ConversationThreadScreen() {
       return String((a as any).id ?? "").localeCompare(String((b as any).id ?? ""));
     });
     return out;
-  }, [isReady, sid, cid, messagesMap]);
+  }, [isReady, sid, cid, messagesMap, messageIds]);
 
   // Messages currently visible in UI (last `visibleCount` messages)
   const visibleMessages = useMemo(() => {
@@ -897,7 +917,7 @@ export default function ConversationThreadScreen() {
     [closePicker]
   );
 
-  const onSend = useCallback(async () => {
+  const onSend = useCallback(() => {
     if (!sid || !cid) return;
     if (!sendAsId) return;
 
@@ -905,72 +925,79 @@ export default function ConversationThreadScreen() {
     const imgs = Array.isArray(imageUris) ? imageUris.map(String).filter(Boolean) : [];
     if (!body && imgs.length === 0) return;
 
+    // Clear composer immediately so send feels instant.
+    setText("");
+    setImageUris([]);
+    try { scrollToBottom(true); } catch {}
+
     if (sendingRef.current) return;
     sendingRef.current = true;
     setSending(true);
 
-    let res: any;
-    try {
-      res = await sendMessage?.({
+    const p = Promise.resolve(
+      sendMessage?.({
         scenarioId: sid,
         conversationId: cid,
         senderProfileId: String(sendAsId),
         text: body,
         imageUris: imgs,
-      });
-    } catch (e) {
-      Alert.alert("Could not send", formatErrorMessage(e, "Send failed"));
-      return;
-    } finally {
-      sendingRef.current = false;
-      setSending(false);
-    }
+      })
+    );
 
-    // accept several success shapes: { ok: true }, { messageId }, { message }
-    const isSuccess = !!(res && (res.ok === true || (res as any).messageId || (res as any).message));
+    void p
+      .then(async (res: any) => {
+        // accept several success shapes: { ok: true }, { messageId }, { message }
+        const isSuccess = !!(res && (res.ok === true || (res as any).messageId || (res as any).message));
 
-    if (isSuccess) {
-      setText("");
-      setImageUris([]);
-      try {
-        const pid = String(sendAsId ?? selectedProfileId ?? "").trim();
-        if (sid && cid && pid) {
-          try { app?.sendTyping?.({ scenarioId: sid, conversationId: cid, profileId: pid, typing: false }); } catch {}
-          // Mark only the message just sent as read via backend, but only if it was sent successfully and is not forbidden
-          let sentMsgId = null;
-          if (res?.messageId) sentMsgId = res.messageId;
-          else if (res?.message?.id) sentMsgId = res.message.id;
-          if (sentMsgId) {
-            const sentMsg = app?.db?.messages?.[sentMsgId];
-            if (sentMsg && !sentMsg.read && !res.error) {
-              try {
-                await app?.updateMessage?.({
-                  scenarioId: sid,
-                  messageId: String(sentMsgId),
-                  text: sentMsg.text,
-                  read: true,
-                });
-              } catch {}
+        if (isSuccess) {
+          try {
+            const pid = String(sendAsId ?? selectedProfileId ?? "").trim();
+            if (sid && cid && pid) {
+              try { app?.sendTyping?.({ scenarioId: sid, conversationId: cid, profileId: pid, typing: false }); } catch {}
+
+              // Mark only the message just sent as read via backend, but only if it was sent successfully and is not forbidden
+              let sentMsgId = null;
+              if (res?.messageId) sentMsgId = res.messageId;
+              else if (res?.message?.id) sentMsgId = res.message.id;
+              if (sentMsgId) {
+                const sentMsg = app?.db?.messages?.[sentMsgId];
+                if (sentMsg && !sentMsg.read && !res.error) {
+                  try {
+                    await app?.updateMessage?.({
+                      scenarioId: sid,
+                      messageId: String(sentMsgId),
+                      text: sentMsg.text,
+                      read: true,
+                    });
+                  } catch {}
+                }
+              }
+
+              // Clear unread count for this conversation locally
+              if (app?.db?.conversations?.[cid]) {
+                try { app.db.conversations[cid].unreadCount = 0; } catch {}
+              }
             }
-          }
-          // Clear unread count for this conversation locally
-          if (app?.db?.conversations?.[cid]) {
-            try { app.db.conversations[cid].unreadCount = 0; } catch {}
-          }
+          } catch {}
+
+          return;
         }
-      } catch {}
-      // scroll to bottom when the local user sends a message
-      try { scrollToBottom(true); } catch {}
-      return;
-    }
 
-    const msg = String((res as any)?.error ?? "Send failed");
-    Alert.alert("Could not send", msg);
+        const msg = String((res as any)?.error ?? "Send failed");
+        Alert.alert("Could not send", msg);
 
-    // If user accidentally picked/toggled to an invalid sender, snap back to the selected profile.
-    if (selectedProfileId && String(sendAsId) !== String(selectedProfileId)) {
-      setSendAsId(String(selectedProfileId));
-    }
+        // If user accidentally picked/toggled to an invalid sender, snap back to the selected profile.
+        if (selectedProfileId && String(sendAsId) !== String(selectedProfileId)) {
+          setSendAsId(String(selectedProfileId));
+        }
+      })
+      .catch((e) => {
+        Alert.alert("Could not send", formatErrorMessage(e, "Send failed"));
+      })
+      .finally(() => {
+        sendingRef.current = false;
+        setSending(false);
+      });
   }, [sid, cid, sendAsId, text, imageUris, sendMessage, selectedProfileId, scrollToBottom]);
 
   const onPickImages = useCallback(async () => {
@@ -983,6 +1010,40 @@ export default function ConversationThreadScreen() {
       return next.slice(0, 4);
     });
   }, [imageUris]);
+
+  const retryFailedMessage = useCallback(
+    (m: Message) => {
+      if (!sid || !cid) return;
+      const mid = String((m as any)?.id ?? "").trim();
+      if (!mid) return;
+
+      const status = String((m as any)?.clientStatus ?? "").trim();
+      if (status && status !== "failed") return;
+
+      const senderProfileId = String((m as any)?.senderProfileId ?? "").trim();
+      const body = String((m as any)?.text ?? "").trim();
+      const imageUris = coerceStringArray((m as any)?.imageUrls ?? (m as any)?.image_urls);
+      const kind = String((m as any)?.kind ?? "text").trim();
+
+      // Reuse the same client message id so the UI doesn't duplicate bubbles.
+      const p = Promise.resolve(
+        sendMessage?.({
+          scenarioId: sid,
+          conversationId: cid,
+          senderProfileId: senderProfileId || String(sendAsId ?? selectedProfileId ?? ""),
+          text: body,
+          imageUris,
+          kind,
+          clientMessageId: mid,
+        } as any)
+      );
+
+      void p.catch(() => {
+        // sendMessage already marks the message failed + returns an error; screen can stay quiet.
+      });
+    },
+    [sid, cid, sendMessage, sendAsId, selectedProfileId]
+  );
 
   const renderBubbleRow = (
     item: Message,
@@ -1000,6 +1061,9 @@ export default function ConversationThreadScreen() {
     const hasText = Boolean(String((item as any).text ?? "").trim());
     const hasImages = imageUrls.length > 0;
     const forceColumnWidth = hasImages; // when images exist, keep a stable column width so images don't shrink to short text
+
+    const clientStatus = String((item as any).clientStatus ?? "").trim();
+    const canRetry = clientStatus === "failed";
 
     const canSwipeEdit = !reorderMode && editAllowedIds.has(senderId);
 
@@ -1044,6 +1108,10 @@ export default function ConversationThreadScreen() {
 
     const row = (
       <Pressable
+        onPress={() => {
+          if (!canRetry) return;
+          retryFailedMessage(item);
+        }}
         onLongPress={() => {
           // Only begin dragging when already in reorder mode; don't enter reorder
           // mode by long-pressing an individual message.
@@ -1102,6 +1170,12 @@ export default function ConversationThreadScreen() {
                   }}
                 />
               </View>
+            ) : null}
+
+            {clientStatus === "failed" ? (
+              <ThemedText style={{ marginTop: 6, fontSize: 12, color: scheme === "dark" ? "#FF7B7B" : "#D73A49" }}>
+                Failed to send • tap to retry
+              </ThemedText>
             ) : null}
           </View>
         </View>

@@ -294,6 +294,8 @@ type AppDataApi = {
     senderProfileId: string;
     text: string;
     imageUris?: string[];
+    kind?: string;
+    clientMessageId?: string;
   }) => Promise<{ ok: true; messageId: string } | { ok: false; error: string }>;
 
   updateMessage: (args: {
@@ -1444,6 +1446,90 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                         const cid = String(messages[mid].conversationId ?? "");
                         const conv = conversations[cid];
                         if (conv && String((conv as any).scenarioId ?? "") === sid) {
+                          // If we have an optimistic local "client_*" message for this send,
+                          // remove it now to avoid a brief duplicate bubble (optimistic + server echo).
+                          try {
+                            const serverSender = String(messages[mid].senderProfileId ?? "");
+                            const serverText = String(messages[mid].text ?? "").trim();
+                            const serverHasImages = (messages[mid] as any)?.imageUrls?.length > 0;
+
+                            const serverMs = Date.parse(String(createdAt));
+                            const cutoffMs = Number.isFinite(serverMs) ? serverMs - 2 * 60_000 : Date.now() - 2 * 60_000;
+
+                            const convIdsRaw = (conv as any).messageIds;
+                            const convIds = Array.isArray(convIdsRaw) ? convIdsRaw.map(String).filter(Boolean) : [];
+
+                            let optimisticId: string | null = null;
+                            // Search recent ids from the end first (newest).
+                            for (let i = convIds.length - 1; i >= 0; i--) {
+                              const id = convIds[i];
+                              if (!id || !id.startsWith("client_")) continue;
+                              const om = messages[id] as any;
+                              if (!om) continue;
+                              if (String(om.scenarioId ?? "") !== sid) continue;
+                              if (String(om.conversationId ?? "") !== cid) continue;
+                              if (String(om.senderProfileId ?? "") !== serverSender) continue;
+                              if (String(om.clientStatus ?? "") !== "sending") continue;
+
+                              const omCreatedAt = String(om.createdAt ?? "");
+                              const omMs = Date.parse(omCreatedAt);
+                              if (Number.isFinite(omMs) && omMs < cutoffMs) continue;
+
+                              const omText = String(om.text ?? "").trim();
+                              const omHasImages = Array.isArray(om.imageUrls) ? om.imageUrls.length > 0 : false;
+
+                              const textMatch = serverText && omText ? serverText === omText : !serverText && !omText;
+                              const imageMatch = serverHasImages && omHasImages;
+
+                              // Prefer exact text matches; otherwise allow image-only match.
+                              if (textMatch || imageMatch) {
+                                optimisticId = id;
+                                break;
+                              }
+                            }
+
+                            // Fallback if conversation has no messageIds index yet.
+                            if (!optimisticId) {
+                              for (const [id, omAny] of Object.entries(messages)) {
+                                if (!id || !id.startsWith("client_")) continue;
+                                const om = omAny as any;
+                                if (String(om.scenarioId ?? "") !== sid) continue;
+                                if (String(om.conversationId ?? "") !== cid) continue;
+                                if (String(om.senderProfileId ?? "") !== serverSender) continue;
+                                if (String(om.clientStatus ?? "") !== "sending") continue;
+                                const omText = String(om.text ?? "").trim();
+                                const omHasImages = Array.isArray(om.imageUrls) ? om.imageUrls.length > 0 : false;
+                                const textMatch = serverText && omText ? serverText === omText : !serverText && !omText;
+                                const imageMatch = serverHasImages && omHasImages;
+                                if (textMatch || imageMatch) {
+                                  optimisticId = id;
+                                  break;
+                                }
+                              }
+                            }
+
+                            if (optimisticId) {
+                              try {
+                                delete (messages as any)[optimisticId];
+                              } catch {}
+                              try {
+                                if (Array.isArray((conv as any).messageIds)) {
+                                  (conv as any).messageIds = (conv as any).messageIds
+                                    .map(String)
+                                    .filter(Boolean)
+                                    .filter((x: string) => x !== optimisticId);
+                                }
+                              } catch {}
+                            }
+                          } catch {
+                            // ignore dedupe failures
+                          }
+
+                          const existingIds = Array.isArray((conv as any).messageIds)
+                            ? (conv as any).messageIds.map(String).filter(Boolean)
+                            : [];
+                          if (!existingIds.includes(mid)) existingIds.push(mid);
+
                           // Update preview fields for conversation list
                           conversations[cid] = {
                             ...conv,
@@ -1451,6 +1537,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                             updatedAt: new Date().toISOString(),
                             lastMessageText: String(m.text ?? ""),
                             lastMessageSenderProfileId: String(m.senderProfileId ?? m.sender_profile_id ?? ""),
+                            messageIds: existingIds,
                           } as any;
                         }
 
@@ -1678,6 +1765,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
           }
 
           let lastMessageAt: string | undefined = undefined;
+          const order: Array<{ id: string; createdAt: string }> = [];
 
           for (const raw of rows) {
             const id = String(raw?.id ?? "").trim();
@@ -1715,11 +1803,18 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
             } as any;
 
             if (!lastMessageAt || createdAt > lastMessageAt) lastMessageAt = createdAt;
+            order.push({ id, createdAt });
           }
+
+          order.sort((a, b) => {
+            if (a.createdAt !== b.createdAt) return a.createdAt.localeCompare(b.createdAt);
+            return a.id.localeCompare(b.id);
+          });
+          const messageIds = order.map((x) => x.id);
 
           const conv = conversations[cid];
           if (conv && String((conv as any).scenarioId ?? "") === sid) {
-            conversations[cid] = { ...conv, lastMessageAt, updatedAt: now } as any;
+            conversations[cid] = { ...conv, lastMessageAt, updatedAt: now, messageIds } as any;
           }
 
           // Debug: log after new messages are added to messages map
@@ -5172,6 +5267,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         text,
         imageUris,
         kind,
+        clientMessageId,
       }: {
         scenarioId: string;
         conversationId: string;
@@ -5179,6 +5275,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         text: string;
         imageUris?: string[];
         kind?: string;
+        clientMessageId?: string;
       }) => {
         const sid = String(scenarioId ?? "").trim();
         const cid = String(conversationId ?? "").trim();
@@ -5194,6 +5291,62 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
           const baseUrl = String(process.env.EXPO_PUBLIC_API_BASE_URL ?? "").trim();
           if (!token || !baseUrl) return { ok: false, error: "Missing backend auth" };
           if (!isUuidLike(sid) || !isUuidLike(cid) || !isUuidLike(from)) return { ok: false, error: "Invalid ids for backend mode" };
+
+          // Optimistic local insert so the UI updates instantly.
+          // If caller provided a clientMessageId (e.g. retry), reuse it.
+          const requestedClientId = String(clientMessageId ?? "").trim();
+          const optimisticId = requestedClientId ? requestedClientId : `client_${uuidv4()}`;
+          const optimisticCreatedAt = new Date().toISOString();
+          const optimisticTextForPreview = body ? body : images.length > 0 ? "photo" : "";
+
+          try {
+            const optimisticDb = await updateDb((prev) => {
+              const conversations = { ...((prev as any).conversations ?? {}) } as Record<string, Conversation>;
+              const messages = { ...((prev as any).messages ?? {}) } as Record<string, Message>;
+
+              const existing = messages[optimisticId];
+              const base = existing ? { ...(existing as any) } : {};
+              messages[optimisticId] = {
+                ...base,
+                id: optimisticId,
+                scenarioId: sid,
+                conversationId: cid,
+                senderProfileId: from,
+                text: body,
+                kind: String(kindVal ?? (base as any)?.kind ?? "text"),
+                imageUrls: images,
+                createdAt: String((base as any)?.createdAt ?? optimisticCreatedAt),
+                updatedAt: optimisticCreatedAt,
+                editedAt: undefined,
+                clientStatus: "sending",
+                clientError: undefined,
+              } as any;
+
+              const conv = conversations[cid];
+              if (conv && String((conv as any).scenarioId ?? "") === sid) {
+                const existingIds = Array.isArray((conv as any).messageIds)
+                  ? (conv as any).messageIds.map(String).filter(Boolean)
+                  : [];
+                if (!existingIds.includes(optimisticId)) existingIds.push(optimisticId);
+
+                conversations[cid] = {
+                  ...conv,
+                  lastMessageAt: optimisticCreatedAt,
+                  updatedAt: optimisticCreatedAt,
+                  messageIds: existingIds,
+                  lastMessageText: optimisticTextForPreview,
+                  lastMessageKind: String(kindVal ?? "text"),
+                  lastMessageSenderProfileId: from,
+                } as any;
+              }
+
+              return { ...(prev as any), conversations, messages } as any;
+            });
+
+            setState({ isReady: true, db: optimisticDb as any });
+          } catch {
+            // If optimistic insert fails for any reason, continue with the network send.
+          }
 
           const hasLocalImages = images.some((u) => !/^https?:\/\//i.test(u));
 
@@ -5233,7 +5386,20 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                 },
               });
 
-          if (!res.ok) return { ok: false, error: (res.json as any)?.error ?? res.text ?? "Send failed" };
+          if (!res.ok) {
+            const err = (res.json as any)?.error ?? res.text ?? "Send failed";
+            try {
+              const failedDb = await updateDb((prev) => {
+                const messages = { ...((prev as any).messages ?? {}) } as Record<string, Message>;
+                const existing = messages[optimisticId];
+                if (!existing) return prev as any;
+                messages[optimisticId] = { ...(existing as any), clientStatus: "failed", clientError: String(err), updatedAt: new Date().toISOString() } as any;
+                return { ...(prev as any), messages } as any;
+              });
+              setState({ isReady: true, db: failedDb as any });
+            } catch {}
+            return { ok: false, error: err };
+          }
           const m = (res.json as any)?.message;
           const mid = String(m?.id ?? "").trim();
           if (!mid) return { ok: false, error: "Send failed" };
@@ -5246,6 +5412,11 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
           const nextDb = await updateDb((prev) => {
             const conversations = { ...((prev as any).conversations ?? {}) } as Record<string, Conversation>;
             const messages = { ...((prev as any).messages ?? {}) } as Record<string, Message>;
+
+            // Remove optimistic placeholder (if still present).
+            try {
+              delete (messages as any)[optimisticId];
+            } catch {}
 
             const createdAt = m?.createdAt ? new Date(m.createdAt).toISOString() : new Date().toISOString();
 
@@ -5264,7 +5435,22 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
 
             const conv = conversations[cid];
             if (conv && String((conv as any).scenarioId ?? "") === sid) {
-              conversations[cid] = { ...conv, lastMessageAt: createdAt, updatedAt: new Date().toISOString() } as any;
+              const existingIds = Array.isArray((conv as any).messageIds)
+                ? (conv as any).messageIds.map(String).filter(Boolean)
+                : [];
+
+              const nextIds = existingIds.filter((x: string) => x !== optimisticId);
+              if (!nextIds.includes(mid)) nextIds.push(mid);
+
+              conversations[cid] = {
+                ...conv,
+                lastMessageAt: createdAt,
+                updatedAt: new Date().toISOString(),
+                messageIds: nextIds,
+                lastMessageText: String(m?.text ?? optimisticTextForPreview ?? ""),
+                lastMessageKind: String(m?.kind ?? kindVal ?? "text"),
+                lastMessageSenderProfileId: from,
+              } as any;
             }
 
             return { ...(prev as any), conversations, messages } as any;
@@ -5299,7 +5485,20 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
             editedAt: undefined,
           };
 
-          conversations[cid] = { ...conv, lastMessageAt: now, updatedAt: now };
+          const existingIds = Array.isArray((conv as any).messageIds)
+            ? (conv as any).messageIds.map(String).filter(Boolean)
+            : [];
+          if (!existingIds.includes(messageId)) existingIds.push(messageId);
+
+          conversations[cid] = {
+            ...conv,
+            lastMessageAt: now,
+            updatedAt: now,
+            messageIds: existingIds,
+            lastMessageText: body ? body : images.length > 0 ? "photo" : "",
+            lastMessageKind: String(kindVal ?? "text"),
+            lastMessageSenderProfileId: from,
+          } as any;
 
           return { ...(prev as any), conversations, messages };
         });
@@ -5450,15 +5649,16 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
           const token = String(auth.token ?? "").trim();
           const baseUrl = String(process.env.EXPO_PUBLIC_API_BASE_URL ?? "").trim();
           if (!token || !baseUrl) throw new Error("Missing backend auth");
-          if (!isUuidLike(sid) || !isUuidLike(mid)) throw new Error("Invalid ids for backend mode");
-
-          const res = await apiFetch({
-            path: `/messages/${encodeURIComponent(mid)}`,
-            token,
-            init: { method: "DELETE" },
-          });
-          if (!res.ok) throw new Error((res.json as any)?.error ?? res.text ?? "Delete failed");
-          // fall through to local removal below for immediate UI.
+          // Client-only optimistic ids (e.g. client_*) should be deleted locally only.
+          if (isUuidLike(sid) && isUuidLike(mid)) {
+            const res = await apiFetch({
+              path: `/messages/${encodeURIComponent(mid)}`,
+              token,
+              init: { method: "DELETE" },
+            });
+            if (!res.ok) throw new Error((res.json as any)?.error ?? res.text ?? "Delete failed");
+            // fall through to local removal below for immediate UI.
+          }
         }
 
         const nextDb = await updateDb((prev) => {
