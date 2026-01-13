@@ -85,6 +85,8 @@ export default function ProfileScreen() {
   const sid = decodeURIComponent(String(scenarioId ?? ""));
   const pid = decodeURIComponent(String(profileId ?? ""));
 
+  const deletePostRef = useRef(false);
+
   const profile = useMemo(() => getProfileById(String(pid)), [pid, getProfileById]);
 
   const scenario = useMemo(() => getScenarioById?.(sid) ?? null, [sid, getScenarioById]);
@@ -400,14 +402,18 @@ export default function ProfileScreen() {
             text: "Delete",
             style: "destructive",
             onPress: async () => {
+              if (deletePostRef.current) return resolve();
+              deletePostRef.current = true;
               try {
                 await deletePost(postId);
                 loadFirstPage();
               } catch (e: any) {
                 const msg = String(e?.message ?? "Could not delete post");
                 Alert.alert("Could not delete", msg);
+              } finally {
+                deletePostRef.current = false;
+                resolve();
               }
-              resolve();
             },
           },
         ]);

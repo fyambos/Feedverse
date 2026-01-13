@@ -57,6 +57,8 @@ export default function PostScreen() {
     isPostRepostedBySelectedProfile,
   } = useAppData();
 
+  const deletePostRef = useRef(false);
+
   const openEditPost = useCallback(
     (id: string) => {
       router.push({
@@ -76,6 +78,8 @@ export default function PostScreen() {
             text: "Delete",
             style: "destructive",
             onPress: async () => {
+              if (deletePostRef.current) return resolve();
+              deletePostRef.current = true;
               try {
                 await deletePost(String(id));
                 // After deletion, go back to where the user came from.
@@ -87,6 +91,7 @@ export default function PostScreen() {
                 const msg = String(e?.message ?? "Could not delete post");
                 Alert.alert("Could not delete", msg);
               } finally {
+                deletePostRef.current = false;
                 resolve();
               }
             },

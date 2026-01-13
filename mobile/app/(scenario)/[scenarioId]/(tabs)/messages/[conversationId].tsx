@@ -212,6 +212,11 @@ export default function ConversationThreadScreen() {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [publicOpen, setPublicOpen] = useState(false);
 
+  const sendingRef = useRef(false);
+  const [sending, setSending] = useState(false);
+
+  const deleteMessageRef = useRef(false);
+
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxUrls, setLightboxUrls] = useState<string[]>([]);
   const [lightboxIndex, setLightboxIndex] = useState<number>(0);
@@ -762,6 +767,27 @@ export default function ConversationThreadScreen() {
     setEditSenderId(null);
   }, []);
 
+  const runDeleteMessage = useCallback(
+    async (messageId: string, opts?: { after?: () => void }) => {
+      if (!sid) return;
+      const mid = String(messageId ?? "").trim();
+      if (!mid) return;
+      if (deleteMessageRef.current) return;
+      deleteMessageRef.current = true;
+
+      try {
+        await deleteMessage?.({ scenarioId: sid, messageId: mid });
+        opts?.after?.();
+      } catch (e: any) {
+        const msg = String(e?.message ?? "Could not delete message");
+        Alert.alert("Could not delete", msg);
+      } finally {
+        deleteMessageRef.current = false;
+      }
+    },
+    [sid, deleteMessage]
+  );
+
   const onSaveEdit = useCallback(async () => {
     if (!sid) return;
     if (!editMessageId) return;
@@ -798,17 +824,11 @@ export default function ConversationThreadScreen() {
         text: "Delete",
         style: "destructive",
         onPress: async () => {
-          try {
-            await deleteMessage?.({ scenarioId: sid, messageId: mid });
-            closeEdit();
-          } catch (e: any) {
-            const msg = String(e?.message ?? "Could not delete message");
-            Alert.alert("Could not delete", msg);
-          }
+          await runDeleteMessage(mid, { after: closeEdit });
         },
       },
     ]);
-  }, [sid, editMessageId, deleteMessage, closeEdit]);
+  }, [sid, editMessageId, runDeleteMessage, closeEdit]);
 
   const canSwitchOneToOneSender = useMemo(() => {
     if (!isOneToOne) return false;
@@ -887,6 +907,10 @@ export default function ConversationThreadScreen() {
     const imgs = Array.isArray(imageUris) ? imageUris.map(String).filter(Boolean) : [];
     if (!body && imgs.length === 0) return;
 
+    if (sendingRef.current) return;
+    sendingRef.current = true;
+    setSending(true);
+
     let res: any;
     try {
       res = await sendMessage?.({
@@ -899,6 +923,9 @@ export default function ConversationThreadScreen() {
     } catch (e) {
       Alert.alert("Could not send", formatNetworkError(e, "Send failed"));
       return;
+    } finally {
+      sendingRef.current = false;
+      setSending(false);
     }
 
     // accept several success shapes: { ok: true }, { messageId }, { message }
@@ -970,7 +997,6 @@ export default function ConversationThreadScreen() {
     const senderId = String((item as any).senderProfileId ?? "");
     const isRight = senderId === String(selectedProfileId ?? "");
     const sender: Profile | null = senderId ? (getProfileById?.(senderId) ?? null) : null;
-
     const imageUrls = coerceStringArray((item as any).imageUrls ?? (item as any).image_urls);
     const kind = String((item as any).kind ?? "text").trim();
     const hasText = Boolean(String((item as any).text ?? "").trim());
@@ -982,7 +1008,9 @@ export default function ConversationThreadScreen() {
     if (kind === "separator") {
       const sepRow = (
         <View style={{ alignItems: "center", paddingVertical: 8 }}>
-          <ThemedText style={{ color: colors.textSecondary, fontSize: 12 }}>{String((item as any).text ?? "")}</ThemedText>
+          <ThemedText style={{ color: colors.textSecondary, fontSize: 12 }}>
+            {String((item as any).text ?? "")}
+          </ThemedText>
         </View>
       );
 
@@ -1002,12 +1030,7 @@ export default function ConversationThreadScreen() {
                 text: "Delete",
                 style: "destructive",
                 onPress: async () => {
-                  try {
-                    await deleteMessage?.({ scenarioId: sid, messageId: mid });
-                  } catch (e: any) {
-                    const msg = String(e?.message ?? "Could not delete message");
-                    Alert.alert("Could not delete", msg);
-                  }
+                  await runDeleteMessage(mid);
                 },
               },
             ]);
@@ -1103,12 +1126,7 @@ export default function ConversationThreadScreen() {
               text: "Delete",
               style: "destructive",
               onPress: async () => {
-                try {
-                  await deleteMessage?.({ scenarioId: sid, messageId: mid });
-                } catch (e: any) {
-                  const msg = String(e?.message ?? "Could not delete message");
-                  Alert.alert("Could not delete", msg);
-                }
+                await runDeleteMessage(mid);
               },
             },
           ]);
@@ -1359,6 +1377,7 @@ export default function ConversationThreadScreen() {
             <Pressable
               onPress={onSend}
               disabled={
+                sending ||
                 !sendAsId ||
                 (!String(text ?? "").trim() && (imageUris?.length ?? 0) === 0) ||
                 !sendAsAllowedIds.has(String(sendAsId))
@@ -1368,6 +1387,7 @@ export default function ConversationThreadScreen() {
                 {
                   backgroundColor: colors.tint,
                   opacity:
+                    sending ||
                     !sendAsId ||
                     (!String(text ?? "").trim() && (imageUris?.length ?? 0) === 0) ||
                     !sendAsAllowedIds.has(String(sendAsId))
@@ -1385,30 +1405,45 @@ export default function ConversationThreadScreen() {
                   Alert.alert("Separator text required", "Type separator text then long-press send to create it.");
                   return;
                 }
+
+                if (sendingRef.current) return;
+                sendingRef.current = true;
+                setSending(true);
+
+                let res: any;
                 try {
-                  const res = await sendMessage?.({
+                  res = await sendMessage?.({
                     scenarioId: sid,
                     conversationId: cid,
                     senderProfileId: String(sendAsId),
                     text: body,
                     kind: "separator",
+                    imageUris: [],
                   });
-
-                  const isSuccess = !!(res && (res.ok === true || (res as any).messageId || (res as any).message));
-                  if (!isSuccess) {
-                    Alert.alert("Could not send", String((res as any)?.error ?? "Send failed"));
-                    return;
-                  }
-
-                  setText("");
                 } catch (e) {
                   Alert.alert("Could not send", formatNetworkError(e, "Send failed"));
+                  return;
+                } finally {
+                  sendingRef.current = false;
+                  setSending(false);
                 }
+
+                const isSuccess = !!(res && (res.ok === true || (res as any).messageId || (res as any).message));
+                if (!isSuccess) {
+                  Alert.alert("Could not send", String((res as any)?.error ?? "Send failed"));
+                  return;
+                }
+
+                setText("");
               }}
               accessibilityRole="button"
               accessibilityLabel="Send"
             >
-              <Ionicons name="arrow-up" size={18} color={colors.background} />
+              {sending ? (
+                <ActivityIndicator size="small" color={colors.background} />
+              ) : (
+                <Ionicons name="arrow-up" size={18} color={colors.background} />
+              )}
             </Pressable>
           </View>
         </SafeAreaView>

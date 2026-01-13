@@ -132,6 +132,7 @@ export default function CreateProfileModal() {
   const [link, setLink] = useState((existing as any)?.link ?? "");
 
   const [submitting, setSubmitting] = useState(false);
+  const deleteProfileRef = useRef(false);
 
   /* -------------------------------------------------------------------------- */
   /* Submit                                                                     */
@@ -240,6 +241,8 @@ export default function CreateProfileModal() {
     if (!existing) return;
     if (!canDelete) return;
     if (submitting) return;
+    if (deleteProfileRef.current) return;
+    deleteProfileRef.current = true;
 
     setSubmitting(true);
     try {
@@ -252,6 +255,7 @@ export default function CreateProfileModal() {
     } catch {
       Alert.alert("Delete failed", "Could not delete profile.");
     } finally {
+      deleteProfileRef.current = false;
       setSubmitting(false);
     }
   };

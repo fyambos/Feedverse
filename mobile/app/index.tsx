@@ -94,8 +94,28 @@ export default function ScenarioListScreen() {
     toUserId: string | null;
   }>({ open: false, scenarioId: null, toUserId: null });
 
-  const closeTransfer = () => setTransfer({ open: false, scenarioId: null });
-  const closeConfirm = () => setConfirm({ open: false, scenarioId: null, toUserId: null });
+  const transferConfirmRef = useRef(false);
+  const [transferConfirmBusy, setTransferConfirmBusy] = useState(false);
+
+  const leaveRef = useRef(false);
+  const [leaveBusy, setLeaveBusy] = useState(false);
+  const leavePromptLockRef = useRef(false);
+
+  const deleteRef = useRef(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const deletePromptLockRef = useRef(false);
+
+  const closeTransfer = () => {
+    transferConfirmRef.current = false;
+    setTransferConfirmBusy(false);
+    setTransfer({ open: false, scenarioId: null });
+  };
+
+  const closeConfirm = () => {
+    transferConfirmRef.current = false;
+    setTransferConfirmBusy(false);
+    setConfirm({ open: false, scenarioId: null, toUserId: null });
+  };
 
   const onLogout = async () => {
     await signOut();
@@ -272,8 +292,52 @@ export default function ScenarioListScreen() {
     Alert.alert("Copied", "Invite code copied to clipboard.");
   };
 
+  const runLeaveScenario = useCallback(
+    async (sid: string, uid: string) => {
+      if (!sid || !uid) return;
+      if (leaveRef.current) return;
+      leaveRef.current = true;
+      setLeaveBusy(true);
+
+      try {
+        await leaveScenarioApi?.(sid, uid);
+      } catch (e: any) {
+        Alert.alert("Leave failed", e?.message ?? "Could not leave scenario.");
+      } finally {
+        leaveRef.current = false;
+        setLeaveBusy(false);
+      }
+    },
+    [leaveScenarioApi]
+  );
+
+  const runDeleteScenario = useCallback(
+    async (sid: string, uid: string) => {
+      if (!sid || !uid) return;
+      if (deleteRef.current) return;
+      deleteRef.current = true;
+      setDeleteBusy(true);
+
+      try {
+        const ok = await deleteScenarioApi?.(sid, uid);
+        if (!ok) Alert.alert("Delete failed", "Could not delete this scenario.");
+      } catch (e: any) {
+        Alert.alert("Delete failed", e?.message ?? "Could not delete this scenario.");
+      } finally {
+        deleteRef.current = false;
+        setDeleteBusy(false);
+      }
+    },
+    [deleteScenarioApi]
+  );
+
   const leaveScenario = () => {
     if (!isReady) return;
+    if (leavePromptLockRef.current) return;
+    leavePromptLockRef.current = true;
+    setTimeout(() => {
+      leavePromptLockRef.current = false;
+    }, 600);
 
     const sid = String(menu.scenarioId ?? "").trim();
     if (!sid) return;
@@ -300,7 +364,7 @@ export default function ScenarioListScreen() {
     // owner alone => leave silently (no alert) per your rule
     if (isOwner && otherPlayersCount === 0) {
       closeScenarioMenu();
-      Promise.resolve(leaveScenarioApi?.(sid, uid)).catch(() => {});
+      void runLeaveScenario(sid, uid);
       return;
     }
 
@@ -312,11 +376,7 @@ export default function ScenarioListScreen() {
         text: "Leave",
         style: "destructive",
         onPress: async () => {
-          try {
-            await leaveScenarioApi?.(sid, uid);
-          } catch (e: any) {
-            Alert.alert("Leave failed", e?.message ?? "Could not leave scenario.");
-          }
+          await runLeaveScenario(sid, uid);
         },
       },
     ]);
@@ -344,6 +404,11 @@ export default function ScenarioListScreen() {
 
   const deleteScenario = () => {
     if (!isReady) return;
+    if (deletePromptLockRef.current) return;
+    deletePromptLockRef.current = true;
+    setTimeout(() => {
+      deletePromptLockRef.current = false;
+    }, 600);
 
     const sid = String(menu.scenarioId ?? "").trim();
     if (!sid) return;
@@ -372,12 +437,7 @@ export default function ScenarioListScreen() {
           text: "Delete",
           style: "destructive",
           onPress: async () => {
-            try {
-              const ok = await deleteScenarioApi?.(sid, uid);
-              if (!ok) Alert.alert("Delete failed", "Could not delete this scenario.");
-            } catch (e: any) {
-              Alert.alert("Delete failed", e?.message ?? "Could not delete this scenario.");
-            }
+            await runDeleteScenario(sid, uid);
           },
         },
       ]
@@ -465,11 +525,12 @@ export default function ScenarioListScreen() {
           {/* Leave scenario */}
           <Pressable
             onPress={leaveScenario}
+            disabled={leaveBusy || deleteBusy || transferConfirmBusy}
             style={({ pressed }) => [styles.menuItem, { backgroundColor: pressed ? colors.pressed : "transparent" }]}
           >
             <Ionicons name="exit-outline" size={18} color="#ff3b30" />
             <ThemedText style={{ color: "#ff3b30", fontSize: 15, fontWeight: "700" }}>
-              Leave Scenario
+              {leaveBusy ? "Leaving…" : "Leave Scenario"}
             </ThemedText>
           </Pressable>
 
@@ -481,11 +542,12 @@ export default function ScenarioListScreen() {
           String((db as any)?.scenarios?.[String(menu.scenarioId)]?.ownerUserId ?? "") === String(userId) ? (
             <Pressable
               onPress={deleteScenario}
+              disabled={deleteBusy || leaveBusy || transferConfirmBusy}
               style={({ pressed }) => [styles.menuItem, { backgroundColor: pressed ? colors.pressed : "transparent" }]}
             >
               <Ionicons name="trash-outline" size={18} color="#ff3b30" />
               <ThemedText style={{ color: "#ff3b30", fontSize: 15, fontWeight: "700" }}>
-                Delete Scenario
+                {deleteBusy ? "Deleting…" : "Delete Scenario"}
               </ThemedText>
             </Pressable>
           ) : null}
@@ -585,6 +647,9 @@ export default function ScenarioListScreen() {
 
     const onConfirm = async () => {
       if (!sid || !toId || !userId) return;
+      if (transferConfirmRef.current) return;
+      transferConfirmRef.current = true;
+      setTransferConfirmBusy(true);
 
       try {
         const updated = await transferScenarioOwnership(sid, String(userId), toId);
@@ -599,6 +664,9 @@ export default function ScenarioListScreen() {
         Alert.alert("Done", "Ownership transferred.");
       } catch (e: any) {
         Alert.alert("Transfer failed", e?.message ?? "Could not transfer ownership.");
+      } finally {
+        transferConfirmRef.current = false;
+        setTransferConfirmBusy(false);
       }
     };
 
@@ -639,12 +707,19 @@ export default function ScenarioListScreen() {
 
               <Pressable
                 onPress={onConfirm}
+                disabled={transferConfirmBusy}
                 style={({ pressed }) => [
                   styles.confirmBtn,
-                  { borderColor: "#ff3b30", backgroundColor: pressed ? "rgba(255,59,48,0.12)" : "transparent" },
+                  {
+                    borderColor: "#ff3b30",
+                    backgroundColor: pressed ? "rgba(255,59,48,0.12)" : "transparent",
+                    opacity: transferConfirmBusy ? 0.55 : 1,
+                  },
                 ]}
               >
-                <ThemedText style={{ color: "#ff3b30", fontWeight: "900" }}>Transfer</ThemedText>
+                <ThemedText style={{ color: "#ff3b30", fontWeight: "900" }}>
+                  {transferConfirmBusy ? "Transferring…" : "Transfer"}
+                </ThemedText>
               </Pressable>
             </View>
           </Pressable>

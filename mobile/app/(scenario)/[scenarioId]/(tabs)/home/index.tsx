@@ -199,6 +199,7 @@ export default function HomeScreen() {
 
   const loadingLock = useRef(false);
   const listRef = useRef<FlatList<any> | null>(null);
+  const deletePostRef = useRef(false);
 
   const loadFirstPage = useCallback(() => {
     if (!isReady) return;
@@ -317,6 +318,8 @@ export default function HomeScreen() {
             text: "Delete",
             style: "destructive",
             onPress: async () => {
+              if (deletePostRef.current) return resolve();
+              deletePostRef.current = true;
               try {
                 await deletePost(postId);
                 loadFirstPage();
@@ -324,6 +327,7 @@ export default function HomeScreen() {
                 const msg = String(e?.message ?? "Could not delete post");
                 Alert.alert("Could not delete", msg);
               } finally {
+                deletePostRef.current = false;
                 resolve();
               }
             },

@@ -149,6 +149,9 @@ export default function CreateScenarioModal() {
   const [cover, setCover] = useState<string>(String(existing?.cover ?? "").trim());
   const [pickingCover, setPickingCover] = useState(false);
 
+  const savingRef = useRef(false);
+  const [saving, setSaving] = useState(false);
+
   const [inviteCode, setInviteCode] = useState<string>(() => {
     const existingCode = String(existing?.inviteCode ?? "").trim();
     if (existingCode) return existingCode;
@@ -344,8 +347,12 @@ export default function CreateScenarioModal() {
   ]);
 
   const onSave = useCallback(async () => {
+    if (savingRef.current) return;
     if (!isReady) return;
     if (!validate()) return;
+
+    savingRef.current = true;
+    setSaving(true);
 
     const now = new Date().toISOString();
 
@@ -420,6 +427,9 @@ export default function CreateScenarioModal() {
       router.back();
     } catch (e: any) {
       Alert.alert("Save failed", e?.message ?? "Could not save scenario.");
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
     }
   }, [
     isReady,
@@ -463,11 +473,12 @@ export default function CreateScenarioModal() {
             {canEdit ? (
               <Pressable
                 onPress={onSave}
+                disabled={saving}
                 hitSlop={12}
-                style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}
+                style={({ pressed }) => [{ opacity: saving ? 0.5 : pressed ? 0.7 : 1 }]}
               >
                 <ThemedText style={{ color: colors.tint, fontWeight: "800" }}>
-                  {isEdit ? "Save" : "Create"}
+                  {saving ? (isEdit ? "Saving…" : "Creating…") : isEdit ? "Save" : "Create"}
                 </ThemedText>
               </Pressable>
             ) : (

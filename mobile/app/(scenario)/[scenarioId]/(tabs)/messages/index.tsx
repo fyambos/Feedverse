@@ -1,7 +1,7 @@
 // mobile/app/(scenario)/[scenarioId]/(tabs)/messages/index.tsx
 import { subscribeToMessageEvents, subscribeToTypingEvents } from "@/context/appData";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/context/auth";
 import { apiFetch } from "@/lib/apiClient";
 
@@ -52,6 +52,9 @@ function scenarioIdFromPathname(pathname: string): string {
 export default function MessagesScreen() {
     // Force re-render on message event
     const [messageVersion, setMessageVersion] = useState(0);
+
+  // Prevent destructive actions from double-firing (Alert confirm double-taps)
+  const deleteConversationLockRef = useRef<Record<string, boolean>>({});
   // Debug: log messagesMap on every render
   const scheme = useColorScheme() ?? "light";
   const colors = Colors[scheme];
@@ -868,6 +871,10 @@ useEffect(() => {
               if (!canManageChatsAsSelected) return;
               if (!sid || !selectedProfileId) return;
 
+              const lockKey = `${sid}:${convId}:${String(selectedProfileId)}:${canHardDelete ? "hard" : "soft"}`;
+              if (deleteConversationLockRef.current[lockKey]) return;
+              deleteConversationLockRef.current[lockKey] = true;
+
               try {
                 if (canHardDelete) {
                   await deleteConversationCascade?.({ scenarioId: sid, conversationId: convId });
@@ -885,8 +892,10 @@ useEffect(() => {
                   conversationId: convId,
                   participantProfileIds: nextParts,
                 });
-              } catch {
-                // ignore
+              } catch (e: any) {
+                Alert.alert("Could not update chat", e?.message ?? "Please try again.");
+              } finally {
+                deleteConversationLockRef.current[lockKey] = false;
               }
             };
 
