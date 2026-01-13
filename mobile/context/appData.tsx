@@ -1526,6 +1526,56 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                         } catch (e) {
                           // ignore notification errors
                         }
+                    } else if (evName === "mention.created" && payload) {
+                      try {
+                        const sid2 = String(payload?.scenarioId ?? sid);
+                        const postId = String(payload?.postId ?? "").trim();
+                        const authorProfileId = String(payload?.authorProfileId ?? "").trim();
+                        const mentionedProfileIds: string[] = Array.isArray(payload?.mentionedProfileIds)
+                          ? payload.mentionedProfileIds.map(String).filter(Boolean)
+                          : [];
+
+                        if (!sid2 || !postId || mentionedProfileIds.length === 0) return;
+
+                        const dbNow = await readDb();
+                        const profiles = (dbNow as any)?.profiles ?? {};
+                        const selectedProfileId = String((dbNow as any)?.selectedProfileByScenario?.[sid2] ?? "");
+
+                        // Skip if the mention comes from a profile owned by the current user.
+                        const authorOwner = String((profiles?.[authorProfileId] as any)?.ownerUserId ?? "");
+                        if (authorOwner && authorOwner === String(currentUserId ?? "")) return;
+
+                        const ownedMentioned = mentionedProfileIds.filter(
+                          (pid) => String((profiles?.[pid] as any)?.ownerUserId ?? "") === String(currentUserId ?? ""),
+                        );
+                        if (ownedMentioned.length === 0) return;
+
+                        const targetProfileId =
+                          selectedProfileId && ownedMentioned.includes(selectedProfileId)
+                            ? selectedProfileId
+                            : String(ownedMentioned[0]);
+
+                        const title = String(payload?.title ?? "You were mentioned").trim() || "You were mentioned";
+                        const body = String(payload?.body ?? "").trim();
+
+                        const notif = {
+                          id: uuidv4(),
+                          title,
+                          body: body ? (body.length > 140 ? body.slice(0, 137) + "…" : body) : undefined,
+                          scenarioId: sid2,
+                          data: {
+                            scenarioId: sid2,
+                            postId,
+                            profileId: targetProfileId,
+                            kind: "mention",
+                            authorProfileId,
+                          },
+                        } as AppNotification;
+
+                        void presentNotification(notif);
+                      } catch {
+                        // ignore mention notification errors
+                      }
                     } else if (evName === "typing" && payload) {
                       // Notify typing subscribers
                       for (const h of typingEventHandlers) {
