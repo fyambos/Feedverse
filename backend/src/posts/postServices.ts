@@ -1,7 +1,22 @@
-import { createPostForScenario, deletePost, listPostsForScenario, updatePost, uploadPostImages } from "./postRepositories";
+import {
+  createPostForScenario,
+  deletePost,
+  listPostsForScenario,
+  listPostsPageForScenario,
+  updatePost,
+  uploadPostImages,
+} from "./postRepositories";
 
 export const ListPostsForScenarioService = async (userId: string, scenarioId: string) => {
   return await listPostsForScenario({ userId, scenarioId });
+};
+
+export const ListPostsPageForScenarioService = async (
+  userId: string,
+  scenarioId: string,
+  opts: { limit: number; cursor?: string | null },
+) => {
+  return await listPostsPageForScenario({ userId, scenarioId, limit: opts.limit, cursor: opts.cursor });
 };
 
 export const CreatePostForScenarioService = async (args: { userId: string; scenarioId: string; input: any }) => {

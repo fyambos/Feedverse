@@ -117,6 +117,88 @@ export async function listPostsForScenario(args: {
   }
 }
 
+// Cursor is `${updatedAtIso}|${id}` using the post's updated_at timestamp.
+export async function listPostsPageForScenario(args: {
+  scenarioId: string;
+  userId: string;
+  limit: number;
+  cursor?: string | null;
+}): Promise<{ items: PostApi[]; nextCursor: string | null } | null> {
+  const sid = String(args.scenarioId ?? "").trim();
+  const uid = String(args.userId ?? "").trim();
+  const limit = Math.max(1, Math.min(500, Math.floor(Number(args.limit ?? 200))));
+  const cursorRaw = args.cursor == null ? "" : String(args.cursor);
+  if (!sid || !uid) return null;
+
+  let cursorUpdatedAt: Date | null = null;
+  let cursorId = "";
+  if (cursorRaw.trim()) {
+    const parts = cursorRaw.split("|");
+    if (parts.length >= 2) {
+      const t = parts[0] ? new Date(String(parts[0])) : null;
+      const id = String(parts[1] ?? "").trim();
+      if (t && !Number.isNaN(t.getTime()) && id) {
+        cursorUpdatedAt = t;
+        cursorId = id;
+      }
+    }
+  }
+
+  const client = await pool.connect();
+  try {
+    const ok = await scenarioAccess(client, sid, uid);
+    if (!ok) return null;
+
+    const res = await client.query<PostRow>(
+      `
+      SELECT
+        id,
+        scenario_id,
+        author_profile_id,
+        text,
+        image_urls,
+        reply_count,
+        repost_count,
+        like_count,
+        parent_post_id,
+        quoted_post_id,
+        inserted_at,
+        created_at,
+        post_type,
+        meta,
+        is_pinned,
+        pin_order,
+        updated_at
+      FROM posts
+      WHERE scenario_id = $1
+        AND (
+          $2::timestamptz IS NULL
+          OR updated_at < $2
+          OR (updated_at = $2 AND id < $3)
+        )
+      ORDER BY updated_at DESC, id DESC
+      LIMIT $4
+    `,
+      [sid, cursorUpdatedAt, cursorId, limit],
+    );
+
+    const items = res.rows.map(mapPostRowToApi);
+    if (items.length === 0) return { items: [], nextCursor: null };
+
+    let nextCursor: string | null = null;
+    if (items.length === limit) {
+      const last = res.rows[res.rows.length - 1] as any;
+      const updatedAtIso = last?.updated_at ? new Date(last.updated_at).toISOString() : null;
+      const id = String(last?.id ?? "").trim();
+      if (updatedAtIso && id) nextCursor = `${updatedAtIso}|${id}`;
+    }
+
+    return { items, nextCursor };
+  } finally {
+    client.release();
+  }
+}
+
 export async function createPostForScenario(args: {
   scenarioId: string;
   userId: string;

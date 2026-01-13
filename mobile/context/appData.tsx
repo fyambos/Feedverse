@@ -899,9 +899,11 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
   const postsSyncRef = React.useRef<{
     inFlightByScenario: Record<string, boolean>;
     lastSyncAtByScenario: Record<string, number>;
+    backfillCursorByScenario: Record<string, string | null>;
   }>({
     inFlightByScenario: {},
     lastSyncAtByScenario: {},
+    backfillCursorByScenario: {},
   });
 
   const conversationsSyncRef = React.useRef<{
@@ -1855,30 +1857,63 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       postsSyncRef.current.lastSyncAtByScenario[sid] = nowMs;
 
       (async () => {
-        const [postsRes, repostsRes, likesRes] = await Promise.all([
-          apiFetch({
-            path: `/scenarios/${encodeURIComponent(sid)}/posts`,
-            token,
-          }),
-          apiFetch({
-            path: `/scenarios/${encodeURIComponent(sid)}/reposts`,
-            token,
-          }),
-          apiFetch({
-            path: `/scenarios/${encodeURIComponent(sid)}/likes`,
-            token,
-          }),
+        const [repostsRes, likesRes] = await Promise.all([
+          apiFetch({ path: `/scenarios/${encodeURIComponent(sid)}/reposts`, token }),
+          apiFetch({ path: `/scenarios/${encodeURIComponent(sid)}/likes`, token }),
         ]);
 
-        if (!postsRes.ok || !Array.isArray(postsRes.json)) return;
-
-        const rows = postsRes.json as any[];
         const repostRows = repostsRes.ok && Array.isArray(repostsRes.json) ? (repostsRes.json as any[]) : [];
         const likeRows = likesRes.ok && Array.isArray(likesRes.json) ? (likesRes.json as any[]) : [];
 
+        const pageLimit = 200;
+        const allRows: any[] = [];
+
+        // 1) Always pull the most-recently-updated page (catches new posts + edits + count changes).
+        const topRes = await apiFetch({
+          path: `/scenarios/${encodeURIComponent(sid)}/posts?limit=${encodeURIComponent(String(pageLimit))}`,
+          token,
+        });
+
+        if (topRes.ok) {
+          const topItems = Array.isArray((topRes.json as any)?.items)
+            ? ((topRes.json as any).items as any[])
+            : Array.isArray(topRes.json)
+              ? (topRes.json as any[])
+              : [];
+          allRows.push(...topItems);
+
+          // Initialize backfill cursor if we haven't started yet.
+          if (!(sid in postsSyncRef.current.backfillCursorByScenario)) {
+            const nextCursor = typeof (topRes.json as any)?.nextCursor === "string" ? String((topRes.json as any).nextCursor) : null;
+            postsSyncRef.current.backfillCursorByScenario[sid] = nextCursor;
+          }
+        }
+
+        // 2) Backfill one additional page of older posts per tick (until cursor becomes null).
+        const backCursor = postsSyncRef.current.backfillCursorByScenario[sid];
+        if (typeof backCursor === "string" && backCursor.trim()) {
+          const backRes = await apiFetch({
+            path: `/scenarios/${encodeURIComponent(sid)}/posts?limit=${encodeURIComponent(String(pageLimit))}&cursor=${encodeURIComponent(backCursor)}`,
+            token,
+          });
+          if (backRes.ok) {
+            const backItems = Array.isArray((backRes.json as any)?.items)
+              ? ((backRes.json as any).items as any[])
+              : Array.isArray(backRes.json)
+                ? (backRes.json as any[])
+                : [];
+            allRows.push(...backItems);
+
+            const nextCursor = typeof (backRes.json as any)?.nextCursor === "string" ? String((backRes.json as any).nextCursor) : null;
+            postsSyncRef.current.backfillCursorByScenario[sid] = nextCursor;
+          }
+        }
+
+        if (allRows.length === 0 && repostRows.length === 0 && likeRows.length === 0) return;
+
         // mark server-seen posts for filtering (server post ids may be non-uuid)
         const seen = (serverSeenPostsRef.current.byScenario[sid] ??= {});
-        for (const raw of rows) {
+        for (const raw of allRows) {
           const id = String(raw?.id ?? "").trim();
           if (id) seen[id] = true;
         }
@@ -1890,7 +1925,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
           const reposts = { ...((prev as any).reposts ?? {}) } as any;
           const likes = { ...((prev as any).likes ?? {}) } as Record<string, Like>;
 
-          for (const raw of rows) {
+          for (const raw of allRows) {
             const id = String(raw?.id ?? "").trim();
             if (!id) continue;
 

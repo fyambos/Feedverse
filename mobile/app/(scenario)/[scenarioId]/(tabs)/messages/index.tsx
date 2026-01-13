@@ -18,7 +18,7 @@ import { useColorScheme } from "@/hooks/use-color-scheme";
 import { useAppData } from "@/context/appData";
 import { Avatar } from "@/components/ui/Avatar";
 import { SwipeableRow } from "@/components/ui/SwipeableRow";
-import type { Conversation, Message, Profile } from "@/data/db/schema";
+import type { Conversation, Profile } from "@/data/db/schema";
 import { formatErrorMessage } from "@/lib/format";
 
 import { useFocusEffect } from "@react-navigation/native";
@@ -448,75 +448,19 @@ useEffect(() => {
     })();
   }, [openConversationId, isReady, sid, selectedProfileId, markConversationRead]);
 
-  const messagesMap: Record<string, Message> = useMemo(() => ((db as any)?.messages ?? {}) as any, [db, messageVersion]);
-
-  const inboxLastMessageAtByConversationId: Record<string, string> = useMemo(() => {
-    if (!isReady) return {};
-    if (!sid) return {};
-
-    const best: Record<string, string> = {};
-    for (const m of Object.values(messagesMap)) {
-      if (String((m as any).scenarioId ?? "") !== String(sid)) continue;
-      const cid = String((m as any).conversationId ?? "");
-      if (!cid) continue;
-      const t = String((m as any).createdAt ?? "");
-      if (!t) continue;
-      if (!best[cid] || t > best[cid]) best[cid] = t;
-    }
-    return best;
-  }, [isReady, sid, messagesMap, messageVersion]);
-
-  // Build the conversation list from messagesMap for live updates
+  // Conversation list should not depend on scanning all messages.
+  // Use cached conversations + server-provided preview fields.
   const conversations: Conversation[] = useMemo(() => {
     if (!isReady) return [];
     if (!sid) return [];
     if (!selectedProfileId) return [];
 
-    // Find all unique conversation IDs for this scenario/profile
-    const convMap: Record<string, Conversation> = {};
-    for (const m of Object.values(messagesMap)) {
-      if (String((m as any).scenarioId ?? "") !== String(sid)) continue;
-      const cid = String((m as any).conversationId ?? "");
-      if (!cid) continue;
-      // Only include conversations where the selected profile is a participant
-      const conv = (db as any)?.conversations?.[cid];
-      if (!conv) continue;
-      if (!Array.isArray(conv.participantProfileIds) || !conv.participantProfileIds.includes(selectedProfileId)) continue;
-      convMap[cid] = conv;
-    }
-    // Also include local DB conversations as a fallback so they appear
-    // even when messages are missing/cleared locally. This prevents the
-    // UI from showing an empty inbox until a new message arrives.
     try {
-      const allConvs = (db as any)?.conversations ?? {};
-      for (const [cid, conv] of Object.entries(allConvs)) {
-        if (convMap[cid]) continue; // already included from messages
-        const convObj: any = conv as any;
-        // Ensure it's for the same scenario (try a few common field names)
-        const convSid = String(convObj.scenarioId ?? convObj.scenario_id ?? convObj.scenario ?? "");
-        if (sid && convSid && String(convSid) !== String(sid)) continue;
-        if (!Array.isArray(convObj.participantProfileIds) || !convObj.participantProfileIds.includes(selectedProfileId)) continue;
-        convMap[String(cid)] = conv as Conversation;
-      }
+      return (listConversationsForScenario?.(sid, selectedProfileId) ?? []) as Conversation[];
     } catch {
-      // ignore
+      return [];
     }
-    const items = Object.values(convMap);
-
-    return items.slice().sort((a, b) => {
-      const aId = String((a as any).id ?? "");
-      const bId = String((b as any).id ?? "");
-      const aT =
-        inboxLastMessageAtByConversationId[aId] ??
-        String((a as any).lastMessageAt ?? (a as any).updatedAt ?? (a as any).createdAt ?? "");
-      const bT =
-        inboxLastMessageAtByConversationId[bId] ??
-        String((b as any).lastMessageAt ?? (b as any).updatedAt ?? (b as any).createdAt ?? "");
-      const c = String(bT).localeCompare(String(aT));
-      if (c !== 0) return c;
-      return String(bId).localeCompare(String(aId));
-    });
-  }, [isReady, sid, selectedProfileId, db, messagesMap, inboxLastMessageAtByConversationId, messageVersion]);
+  }, [isReady, sid, selectedProfileId, listConversationsForScenario, db, messageVersion]);
 
   const allScenarioProfiles: Profile[] = useMemo(() => {
     if (!isReady) return [];
@@ -550,23 +494,6 @@ useEffect(() => {
   const ownedProfileIds = useMemo(() => {
     return new Set((sendAsCandidates.owned ?? []).map((p) => String((p as any).id ?? "")).filter(Boolean));
   }, [sendAsCandidates.owned]);
-
-  const getLastMessageForConversation = (conversationId: string): Message | null => {
-    const cid = String(conversationId);
-    let best: Message | null = null;
-    for (const m of Object.values(messagesMap)) {
-      if (String((m as any).conversationId) !== cid) continue;
-      if (String((m as any).scenarioId) !== String(sid)) continue;
-      if (!best) {
-        best = m;
-        continue;
-      }
-      const a = String((best as any).createdAt ?? "");
-      const b = String((m as any).createdAt ?? "");
-      if (b > a) best = m;
-    }
-    return best;
-  };
 
   const getConversationTitleAndAvatar = (c: Conversation): { title: string; avatarUrl: string | null } => {
       const customTitle = String((c as any)?.title ?? "").trim();
@@ -817,16 +744,11 @@ useEffect(() => {
             const convId = String((c as any).id);
             const meta = getConversationTitleAndAvatar(c);
 
-            const latestMsg = getLastMessageForConversation(convId);
-
-            const convLastAt = String((c as any).lastMessageAt ?? "");
-            const serverPreview = String((c as any).lastMessageText ?? "").trim();
-
-            const localLastAt = latestMsg ? String((latestMsg as any).createdAt ?? "") : "";
-            const localPreview = latestMsg?.text ? String(latestMsg.text).trim() : "";
-            const localIsStale = Boolean(convLastAt && localLastAt && localLastAt.localeCompare(convLastAt) < 0);
-
-            const preview = ((!localPreview || localIsStale) && serverPreview ? serverPreview : localPreview).trim();
+            let preview = String((c as any).lastMessageText ?? "").trim();
+            if (!preview) {
+              const kind = String((c as any).lastMessageKind ?? "").trim();
+              if (kind && kind !== "text") preview = kind === "image" ? "photo" : kind;
+            }
 
             const parts = Array.isArray((c as any).participantProfileIds)
               ? (c as any).participantProfileIds.map(String).filter(Boolean)
