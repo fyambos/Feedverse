@@ -10,7 +10,7 @@ import {
   View,
 } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 
 import { ThemedView } from "@/components/themed-view";
@@ -55,6 +55,7 @@ export default function CreateProfileModal() {
 
   const scheme = useColorScheme() ?? "light";
   const colors = Colors[scheme];
+  const insets = useSafeAreaInsets();
 
   const { userId } = useAuth();
   const { getProfileById, upsertProfile, listProfilesForScenario, deleteProfileCascade } = useAppData();
@@ -296,7 +297,12 @@ export default function CreateProfileModal() {
             style={{ flex: 1 }}
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
-            contentContainerStyle={{ paddingBottom: 24 }}
+            contentContainerStyle={{
+              paddingBottom: 24 + (insets.bottom || 0) + (Platform.OS === "ios" ? 320 : 240),
+            }}
+            scrollIndicatorInsets={{
+              bottom: (insets.bottom || 0) + (Platform.OS === "ios" ? 320 : 240),
+            }}
           >
             {/* Avatar */}
             <ProfileAvatarPicker avatarUrl={avatarUrl} setAvatarUrl={setAvatarUrl} colors={colors} />
