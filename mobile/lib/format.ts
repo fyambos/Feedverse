@@ -16,7 +16,10 @@ export function displayUrl(input: string) {
 }
 
 export function formatRelativeTime(iso: string) {
-  const diff = Date.now() - new Date(iso).getTime();
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return "";
+  const now = Date.now();
+  const diff = now - t;
   const sec = Math.floor(diff / 1000);
   if (sec < 60) return `${sec}s`;
   const min = Math.floor(sec / 60);
@@ -25,7 +28,20 @@ export function formatRelativeTime(iso: string) {
   if (h < 24) return `${h}h`;
   const d = Math.floor(h / 24);
   if (d < 7) return `${d}d`;
-  return `${new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" })}`;
+
+  // For older timestamps, show a compact date.
+  // Rule: only omit the year when the date is within the last ~12 months.
+  // This avoids locale-specific formats like "Jan 9, 2024" getting visually truncated.
+  const ONE_YEAR_MS = 365 * 24 * 60 * 60 * 1000;
+  const includeYear = diff >= ONE_YEAR_MS;
+
+  const date = new Date(t);
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const day = date.getDate();
+  const mon = months[date.getMonth()] ?? "";
+  const year = date.getFullYear();
+
+  return includeYear ? `${day} ${mon} ${year}` : `${day} ${mon}`;
 }
 export function formatDetailTimestamp(iso: string) {
   const d = new Date(iso);

@@ -308,6 +308,7 @@ export default function CreateProfileModal() {
                 onChangeText={(v) => setDisplayName(v.slice(0, PROFILE_LIMITS.MAX_DISPLAY_NAME))}
                 placeholder="Display name"
                 placeholderTextColor={colors.textSecondary}
+                maxLength={PROFILE_LIMITS.MAX_DISPLAY_NAME}
                 style={[styles.input, { color: colors.text, borderColor: colors.border }]}
               />
 
