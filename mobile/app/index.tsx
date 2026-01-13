@@ -18,8 +18,9 @@ import { TagPill } from "@/components/ui/TagPill";
 
 import { createScenarioIO } from "@/lib/scenarioIO";
 import { Alert } from "@/context/dialog";
+import { MAX_TOTAL_PLAYERS_PER_SCENARIO } from "@/lib/rules";
 
-const MAX_PLAYERS = 20;
+const MAX_PLAYERS = MAX_TOTAL_PLAYERS_PER_SCENARIO;
 
 type ScenarioMenuState = {
   open: boolean;

@@ -37,7 +37,7 @@ import { apiFetch } from "@/lib/apiClient";
 import { pickAndPersistManyImages } from "@/components/ui/ImagePicker";
 import { MediaGrid } from "@/components/media/MediaGrid";
 import { Lightbox } from "@/components/media/LightBox";
-import { formatNetworkError } from "@/lib/networkErrors";
+import { formatNetworkError } from "@/lib/format";
 
 function parsePgTextArrayLiteral(input: string): string[] {
   const s = String(input ?? "").trim();
