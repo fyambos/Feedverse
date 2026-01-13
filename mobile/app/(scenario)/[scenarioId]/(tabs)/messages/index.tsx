@@ -502,26 +502,7 @@ useEffect(() => {
       // ignore
     }
     const items = Object.values(convMap);
-    // Debug: log conversations and their latest message
-    const debugConvs = items.map((c) => {
-      const cid = String((c as any).id ?? "");
-      let latestMsg: Message | null = null;
-      for (const m of Object.values(messagesMap)) {
-        if (String((m as any).conversationId) !== cid) continue;
-        if (String((m as any).scenarioId) !== String(sid)) continue;
-        if (!latestMsg || String((m as any).createdAt ?? "") > String((latestMsg as any).createdAt ?? "")) {
-          latestMsg = m;
-        }
-      }
-      return {
-        conversationId: cid,
-        title: (c as any).title,
-        latestMsgId: latestMsg?.id,
-        latestMsgText: latestMsg?.text,
-        latestMsgCreatedAt: latestMsg?.createdAt,
-      };
-    });
-    
+
     return items.slice().sort((a, b) => {
       const aId = String((a as any).id ?? "");
       const bId = String((b as any).id ?? "");
@@ -836,31 +817,16 @@ useEffect(() => {
             const convId = String((c as any).id);
             const meta = getConversationTitleAndAvatar(c);
 
-            // Always show the latest message text as preview (live)
+            const latestMsg = getLastMessageForConversation(convId);
 
-            // Always compute the latest message for this conversation from messagesMap
-            let preview = "";
-            let latestMsg: Message | null = null;
-            // Debug: print all messages for this conversation, sorted by createdAt
-            if (convId === "422bb9dd-46c6-4d26-b9d1-c7b536ef4378") {
-              // Print sid and scenarioId for each message
-              const allMsgs = Object.values(messagesMap).filter(m => String((m as any).conversationId) === convId);
-              
-              const convMsgs = allMsgs
-                .filter(m => String((m as any).scenarioId) === String(sid))
-                .sort((a, b) => String((a as any).createdAt ?? "").localeCompare(String((b as any).createdAt ?? "")));
-              
-            }
-            for (const m of Object.values(messagesMap)) {
-              if (String((m as any).conversationId) !== convId) continue;
-              if (String((m as any).scenarioId) !== String(sid)) continue;
-              if (!latestMsg || String((m as any).createdAt ?? "") > String((latestMsg as any).createdAt ?? "")) {
-                latestMsg = m;
-              }
-            }
-            // Debug: log preview computation for each conversation
-            
-            if (latestMsg && latestMsg.text) preview = String(latestMsg.text);
+            const convLastAt = String((c as any).lastMessageAt ?? "");
+            const serverPreview = String((c as any).lastMessageText ?? "").trim();
+
+            const localLastAt = latestMsg ? String((latestMsg as any).createdAt ?? "") : "";
+            const localPreview = latestMsg?.text ? String(latestMsg.text).trim() : "";
+            const localIsStale = Boolean(convLastAt && localLastAt && localLastAt.localeCompare(convLastAt) < 0);
+
+            const preview = ((!localPreview || localIsStale) && serverPreview ? serverPreview : localPreview).trim();
 
             const parts = Array.isArray((c as any).participantProfileIds)
               ? (c as any).participantProfileIds.map(String).filter(Boolean)

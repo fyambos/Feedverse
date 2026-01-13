@@ -9,6 +9,9 @@ export type ConversationRow = {
   created_at: Date | string;
   updated_at: Date | string | null;
   last_message_at: Date | string | null;
+  last_message_text?: string | null;
+  last_message_kind?: string | null;
+  last_message_sender_profile_id?: string | null;
 };
 
 export type ConversationApi = {
@@ -20,6 +23,9 @@ export type ConversationApi = {
   createdAt: string;
   updatedAt?: string;
   lastMessageAt?: string;
+  lastMessageText?: string;
+  lastMessageKind?: string;
+  lastMessageSenderProfileId?: string;
 };
 
 function toIso(v: Date | string | null | undefined): string | undefined {
@@ -36,6 +42,15 @@ export function mapConversationRowToApi(row: ConversationRow): ConversationApi {
   const updatedAt = toIso(row.updated_at);
   const lastMessageAt = toIso(row.last_message_at);
 
+  const lastMessageTextRaw = (row as any).last_message_text;
+  const lastMessageKindRaw = (row as any).last_message_kind;
+  const lastMessageSenderProfileIdRaw = (row as any).last_message_sender_profile_id;
+
+  const lastMessageText = lastMessageTextRaw != null ? String(lastMessageTextRaw) : undefined;
+  const lastMessageKind = lastMessageKindRaw != null ? String(lastMessageKindRaw) : undefined;
+  const lastMessageSenderProfileId =
+    lastMessageSenderProfileIdRaw != null ? String(lastMessageSenderProfileIdRaw) : undefined;
+
   return {
     id: String(row.id),
     scenarioId: String(row.scenario_id),
@@ -47,5 +62,8 @@ export function mapConversationRowToApi(row: ConversationRow): ConversationApi {
     createdAt,
     updatedAt,
     lastMessageAt,
+    lastMessageText,
+    lastMessageKind,
+    lastMessageSenderProfileId,
   };
 }

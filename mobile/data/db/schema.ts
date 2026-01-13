@@ -208,6 +208,12 @@ export type Conversation = {
   createdAt: string;
   updatedAt?: string;
   lastMessageAt?: string;
+
+  // Server-provided preview fields (so inbox can show latest snippet even if
+  // message history for the conversation hasn't been synced locally).
+  lastMessageText?: string;
+  lastMessageKind?: string;
+  lastMessageSenderProfileId?: string;
 };
 
 export type Message = {

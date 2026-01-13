@@ -1348,6 +1348,24 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                   : raw?.last_message_at != null
                     ? (raw.last_message_at ? new Date(raw.last_message_at).toISOString() : undefined)
                     : (existing as any)?.lastMessageAt,
+              lastMessageText:
+                raw?.lastMessageText != null
+                  ? String(raw.lastMessageText)
+                  : raw?.last_message_text != null
+                    ? String(raw.last_message_text)
+                    : (existing as any)?.lastMessageText,
+              lastMessageKind:
+                raw?.lastMessageKind != null
+                  ? String(raw.lastMessageKind)
+                  : raw?.last_message_kind != null
+                    ? String(raw.last_message_kind)
+                    : (existing as any)?.lastMessageKind,
+              lastMessageSenderProfileId:
+                raw?.lastMessageSenderProfileId != null
+                  ? String(raw.lastMessageSenderProfileId)
+                  : raw?.last_message_sender_profile_id != null
+                    ? String(raw.last_message_sender_profile_id)
+                    : (existing as any)?.lastMessageSenderProfileId,
             } as any;
           }
 
