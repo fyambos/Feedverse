@@ -60,8 +60,20 @@ function AppShell() {
 
   return (
     <AppThemeProvider mode={mode}>
-      <ThemedNavigation />
+      <ThemedAppShell />
     </AppThemeProvider>
+  );
+}
+
+function ThemedAppShell() {
+  const scheme = useColorScheme() ?? "light";
+  const colors = Colors[scheme];
+
+  return (
+    <GestureHandlerRootView style={{ flex: 1, backgroundColor: colors.background }}>
+      <ThemedNavigation />
+      <NotificationBanner />
+    </GestureHandlerRootView>
   );
 }
 
@@ -77,19 +89,13 @@ function ThemedNavigation() {
 }
 
 export default function RootLayout() {
-  const scheme = useColorScheme() ?? "light";
-  const colors = Colors[scheme];
-
   return (
     <DialogProvider>
-      <GestureHandlerRootView style={{ flex: 1, backgroundColor: colors.background }}>
-        <AuthProvider>
-          <AppDataProvider>
-            <AppShell />
-            <NotificationBanner />
-          </AppDataProvider>
-        </AuthProvider>
-      </GestureHandlerRootView>
+      <AuthProvider>
+        <AppDataProvider>
+          <AppShell />
+        </AppDataProvider>
+      </AuthProvider>
     </DialogProvider>
   );
 }

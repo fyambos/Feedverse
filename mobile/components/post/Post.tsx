@@ -130,6 +130,8 @@ export function Post({
       ? appData.getScenarioById(sid)
       : appData.scenarios?.[sid] ?? appData.scenarioById?.[sid] ?? null;
 
+  const isCampaignMode = String((scenario as any)?.mode ?? "story") === "campaign";
+
   // Only the scenario owner or listed GMs can use GM tools
   const isGmUser = Boolean(
     currentUserId &&
@@ -140,9 +142,9 @@ export function Post({
 
   const gmProfileId = sid ? getSelectedProfileId(sid) : null;
 
-  const isCampaign = isCampaignPostType(postType);
-  // GM tools should only be available to actual GMs, not all users viewing campaign posts
-  const canUseGmMenu = Boolean(isCampaign && isGmUser);
+  const isCampaignPost = isCampaignMode && isCampaignPostType(postType);
+  // GM tools should only be available to actual GMs in campaign mode.
+  const canUseGmMenu = Boolean(isCampaignMode && isGmUser);
 
   const replyCount = item.replyCount ?? 0;
   const repostCount = item.repostCount ?? 0;
@@ -323,7 +325,7 @@ export function Post({
           </Pressable>
 
           {/* post type under avatar (campaign only, hide "rp") */}
-          {isCampaign && postType && postType !== "rp" ? (
+          {isCampaignPost && postType && postType !== "rp" ? (
             <View style={styles.avatarBadge}>
               <PostTypeBadge colors={colors as any} type={postType} compact />
             </View>

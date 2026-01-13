@@ -25,7 +25,7 @@ export class UserRepository {
   }
 
   async findByUsername(username: string): Promise<User | null> {
-    const query = "SELECT * FROM users WHERE username = $1";
+    const query = "SELECT * FROM users WHERE LOWER(TRIM(username)) = LOWER(TRIM($1))";
     const result = await pool.query(query, [username]);
     return result.rows[0] || null;
   }

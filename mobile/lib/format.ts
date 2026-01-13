@@ -16,7 +16,10 @@ export function displayUrl(input: string) {
 }
 
 export function formatRelativeTime(iso: string) {
-  const diff = Date.now() - new Date(iso).getTime();
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return "";
+  const now = Date.now();
+  const diff = now - t;
   const sec = Math.floor(diff / 1000);
   if (sec < 60) return `${sec}s`;
   const min = Math.floor(sec / 60);
@@ -25,7 +28,20 @@ export function formatRelativeTime(iso: string) {
   if (h < 24) return `${h}h`;
   const d = Math.floor(h / 24);
   if (d < 7) return `${d}d`;
-  return `${new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" })}`;
+
+  // For older timestamps, show a compact date.
+  // Rule: only omit the year when the date is within the last ~12 months.
+  // This avoids locale-specific formats like "Jan 9, 2024" getting visually truncated.
+  const ONE_YEAR_MS = 365 * 24 * 60 * 60 * 1000;
+  const includeYear = diff >= ONE_YEAR_MS;
+
+  const date = new Date(t);
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const day = date.getDate();
+  const mon = months[date.getMonth()] ?? "";
+  const year = date.getFullYear();
+
+  return includeYear ? `${day} ${mon} ${year}` : `${day} ${mon}`;
 }
 export function formatDetailTimestamp(iso: string) {
   const d = new Date(iso);
@@ -82,3 +98,118 @@ export function formatCount(n: number) {
 export function makeId(prefix: string) {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
+
+function normalizePgUniqueConstraintMessage(raw: string): string | null {
+    const msg = String(raw ?? "").trim();
+    if (!msg) return null;
+
+    const lower = msg.toLowerCase();
+
+    // Common Postgres unique constraint shape:
+    // duplicate key value violates unique constraint "users_username_uidx"
+    if (lower.includes("duplicate key value") && lower.includes("unique constraint")) {
+      if (lower.includes("users_username_uidx")) {
+        return "That username is already taken.";
+      }
+
+      if (lower.includes("scenarios_invite_code_uidx")) {
+        return "That invite code is already in use. Please pick another.";
+      }
+
+      return "That value is already in use.";
+    }
+
+    // Sometimes the backend bubbles only the constraint name.
+    if (lower.includes("users_username_uidx")) return "That username is already taken.";
+    if (lower.includes("scenarios_invite_code_uidx")) {
+      return "That invite code is already in use. Please pick another.";
+    }
+
+    return null;
+}
+
+function isProbablyTechnicalErrorMessage(msg: string): boolean {
+  const s = String(msg ?? "").trim();
+  if (!s) return false;
+
+  // Multi-line or very long messages are almost always internal.
+  if (s.includes("\n") || s.length > 160) return true;
+
+  const lower = s.toLowerCase();
+
+  // Database / SQL / ORM / stack traces.
+  if (
+    lower.includes("sqlstate") ||
+    lower.includes("postgres") ||
+    lower.includes("pg_") ||
+    lower.includes("query failed") ||
+    lower.includes("syntax error") ||
+    lower.includes("violates") ||
+    lower.includes("constraint") ||
+    lower.includes("duplicate key value") ||
+    lower.includes("relation ") ||
+    lower.includes("column ") ||
+    lower.includes("at character") ||
+    lower.includes("sequelize") ||
+    lower.includes("prisma") ||
+    lower.includes("knex") ||
+    lower.includes("typeorm") ||
+    lower.includes("queryfailederror") ||
+    lower.includes("stack")
+  ) {
+    return true;
+  }
+
+  // Low-signal generic runtime prefixes.
+  if (lower.startsWith("error:")) return true;
+  if (lower.startsWith("typeerror:")) return true;
+
+  // Looks like an internal identifier.
+  if (/[a-z0-9_]{8,}_(uidx|idx|pkey)\b/i.test(s)) return true;
+
+  return false;
+}
+
+/**
+ * Best-effort extraction of a user-facing error message.
+ * This is intentionally NOT limited to network errors (name kept for backward-compat elsewhere).
+ */
+export function formatErrorMessage(e: unknown, fallback: string) {
+  if (e == null) return fallback;
+
+  if (typeof e === "string") {
+    const normalized = normalizePgUniqueConstraintMessage(e);
+    if (normalized) return normalized;
+
+    const raw = String(e).trim();
+    if (!raw) return fallback;
+    if (isProbablyTechnicalErrorMessage(raw)) return fallback;
+    return raw;
+  }
+
+  if (typeof e === "object") {
+    const anyE = e as any;
+
+    // Common shapes we use in the app
+    const candidateStrings = [
+      anyE?.message,
+      anyE?.error,
+      anyE?.details,
+      anyE?.response?.data?.error,
+      anyE?.response?.data?.message,
+    ].filter((v) => typeof v === "string") as string[];
+
+    for (const s of candidateStrings) {
+      const trimmed = String(s).trim();
+      if (!trimmed) continue;
+
+      const normalized = normalizePgUniqueConstraintMessage(trimmed);
+      if (normalized) return normalized;
+      if (isProbablyTechnicalErrorMessage(trimmed)) return fallback;
+      return trimmed;
+    }
+  }
+
+  return fallback;
+}
+

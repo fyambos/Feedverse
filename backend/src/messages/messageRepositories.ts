@@ -88,7 +88,7 @@ async function userOwnsAnyProfileInConversation(client: PoolClient, conversation
     FROM conversation_participants cp
     JOIN profiles p ON p.id = cp.profile_id
     WHERE cp.conversation_id = $1
-      AND p.owner_user_id = $2
+      AND (p.owner_user_id = $2 OR p.is_public = true)
     LIMIT 1
   `,
     [conversationId, userId],
@@ -117,7 +117,7 @@ async function userCanActAsSender(client: PoolClient, scenarioId: string, userId
 
   const profile = resRow.rows?.[0];
   if (!profile) {
-    console.log("userCanActAsSender: profile not found", { senderProfileId, scenarioId, userId });
+    // console.log("userCanActAsSender: profile not found", { senderProfileId, scenarioId, userId });
     return false;
   }
 
@@ -148,6 +148,7 @@ async function getConversationScenarioId(client: PoolClient, conversationId: str
 export async function listMessages(args: {
   conversationId: string;
   userId: string;
+  selectedProfileId?: string;
   limit?: number;
   beforeCreatedAt?: string;
 }): Promise<{ messages: MessageApi[] } | null> {
@@ -167,7 +168,30 @@ export async function listMessages(args: {
     const ok = await scenarioAccess(client, sid, uid);
     if (!ok) return null;
 
-    const canSee = await userOwnsAnyProfileInConversation(client, cid, uid);
+    let canSee = await userOwnsAnyProfileInConversation(client, cid, uid);
+
+    // If the requester doesn't own any profile in the conversation, allow
+    // viewing when a `selectedProfileId` is provided and that profile is
+    // participating in the conversation and is either public or owned by
+    // the requester.
+    if (!canSee && args.selectedProfileId) {
+      const sel = String(args.selectedProfileId ?? "").trim();
+      if (sel) {
+        const prow = await client.query(`SELECT owner_user_id, is_public, scenario_id FROM profiles WHERE id = $1 LIMIT 1`, [sel]);
+        const p = prow.rows?.[0];
+        if (p && String(p.scenario_id ?? "") === sid) {
+          const part = await client.query(`SELECT 1 FROM conversation_participants WHERE conversation_id = $1 AND profile_id = $2 LIMIT 1`, [cid, sel]);
+          if ((part.rowCount ?? 0) > 0) {
+            const ownerMatches = String(p.owner_user_id ?? "") === uid;
+            const isPublic = Boolean(p.is_public);
+            if (ownerMatches || isPublic) {
+              canSee = true;
+            }
+          }
+        }
+      }
+    }
+
     if (!canSee) return null;
 
     const res = await client.query<MessageRow>(
@@ -297,14 +321,14 @@ export async function sendMessage(args: {
       const payload = { message: mapMessageRowToApi(row), senderUserId: uid };
       realtimeService.emitScenarioEvent(sid, "message.created", payload);
     } catch (e) {
-      console.log("realtime emit message.created failed", e);
+      // console.log("realtime emit message.created failed", e);
     }
 
     try {
       const payload = { message: mapMessageRowToApi(row), senderUserId: uid };
       websocketService.broadcastScenarioEvent(sid, "message.created", payload);
     } catch (e) {
-      console.log("websocket emit message.created failed", e);
+      // console.log("websocket emit message.created failed", e);
     }
 
     // Attempt to send push notifications via FCM to conversation participants' owners.
@@ -338,7 +362,7 @@ export async function sendMessage(args: {
           const messaging = getMessaging();
           if (!messaging) {
             // no messaging available in this environment
-            console.log("FCM messaging not available; skipping push send");
+            // console.log("FCM messaging not available; skipping push send");
             return;
           }
 
@@ -590,14 +614,6 @@ export async function updateMessage(args: {
       return null;
     }
 
-    // Check whether the requester may act as the original sender (owner OR public/shared profile).
-    const canActOriginal = await userCanActAsSender(client, scenarioId, uid, senderProfileId);
-    if (!canActOriginal) {
-      // console.log("updateMessage: denied original sender", { messageId: mid, scenarioId, senderProfileId, requestUserId: uid });
-      await client.query("ROLLBACK");
-      return { error: "Not allowed", status: 403 };
-    }
-
     // Optionally allow changing senderProfileId (used by mobile "send as" edit UX).
     // Must remain a participant and must be a profile the user can act as.
     let finalSender = senderProfileId;
@@ -619,12 +635,22 @@ export async function updateMessage(args: {
 
       const canAct = await userCanActAsSender(client, scenarioId, uid, nextSenderProfileId);
       if (!canAct) {
-        console.log(" denied next sender", { messageId: mid, nextSenderProfileId, requestUserId: uid });
+        // console.log(" denied next sender", { messageId: mid, nextSenderProfileId, requestUserId: uid });
         await client.query("ROLLBACK");
         return { error: "Not allowed", status: 403 };
       }
 
       finalSender = nextSenderProfileId;
+    }
+
+    // If the requester did not supply a next sender, ensure they can act as the
+    // original sender; otherwise deny.
+    if (!nextSenderProfileId) {
+      const canActOriginal = await userCanActAsSender(client, scenarioId, uid, senderProfileId);
+      if (!canActOriginal) {
+        await client.query("ROLLBACK");
+        return { error: "Not allowed", status: 403 };
+      }
     }
 
     const res = await client.query<MessageRow>(

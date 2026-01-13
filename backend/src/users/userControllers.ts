@@ -9,6 +9,7 @@ import {
   HTTP_STATUS,
   USER_MESSAGES,
 } from "../config/constants";
+import { normalizeUsername, validateUsername } from "../lib/username";
 
 
 // PATCH /username
@@ -25,7 +26,11 @@ export const UpdateUsernameController = async (req: Request, res: Response) => {
     if (!username || typeof username !== "string" || username.trim().length < 3) {
       return res.status(400).json({ error: "Invalid username" });
     }
-    const usernameNormalized = username.trim();
+    const usernameNormalized = normalizeUsername(username);
+    const usernameErr = validateUsername(usernameNormalized);
+    if (usernameErr) {
+      return res.status(400).json({ error: usernameErr });
+    }
     const repo = new UserRepository();
     // Check if username is taken by another user
     const existing = await repo.findByUsername(usernameNormalized);

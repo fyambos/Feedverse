@@ -1,7 +1,7 @@
 // mobile/app/(scenario)/[scenarioId]/(tabs)/messages/index.tsx
 import { subscribeToMessageEvents, subscribeToTypingEvents } from "@/context/appData";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/context/auth";
 import { apiFetch } from "@/lib/apiClient";
 
@@ -18,7 +18,8 @@ import { useColorScheme } from "@/hooks/use-color-scheme";
 import { useAppData } from "@/context/appData";
 import { Avatar } from "@/components/ui/Avatar";
 import { SwipeableRow } from "@/components/ui/SwipeableRow";
-import type { Conversation, Message, Profile } from "@/data/db/schema";
+import type { Conversation, Profile } from "@/data/db/schema";
+import { formatErrorMessage } from "@/lib/format";
 
 import { useFocusEffect } from "@react-navigation/native";
 
@@ -52,6 +53,9 @@ function scenarioIdFromPathname(pathname: string): string {
 export default function MessagesScreen() {
     // Force re-render on message event
     const [messageVersion, setMessageVersion] = useState(0);
+
+  // Prevent destructive actions from double-firing (Alert confirm double-taps)
+  const deleteConversationLockRef = useRef<Record<string, boolean>>({});
   // Debug: log messagesMap on every render
   const scheme = useColorScheme() ?? "light";
   const colors = Colors[scheme];
@@ -142,6 +146,23 @@ export default function MessagesScreen() {
         const convId = String(msg.conversationId ?? msg.conversation_id ?? "").trim();
         if (convId) {
           app?.syncMessagesForConversation?.({ scenarioId: sid, conversationId: convId, limit: 30 });
+
+          // If the user is currently viewing this conversation, optimistically
+          // clear the unread badge locally and skip the immediate unread API refetch
+          // (the conversation screen should also post the read to the server).
+          try {
+            const viewingConvId = (app?.db as any)?.selectedConversationByScenario?.[sid] ?? null;
+            const selectedPid = (app?.db as any)?.selectedProfileByScenario?.[sid] ?? null;
+            if (viewingConvId && String(viewingConvId) === String(convId) && selectedPid) {
+              setUnreadCounts((prev) => ({ ...(prev ?? {}), [convId]: 0 }));
+              markOptimisticallyRead(convId);
+              setMessageVersion((v) => v + 1);
+              return;
+            } else {
+              // If not viewing, always fetch unread counts from server
+              fetchUnreadCounts();
+            }
+          } catch {}
         }
       } catch {
         // ignore
@@ -408,101 +429,38 @@ useEffect(() => {
     // clear the param so we don't re-open on re-render
     router.setParams({ openConversationId: undefined } as any);
 
-    void markConversationRead(cid);
-    router.push({
-      pathname: "/(scenario)/[scenarioId]/(tabs)/messages/[conversationId]",
-      params: { scenarioId: sid, conversationId: cid },
-    } as any);
+    (async () => {
+      try {
+        // Ensure we have the conversation + at least a page of messages before opening the thread.
+        // This avoids getting stuck on the thread's loading state when launched from a notification.
+        try { await app?.syncConversationsForScenario?.(sid); } catch {}
+        try { await app?.syncMessagesForConversation?.({ scenarioId: sid, conversationId: cid, limit: 60 }); } catch {}
+      } catch {}
+
+      try { await markConversationRead(cid); } catch {}
+
+      try {
+        router.push({
+          pathname: "/(scenario)/[scenarioId]/(tabs)/messages/[conversationId]",
+          params: { scenarioId: sid, conversationId: cid },
+        } as any);
+      } catch {}
+    })();
   }, [openConversationId, isReady, sid, selectedProfileId, markConversationRead]);
 
-  const messagesMap: Record<string, Message> = useMemo(() => ((db as any)?.messages ?? {}) as any, [db, messageVersion]);
-
-  const inboxLastMessageAtByConversationId: Record<string, string> = useMemo(() => {
-    if (!isReady) return {};
-    if (!sid) return {};
-
-    const best: Record<string, string> = {};
-    for (const m of Object.values(messagesMap)) {
-      if (String((m as any).scenarioId ?? "") !== String(sid)) continue;
-      const cid = String((m as any).conversationId ?? "");
-      if (!cid) continue;
-      const t = String((m as any).createdAt ?? "");
-      if (!t) continue;
-      if (!best[cid] || t > best[cid]) best[cid] = t;
-    }
-    return best;
-  }, [isReady, sid, messagesMap, messageVersion]);
-
-  // Build the conversation list from messagesMap for live updates
+  // Conversation list should not depend on scanning all messages.
+  // Use cached conversations + server-provided preview fields.
   const conversations: Conversation[] = useMemo(() => {
     if (!isReady) return [];
     if (!sid) return [];
     if (!selectedProfileId) return [];
 
-    // Find all unique conversation IDs for this scenario/profile
-    const convMap: Record<string, Conversation> = {};
-    for (const m of Object.values(messagesMap)) {
-      if (String((m as any).scenarioId ?? "") !== String(sid)) continue;
-      const cid = String((m as any).conversationId ?? "");
-      if (!cid) continue;
-      // Only include conversations where the selected profile is a participant
-      const conv = (db as any)?.conversations?.[cid];
-      if (!conv) continue;
-      if (!Array.isArray(conv.participantProfileIds) || !conv.participantProfileIds.includes(selectedProfileId)) continue;
-      convMap[cid] = conv;
-    }
-    // Also include local DB conversations as a fallback so they appear
-    // even when messages are missing/cleared locally. This prevents the
-    // UI from showing an empty inbox until a new message arrives.
     try {
-      const allConvs = (db as any)?.conversations ?? {};
-      for (const [cid, conv] of Object.entries(allConvs)) {
-        if (convMap[cid]) continue; // already included from messages
-        const convObj: any = conv as any;
-        // Ensure it's for the same scenario (try a few common field names)
-        const convSid = String(convObj.scenarioId ?? convObj.scenario_id ?? convObj.scenario ?? "");
-        if (sid && convSid && String(convSid) !== String(sid)) continue;
-        if (!Array.isArray(convObj.participantProfileIds) || !convObj.participantProfileIds.includes(selectedProfileId)) continue;
-        convMap[String(cid)] = conv as Conversation;
-      }
+      return (listConversationsForScenario?.(sid, selectedProfileId) ?? []) as Conversation[];
     } catch {
-      // ignore
+      return [];
     }
-    const items = Object.values(convMap);
-    // Debug: log conversations and their latest message
-    const debugConvs = items.map((c) => {
-      const cid = String((c as any).id ?? "");
-      let latestMsg: Message | null = null;
-      for (const m of Object.values(messagesMap)) {
-        if (String((m as any).conversationId) !== cid) continue;
-        if (String((m as any).scenarioId) !== String(sid)) continue;
-        if (!latestMsg || String((m as any).createdAt ?? "") > String((latestMsg as any).createdAt ?? "")) {
-          latestMsg = m;
-        }
-      }
-      return {
-        conversationId: cid,
-        title: (c as any).title,
-        latestMsgId: latestMsg?.id,
-        latestMsgText: latestMsg?.text,
-        latestMsgCreatedAt: latestMsg?.createdAt,
-      };
-    });
-    
-    return items.slice().sort((a, b) => {
-      const aId = String((a as any).id ?? "");
-      const bId = String((b as any).id ?? "");
-      const aT =
-        inboxLastMessageAtByConversationId[aId] ??
-        String((a as any).lastMessageAt ?? (a as any).updatedAt ?? (a as any).createdAt ?? "");
-      const bT =
-        inboxLastMessageAtByConversationId[bId] ??
-        String((b as any).lastMessageAt ?? (b as any).updatedAt ?? (b as any).createdAt ?? "");
-      const c = String(bT).localeCompare(String(aT));
-      if (c !== 0) return c;
-      return String(bId).localeCompare(String(aId));
-    });
-  }, [isReady, sid, selectedProfileId, db, messagesMap, inboxLastMessageAtByConversationId, messageVersion]);
+  }, [isReady, sid, selectedProfileId, listConversationsForScenario, db, messageVersion]);
 
   const allScenarioProfiles: Profile[] = useMemo(() => {
     if (!isReady) return [];
@@ -536,23 +494,6 @@ useEffect(() => {
   const ownedProfileIds = useMemo(() => {
     return new Set((sendAsCandidates.owned ?? []).map((p) => String((p as any).id ?? "")).filter(Boolean));
   }, [sendAsCandidates.owned]);
-
-  const getLastMessageForConversation = (conversationId: string): Message | null => {
-    const cid = String(conversationId);
-    let best: Message | null = null;
-    for (const m of Object.values(messagesMap)) {
-      if (String((m as any).conversationId) !== cid) continue;
-      if (String((m as any).scenarioId) !== String(sid)) continue;
-      if (!best) {
-        best = m;
-        continue;
-      }
-      const a = String((best as any).createdAt ?? "");
-      const b = String((m as any).createdAt ?? "");
-      if (b > a) best = m;
-    }
-    return best;
-  };
 
   const getConversationTitleAndAvatar = (c: Conversation): { title: string; avatarUrl: string | null } => {
       const customTitle = String((c as any)?.title ?? "").trim();
@@ -803,31 +744,11 @@ useEffect(() => {
             const convId = String((c as any).id);
             const meta = getConversationTitleAndAvatar(c);
 
-            // Always show the latest message text as preview (live)
-
-            // Always compute the latest message for this conversation from messagesMap
-            let preview = "";
-            let latestMsg: Message | null = null;
-            // Debug: print all messages for this conversation, sorted by createdAt
-            if (convId === "422bb9dd-46c6-4d26-b9d1-c7b536ef4378") {
-              // Print sid and scenarioId for each message
-              const allMsgs = Object.values(messagesMap).filter(m => String((m as any).conversationId) === convId);
-              
-              const convMsgs = allMsgs
-                .filter(m => String((m as any).scenarioId) === String(sid))
-                .sort((a, b) => String((a as any).createdAt ?? "").localeCompare(String((b as any).createdAt ?? "")));
-              
+            let preview = String((c as any).lastMessageText ?? "").trim();
+            if (!preview) {
+              const kind = String((c as any).lastMessageKind ?? "").trim();
+              if (kind && kind !== "text") preview = kind === "image" ? "photo" : kind;
             }
-            for (const m of Object.values(messagesMap)) {
-              if (String((m as any).conversationId) !== convId) continue;
-              if (String((m as any).scenarioId) !== String(sid)) continue;
-              if (!latestMsg || String((m as any).createdAt ?? "") > String((latestMsg as any).createdAt ?? "")) {
-                latestMsg = m;
-              }
-            }
-            // Debug: log preview computation for each conversation
-            
-            if (latestMsg && latestMsg.text) preview = String(latestMsg.text);
 
             const parts = Array.isArray((c as any).participantProfileIds)
               ? (c as any).participantProfileIds.map(String).filter(Boolean)
@@ -838,6 +759,10 @@ useEffect(() => {
             const onDelete = async () => {
               if (!canManageChatsAsSelected) return;
               if (!sid || !selectedProfileId) return;
+
+              const lockKey = `${sid}:${convId}:${String(selectedProfileId)}:${canHardDelete ? "hard" : "soft"}`;
+              if (deleteConversationLockRef.current[lockKey]) return;
+              deleteConversationLockRef.current[lockKey] = true;
 
               try {
                 if (canHardDelete) {
@@ -856,8 +781,10 @@ useEffect(() => {
                   conversationId: convId,
                   participantProfileIds: nextParts,
                 });
-              } catch {
-                // ignore
+              } catch (e: any) {
+                Alert.alert("Could not update chat", formatErrorMessage(e, "Please try again."));
+              } finally {
+                deleteConversationLockRef.current[lockKey] = false;
               }
             };
 

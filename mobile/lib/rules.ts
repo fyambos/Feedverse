@@ -1,7 +1,8 @@
 import type { Profile } from "@/data/db/schema";
 
+export const MAX_TOTAL_PLAYERS_PER_SCENARIO = 12;
 export const MAX_OWNED_PROFILES_PER_USER = 15;
-export const MAX_TOTAL_PROFILES_PER_SCENARIO = 150;
+export const MAX_TOTAL_PROFILES_PER_SCENARIO = 180;
 
 export function countOwnedProfilesForUser(profiles: Profile[], userId: string | null | undefined) {
   if (!userId) return 0;

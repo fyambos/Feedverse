@@ -14,7 +14,7 @@ import type {
   Conversation,
   Message,
 } from "@/data/db/schema";
-import { readDb, updateDb, writeDb } from "@/data/db/storage";
+import { readDb, updateDb, writeDb, subscribeDbChanges } from "@/data/db/storage";
 import { seedDbIfNeeded } from "@/data/db/seed";
 import { buildGlobalTagFromKey } from "@/lib/tags";
 import { pickScenarioExportJson } from "@/lib/importExport/importFromFile";
@@ -24,6 +24,23 @@ import { useRouter } from "expo-router";
 import { apiFetch } from "@/lib/apiClient";
 import { buildScenarioExportBundleV1 } from "@/lib/importExport/exportScenarioBundle";
 import { saveAndShareScenarioExport } from "@/lib/importExport/exportScenario";
+
+// Non-reactive tracker for which conversation is currently being viewed.
+// Using a module-level map avoids React state update loops and stays
+// consistent across iOS/Android timings.
+const activeConversationByScenario: Record<string, string | null> = {};
+
+export function setActiveConversation(scenarioId: string, conversationId: string | null) {
+  const sid = String(scenarioId ?? "").trim();
+  if (!sid) return;
+  activeConversationByScenario[sid] = conversationId == null ? null : String(conversationId).trim();
+}
+
+export function getActiveConversation(scenarioId: string): string | null {
+  const sid = String(scenarioId ?? "").trim();
+  if (!sid) return null;
+  return activeConversationByScenario[sid] ?? null;
+}
 
 type AppDataState = {
   isReady: boolean;
@@ -108,6 +125,7 @@ type AppDataApi = {
   // scenarios
   getScenarioById: (id: string) => Scenario | null;
   listScenarios: () => Scenario[];
+  syncScenarios: (opts?: { force?: boolean }) => Promise<void>;
   upsertScenario: (s: Scenario) => Promise<void>;
   joinScenarioByInviteCode: (
     inviteCode: string,
@@ -276,6 +294,8 @@ type AppDataApi = {
     senderProfileId: string;
     text: string;
     imageUris?: string[];
+    kind?: string;
+    clientMessageId?: string;
   }) => Promise<{ ok: true; messageId: string } | { ok: false; error: string }>;
 
   updateMessage: (args: {
@@ -547,6 +567,22 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     })();
   }, []);
 
+  // Keep AppDataProvider state in sync when other modules call `updateDb`.
+  React.useEffect(() => {
+    const unsub = subscribeDbChanges((db) => {
+      try {
+        setState((prev) => ({ isReady: true, db }));
+      } catch {}
+    });
+
+    // Important: React cleanup functions must return void (not a boolean).
+    return () => {
+      try {
+        unsub();
+      } catch {}
+    };
+  }, []);
+
   const db = state.db;
 
   const auth = useAuth();
@@ -602,8 +638,36 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
               const data = response?.notification?.request?.content?.data ?? response?.notification?.data ?? {};
               const sid = String(data?.scenarioId ?? data?.scenario_id ?? "");
               const conv = String(data?.conversationId ?? data?.conversation_id ?? "");
+              const targetProfileId = String(data?.profileId ?? data?.profile_id ?? "").trim();
               if (sid && conv) {
-                try { router.push({ pathname: "/(scenario)/[scenarioId]/(tabs)/messages/[conversationId]", params: { scenarioId: sid, conversationId: conv } } as any); } catch {}
+                // If notification is for a specific owned profile, switch selection first.
+                if (targetProfileId) {
+                  try {
+                    void updateDb((prev) => ({
+                      ...(prev as any),
+                      selectedProfileByScenario: {
+                        ...((prev as any).selectedProfileByScenario ?? {}),
+                        [sid]: targetProfileId,
+                      },
+                    })).catch(() => {});
+                  } catch {}
+                }
+                // Navigate via the inbox screen so it can sync state before opening the thread.
+                // Jumping directly to the thread can land on an infinite loading state if the
+                // conversation/messages haven't been synced yet.
+                try {
+                  // Use replace (not push) so the app's active tab navigator
+                  // becomes the notification's scenario. Avoid dismissAll(): it
+                  // can dispatch POP_TO_TOP when no stack is present.
+                  setTimeout(() => {
+                    try {
+                      router.replace({
+                        pathname: "/(scenario)/[scenarioId]/(tabs)/messages",
+                        params: { scenarioId: sid, openConversationId: conv },
+                      } as any);
+                    } catch {}
+                  }, 0);
+                } catch {}
               }
             } catch {}
           });
@@ -816,9 +880,10 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     });
   }, [state.isReady, state.db, auth.isReady, auth.token, isBackendMode, isUuidLike]);
 
-  const scenariosSyncRef = React.useRef<{ token: string | null; inFlight: boolean }>({
+  const scenariosSyncRef = React.useRef<{ token: string | null; inFlight: boolean; lastSyncAt: number }>({
     token: null,
     inFlight: false,
+    lastSyncAt: 0,
   });
 
   const profilesSyncRef = React.useRef<{
@@ -834,9 +899,11 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
   const postsSyncRef = React.useRef<{
     inFlightByScenario: Record<string, boolean>;
     lastSyncAtByScenario: Record<string, number>;
+    backfillCursorByScenario: Record<string, string | null>;
   }>({
     inFlightByScenario: {},
     lastSyncAtByScenario: {},
+    backfillCursorByScenario: {},
   });
 
   const conversationsSyncRef = React.useRef<{
@@ -858,112 +925,121 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     lastSyncAtByConversation: {},
   });
 
+  const syncScenariosFromBackend = React.useCallback(
+    async (opts?: { force?: boolean }) => {
+      if (!state.isReady || !state.db) return;
+      if (!auth.isReady) return;
+
+      const token = String(auth.token ?? "").trim();
+      const baseUrl = String(process.env.EXPO_PUBLIC_API_BASE_URL ?? "").trim();
+      if (!token || !baseUrl) return;
+
+      const force = Boolean(opts?.force);
+      const nowMs = Date.now();
+
+      if (scenariosSyncRef.current.inFlight) return;
+      if (!force && scenariosSyncRef.current.token === token) return; // already synced for this session token
+
+      // When forced, still throttle so we don't spam the backend.
+      if (force && nowMs - (scenariosSyncRef.current.lastSyncAt || 0) < 15_000) return;
+
+      scenariosSyncRef.current.inFlight = true;
+      try {
+        const [res, tagsRes] = await Promise.all([
+          apiFetch({ path: "/scenarios", token }),
+          apiFetch({ path: "/global-tags", token }),
+        ]);
+        if (!res.ok || !Array.isArray(res.json)) return;
+
+        const rows = res.json as any[];
+        const globalTagRows = tagsRes.ok && Array.isArray(tagsRes.json) ? (tagsRes.json as any[]) : [];
+        const nowIso = new Date().toISOString();
+
+        const nextDb = await updateDb((prev) => {
+          const nextScenarios = { ...(prev.scenarios ?? {}) } as any;
+          const nextTags = { ...((prev as any).tags ?? {}) } as Record<string, GlobalTag>;
+
+          for (const t of globalTagRows) {
+            const key = String(t?.key ?? "").trim().toLowerCase();
+            if (!key) continue;
+            nextTags[key] = {
+              key,
+              name: String(t?.name ?? key),
+              color: String(t?.color ?? "#000"),
+              createdAt: t?.createdAt
+                ? new Date(t.createdAt).toISOString()
+                : t?.created_at
+                  ? new Date(t.created_at).toISOString()
+                  : (nextTags[key]?.createdAt ?? nowIso),
+              updatedAt: t?.updatedAt
+                ? new Date(t.updatedAt).toISOString()
+                : t?.updated_at
+                  ? new Date(t.updated_at).toISOString()
+                  : nextTags[key]?.updatedAt,
+            };
+          }
+
+          for (const raw of rows) {
+            const id = String(raw?.id ?? "").trim();
+            if (!id) continue;
+
+            const existing = (prev.scenarios as any)?.[id];
+
+            const playerIdsRaw = raw?.player_ids ?? raw?.playerIds;
+            const playerIds = Array.isArray(playerIdsRaw) ? playerIdsRaw.map(String) : [];
+
+            const gmUserIdsRaw = raw?.gm_user_ids ?? raw?.gmUserIds;
+            const gmUserIds = Array.isArray(gmUserIdsRaw) ? gmUserIdsRaw.map(String).filter(Boolean) : undefined;
+
+            const settings = raw?.settings != null ? raw.settings : undefined;
+
+            nextScenarios[id] = {
+              ...(existing ?? {}),
+              id,
+              name: String(raw?.name ?? existing?.name ?? ""),
+              cover: String(raw?.cover ?? raw?.cover_url ?? existing?.cover ?? ""),
+              inviteCode: String(raw?.invite_code ?? raw?.inviteCode ?? existing?.inviteCode ?? ""),
+              ownerUserId: String(raw?.owner_user_id ?? raw?.ownerUserId ?? existing?.ownerUserId ?? ""),
+              description: raw?.description != null ? String(raw.description) : existing?.description,
+              mode: raw?.mode === "campaign" || raw?.mode === "story" ? raw.mode : (existing?.mode ?? "story"),
+              playerIds: playerIds.length > 0 ? playerIds : (existing?.playerIds ?? []),
+              tags: Array.isArray(raw?.tags) ? raw.tags : (existing?.tags ?? []),
+              gmUserIds: gmUserIds ?? (existing as any)?.gmUserIds,
+              settings: settings ?? (existing as any)?.settings,
+              createdAt: raw?.created_at
+                ? new Date(raw.created_at).toISOString()
+                : raw?.createdAt
+                  ? new Date(raw.createdAt).toISOString()
+                  : (existing?.createdAt ?? nowIso),
+              updatedAt: raw?.updated_at
+                ? new Date(raw.updated_at).toISOString()
+                : raw?.updatedAt
+                  ? new Date(raw.updatedAt).toISOString()
+                  : nowIso,
+            } as any;
+          }
+
+          return {
+            ...prev,
+            scenarios: nextScenarios,
+            tags: nextTags,
+          };
+        });
+
+        setState({ isReady: true, db: nextDb as any });
+        scenariosSyncRef.current.token = token;
+        scenariosSyncRef.current.lastSyncAt = nowMs;
+      } finally {
+        scenariosSyncRef.current.inFlight = false;
+      }
+    },
+    [state.isReady, state.db, auth.isReady, auth.token]
+  );
+
   // If backend auth is enabled, fetch scenarios from server and merge into local DB.
   React.useEffect(() => {
-    if (!state.isReady || !state.db) return;
-    if (!auth.isReady) return;
-
-    const token = String(auth.token ?? "").trim();
-    const baseUrl = String(process.env.EXPO_PUBLIC_API_BASE_URL ?? "").trim();
-    if (!token || !baseUrl) return;
-
-    if (scenariosSyncRef.current.inFlight) return;
-    if (scenariosSyncRef.current.token === token) return; // already synced for this session token
-
-    scenariosSyncRef.current.inFlight = true;
-
-    (async () => {
-      const [res, tagsRes] = await Promise.all([
-        apiFetch({ path: "/scenarios", token }),
-        apiFetch({ path: "/global-tags", token }),
-      ]);
-      if (!res.ok || !Array.isArray(res.json)) return;
-
-      const rows = res.json as any[];
-      const globalTagRows = tagsRes.ok && Array.isArray(tagsRes.json) ? (tagsRes.json as any[]) : [];
-      const now = new Date().toISOString();
-
-      const nextDb = await updateDb((prev) => {
-        const nextScenarios = { ...(prev.scenarios ?? {}) } as any;
-        const nextTags = { ...((prev as any).tags ?? {}) } as Record<string, GlobalTag>;
-
-        for (const t of globalTagRows) {
-          const key = String(t?.key ?? "").trim().toLowerCase();
-          if (!key) continue;
-          nextTags[key] = {
-            key,
-            name: String(t?.name ?? key),
-            color: String(t?.color ?? "#000"),
-            createdAt: t?.createdAt
-              ? new Date(t.createdAt).toISOString()
-              : t?.created_at
-                ? new Date(t.created_at).toISOString()
-                : (nextTags[key]?.createdAt ?? now),
-            updatedAt: t?.updatedAt
-              ? new Date(t.updatedAt).toISOString()
-              : t?.updated_at
-                ? new Date(t.updated_at).toISOString()
-                : nextTags[key]?.updatedAt,
-          };
-        }
-
-        for (const raw of rows) {
-          const id = String(raw?.id ?? "").trim();
-          if (!id) continue;
-
-          const existing = (prev.scenarios as any)?.[id];
-
-          const playerIdsRaw = raw?.player_ids ?? raw?.playerIds;
-          const playerIds = Array.isArray(playerIdsRaw) ? playerIdsRaw.map(String) : [];
-
-          const gmUserIdsRaw = raw?.gm_user_ids ?? raw?.gmUserIds;
-          const gmUserIds = Array.isArray(gmUserIdsRaw) ? gmUserIdsRaw.map(String).filter(Boolean) : undefined;
-
-          const settings = raw?.settings != null ? raw.settings : undefined;
-
-          nextScenarios[id] = {
-            ...(existing ?? {}),
-            id,
-            name: String(raw?.name ?? existing?.name ?? ""),
-            cover: String(raw?.cover ?? raw?.cover_url ?? existing?.cover ?? ""),
-            inviteCode: String(raw?.invite_code ?? raw?.inviteCode ?? existing?.inviteCode ?? ""),
-            ownerUserId: String(raw?.owner_user_id ?? raw?.ownerUserId ?? existing?.ownerUserId ?? ""),
-            description: raw?.description != null ? String(raw.description) : existing?.description,
-            mode: (raw?.mode === "campaign" || raw?.mode === "story") ? raw.mode : (existing?.mode ?? "story"),
-            playerIds: playerIds.length > 0 ? playerIds : (existing?.playerIds ?? []),
-            tags: Array.isArray(raw?.tags) ? raw.tags : (existing?.tags ?? []),
-            gmUserIds: gmUserIds ?? (existing as any)?.gmUserIds,
-            settings: settings ?? (existing as any)?.settings,
-            createdAt: raw?.created_at
-              ? new Date(raw.created_at).toISOString()
-              : raw?.createdAt
-                ? new Date(raw.createdAt).toISOString()
-                : (existing?.createdAt ?? now),
-            updatedAt: raw?.updated_at
-              ? new Date(raw.updated_at).toISOString()
-              : raw?.updatedAt
-                ? new Date(raw.updatedAt).toISOString()
-                : now,
-          } as any;
-        }
-
-        return {
-          ...prev,
-          scenarios: nextScenarios,
-          tags: nextTags,
-        };
-      });
-
-      setState({ isReady: true, db: nextDb as any });
-      scenariosSyncRef.current.token = token;
-    })()
-      .catch(() => {
-        // ignore
-      })
-      .finally(() => {
-        scenariosSyncRef.current.inFlight = false;
-      });
-  }, [state.isReady, state.db, auth.isReady, auth.token]);
+    void syncScenariosFromBackend({ force: false });
+  }, [syncScenariosFromBackend]);
 
   // Cleanup on unmount.
   React.useEffect(() => {
@@ -1276,6 +1352,24 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                   : raw?.last_message_at != null
                     ? (raw.last_message_at ? new Date(raw.last_message_at).toISOString() : undefined)
                     : (existing as any)?.lastMessageAt,
+              lastMessageText:
+                raw?.lastMessageText != null
+                  ? String(raw.lastMessageText)
+                  : raw?.last_message_text != null
+                    ? String(raw.last_message_text)
+                    : (existing as any)?.lastMessageText,
+              lastMessageKind:
+                raw?.lastMessageKind != null
+                  ? String(raw.lastMessageKind)
+                  : raw?.last_message_kind != null
+                    ? String(raw.last_message_kind)
+                    : (existing as any)?.lastMessageKind,
+              lastMessageSenderProfileId:
+                raw?.lastMessageSenderProfileId != null
+                  ? String(raw.lastMessageSenderProfileId)
+                  : raw?.last_message_sender_profile_id != null
+                    ? String(raw.last_message_sender_profile_id)
+                    : (existing as any)?.lastMessageSenderProfileId,
             } as any;
           }
 
@@ -1321,7 +1415,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                 ws.onopen = () => {
                   // no-op for now
                 };
-                ws.onmessage = (ev: any) => {
+                ws.onmessage = async (ev: any) => {
                   try {
                     const d = typeof ev.data === "string" ? JSON.parse(ev.data) : ev.data;
                     const evName = String(d?.event ?? "");
@@ -1354,6 +1448,90 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                         const cid = String(messages[mid].conversationId ?? "");
                         const conv = conversations[cid];
                         if (conv && String((conv as any).scenarioId ?? "") === sid) {
+                          // If we have an optimistic local "client_*" message for this send,
+                          // remove it now to avoid a brief duplicate bubble (optimistic + server echo).
+                          try {
+                            const serverSender = String(messages[mid].senderProfileId ?? "");
+                            const serverText = String(messages[mid].text ?? "").trim();
+                            const serverHasImages = (messages[mid] as any)?.imageUrls?.length > 0;
+
+                            const serverMs = Date.parse(String(createdAt));
+                            const cutoffMs = Number.isFinite(serverMs) ? serverMs - 2 * 60_000 : Date.now() - 2 * 60_000;
+
+                            const convIdsRaw = (conv as any).messageIds;
+                            const convIds = Array.isArray(convIdsRaw) ? convIdsRaw.map(String).filter(Boolean) : [];
+
+                            let optimisticId: string | null = null;
+                            // Search recent ids from the end first (newest).
+                            for (let i = convIds.length - 1; i >= 0; i--) {
+                              const id = convIds[i];
+                              if (!id || !id.startsWith("client_")) continue;
+                              const om = messages[id] as any;
+                              if (!om) continue;
+                              if (String(om.scenarioId ?? "") !== sid) continue;
+                              if (String(om.conversationId ?? "") !== cid) continue;
+                              if (String(om.senderProfileId ?? "") !== serverSender) continue;
+                              if (String(om.clientStatus ?? "") !== "sending") continue;
+
+                              const omCreatedAt = String(om.createdAt ?? "");
+                              const omMs = Date.parse(omCreatedAt);
+                              if (Number.isFinite(omMs) && omMs < cutoffMs) continue;
+
+                              const omText = String(om.text ?? "").trim();
+                              const omHasImages = Array.isArray(om.imageUrls) ? om.imageUrls.length > 0 : false;
+
+                              const textMatch = serverText && omText ? serverText === omText : !serverText && !omText;
+                              const imageMatch = serverHasImages && omHasImages;
+
+                              // Prefer exact text matches; otherwise allow image-only match.
+                              if (textMatch || imageMatch) {
+                                optimisticId = id;
+                                break;
+                              }
+                            }
+
+                            // Fallback if conversation has no messageIds index yet.
+                            if (!optimisticId) {
+                              for (const [id, omAny] of Object.entries(messages)) {
+                                if (!id || !id.startsWith("client_")) continue;
+                                const om = omAny as any;
+                                if (String(om.scenarioId ?? "") !== sid) continue;
+                                if (String(om.conversationId ?? "") !== cid) continue;
+                                if (String(om.senderProfileId ?? "") !== serverSender) continue;
+                                if (String(om.clientStatus ?? "") !== "sending") continue;
+                                const omText = String(om.text ?? "").trim();
+                                const omHasImages = Array.isArray(om.imageUrls) ? om.imageUrls.length > 0 : false;
+                                const textMatch = serverText && omText ? serverText === omText : !serverText && !omText;
+                                const imageMatch = serverHasImages && omHasImages;
+                                if (textMatch || imageMatch) {
+                                  optimisticId = id;
+                                  break;
+                                }
+                              }
+                            }
+
+                            if (optimisticId) {
+                              try {
+                                delete (messages as any)[optimisticId];
+                              } catch {}
+                              try {
+                                if (Array.isArray((conv as any).messageIds)) {
+                                  (conv as any).messageIds = (conv as any).messageIds
+                                    .map(String)
+                                    .filter(Boolean)
+                                    .filter((x: string) => x !== optimisticId);
+                                }
+                              } catch {}
+                            }
+                          } catch {
+                            // ignore dedupe failures
+                          }
+
+                          const existingIds = Array.isArray((conv as any).messageIds)
+                            ? (conv as any).messageIds.map(String).filter(Boolean)
+                            : [];
+                          if (!existingIds.includes(mid)) existingIds.push(mid);
+
                           // Update preview fields for conversation list
                           conversations[cid] = {
                             ...conv,
@@ -1361,6 +1539,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                             updatedAt: new Date().toISOString(),
                             lastMessageText: String(m.text ?? ""),
                             lastMessageSenderProfileId: String(m.senderProfileId ?? m.sender_profile_id ?? ""),
+                            messageIds: existingIds,
                           } as any;
                         }
 
@@ -1375,11 +1554,36 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                         try {
                           const mid2 = String(m.id ?? "");
                           const convId = String(m.conversationId ?? m.conversation_id ?? "");
-                          const dbNow = state?.db ?? null;
-                          const conv = dbNow?.conversations?.[convId] ?? null;
-                          const viewingConvId = dbNow?.selectedConversationByScenario?.[sid] ?? null;
-                          const profiles = dbNow?.profiles ?? {};
-                          const selectedProfileId = dbNow?.selectedProfileByScenario?.[sid] ?? null;
+
+                          // IMPORTANT: use a fresh DB snapshot here (not `state.db`), because
+                          // `state` can be stale across platforms/timings and cause iOS/Android
+                          // to disagree about whether a conversation is currently being viewed.
+                          const dbNow = await readDb();
+
+                          const conv = (dbNow as any)?.conversations?.[convId] ?? null;
+                          const viewingConvId = getActiveConversation(sid);
+                          const profiles = (dbNow as any)?.profiles ?? {};
+                          const selectedProfileId = (dbNow as any)?.selectedProfileByScenario?.[sid] ?? null;
+
+                          // If the user is currently viewing this conversation, mark it read
+                          // immediately (best-effort). Do not mutate unread counters here; the
+                          // inbox screen uses the server unread endpoint.
+                          try {
+                            if (viewingConvId && String(viewingConvId) === String(convId) && selectedProfileId) {
+                              const tokenLocal = String(auth.token ?? "").trim();
+                              if (tokenLocal) {
+                                void apiFetch({
+                                  path: `/conversations/${encodeURIComponent(convId)}/read`,
+                                  token: tokenLocal,
+                                  init: {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({ profileId: String(selectedProfileId) }),
+                                  },
+                                }).catch(() => {});
+                              }
+                            }
+                          } catch {}
 
                           // don't notify for messages missing conversation or when message is from selected profile
                           if (convId && String(m.senderProfileId ?? "") !== String(selectedProfileId ?? "")) {
@@ -1397,23 +1601,21 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                                 ? (conv as any).participantProfileIds.map(String).filter(Boolean)
                                 : [];
 
-                              // notify if any participant is owned by current user
-                              const ownedByMe = participantIds.some((pid) => String((profiles?.[pid] as any)?.ownerUserId ?? "") === String(currentUserId ?? ""));
+                              // Only notify for conversations that include at least one profile owned by the current user.
+                              const ownedParticipantIds = participantIds.filter(
+                                (pid) => String((profiles?.[pid] as any)?.ownerUserId ?? "") === String(currentUserId ?? "")
+                              );
 
-                              let shouldNotify = false;
-                              if (ownedByMe) {
-                                shouldNotify = true;
-                              } else {
-                                // if not owned, only notify when the selected profile is one of the participants
-                                if (selectedProfileId && participantIds.includes(String(selectedProfileId))) {
-                                  shouldNotify = true;
-                                }
-                              }
-
-                              // If the user is currently viewing this conversation, skip notification
+                              // If the user is currently viewing this conversation, skip notification.
                               if (viewingConvId && String(viewingConvId) === String(convId)) {
                                 // skip notification when conversation is open
-                              } else if (shouldNotify) {
+                              } else if (ownedParticipantIds.length > 0) {
+                                // Pick the best target profile for navigation (prefer selected profile if it's owned and a participant).
+                                const preferred =
+                                  selectedProfileId && ownedParticipantIds.includes(String(selectedProfileId))
+                                    ? String(selectedProfileId)
+                                    : String(ownedParticipantIds[0]);
+
                                 const title = senderProfile?.displayName ? `DM from ${senderProfile.displayName}` : "New message";
                                 const body = String(m.text ?? "");
                                 const notif = {
@@ -1422,7 +1624,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                                   body: body ? (body.length > 140 ? body.slice(0, 137) + "…" : body) : undefined,
                                   scenarioId: sid,
                                   conversationId: convId,
-                                  data: { conversationId: convId, scenarioId: sid },
+                                  data: { conversationId: convId, scenarioId: sid, profileId: preferred, messageId: mid2 },
                                 } as AppNotification;
                                 void presentNotification(notif);
                               }
@@ -1431,6 +1633,56 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                         } catch (e) {
                           // ignore notification errors
                         }
+                    } else if (evName === "mention.created" && payload) {
+                      try {
+                        const sid2 = String(payload?.scenarioId ?? sid);
+                        const postId = String(payload?.postId ?? "").trim();
+                        const authorProfileId = String(payload?.authorProfileId ?? "").trim();
+                        const mentionedProfileIds: string[] = Array.isArray(payload?.mentionedProfileIds)
+                          ? payload.mentionedProfileIds.map(String).filter(Boolean)
+                          : [];
+
+                        if (!sid2 || !postId || mentionedProfileIds.length === 0) return;
+
+                        const dbNow = await readDb();
+                        const profiles = (dbNow as any)?.profiles ?? {};
+                        const selectedProfileId = String((dbNow as any)?.selectedProfileByScenario?.[sid2] ?? "");
+
+                        // Skip if the mention comes from a profile owned by the current user.
+                        const authorOwner = String((profiles?.[authorProfileId] as any)?.ownerUserId ?? "");
+                        if (authorOwner && authorOwner === String(currentUserId ?? "")) return;
+
+                        const ownedMentioned = mentionedProfileIds.filter(
+                          (pid) => String((profiles?.[pid] as any)?.ownerUserId ?? "") === String(currentUserId ?? ""),
+                        );
+                        if (ownedMentioned.length === 0) return;
+
+                        const targetProfileId =
+                          selectedProfileId && ownedMentioned.includes(selectedProfileId)
+                            ? selectedProfileId
+                            : String(ownedMentioned[0]);
+
+                        const title = String(payload?.title ?? "You were mentioned").trim() || "You were mentioned";
+                        const body = String(payload?.body ?? "").trim();
+
+                        const notif = {
+                          id: uuidv4(),
+                          title,
+                          body: body ? (body.length > 140 ? body.slice(0, 137) + "…" : body) : undefined,
+                          scenarioId: sid2,
+                          data: {
+                            scenarioId: sid2,
+                            postId,
+                            profileId: targetProfileId,
+                            kind: "mention",
+                            authorProfileId,
+                          },
+                        } as AppNotification;
+
+                        void presentNotification(notif);
+                      } catch {
+                        // ignore mention notification errors
+                      }
                     } else if (evName === "typing" && payload) {
                       // Notify typing subscribers
                       for (const h of typingEventHandlers) {
@@ -1515,6 +1767,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
           }
 
           let lastMessageAt: string | undefined = undefined;
+          const order: Array<{ id: string; createdAt: string }> = [];
 
           for (const raw of rows) {
             const id = String(raw?.id ?? "").trim();
@@ -1552,11 +1805,18 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
             } as any;
 
             if (!lastMessageAt || createdAt > lastMessageAt) lastMessageAt = createdAt;
+            order.push({ id, createdAt });
           }
+
+          order.sort((a, b) => {
+            if (a.createdAt !== b.createdAt) return a.createdAt.localeCompare(b.createdAt);
+            return a.id.localeCompare(b.id);
+          });
+          const messageIds = order.map((x) => x.id);
 
           const conv = conversations[cid];
           if (conv && String((conv as any).scenarioId ?? "") === sid) {
-            conversations[cid] = { ...conv, lastMessageAt, updatedAt: now } as any;
+            conversations[cid] = { ...conv, lastMessageAt, updatedAt: now, messageIds } as any;
           }
 
           // Debug: log after new messages are added to messages map
@@ -1597,30 +1857,63 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       postsSyncRef.current.lastSyncAtByScenario[sid] = nowMs;
 
       (async () => {
-        const [postsRes, repostsRes, likesRes] = await Promise.all([
-          apiFetch({
-            path: `/scenarios/${encodeURIComponent(sid)}/posts`,
-            token,
-          }),
-          apiFetch({
-            path: `/scenarios/${encodeURIComponent(sid)}/reposts`,
-            token,
-          }),
-          apiFetch({
-            path: `/scenarios/${encodeURIComponent(sid)}/likes`,
-            token,
-          }),
+        const [repostsRes, likesRes] = await Promise.all([
+          apiFetch({ path: `/scenarios/${encodeURIComponent(sid)}/reposts`, token }),
+          apiFetch({ path: `/scenarios/${encodeURIComponent(sid)}/likes`, token }),
         ]);
 
-        if (!postsRes.ok || !Array.isArray(postsRes.json)) return;
-
-        const rows = postsRes.json as any[];
         const repostRows = repostsRes.ok && Array.isArray(repostsRes.json) ? (repostsRes.json as any[]) : [];
         const likeRows = likesRes.ok && Array.isArray(likesRes.json) ? (likesRes.json as any[]) : [];
 
+        const pageLimit = 200;
+        const allRows: any[] = [];
+
+        // 1) Always pull the most-recently-updated page (catches new posts + edits + count changes).
+        const topRes = await apiFetch({
+          path: `/scenarios/${encodeURIComponent(sid)}/posts?limit=${encodeURIComponent(String(pageLimit))}`,
+          token,
+        });
+
+        if (topRes.ok) {
+          const topItems = Array.isArray((topRes.json as any)?.items)
+            ? ((topRes.json as any).items as any[])
+            : Array.isArray(topRes.json)
+              ? (topRes.json as any[])
+              : [];
+          allRows.push(...topItems);
+
+          // Initialize backfill cursor if we haven't started yet.
+          if (!(sid in postsSyncRef.current.backfillCursorByScenario)) {
+            const nextCursor = typeof (topRes.json as any)?.nextCursor === "string" ? String((topRes.json as any).nextCursor) : null;
+            postsSyncRef.current.backfillCursorByScenario[sid] = nextCursor;
+          }
+        }
+
+        // 2) Backfill one additional page of older posts per tick (until cursor becomes null).
+        const backCursor = postsSyncRef.current.backfillCursorByScenario[sid];
+        if (typeof backCursor === "string" && backCursor.trim()) {
+          const backRes = await apiFetch({
+            path: `/scenarios/${encodeURIComponent(sid)}/posts?limit=${encodeURIComponent(String(pageLimit))}&cursor=${encodeURIComponent(backCursor)}`,
+            token,
+          });
+          if (backRes.ok) {
+            const backItems = Array.isArray((backRes.json as any)?.items)
+              ? ((backRes.json as any).items as any[])
+              : Array.isArray(backRes.json)
+                ? (backRes.json as any[])
+                : [];
+            allRows.push(...backItems);
+
+            const nextCursor = typeof (backRes.json as any)?.nextCursor === "string" ? String((backRes.json as any).nextCursor) : null;
+            postsSyncRef.current.backfillCursorByScenario[sid] = nextCursor;
+          }
+        }
+
+        if (allRows.length === 0 && repostRows.length === 0 && likeRows.length === 0) return;
+
         // mark server-seen posts for filtering (server post ids may be non-uuid)
         const seen = (serverSeenPostsRef.current.byScenario[sid] ??= {});
-        for (const raw of rows) {
+        for (const raw of allRows) {
           const id = String(raw?.id ?? "").trim();
           if (id) seen[id] = true;
         }
@@ -1632,7 +1925,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
           const reposts = { ...((prev as any).reposts ?? {}) } as any;
           const likes = { ...((prev as any).likes ?? {}) } as Record<string, Like>;
 
-          for (const raw of rows) {
+          for (const raw of allRows) {
             const id = String(raw?.id ?? "").trim();
             if (!id) continue;
 
@@ -2673,13 +2966,15 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         const token = String(auth.token ?? "").trim();
         const baseUrl = String(process.env.EXPO_PUBLIC_API_BASE_URL ?? "").trim();
         if (token && baseUrl) {
-          await apiFetch({
+          const res = await apiFetch({
             path: `/posts/${encodeURIComponent(id)}`,
             token,
             init: { method: "DELETE" },
-          }).catch(() => {
-            // ignore (offline / server error)
           });
+
+          if (!res.ok) {
+            throw new Error((res.json as any)?.error ?? res.text ?? `Delete failed (HTTP ${res.status})`);
+          }
         }
 
         const next = await updateDb((prev) => {
@@ -3174,6 +3469,9 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       // --- scenarios
       getScenarioById: (id) => (db ? db.scenarios[String(id)] ?? null : null),
       listScenarios: () => (db ? Object.values(db.scenarios) : []),
+      syncScenarios: async (opts) => {
+        await syncScenariosFromBackend({ force: Boolean(opts?.force) });
+      },
 
       upsertScenario: async (s) => {
         const upsertScenarioLocal = async (localScenario: Scenario) => {
@@ -5004,6 +5302,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         text,
         imageUris,
         kind,
+        clientMessageId,
       }: {
         scenarioId: string;
         conversationId: string;
@@ -5011,6 +5310,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         text: string;
         imageUris?: string[];
         kind?: string;
+        clientMessageId?: string;
       }) => {
         const sid = String(scenarioId ?? "").trim();
         const cid = String(conversationId ?? "").trim();
@@ -5026,6 +5326,62 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
           const baseUrl = String(process.env.EXPO_PUBLIC_API_BASE_URL ?? "").trim();
           if (!token || !baseUrl) return { ok: false, error: "Missing backend auth" };
           if (!isUuidLike(sid) || !isUuidLike(cid) || !isUuidLike(from)) return { ok: false, error: "Invalid ids for backend mode" };
+
+          // Optimistic local insert so the UI updates instantly.
+          // If caller provided a clientMessageId (e.g. retry), reuse it.
+          const requestedClientId = String(clientMessageId ?? "").trim();
+          const optimisticId = requestedClientId ? requestedClientId : `client_${uuidv4()}`;
+          const optimisticCreatedAt = new Date().toISOString();
+          const optimisticTextForPreview = body ? body : images.length > 0 ? "photo" : "";
+
+          try {
+            const optimisticDb = await updateDb((prev) => {
+              const conversations = { ...((prev as any).conversations ?? {}) } as Record<string, Conversation>;
+              const messages = { ...((prev as any).messages ?? {}) } as Record<string, Message>;
+
+              const existing = messages[optimisticId];
+              const base = existing ? { ...(existing as any) } : {};
+              messages[optimisticId] = {
+                ...base,
+                id: optimisticId,
+                scenarioId: sid,
+                conversationId: cid,
+                senderProfileId: from,
+                text: body,
+                kind: String(kindVal ?? (base as any)?.kind ?? "text"),
+                imageUrls: images,
+                createdAt: String((base as any)?.createdAt ?? optimisticCreatedAt),
+                updatedAt: optimisticCreatedAt,
+                editedAt: undefined,
+                clientStatus: "sending",
+                clientError: undefined,
+              } as any;
+
+              const conv = conversations[cid];
+              if (conv && String((conv as any).scenarioId ?? "") === sid) {
+                const existingIds = Array.isArray((conv as any).messageIds)
+                  ? (conv as any).messageIds.map(String).filter(Boolean)
+                  : [];
+                if (!existingIds.includes(optimisticId)) existingIds.push(optimisticId);
+
+                conversations[cid] = {
+                  ...conv,
+                  lastMessageAt: optimisticCreatedAt,
+                  updatedAt: optimisticCreatedAt,
+                  messageIds: existingIds,
+                  lastMessageText: optimisticTextForPreview,
+                  lastMessageKind: String(kindVal ?? "text"),
+                  lastMessageSenderProfileId: from,
+                } as any;
+              }
+
+              return { ...(prev as any), conversations, messages } as any;
+            });
+
+            setState({ isReady: true, db: optimisticDb as any });
+          } catch {
+            // If optimistic insert fails for any reason, continue with the network send.
+          }
 
           const hasLocalImages = images.some((u) => !/^https?:\/\//i.test(u));
 
@@ -5065,7 +5421,20 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                 },
               });
 
-          if (!res.ok) return { ok: false, error: (res.json as any)?.error ?? res.text ?? "Send failed" };
+          if (!res.ok) {
+            const err = (res.json as any)?.error ?? res.text ?? "Send failed";
+            try {
+              const failedDb = await updateDb((prev) => {
+                const messages = { ...((prev as any).messages ?? {}) } as Record<string, Message>;
+                const existing = messages[optimisticId];
+                if (!existing) return prev as any;
+                messages[optimisticId] = { ...(existing as any), clientStatus: "failed", clientError: String(err), updatedAt: new Date().toISOString() } as any;
+                return { ...(prev as any), messages } as any;
+              });
+              setState({ isReady: true, db: failedDb as any });
+            } catch {}
+            return { ok: false, error: err };
+          }
           const m = (res.json as any)?.message;
           const mid = String(m?.id ?? "").trim();
           if (!mid) return { ok: false, error: "Send failed" };
@@ -5078,6 +5447,11 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
           const nextDb = await updateDb((prev) => {
             const conversations = { ...((prev as any).conversations ?? {}) } as Record<string, Conversation>;
             const messages = { ...((prev as any).messages ?? {}) } as Record<string, Message>;
+
+            // Remove optimistic placeholder (if still present).
+            try {
+              delete (messages as any)[optimisticId];
+            } catch {}
 
             const createdAt = m?.createdAt ? new Date(m.createdAt).toISOString() : new Date().toISOString();
 
@@ -5096,7 +5470,22 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
 
             const conv = conversations[cid];
             if (conv && String((conv as any).scenarioId ?? "") === sid) {
-              conversations[cid] = { ...conv, lastMessageAt: createdAt, updatedAt: new Date().toISOString() } as any;
+              const existingIds = Array.isArray((conv as any).messageIds)
+                ? (conv as any).messageIds.map(String).filter(Boolean)
+                : [];
+
+              const nextIds = existingIds.filter((x: string) => x !== optimisticId);
+              if (!nextIds.includes(mid)) nextIds.push(mid);
+
+              conversations[cid] = {
+                ...conv,
+                lastMessageAt: createdAt,
+                updatedAt: new Date().toISOString(),
+                messageIds: nextIds,
+                lastMessageText: String(m?.text ?? optimisticTextForPreview ?? ""),
+                lastMessageKind: String(m?.kind ?? kindVal ?? "text"),
+                lastMessageSenderProfileId: from,
+              } as any;
             }
 
             return { ...(prev as any), conversations, messages } as any;
@@ -5131,7 +5520,20 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
             editedAt: undefined,
           };
 
-          conversations[cid] = { ...conv, lastMessageAt: now, updatedAt: now };
+          const existingIds = Array.isArray((conv as any).messageIds)
+            ? (conv as any).messageIds.map(String).filter(Boolean)
+            : [];
+          if (!existingIds.includes(messageId)) existingIds.push(messageId);
+
+          conversations[cid] = {
+            ...conv,
+            lastMessageAt: now,
+            updatedAt: now,
+            messageIds: existingIds,
+            lastMessageText: body ? body : images.length > 0 ? "photo" : "",
+            lastMessageKind: String(kindVal ?? "text"),
+            lastMessageSenderProfileId: from,
+          } as any;
 
           return { ...(prev as any), conversations, messages };
         });
@@ -5282,15 +5684,16 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
           const token = String(auth.token ?? "").trim();
           const baseUrl = String(process.env.EXPO_PUBLIC_API_BASE_URL ?? "").trim();
           if (!token || !baseUrl) throw new Error("Missing backend auth");
-          if (!isUuidLike(sid) || !isUuidLike(mid)) throw new Error("Invalid ids for backend mode");
-
-          const res = await apiFetch({
-            path: `/messages/${encodeURIComponent(mid)}`,
-            token,
-            init: { method: "DELETE" },
-          });
-          if (!res.ok) throw new Error((res.json as any)?.error ?? res.text ?? "Delete failed");
-          // fall through to local removal below for immediate UI.
+          // Client-only optimistic ids (e.g. client_*) should be deleted locally only.
+          if (isUuidLike(sid) && isUuidLike(mid)) {
+            const res = await apiFetch({
+              path: `/messages/${encodeURIComponent(mid)}`,
+              token,
+              init: { method: "DELETE" },
+            });
+            if (!res.ok) throw new Error((res.json as any)?.error ?? res.text ?? "Delete failed");
+            // fall through to local removal below for immediate UI.
+          }
         }
 
         const nextDb = await updateDb((prev) => {
@@ -5474,7 +5877,56 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         return { ok: true, conversationId: convId };
       },
     };
-  }, [db, currentUserId, auth.isReady]);
+  }, [db, currentUserId, auth.isReady, syncScenariosFromBackend]);
+
+  // Ensure realtime (WS) connections stay active even when the user is on the
+  // scenario list or other screens. Without this, realtime/notifications can
+  // appear to "turn off" until the Messages tab forces a conversations sync.
+  const realtimeBootstrapRef = React.useRef<{ lastAttemptAtByScenario: Record<string, number> }>({
+    lastAttemptAtByScenario: {},
+  });
+
+  React.useEffect(() => {
+    if (!state.isReady || !state.db) return;
+    if (!auth.isReady) return;
+
+    const token = String(auth.token ?? "").trim();
+    const baseUrl = String(process.env.EXPO_PUBLIC_API_BASE_URL ?? "").trim();
+    if (!token || !baseUrl) return;
+    if (typeof WebSocket === "undefined") return;
+
+    const uid = String(auth.userId ?? "").trim();
+    if (!uid) return;
+
+    const scenariosMap = (state.db as any)?.scenarios ?? {};
+    const scenarios = Object.values(scenariosMap) as any[];
+    const nowMs = Date.now();
+
+    for (const s of scenarios) {
+      const sid = String(s?.id ?? "").trim();
+      if (!sid) continue;
+      if (!isUuidLike(sid)) continue;
+
+      const players = Array.isArray(s?.playerIds) ? s.playerIds.map(String).filter(Boolean) : [];
+      if (players.length > 0 && !players.includes(uid)) continue;
+
+      // If there's already a socket (open/connecting), don't spam sync.
+      const existingWs = wsConnectionsRef.current?.[sid] ?? null;
+      if (existingWs && (existingWs as any).readyState != null) {
+        const rs = Number((existingWs as any).readyState);
+        // 0 CONNECTING, 1 OPEN
+        if (rs === 0 || rs === 1) continue;
+      }
+
+      const lastAt = realtimeBootstrapRef.current.lastAttemptAtByScenario[sid] ?? 0;
+      if (nowMs - lastAt < 15_000) continue;
+      realtimeBootstrapRef.current.lastAttemptAtByScenario[sid] = nowMs;
+
+      try {
+        void api.syncConversationsForScenario(sid).catch(() => {});
+      } catch {}
+    }
+  }, [state.isReady, state.db, auth.isReady, auth.token, auth.userId, api, isUuidLike]);
 
   return <Ctx.Provider value={{ ...state, ...api }}>{children}</Ctx.Provider>;
 }

@@ -18,6 +18,7 @@ import { Avatar } from "@/components/ui/Avatar";
 import { Post as PostCard } from "@/components/post/Post";
 
 import { Alert } from "@/context/dialog";
+import { formatErrorMessage } from "@/lib/format";
 
 type PinRow = {
   id: string; // postId
@@ -114,7 +115,7 @@ export default function PinsScreen() {
         await reorderPinnedPostsForScenario(sid, nextOrder);
         lastSavedRef.current = sig;
       } catch (e: any) {
-        Alert.alert("Failed to reorder pins", e?.message ?? "Could not save new pin order.");
+        Alert.alert("Failed to reorder pins", formatErrorMessage(e, "Could not save new pin order."));
       } finally {
         setSaving(false);
         saveLock.current = false;

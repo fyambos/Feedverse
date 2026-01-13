@@ -35,6 +35,14 @@ type Props = {
   showTimestamps?: boolean;
 };
 
+function clipText(input: unknown, maxChars: number) {
+  const s = String(input ?? "").trim();
+  if (!s) return "";
+  if (s.length <= maxChars) return s;
+  if (maxChars <= 1) return "…";
+  return `${s.slice(0, maxChars - 1)}…`;
+}
+
 export function PostHeader({
   variant,
   colors,
@@ -51,6 +59,9 @@ export function PostHeader({
 }: Props) {
   const isDetail = variant === "detail";
   const showRelative = !isDetail;
+
+  const safeDisplayName = clipText((profile as any)?.displayName, 50);
+  const safeHandle = clipText((profile as any)?.handle, 20);
 
   const showLock = Boolean((profile as any)?.isPrivate);
   const rel = React.useMemo(() => formatRelativeTime(createdAtIso), [createdAtIso, refreshTick]);
@@ -81,16 +92,21 @@ export function PostHeader({
                     type="defaultSemiBold"
                     style={[styles.name, styles.nameDetail]}
                     numberOfLines={1}
+                    ellipsizeMode="tail"
                   >
-                    {profile.displayName}
+                    {safeDisplayName}
                   </ThemedText>
                   {LockIcon}
                 </View>
               </Pressable>
 
               <Pressable onPress={onOpenProfile} hitSlop={0} style={styles.inlinePress}>
-                <ThemedText style={[styles.handleInline, { color: colors.textSecondary }]} numberOfLines={1}>
-                  @{profile.handle}
+                <ThemedText
+                  style={[styles.handleInline, { color: colors.textSecondary }]}
+                  numberOfLines={1}
+                  ellipsizeMode="tail"
+                >
+                  @{safeHandle}
                 </ThemedText>
               </Pressable>
             </View>
@@ -114,15 +130,19 @@ export function PostHeader({
           <Pressable onPress={onOpenProfile} hitSlop={0} style={styles.inlinePress}>
             <View style={styles.nameWithLock}>
               <ThemedText type="defaultSemiBold" style={styles.name} numberOfLines={1}>
-                {profile.displayName}
+                {safeDisplayName}
               </ThemedText>
               {LockIcon}
             </View>
           </Pressable>
 
           <Pressable onPress={onOpenProfile} hitSlop={0} style={styles.inlinePress}>
-            <ThemedText style={[styles.handleInline, { color: colors.textSecondary }]} numberOfLines={1}>
-              @{profile.handle}
+            <ThemedText
+              style={[styles.handleInline, { color: colors.textSecondary }]}
+              numberOfLines={1}
+              ellipsizeMode="tail"
+            >
+              @{safeHandle}
               {showRelative && showTimestamps ? ` · ${rel}` : ""}
             </ThemedText>
           </Pressable>
@@ -149,7 +169,7 @@ export function PostHeader({
 const styles = StyleSheet.create({
   avatarPress: { alignSelf: "flex-start" },
 
-  name: { fontSize: 16, maxWidth: 160, lineHeight: 20 },
+  name: { fontSize: 16, flexShrink: 1, minWidth: 0, maxWidth: 200, lineHeight: 20 },
   nameDetail: { fontSize: 18 },
 
   nameWithLock: {
@@ -161,6 +181,7 @@ const styles = StyleSheet.create({
   handleInline: {
     fontSize: 15,
     opacity: 0.9,
+    minWidth: 0,
     flexShrink: 1,
     lineHeight: 20,
   },
@@ -178,6 +199,8 @@ const styles = StyleSheet.create({
     alignItems: "baseline",
     gap: 6,
     flexWrap: "nowrap",
+    flexShrink: 1,
+    minWidth: 0,
   },
   replyingInline: { marginTop: 0 },
   replyingText: { fontSize: 13, lineHeight: 17 },
@@ -200,8 +223,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 8,
     flexWrap: "nowrap",
+    flexShrink: 1,
+    minWidth: 0,
   },
 
-  inlinePress: { alignSelf: "flex-start" },
+  inlinePress: { alignSelf: "flex-start", flexShrink: 1, minWidth: 0 },
   menuBtn: { padding: 6, borderRadius: 999, alignSelf: "flex-start" },
 });

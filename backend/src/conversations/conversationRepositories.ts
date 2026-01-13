@@ -146,6 +146,14 @@ export async function listConversationsForScenario(args: { scenarioId: string; u
     );
     if (profileCheck.rowCount === 0) return null;
 
+    // Enforce visibility: selected profile must be owned by the requester or be public
+    const profileMeta = await client.query(`SELECT owner_user_id, is_public FROM profiles WHERE id = $1 LIMIT 1`, [selectedProfileId]);
+    const p = profileMeta.rows?.[0];
+    if (!p) return null;
+    const ownerMatches = String(p.owner_user_id ?? "") === userId;
+    const isPublic = Boolean(p.is_public);
+    if (!ownerMatches && !isPublic) return null;
+
     // Filter conversations by selectedProfileId participation
     const res = await client.query<ConversationRow>(
       `
@@ -158,8 +166,27 @@ export async function listConversationsForScenario(args: { scenarioId: string; u
           AS participant_profile_ids,
         c.created_at,
         c.updated_at,
-        c.last_message_at
+        c.last_message_at,
+        lm.last_message_text,
+        lm.last_message_kind,
+        lm.last_message_sender_profile_id
       FROM conversations c
+      LEFT JOIN LATERAL (
+        SELECT
+          CASE
+            WHEN NULLIF(m.text, '') IS NOT NULL THEN m.text
+            WHEN array_length(m.image_urls, 1) > 0 THEN 'Photo'
+            WHEN m.kind IS NOT NULL AND m.kind <> 'text' THEN m.kind
+            ELSE ''
+          END AS last_message_text,
+          m.kind AS last_message_kind,
+          m.sender_profile_id AS last_message_sender_profile_id
+        FROM messages m
+        WHERE m.scenario_id = c.scenario_id
+          AND m.conversation_id = c.id
+        ORDER BY m.created_at DESC, m.id DESC
+        LIMIT 1
+      ) lm ON true
       LEFT JOIN conversation_participants cp ON cp.conversation_id = c.id
       WHERE c.scenario_id = $1
         AND EXISTS (
@@ -169,7 +196,7 @@ export async function listConversationsForScenario(args: { scenarioId: string; u
             AND cp2.profile_id = $2
           LIMIT 1
         )
-      GROUP BY c.id
+      GROUP BY c.id, lm.last_message_text, lm.last_message_kind, lm.last_message_sender_profile_id
       ORDER BY c.last_message_at DESC NULLS LAST, c.updated_at DESC NULLS LAST, c.created_at DESC, c.id DESC
     `,
       [sid, selectedProfileId],

@@ -14,6 +14,7 @@ import { Alert } from "@/context/dialog";
 
 import type { Profile } from "@/data/db/schema";
 import { canEditProfile } from "@/lib/permission";
+import { formatErrorMessage } from "@/lib/format";
 
 import {
   MAX_OWNED_PROFILES_PER_USER,
@@ -79,10 +80,24 @@ export default function SelectProfileModal() {
     profileId: null,
   }));
 
-  const closeAdopt = () => setAdopt({ open: false, profileId: null });
+  const adoptConfirmRef = React.useRef(false);
+  const [adoptBusy, setAdoptBusy] = React.useState(false);
+
+  const transferConfirmRef = React.useRef(false);
+  const [transferBusy, setTransferBusy] = React.useState(false);
+
+  const closeAdopt = () => {
+    adoptConfirmRef.current = false;
+    setAdoptBusy(false);
+    setAdopt({ open: false, profileId: null });
+  };
 
   const closeTransfer = () => setTransfer({ open: false });
-  const closeConfirmTransfer = () => setConfirmTransfer({ open: false, toUserId: null });
+  const closeConfirmTransfer = () => {
+    transferConfirmRef.current = false;
+    setTransferBusy(false);
+    setConfirmTransfer({ open: false, toUserId: null });
+  };
 
   const scenario = React.useMemo(() => {
     if (!isReady) return null;
@@ -381,13 +396,30 @@ const allProfiles = React.useMemo<Profile[]>(() => {
       const uid = String(userId ?? "");
       if (!uid) return;
 
-      const res = await adoptPublicProfile?.({ scenarioId: sid, profileId: pid, userId: uid });
-      if (!res || !res.ok) {
-        return;
-      }
+      if (adoptConfirmRef.current) return;
+      adoptConfirmRef.current = true;
+      setAdoptBusy(true);
 
-      closeAdopt();
-      await finishSelection(pid);
+      try {
+        const res = await adoptPublicProfile?.({ scenarioId: sid, profileId: pid, userId: uid });
+        if (!res) {
+          Alert.alert("Adopt failed", "Adopt API is unavailable.");
+          return;
+        }
+
+        if (!res.ok) {
+          Alert.alert("Adopt failed", res.error ?? "Could not adopt profile.");
+          return;
+        }
+
+        closeAdopt();
+        await finishSelection(pid);
+      } catch (e: any) {
+        Alert.alert("Adopt failed", formatErrorMessage(e, "Could not adopt profile."));
+      } finally {
+        adoptConfirmRef.current = false;
+        setAdoptBusy(false);
+      }
     };
 
     return (
@@ -424,12 +456,19 @@ const allProfiles = React.useMemo<Profile[]>(() => {
 
               <Pressable
                 onPress={onConfirm}
+                disabled={adoptBusy}
                 style={({ pressed }) => [
                   styles.confirmBtn,
-                  { borderColor: colors.border, backgroundColor: pressed ? colors.pressed : "transparent" },
+                  {
+                    borderColor: colors.border,
+                    backgroundColor: pressed ? colors.pressed : "transparent",
+                    opacity: adoptBusy ? 0.55 : 1,
+                  },
                 ]}
               >
-                <ThemedText style={{ color: colors.tint, fontWeight: "900" }}>Adopt</ThemedText>
+                <ThemedText style={{ color: colors.tint, fontWeight: "900" }}>
+                  {adoptBusy ? "Adopting…" : "Adopt"}
+                </ThemedText>
               </Pressable>
             </View>
           </Pressable>
@@ -680,6 +719,10 @@ const allProfiles = React.useMemo<Profile[]>(() => {
         return;
       }
 
+      if (transferConfirmRef.current) return;
+      transferConfirmRef.current = true;
+      setTransferBusy(true);
+
       try {
         const transferredIds = Array.from(selectedIds).map(String);
 
@@ -739,7 +782,10 @@ const allProfiles = React.useMemo<Profile[]>(() => {
 
         Alert.alert("Done", "Profiles transferred.");
       } catch (e: any) {
-        Alert.alert("Transfer failed", e?.message ?? "Could not transfer profiles.");
+        Alert.alert("Transfer failed", formatErrorMessage(e, "Could not transfer profiles."));
+      } finally {
+        transferConfirmRef.current = false;
+        setTransferBusy(false);
       }
     };
 
@@ -781,12 +827,19 @@ const allProfiles = React.useMemo<Profile[]>(() => {
 
               <Pressable
                 onPress={onConfirm}
+                disabled={transferBusy}
                 style={({ pressed }) => [
                   styles.confirmBtn,
-                  { borderColor: "#ff3b30", backgroundColor: pressed ? "rgba(255,59,48,0.12)" : "transparent" },
+                  {
+                    borderColor: "#ff3b30",
+                    backgroundColor: pressed ? "rgba(255,59,48,0.12)" : "transparent",
+                    opacity: transferBusy ? 0.55 : 1,
+                  },
                 ]}
               >
-                <ThemedText style={{ color: "#ff3b30", fontWeight: "900" }}>Transfer</ThemedText>
+                <ThemedText style={{ color: "#ff3b30", fontWeight: "900" }}>
+                  {transferBusy ? "Transferring…" : "Transfer"}
+                </ThemedText>
               </Pressable>
             </View>
           </Pressable>

@@ -23,6 +23,7 @@ import { canEditPost } from "@/lib/permission";
 import * as MediaLibrary from "expo-media-library";
 import { captureRef } from "react-native-view-shot";
 import { Alert } from "@/context/dialog";
+import { formatErrorMessage } from "@/lib/format";
 
 export default function PostScreen() {
   const { scenarioId, postId, from } = useLocalSearchParams<{
@@ -57,6 +58,8 @@ export default function PostScreen() {
     isPostRepostedBySelectedProfile,
   } = useAppData();
 
+  const deletePostRef = useRef(false);
+
   const openEditPost = useCallback(
     (id: string) => {
       router.push({
@@ -69,9 +72,34 @@ export default function PostScreen() {
 
   const onDeletePost = useCallback(
     async (id: string) => {
-      await deletePost(String(id));
+      return new Promise<void>((resolve) => {
+        Alert.alert("Delete post?", "This will remove the post.", [
+          { text: "Cancel", style: "cancel", onPress: () => resolve() },
+          {
+            text: "Delete",
+            style: "destructive",
+            onPress: async () => {
+              if (deletePostRef.current) return resolve();
+              deletePostRef.current = true;
+              try {
+                await deletePost(String(id));
+                // After deletion, go back to where the user came from.
+                try {
+                  if (router.canGoBack?.()) router.back();
+                  else router.replace(fromPath as any);
+                } catch {}
+              } catch (e: any) {
+                Alert.alert("Could not delete", formatErrorMessage(e, "Could not delete post"));
+              } finally {
+                deletePostRef.current = false;
+                resolve();
+              }
+            },
+          },
+        ]);
+      });
     },
-    [deletePost]
+    [deletePost, fromPath]
   );
 
   const root = isReady ? getPostById(pid) : null;
@@ -181,7 +209,7 @@ export default function PostScreen() {
       Alert.alert("Saved", "Screenshot saved to your gallery.");
     } catch (e: any) {
       setIsCapturing(false);
-      Alert.alert("Share failed", e?.message ?? "Could not save screenshot.");
+      Alert.alert("Share failed", formatErrorMessage(e, "Could not save screenshot."));
     }
   }, [thread]);
 

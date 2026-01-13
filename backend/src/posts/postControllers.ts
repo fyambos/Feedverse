@@ -5,6 +5,7 @@ import {
   CreatePostForScenarioService,
   DeletePostService,
   ListPostsForScenarioService,
+  ListPostsPageForScenarioService,
   UpdatePostService,
   UploadPostImagesService,
 } from "./postServices";
@@ -20,6 +21,18 @@ export const ListScenarioPostsController = async (req: Request, res: Response) =
 
     const scenarioId = String(req.params?.id ?? "").trim();
     if (!scenarioId) return res.status(HTTP_STATUS.BAD_REQUEST).json({ error: "scenarioId is required" });
+
+    const rawLimit = req.query?.limit;
+    const rawCursor = req.query?.cursor;
+    const hasPaging = rawLimit != null || rawCursor != null;
+
+    if (hasPaging) {
+      const limit = Math.max(1, Math.min(500, Number.isFinite(Number(rawLimit)) ? Math.floor(Number(rawLimit)) : 200));
+      const cursor = rawCursor == null ? null : String(rawCursor);
+      const page = await ListPostsPageForScenarioService(userId, scenarioId, { limit, cursor });
+      if (!page) return res.status(HTTP_STATUS.FORBIDDEN).json({ error: "Not allowed" });
+      return res.status(HTTP_STATUS.OK).json(page);
+    }
 
     const posts = await ListPostsForScenarioService(userId, scenarioId);
     if (!posts) return res.status(HTTP_STATUS.FORBIDDEN).json({ error: "Not allowed" });

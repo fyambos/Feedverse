@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FlatList, StyleSheet, View, Pressable, ActivityIndicator, Image, RefreshControl } from "react-native";
-import { router, useLocalSearchParams } from "expo-router";
+import { router, useLocalSearchParams, usePathname } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -17,13 +17,46 @@ import { canEditPost } from "@/lib/permission";
 import { Avatar } from "@/components/ui/Avatar";
 import { createScenarioIO } from "@/lib/scenarioIO";
 import { Alert } from "@/context/dialog";
+import { formatErrorMessage } from "@/lib/format";
 
 type Cursor = string | null;
 const PAGE_SIZE = 12;
 
+function scenarioIdFromPathname(pathname: string): string {
+  const parts = pathname
+    .split("/")
+    .map((p) => p.trim())
+    .filter(Boolean);
+
+  const scenarioIdx = parts.findIndex((p) => p === "(scenario)" || p === "scenario");
+  const candidate =
+    scenarioIdx >= 0
+      ? parts[scenarioIdx + 1]
+      : parts.length > 0
+      ? parts[0]
+      : "";
+
+  const raw = String(candidate ?? "").trim();
+  if (!raw) return "";
+  if (raw === "modal") return "";
+  if (raw.startsWith("(")) return "";
+
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+}
+
 export default function HomeScreen() {
   const { scenarioId } = useLocalSearchParams<{ scenarioId: string }>();
-  const sid = String(scenarioId ?? "");
+  const pathname = usePathname();
+
+  const sid = useMemo(() => {
+    const fromParams = typeof scenarioId === "string" ? scenarioId.trim() : "";
+    if (fromParams) return fromParams;
+    return scenarioIdFromPathname(pathname);
+  }, [scenarioId, pathname]);
 
   const scheme = useColorScheme() ?? "light";
   const colors = Colors[scheme];
@@ -167,6 +200,7 @@ export default function HomeScreen() {
 
   const loadingLock = useRef(false);
   const listRef = useRef<FlatList<any> | null>(null);
+  const deletePostRef = useRef(false);
 
   const loadFirstPage = useCallback(() => {
     if (!isReady) return;
@@ -278,8 +312,28 @@ export default function HomeScreen() {
 
   const onDeletePost = useCallback(
     async (postId: string) => {
-      await deletePost(postId);
-      loadFirstPage();
+      return new Promise<void>((resolve) => {
+        Alert.alert("Delete post?", "This will remove the post.", [
+          { text: "Cancel", style: "cancel", onPress: () => resolve() },
+          {
+            text: "Delete",
+            style: "destructive",
+            onPress: async () => {
+              if (deletePostRef.current) return resolve();
+              deletePostRef.current = true;
+              try {
+                await deletePost(postId);
+                loadFirstPage();
+              } catch (e: any) {
+                Alert.alert("Could not delete", formatErrorMessage(e, "Could not delete post"));
+              } finally {
+                deletePostRef.current = false;
+                resolve();
+              }
+            },
+          },
+        ]);
+      });
     },
     [deletePost, loadFirstPage]
   );
@@ -292,6 +346,17 @@ export default function HomeScreen() {
     return (
       <SafeAreaView edges={["top"]} style={{ backgroundColor: colors.background }}>
         <View style={[styles.topbar, { borderBottomColor: colors.border }]}>
+          <Pressable
+            onPress={openScenarioMenu}
+            hitSlop={12}
+            accessibilityRole="button"
+            accessibilityLabel="Scenario menu"
+            style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}
+          >
+            <Avatar uri={selectedProfile?.avatarUrl ?? null} size={30} fallbackColor={colors.border} />
+          </Pressable>
+
+          <View style={{ flex: 1, alignItems: "center" }}>
             <Pressable
               onPress={() =>
                 router.push({
@@ -314,17 +379,8 @@ export default function HomeScreen() {
                 } as any);
               }}
               hitSlop={12}
-              style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}
-            >
-              <Avatar uri={selectedProfile?.avatarUrl ?? null} size={30} fallbackColor={colors.border} />
-            </Pressable>
-
-          <View style={{ flex: 1, alignItems: "center" }}>
-            <Pressable
-              onPress={openScenarioMenu}
-              hitSlop={12}
               accessibilityRole="button"
-              accessibilityLabel="Scenario menu"
+              accessibilityLabel="Select profile"
               style={({ pressed }) => [{ opacity: pressed ? 0.75 : 1 }]}
             >
               <Image
@@ -339,7 +395,7 @@ export default function HomeScreen() {
         </View>
       </SafeAreaView>
     );
-  }, [colors.background, colors.border, openScenarioMenu, selectedProfile?.avatarUrl, sid]);
+  }, [colors.background, colors.border, openScenarioMenu, selectedProfile?.avatarUrl, selectedProfile?.id, sid]);
 
   const data = useMemo(() => items, [items]);
 

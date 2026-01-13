@@ -1,6 +1,6 @@
 // mobile/app/(scenario)/[scenarioId]/(tabs)/messages/[conversationId].tsx
 
-import { subscribeToMessageEvents, subscribeToTypingEvents } from "@/context/appData";
+import { setActiveConversation, subscribeToMessageEvents, subscribeToTypingEvents } from "@/context/appData";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Animated,
@@ -37,6 +37,7 @@ import { apiFetch } from "@/lib/apiClient";
 import { pickAndPersistManyImages } from "@/components/ui/ImagePicker";
 import { MediaGrid } from "@/components/media/MediaGrid";
 import { Lightbox } from "@/components/media/LightBox";
+import { formatErrorMessage } from "@/lib/format";
 
 function parsePgTextArrayLiteral(input: string): string[] {
   const s = String(input ?? "").trim();
@@ -129,6 +130,14 @@ export default function ConversationThreadScreen() {
     reorderMessagesInConversation,
   } = app;
 
+  // Track which conversation is currently active (non-reactive; avoids update loops)
+  useFocusEffect(
+    useCallback(() => {
+      setActiveConversation(sid, cid);
+      return () => setActiveConversation(sid, null);
+    }, [sid, cid])
+  );
+
   // Live message subscription: append new messages for this conversation
   useEffect(() => {
     if (!sid || !cid) return;
@@ -202,6 +211,11 @@ export default function ConversationThreadScreen() {
   const [sendAsId, setSendAsId] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [publicOpen, setPublicOpen] = useState(false);
+
+  const sendingRef = useRef(false);
+  const [sending, setSending] = useState(false);
+
+  const deleteMessageRef = useRef(false);
 
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxUrls, setLightboxUrls] = useState<string[]>([]);
@@ -286,9 +300,29 @@ export default function ConversationThreadScreen() {
   }, [isOneToOne, otherProfileId, selectedProfileId]);
 
   const messagesMap: Record<string, Message> = useMemo(() => ((db as any)?.messages ?? {}) as any, [db]);
+  const messageIds: string[] | null = useMemo(() => {
+    const ids = (conversation as any)?.messageIds;
+    if (!Array.isArray(ids)) return null;
+    const out = ids.map(String).map((s: string) => s.trim()).filter(Boolean);
+    return out.length > 0 ? out : null;
+  }, [conversation]);
+
   const messages: Message[] = useMemo(() => {
     if (!isReady) return [];
     if (!sid || !cid) return [];
+
+    // Fast path: use per-conversation id index (avoids scanning all messages).
+    if (messageIds && messageIds.length > 0) {
+      const out: Message[] = [];
+      for (const mid of messageIds) {
+        const m = messagesMap[mid];
+        if (!m) continue;
+        if (String((m as any).scenarioId) !== sid) continue;
+        if (String((m as any).conversationId) !== cid) continue;
+        out.push(m);
+      }
+      return out;
+    }
 
     const out: Message[] = [];
     for (const m of Object.values(messagesMap)) {
@@ -303,7 +337,7 @@ export default function ConversationThreadScreen() {
       return String((a as any).id ?? "").localeCompare(String((b as any).id ?? ""));
     });
     return out;
-  }, [isReady, sid, cid, messagesMap]);
+  }, [isReady, sid, cid, messagesMap, messageIds]);
 
   // Messages currently visible in UI (last `visibleCount` messages)
   const visibleMessages = useMemo(() => {
@@ -753,6 +787,26 @@ export default function ConversationThreadScreen() {
     setEditSenderId(null);
   }, []);
 
+  const runDeleteMessage = useCallback(
+    async (messageId: string, opts?: { after?: () => void }) => {
+      if (!sid) return;
+      const mid = String(messageId ?? "").trim();
+      if (!mid) return;
+      if (deleteMessageRef.current) return;
+      deleteMessageRef.current = true;
+
+      try {
+        await deleteMessage?.({ scenarioId: sid, messageId: mid });
+        opts?.after?.();
+      } catch (e: any) {
+        Alert.alert("Could not delete", formatErrorMessage(e, "Could not delete message"));
+      } finally {
+        deleteMessageRef.current = false;
+      }
+    },
+    [sid, deleteMessage]
+  );
+
   const onSaveEdit = useCallback(async () => {
     if (!sid) return;
     if (!editMessageId) return;
@@ -763,22 +817,36 @@ export default function ConversationThreadScreen() {
     if (!from) return;
     if (!editAllowedIds.has(from)) return;
 
-    await updateMessage?.({
-      scenarioId: sid,
-      messageId: String(editMessageId),
-      text: body,
-      senderProfileId: from,
-    });
-
-    closeEdit();
+    try {
+      await updateMessage?.({
+        scenarioId: sid,
+        messageId: String(editMessageId),
+        text: body,
+        senderProfileId: from,
+      });
+      closeEdit();
+    } catch (e: any) {
+      Alert.alert("Could not update", formatErrorMessage(e, "Could not update message"));
+    }
   }, [sid, editMessageId, editText, editSenderId, editAllowedIds, updateMessage, closeEdit]);
 
   const onDeleteEdit = useCallback(async () => {
     if (!sid) return;
     if (!editMessageId) return;
-    await deleteMessage?.({ scenarioId: sid, messageId: String(editMessageId) });
-    closeEdit();
-  }, [sid, editMessageId, deleteMessage, closeEdit]);
+
+    const mid = String(editMessageId);
+
+    Alert.alert("Delete message?", "This will remove the message.", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: async () => {
+          await runDeleteMessage(mid, { after: closeEdit });
+        },
+      },
+    ]);
+  }, [sid, editMessageId, runDeleteMessage, closeEdit]);
 
   const canSwitchOneToOneSender = useMemo(() => {
     if (!isOneToOne) return false;
@@ -849,7 +917,7 @@ export default function ConversationThreadScreen() {
     [closePicker]
   );
 
-  const onSend = useCallback(async () => {
+  const onSend = useCallback(() => {
     if (!sid || !cid) return;
     if (!sendAsId) return;
 
@@ -857,59 +925,79 @@ export default function ConversationThreadScreen() {
     const imgs = Array.isArray(imageUris) ? imageUris.map(String).filter(Boolean) : [];
     if (!body && imgs.length === 0) return;
 
-    const res = await sendMessage?.({
-      scenarioId: sid,
-      conversationId: cid,
-      senderProfileId: String(sendAsId),
-      text: body,
-      imageUris: imgs,
-    });
+    // Clear composer immediately so send feels instant.
+    setText("");
+    setImageUris([]);
+    try { scrollToBottom(true); } catch {}
 
-    // accept several success shapes: { ok: true }, { messageId }, { message }
-    const isSuccess = !!(res && (res.ok === true || (res as any).messageId || (res as any).message));
+    if (sendingRef.current) return;
+    sendingRef.current = true;
+    setSending(true);
 
-    if (isSuccess) {
-      setText("");
-      setImageUris([]);
-      try {
-        const pid = String(sendAsId ?? selectedProfileId ?? "").trim();
-        if (sid && cid && pid) {
-          try { app?.sendTyping?.({ scenarioId: sid, conversationId: cid, profileId: pid, typing: false }); } catch {}
-          // Mark only the message just sent as read via backend, but only if it was sent successfully and is not forbidden
-          let sentMsgId = null;
-          if (res?.messageId) sentMsgId = res.messageId;
-          else if (res?.message?.id) sentMsgId = res.message.id;
-          if (sentMsgId) {
-            const sentMsg = app?.db?.messages?.[sentMsgId];
-            if (sentMsg && !sentMsg.read && !res.error) {
-              try {
-                await app?.updateMessage?.({
-                  scenarioId: sid,
-                  messageId: String(sentMsgId),
-                  text: sentMsg.text,
-                  read: true,
-                });
-              } catch {}
+    const p = Promise.resolve(
+      sendMessage?.({
+        scenarioId: sid,
+        conversationId: cid,
+        senderProfileId: String(sendAsId),
+        text: body,
+        imageUris: imgs,
+      })
+    );
+
+    void p
+      .then(async (res: any) => {
+        // accept several success shapes: { ok: true }, { messageId }, { message }
+        const isSuccess = !!(res && (res.ok === true || (res as any).messageId || (res as any).message));
+
+        if (isSuccess) {
+          try {
+            const pid = String(sendAsId ?? selectedProfileId ?? "").trim();
+            if (sid && cid && pid) {
+              try { app?.sendTyping?.({ scenarioId: sid, conversationId: cid, profileId: pid, typing: false }); } catch {}
+
+              // Mark only the message just sent as read via backend, but only if it was sent successfully and is not forbidden
+              let sentMsgId = null;
+              if (res?.messageId) sentMsgId = res.messageId;
+              else if (res?.message?.id) sentMsgId = res.message.id;
+              if (sentMsgId) {
+                const sentMsg = app?.db?.messages?.[sentMsgId];
+                if (sentMsg && !sentMsg.read && !res.error) {
+                  try {
+                    await app?.updateMessage?.({
+                      scenarioId: sid,
+                      messageId: String(sentMsgId),
+                      text: sentMsg.text,
+                      read: true,
+                    });
+                  } catch {}
+                }
+              }
+
+              // Clear unread count for this conversation locally
+              if (app?.db?.conversations?.[cid]) {
+                try { app.db.conversations[cid].unreadCount = 0; } catch {}
+              }
             }
-          }
-          // Clear unread count for this conversation locally
-          if (app?.db?.conversations?.[cid]) {
-            try { app.db.conversations[cid].unreadCount = 0; } catch {}
-          }
+          } catch {}
+
+          return;
         }
-      } catch {}
-      // scroll to bottom when the local user sends a message
-      try { scrollToBottom(true); } catch {}
-      return;
-    }
 
-    const msg = String((res as any)?.error ?? "Send failed");
-    Alert.alert("Could not send", msg);
+        const msg = String((res as any)?.error ?? "Send failed");
+        Alert.alert("Could not send", msg);
 
-    // If user accidentally picked/toggled to an invalid sender, snap back to the selected profile.
-    if (selectedProfileId && String(sendAsId) !== String(selectedProfileId)) {
-      setSendAsId(String(selectedProfileId));
-    }
+        // If user accidentally picked/toggled to an invalid sender, snap back to the selected profile.
+        if (selectedProfileId && String(sendAsId) !== String(selectedProfileId)) {
+          setSendAsId(String(selectedProfileId));
+        }
+      })
+      .catch((e) => {
+        Alert.alert("Could not send", formatErrorMessage(e, "Send failed"));
+      })
+      .finally(() => {
+        sendingRef.current = false;
+        setSending(false);
+      });
   }, [sid, cid, sendAsId, text, imageUris, sendMessage, selectedProfileId, scrollToBottom]);
 
   const onPickImages = useCallback(async () => {
@@ -923,6 +1011,40 @@ export default function ConversationThreadScreen() {
     });
   }, [imageUris]);
 
+  const retryFailedMessage = useCallback(
+    (m: Message) => {
+      if (!sid || !cid) return;
+      const mid = String((m as any)?.id ?? "").trim();
+      if (!mid) return;
+
+      const status = String((m as any)?.clientStatus ?? "").trim();
+      if (status && status !== "failed") return;
+
+      const senderProfileId = String((m as any)?.senderProfileId ?? "").trim();
+      const body = String((m as any)?.text ?? "").trim();
+      const imageUris = coerceStringArray((m as any)?.imageUrls ?? (m as any)?.image_urls);
+      const kind = String((m as any)?.kind ?? "text").trim();
+
+      // Reuse the same client message id so the UI doesn't duplicate bubbles.
+      const p = Promise.resolve(
+        sendMessage?.({
+          scenarioId: sid,
+          conversationId: cid,
+          senderProfileId: senderProfileId || String(sendAsId ?? selectedProfileId ?? ""),
+          text: body,
+          imageUris,
+          kind,
+          clientMessageId: mid,
+        } as any)
+      );
+
+      void p.catch(() => {
+        // sendMessage already marks the message failed + returns an error; screen can stay quiet.
+      });
+    },
+    [sid, cid, sendMessage, sendAsId, selectedProfileId]
+  );
+
   const renderBubbleRow = (
     item: Message,
     opts?: {
@@ -934,19 +1056,23 @@ export default function ConversationThreadScreen() {
     const senderId = String((item as any).senderProfileId ?? "");
     const isRight = senderId === String(selectedProfileId ?? "");
     const sender: Profile | null = senderId ? (getProfileById?.(senderId) ?? null) : null;
-
     const imageUrls = coerceStringArray((item as any).imageUrls ?? (item as any).image_urls);
     const kind = String((item as any).kind ?? "text").trim();
     const hasText = Boolean(String((item as any).text ?? "").trim());
     const hasImages = imageUrls.length > 0;
     const forceColumnWidth = hasImages; // when images exist, keep a stable column width so images don't shrink to short text
 
+    const clientStatus = String((item as any).clientStatus ?? "").trim();
+    const canRetry = clientStatus === "failed";
+
     const canSwipeEdit = !reorderMode && editAllowedIds.has(senderId);
 
     if (kind === "separator") {
       const sepRow = (
         <View style={{ alignItems: "center", paddingVertical: 8 }}>
-          <ThemedText style={{ color: colors.textSecondary, fontSize: 12 }}>{String((item as any).text ?? "")}</ThemedText>
+          <ThemedText style={{ color: colors.textSecondary, fontSize: 12 }}>
+            {String((item as any).text ?? "")}
+          </ThemedText>
         </View>
       );
 
@@ -960,7 +1086,16 @@ export default function ConversationThreadScreen() {
             if (!sid) return;
             const mid = String((item as any).id ?? "");
             if (!mid) return;
-            await deleteMessage?.({ scenarioId: sid, messageId: mid });
+            Alert.alert("Delete message?", "This will remove the message.", [
+              { text: "Cancel", style: "cancel" },
+              {
+                text: "Delete",
+                style: "destructive",
+                onPress: async () => {
+                  await runDeleteMessage(mid);
+                },
+              },
+            ]);
           }}
         >
           {sepRow}
@@ -973,6 +1108,10 @@ export default function ConversationThreadScreen() {
 
     const row = (
       <Pressable
+        onPress={() => {
+          if (!canRetry) return;
+          retryFailedMessage(item);
+        }}
         onLongPress={() => {
           // Only begin dragging when already in reorder mode; don't enter reorder
           // mode by long-pressing an individual message.
@@ -1032,6 +1171,12 @@ export default function ConversationThreadScreen() {
                 />
               </View>
             ) : null}
+
+            {clientStatus === "failed" ? (
+              <ThemedText style={{ marginTop: 6, fontSize: 12, color: scheme === "dark" ? "#FF7B7B" : "#D73A49" }}>
+                Failed to send • tap to retry
+              </ThemedText>
+            ) : null}
           </View>
         </View>
       </Pressable>
@@ -1047,7 +1192,16 @@ export default function ConversationThreadScreen() {
           if (!sid) return;
           const mid = String((item as any).id ?? "");
           if (!mid) return;
-          await deleteMessage?.({ scenarioId: sid, messageId: mid });
+          Alert.alert("Delete message?", "This will remove the message.", [
+            { text: "Cancel", style: "cancel" },
+            {
+              text: "Delete",
+              style: "destructive",
+              onPress: async () => {
+                await runDeleteMessage(mid);
+              },
+            },
+          ]);
         }}
       >
         {row}
@@ -1121,10 +1275,15 @@ export default function ConversationThreadScreen() {
           >
             <View style={styles.headerCenterInner}>
               <Pressable
+                onPress={() => {
+                  if (!canEditGroup) return;
+                  onPressHeader();
+                }}
                 onLongPress={() => {
                   // Enter reorder mode when the avatar is long-pressed (GC or DM)
                   setReorderMode(true);
                 }}
+                disabled={!canEditGroup}
                 hitSlop={12}
                 accessibilityRole="button"
                 accessibilityLabel="Reorder messages"
@@ -1290,6 +1449,7 @@ export default function ConversationThreadScreen() {
             <Pressable
               onPress={onSend}
               disabled={
+                sending ||
                 !sendAsId ||
                 (!String(text ?? "").trim() && (imageUris?.length ?? 0) === 0) ||
                 !sendAsAllowedIds.has(String(sendAsId))
@@ -1299,6 +1459,7 @@ export default function ConversationThreadScreen() {
                 {
                   backgroundColor: colors.tint,
                   opacity:
+                    sending ||
                     !sendAsId ||
                     (!String(text ?? "").trim() && (imageUris?.length ?? 0) === 0) ||
                     !sendAsAllowedIds.has(String(sendAsId))
@@ -1316,17 +1477,45 @@ export default function ConversationThreadScreen() {
                   Alert.alert("Separator text required", "Type separator text then long-press send to create it.");
                   return;
                 }
+
+                if (sendingRef.current) return;
+                sendingRef.current = true;
+                setSending(true);
+
+                let res: any;
                 try {
-                  await sendMessage?.({ scenarioId: sid, conversationId: cid, senderProfileId: String(sendAsId), text: body, kind: "separator" });
-                  setText("");
+                  res = await sendMessage?.({
+                    scenarioId: sid,
+                    conversationId: cid,
+                    senderProfileId: String(sendAsId),
+                    text: body,
+                    kind: "separator",
+                    imageUris: [],
+                  });
                 } catch (e) {
-                  // ignore
+                  Alert.alert("Could not send", formatErrorMessage(e, "Send failed"));
+                  return;
+                } finally {
+                  sendingRef.current = false;
+                  setSending(false);
                 }
+
+                const isSuccess = !!(res && (res.ok === true || (res as any).messageId || (res as any).message));
+                if (!isSuccess) {
+                  Alert.alert("Could not send", String((res as any)?.error ?? "Send failed"));
+                  return;
+                }
+
+                setText("");
               }}
               accessibilityRole="button"
               accessibilityLabel="Send"
             >
-              <Ionicons name="arrow-up" size={18} color={colors.background} />
+              {sending ? (
+                <ActivityIndicator size="small" color={colors.background} />
+              ) : (
+                <Ionicons name="arrow-up" size={18} color={colors.background} />
+              )}
             </Pressable>
           </View>
         </SafeAreaView>

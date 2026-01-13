@@ -4,6 +4,10 @@ import type { PostApi, PostRow } from "./postModels";
 import { mapPostRowToApi } from "./postModels";
 import { r2Service } from "../config/cloudflare/r2Service";
 import { deleteRepostsForPostCascade } from "../reposts/repostRepositories";
+import { getMessaging } from "../config/firebaseAdmin";
+import { extractMentionHandles } from "../lib/mentions";
+import realtimeService from "../realtime/realtimeService";
+import websocketService from "../realtime/websocketService";
 
 async function scenarioAccess(client: PoolClient, scenarioId: string, userId: string): Promise<boolean> {
   const res = await client.query(
@@ -55,7 +59,7 @@ async function userCanActAsAuthor(client: PoolClient, scenarioId: string, userId
 
   const row = res.rows[0] as { id: string; owner_user_id: string | null; is_public: boolean | null } | undefined;
   if (!row) {
-    console.log("userCanActAsAuthor: profile not found", { authorProfileId, scenarioId, userId });
+    // console.log("userCanActAsAuthor: profile not found", { authorProfileId, scenarioId, userId });
     return false;
   }
 
@@ -63,7 +67,7 @@ async function userCanActAsAuthor(client: PoolClient, scenarioId: string, userId
   const isPublic = Boolean(row.is_public);
   if (ownerMatches) return true;
   if (isPublic) return true;
-  console.log("userCanActAsAuthor: denied", { authorProfileId, scenarioId, userId, is_public: row.is_public });
+  // console.log("userCanActAsAuthor: denied", { authorProfileId, scenarioId, userId, is_public: row.is_public });
   return false;
 }
 
@@ -108,6 +112,88 @@ export async function listPostsForScenario(args: {
     );
 
     return res.rows.map(mapPostRowToApi);
+  } finally {
+    client.release();
+  }
+}
+
+// Cursor is `${updatedAtIso}|${id}` using the post's updated_at timestamp.
+export async function listPostsPageForScenario(args: {
+  scenarioId: string;
+  userId: string;
+  limit: number;
+  cursor?: string | null;
+}): Promise<{ items: PostApi[]; nextCursor: string | null } | null> {
+  const sid = String(args.scenarioId ?? "").trim();
+  const uid = String(args.userId ?? "").trim();
+  const limit = Math.max(1, Math.min(500, Math.floor(Number(args.limit ?? 200))));
+  const cursorRaw = args.cursor == null ? "" : String(args.cursor);
+  if (!sid || !uid) return null;
+
+  let cursorUpdatedAt: Date | null = null;
+  let cursorId = "";
+  if (cursorRaw.trim()) {
+    const parts = cursorRaw.split("|");
+    if (parts.length >= 2) {
+      const t = parts[0] ? new Date(String(parts[0])) : null;
+      const id = String(parts[1] ?? "").trim();
+      if (t && !Number.isNaN(t.getTime()) && id) {
+        cursorUpdatedAt = t;
+        cursorId = id;
+      }
+    }
+  }
+
+  const client = await pool.connect();
+  try {
+    const ok = await scenarioAccess(client, sid, uid);
+    if (!ok) return null;
+
+    const res = await client.query<PostRow>(
+      `
+      SELECT
+        id,
+        scenario_id,
+        author_profile_id,
+        text,
+        image_urls,
+        reply_count,
+        repost_count,
+        like_count,
+        parent_post_id,
+        quoted_post_id,
+        inserted_at,
+        created_at,
+        post_type,
+        meta,
+        is_pinned,
+        pin_order,
+        updated_at
+      FROM posts
+      WHERE scenario_id = $1
+        AND (
+          $2::timestamptz IS NULL
+          OR updated_at < $2
+          OR (updated_at = $2 AND id < $3)
+        )
+      ORDER BY updated_at DESC, id DESC
+      LIMIT $4
+    `,
+      [sid, cursorUpdatedAt, cursorId, limit],
+    );
+
+    const items = res.rows.map(mapPostRowToApi);
+    if (items.length === 0) return { items: [], nextCursor: null };
+
+    let nextCursor: string | null = null;
+    if (items.length === limit) {
+      const last = res.rows[res.rows.length - 1] as any;
+      const updatedAtIso = last?.updated_at ? new Date(last.updated_at).toISOString() : null;
+      const id = String(last?.id ?? "").trim();
+      if (updatedAtIso && id) nextCursor = `${updatedAtIso}|${id}`;
+    }
+
+    return { items, nextCursor };
   } finally {
     client.release();
   }
@@ -335,6 +421,138 @@ export async function createPostForScenario(args: {
 
     const row = res.rows[0];
     if (!row) return { error: "Insert failed", status: 500 };
+
+    // Mention notifications (best-effort) for new posts/replies.
+    if (isNewInsert && text.includes("@")) {
+      const postId = String(row.id ?? "").trim();
+      const mentionedHandles = extractMentionHandles(text);
+
+      if (postId && mentionedHandles.length > 0) {
+        (async () => {
+          try {
+            const client2 = await pool.connect();
+            try {
+              // Resolve mentioned handles to profile owners within this scenario.
+              const resProfiles = await client2.query<{
+                id: string;
+                owner_user_id: string | null;
+                handle: string | null;
+              }>(
+                `
+                  SELECT id, owner_user_id, handle
+                  FROM profiles
+                  WHERE scenario_id = $1
+                    AND LOWER(handle) = ANY($2::text[])
+                `,
+                [sid, mentionedHandles],
+              );
+
+              const ownerIds = new Set<string>();
+              for (const r of resProfiles.rows) {
+                const owner = String(r?.owner_user_id ?? "").trim();
+                if (owner) ownerIds.add(owner);
+              }
+
+              if (ownerIds.size === 0) return;
+
+              // Remove sender's owner (if sender profile is owned) so sender doesn't get a push.
+              let senderOwner = "";
+              try {
+                const resSender = await client2.query<{
+                  owner_user_id: string | null;
+                  handle: string | null;
+                  display_name: string | null;
+                }>(
+                  `SELECT owner_user_id, handle, display_name FROM profiles WHERE id = $1 LIMIT 1`,
+                  [authorProfileId],
+                );
+                senderOwner = String(resSender.rows?.[0]?.owner_user_id ?? "").trim();
+                if (senderOwner) ownerIds.delete(senderOwner);
+              } catch {}
+
+              if (ownerIds.size === 0) return;
+
+              // Build push title/body.
+              let senderLabel = "Someone";
+              try {
+                const resSender2 = await client2.query<{ handle: string | null; display_name: string | null }>(
+                  `SELECT handle, display_name FROM profiles WHERE id = $1 LIMIT 1`,
+                  [authorProfileId],
+                );
+                const h = String(resSender2.rows?.[0]?.handle ?? "").trim();
+                const dn = String(resSender2.rows?.[0]?.display_name ?? "").trim();
+                senderLabel = h ? `@${h}` : dn || senderLabel;
+              } catch {}
+
+              const title = `${senderLabel} mentioned you`;
+              const body = String(text ?? "").trim();
+
+              // Broadcast a realtime mention event so clients can display in-app/native notifications.
+              // We intentionally include profile ids (not user ids) so clients can decide if they own
+              // the mentioned profile(s) without leaking extra user identifiers.
+              try {
+                const mentionedProfileIds = resProfiles.rows
+                  .filter((r) => {
+                    const owner = String(r?.owner_user_id ?? "").trim();
+                    if (!owner) return false;
+                    if (!ownerIds.has(owner)) return false;
+                    if (senderOwner && owner === senderOwner) return false;
+                    return true;
+                  })
+                  .map((r) => String(r.id ?? "").trim())
+                  .filter(Boolean);
+
+                if (mentionedProfileIds.length > 0) {
+                  const payload = {
+                    scenarioId: sid,
+                    postId,
+                    authorProfileId,
+                    mentionedProfileIds,
+                    title,
+                    body: body ? (body.length > 140 ? body.slice(0, 137) + "…" : body) : undefined,
+                    mentionedHandles,
+                  };
+                  realtimeService.emitScenarioEvent(sid, "mention.created", payload);
+                  websocketService.broadcastScenarioEvent(sid, "mention.created", payload);
+                }
+              } catch {
+                // ignore realtime failures
+              }
+
+              const messaging = getMessaging();
+              if (!messaging) return;
+
+              const promises: Promise<any>[] = [];
+              for (const ownerId of Array.from(ownerIds)) {
+                const topic = `user_${ownerId}`;
+                const msg: any = {
+                  topic,
+                  notification: { title, body: body || undefined },
+                  data: {
+                    scenarioId: sid,
+                    postId,
+                    kind: "mention",
+                    authorProfileId,
+                  },
+                };
+                promises.push(
+                  messaging.send(msg).catch((err: any) => {
+                    console.warn("FCM send to topic failed", topic, err?.message ?? err);
+                  }),
+                );
+              }
+
+              await Promise.all(promises);
+            } finally {
+              client2.release();
+            }
+          } catch (e) {
+            console.warn("Error while attempting mention push send:", (e as Error)?.message ?? e);
+          }
+        })();
+      }
+    }
+
     return { post: mapPostRowToApi(row) };
   } catch (e: unknown) {
     try {

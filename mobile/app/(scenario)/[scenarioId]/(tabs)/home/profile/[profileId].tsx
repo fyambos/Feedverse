@@ -27,6 +27,7 @@ import { ProfilePostsList } from "@/components/profile/ProfilePostsList";
 import { ProfileStatusOverlay } from "@/components/profile/ProfileStatusOverlay";
 import { CreatePostFab } from "@/components/post/CreatePostFab";
 import type { ProfileOverlayConfig, ProfileViewState } from "@/components/profile/profileTypes";
+import { formatErrorMessage } from "@/lib/format";
 
 type Cursor = string | null;
 const PAGE_SIZE = 10;
@@ -84,6 +85,8 @@ export default function ProfileScreen() {
 
   const sid = decodeURIComponent(String(scenarioId ?? ""));
   const pid = decodeURIComponent(String(profileId ?? ""));
+
+  const deletePostRef = useRef(false);
 
   const profile = useMemo(() => getProfileById(String(pid)), [pid, getProfileById]);
 
@@ -400,9 +403,17 @@ export default function ProfileScreen() {
             text: "Delete",
             style: "destructive",
             onPress: async () => {
-              await deletePost(postId);
-              loadFirstPage();
-              resolve();
+              if (deletePostRef.current) return resolve();
+              deletePostRef.current = true;
+              try {
+                await deletePost(postId);
+                loadFirstPage();
+              } catch (e: any) {
+                Alert.alert("Could not delete", formatErrorMessage(e, "Could not delete post"));
+              } finally {
+                deletePostRef.current = false;
+                resolve();
+              }
             },
           },
         ]);

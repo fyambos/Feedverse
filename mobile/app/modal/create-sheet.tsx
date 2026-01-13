@@ -27,6 +27,7 @@ import { Alert } from "@/context/dialog";
 import type { CharacterSheet } from "@/data/db/schema";
 import { RowCard } from "@/components/ui/RowCard";
 import { RpgChipsEditor, type ProfileRpgData } from "@/components/scenario/RpgChipsEditor";
+import { formatErrorMessage } from "@/lib/format";
 
 type Params = { scenarioId: string; profileId: string; mode?: "edit" | "create" };
 
@@ -283,7 +284,7 @@ export default function EditSheetModal() {
       await upsertCharacterSheet(next);
       router.back();
     } catch (e: any) {
-      RNAlert.alert("Save failed", e?.message ?? "Could not save character sheet.");
+      RNAlert.alert("Save failed", formatErrorMessage(e, "Could not save character sheet."));
     }
   }, [
     isReady,
