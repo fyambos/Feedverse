@@ -19,7 +19,6 @@
       }
     },
     "android": {
-      "versionCode": 8,
       "permissions": [
         "CAMERA",
         "READ_EXTERNAL_STORAGE",
