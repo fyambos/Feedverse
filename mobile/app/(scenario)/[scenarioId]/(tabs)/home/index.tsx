@@ -346,6 +346,17 @@ export default function HomeScreen() {
     return (
       <SafeAreaView edges={["top"]} style={{ backgroundColor: colors.background }}>
         <View style={[styles.topbar, { borderBottomColor: colors.border }]}>
+          <Pressable
+            onPress={openScenarioMenu}
+            hitSlop={12}
+            accessibilityRole="button"
+            accessibilityLabel="Scenario menu"
+            style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}
+          >
+            <Avatar uri={selectedProfile?.avatarUrl ?? null} size={30} fallbackColor={colors.border} />
+          </Pressable>
+
+          <View style={{ flex: 1, alignItems: "center" }}>
             <Pressable
               onPress={() =>
                 router.push({
@@ -368,17 +379,8 @@ export default function HomeScreen() {
                 } as any);
               }}
               hitSlop={12}
-              style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}
-            >
-              <Avatar uri={selectedProfile?.avatarUrl ?? null} size={30} fallbackColor={colors.border} />
-            </Pressable>
-
-          <View style={{ flex: 1, alignItems: "center" }}>
-            <Pressable
-              onPress={openScenarioMenu}
-              hitSlop={12}
               accessibilityRole="button"
-              accessibilityLabel="Scenario menu"
+              accessibilityLabel="Select profile"
               style={({ pressed }) => [{ opacity: pressed ? 0.75 : 1 }]}
             >
               <Image
@@ -393,7 +395,7 @@ export default function HomeScreen() {
         </View>
       </SafeAreaView>
     );
-  }, [colors.background, colors.border, openScenarioMenu, selectedProfile?.avatarUrl, sid]);
+  }, [colors.background, colors.border, openScenarioMenu, selectedProfile?.avatarUrl, selectedProfile?.id, sid]);
 
   const data = useMemo(() => items, [items]);
 
