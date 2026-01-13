@@ -17,8 +17,7 @@ export function normalizeUsernameInput(value: string) {
   return String(value ?? "")
     .trim()
     .replace(/^@+/, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9_]/g, "")
+    .replace(/[^A-Za-z0-9_]/g, "")
     .slice(0, USERNAME_MAX_LEN);
 }
 
@@ -33,7 +32,7 @@ export function getUsernameValidationError(value: string): string | null {
   if (u.length < USERNAME_MIN_LEN) return `Use at least ${USERNAME_MIN_LEN} characters.`;
   if (u.length > USERNAME_MAX_LEN) return `Use at most ${USERNAME_MAX_LEN} characters.`;
   // normalizeUsernameInput already strips invalid chars, but keep this for safety.
-  if (!/^[a-z0-9_]+$/.test(u)) return "Use only letters, numbers, and underscores.";
+  if (!/^[A-Za-z0-9_]+$/.test(u)) return "Use only letters, numbers, and underscores.";
   return null;
 }
 

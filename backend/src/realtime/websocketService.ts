@@ -46,11 +46,13 @@ export function attachWebSocketServer(server: http.Server) {
       const url = new URL(req.url ?? "", `http://${req.headers.host ?? "localhost"}`);
       const scenarioId = url.searchParams.get("scenarioId") ?? undefined;
       if (!scenarioId) {
+        /*
         console.log("WS rejected: missing scenarioId", {
           remoteAddr: (req.socket && (req.socket as any).remoteAddress) || null,
           url: req.url,
           headers: req.headers,
         });
+        */
         ws.close(1008, "scenarioId required");
         return;
       }
@@ -61,11 +63,13 @@ export function attachWebSocketServer(server: http.Server) {
       if (authHeader && authHeader.startsWith("Bearer ")) token = authHeader.replace("Bearer ", "");
       if (!token) token = String(url.searchParams.get("token") ?? "");
       if (!token) {
+        /*
         console.log("WS rejected: token required", {
           remoteAddr: (req.socket && (req.socket as any).remoteAddress) || null,
           url: req.url,
           headers: req.headers,
         });
+        */
         ws.close(1008, "token required");
         return;
       }
@@ -74,30 +78,35 @@ export function attachWebSocketServer(server: http.Server) {
       try {
         payload = jwt.verify(token, AUTH.SECRET_KEY) as any;
       } catch (e) {
+        /*
         console.log("WS rejected: invalid token", {
           error: (e && (e as any).message) || String(e),
           remoteAddr: (req.socket && (req.socket as any).remoteAddress) || null,
           url: req.url,
           headers: req.headers,
         });
+        */
         ws.close(1008, "invalid token");
         return;
       }
 
       const userId = String(payload?.user?.id ?? "").trim();
       if (!userId) {
+        /*
         console.log("WS rejected: invalid token payload", {
           payload,
           remoteAddr: (req.socket && (req.socket as any).remoteAddress) || null,
           url: req.url,
           headers: req.headers,
         });
+        */
         ws.close(1008, "invalid token payload");
         return;
       }
 
       const member = await isUserInScenario(scenarioId, userId);
       if (!member) {
+        /*
         console.log("WS rejected: not a scenario member", {
           userId,
           scenarioId,
@@ -105,6 +114,7 @@ export function attachWebSocketServer(server: http.Server) {
           url: req.url,
           headers: req.headers,
         });
+        */
         ws.close(1008, "not a scenario member");
         return;
       }

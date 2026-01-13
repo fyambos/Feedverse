@@ -117,7 +117,7 @@ async function userCanActAsSender(client: PoolClient, scenarioId: string, userId
 
   const profile = resRow.rows?.[0];
   if (!profile) {
-    console.log("userCanActAsSender: profile not found", { senderProfileId, scenarioId, userId });
+    // console.log("userCanActAsSender: profile not found", { senderProfileId, scenarioId, userId });
     return false;
   }
 
@@ -321,14 +321,14 @@ export async function sendMessage(args: {
       const payload = { message: mapMessageRowToApi(row), senderUserId: uid };
       realtimeService.emitScenarioEvent(sid, "message.created", payload);
     } catch (e) {
-      console.log("realtime emit message.created failed", e);
+      // console.log("realtime emit message.created failed", e);
     }
 
     try {
       const payload = { message: mapMessageRowToApi(row), senderUserId: uid };
       websocketService.broadcastScenarioEvent(sid, "message.created", payload);
     } catch (e) {
-      console.log("websocket emit message.created failed", e);
+      // console.log("websocket emit message.created failed", e);
     }
 
     // Attempt to send push notifications via FCM to conversation participants' owners.
@@ -362,7 +362,7 @@ export async function sendMessage(args: {
           const messaging = getMessaging();
           if (!messaging) {
             // no messaging available in this environment
-            console.log("FCM messaging not available; skipping push send");
+            // console.log("FCM messaging not available; skipping push send");
             return;
           }
 
@@ -635,7 +635,7 @@ export async function updateMessage(args: {
 
       const canAct = await userCanActAsSender(client, scenarioId, uid, nextSenderProfileId);
       if (!canAct) {
-        console.log(" denied next sender", { messageId: mid, nextSenderProfileId, requestUserId: uid });
+        // console.log(" denied next sender", { messageId: mid, nextSenderProfileId, requestUserId: uid });
         await client.query("ROLLBACK");
         return { error: "Not allowed", status: 403 };
       }

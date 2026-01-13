@@ -1,10 +1,10 @@
-export const USERNAME_REGEX = /^[a-z0-9_]+$/;
+export const USERNAME_REGEX = /^[A-Za-z0-9_]+$/;
 
 export function normalizeUsername(input: unknown): string {
   return String(input ?? "")
     .trim()
     .replace(/^@+/, "")
-    .toLowerCase();
+    ;
 }
 
 export function validateUsername(username: string): string | null {

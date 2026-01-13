@@ -62,7 +62,7 @@ export default function UserSettingsScreen() {
   const [isSavingUsername, setIsSavingUsername] = useState(false);
 
   const usernameHint = useMemo(
-    () => `Lowercase only. Use letters, numbers, and underscores (${USERNAME_MIN_LEN}-${USERNAME_MAX_LEN}).`,
+    () => `Use letters, numbers, and underscores (${USERNAME_MIN_LEN}-${USERNAME_MAX_LEN}).`,
     []
   );
 
@@ -181,7 +181,7 @@ export default function UserSettingsScreen() {
               <ProfileAvatarPicker avatarUrl={avatarUrl} setAvatarUrl={setAvatarUrl} colors={colors} />
 
               {/* ACCOUNT - Username editing */}
-              <RowCard label="Account" colors={colors}>
+              <RowCard label="Username" colors={colors}>
                 <TextInput
                   style={[styles.input, { color: colors.text, borderBottomColor: colors.border }]}
                   value={username}

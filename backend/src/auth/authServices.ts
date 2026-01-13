@@ -129,11 +129,12 @@ export const LoginUserService = async (
     if (emailError) return { error: ERROR_MESSAGES.INVALID_EMAIL_OR_PASSWORD };
   }
 
-  const identifierNormalized = isEmail ? identifier.toLowerCase() : normalizeUsername(identifier);
-  if (!isEmail) {
-    const uErr = validateUsername(identifierNormalized);
-    if (uErr) return { error: USER_MESSAGES.DOES_NOT_EXISTS };
-  }
+  const identifierNormalized = isEmail
+    ? identifier.toLowerCase()
+    : normalizeUsername(identifier);
+  // For login, don't enforce strict username rules here.
+  // Legacy accounts may contain characters that are no longer allowed.
+  if (!isEmail && !identifierNormalized) return { error: USER_MESSAGES.DOES_NOT_EXISTS };
 
   const userFetched = isEmail
     ? await userRepository.findByEmail(identifierNormalized)

@@ -55,7 +55,7 @@ async function userCanActAsAuthor(client: PoolClient, scenarioId: string, userId
 
   const row = res.rows[0] as { id: string; owner_user_id: string | null; is_public: boolean | null } | undefined;
   if (!row) {
-    console.log("userCanActAsAuthor: profile not found", { authorProfileId, scenarioId, userId });
+    // console.log("userCanActAsAuthor: profile not found", { authorProfileId, scenarioId, userId });
     return false;
   }
 
@@ -63,7 +63,7 @@ async function userCanActAsAuthor(client: PoolClient, scenarioId: string, userId
   const isPublic = Boolean(row.is_public);
   if (ownerMatches) return true;
   if (isPublic) return true;
-  console.log("userCanActAsAuthor: denied", { authorProfileId, scenarioId, userId, is_public: row.is_public });
+  // console.log("userCanActAsAuthor: denied", { authorProfileId, scenarioId, userId, is_public: row.is_public });
   return false;
 }
 
