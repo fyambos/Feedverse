@@ -21,9 +21,9 @@ export function trimTo(s: string, max: number) {
 }
 
 export function normalizeHandle(input: string) {
-  // remove @, lowercase, keep only a-z 0-9 _ .
+  // remove @, lowercase, keep only a-z 0-9 _
   const raw = String(input ?? "").trim().replace(/^@+/, "").toLowerCase();
-  const cleaned = raw.replace(/[^a-z0-9_.]/g, "");
+  const cleaned = raw.replace(/[^a-z0-9_]/g, "");
   return cleaned.slice(0, PROFILE_LIMITS.MAX_HANDLE);
 }
 

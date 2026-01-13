@@ -19,6 +19,7 @@ import {
 } from "../config/constants";
 import { UserRepository } from "../users/userRepositories";
 import type { User as DbUser } from "../users/userModels";
+import { normalizeUsername, validateUsername } from "../lib/username";
 
 const userRepository = new UserRepository();
 
@@ -27,7 +28,7 @@ export const RegisterUserService = async (
   avatarFile?: Express.Multer.File,
 ): Promise<{ user?: RegisterResponse; errors?: ValidationError[] }> => {
   const { username, email, password_hash, avatar_url } = input;
-  const usernameNormalized = String(username ?? "").trim();
+  const usernameNormalized = normalizeUsername(username);
 
   const errors: ValidationError[] = [];
 
@@ -36,6 +37,11 @@ export const RegisterUserService = async (
 
   const passwordError = validatePassword(password_hash);
   if (passwordError) errors.push(passwordError);
+
+  const usernameError = validateUsername(usernameNormalized);
+  if (usernameError) {
+    errors.push({ fields: USER_MESSAGES.USERNAME, message: usernameError });
+  }
 
   if (errors.length > 0) {
     return { errors };
@@ -108,7 +114,8 @@ export const RegisterUserService = async (
 export const LoginUserService = async (
   input: LoginRequest,
 ): Promise<{ user?: Omit<DbUser, "password_hash">; error?: unknown }> => {
-  const identifier = String(input?.email ?? "").trim();
+  const identifierRaw = String(input?.email ?? "").trim();
+  const identifier = identifierRaw.replace(/^@+/, "").trim();
   const password_hash = String(input?.password_hash ?? "");
 
   const passwordError = validatePassword(password_hash);
@@ -122,9 +129,15 @@ export const LoginUserService = async (
     if (emailError) return { error: ERROR_MESSAGES.INVALID_EMAIL_OR_PASSWORD };
   }
 
+  const identifierNormalized = isEmail ? identifier.toLowerCase() : normalizeUsername(identifier);
+  if (!isEmail) {
+    const uErr = validateUsername(identifierNormalized);
+    if (uErr) return { error: USER_MESSAGES.DOES_NOT_EXISTS };
+  }
+
   const userFetched = isEmail
-    ? await userRepository.findByEmail(identifier)
-    : await userRepository.findByUsername(identifier);
+    ? await userRepository.findByEmail(identifierNormalized)
+    : await userRepository.findByUsername(identifierNormalized);
 
   if (!userFetched) {
     return { error: USER_MESSAGES.DOES_NOT_EXISTS };

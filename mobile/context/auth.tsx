@@ -15,6 +15,11 @@ import { readDb, updateDb } from "@/data/db/storage";
 import { seedDbIfNeeded } from "@/data/db/seed";
 import { apiFetch, setAuthInvalidationHandler } from "@/lib/apiClient";
 import { Alert } from "@/context/dialog";
+import {
+  normalizeUsernameForCreate,
+  normalizeUsernameInput,
+  USERNAME_MAX_LEN,
+} from "@/lib/validation/auth";
 
 type AuthState = {
   isReady: boolean;
@@ -121,19 +126,25 @@ function newLocalId(prefix: string) {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function normalizeUsername(input: string) {
-  const raw = String(input ?? "").trim().toLowerCase();
-  const cleaned = raw
-    .replace(/^@+/, "")
-    .replace(/[^a-z0-9_\-.]/g, "_")
-    .replace(/_+/g, "_")
-    .slice(0, 24);
-  return cleaned || "user";
-}
-
 function usernameFromEmail(email: string) {
   const local = String(email).split("@")[0] ?? "user";
-  return normalizeUsername(local);
+  // Keep the whole local-part (including "+tag"), but strip special chars (except "_").
+  // Examples:
+  // - "john+spam@x.com" -> "johnspam"
+  // - "john.spam@x.com" -> "johnspam"
+  return normalizeUsernameForCreate(local);
+}
+
+function randomTwoDigits() {
+  return Math.floor(Math.random() * 100)
+    .toString()
+    .padStart(2, "0");
+}
+
+function withRandomTwoDigitSuffix(base: string) {
+  const b = normalizeUsernameInput(base) || "user";
+  const prefix = b.slice(0, Math.max(0, USERNAME_MAX_LEN - 2));
+  return `${prefix}${randomTwoDigits()}`;
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -427,67 +438,84 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (baseUrl) {
         try {
-          const res = await apiFetch({
-            path: "/auth/register",
-            init: {
-              method: "POST",
-              body: JSON.stringify({
-                email,
-                password_hash: pw,
-                username: String(args.username ?? usernameFromEmail(email)),
-                name: String(args.name ?? ""),
-                avatar_url: "",
-              }),
-            },
-          });
+          const isAutoUsername = !args.username;
+          const base = normalizeUsernameForCreate(args.username ?? usernameFromEmail(email));
 
-          const json = res.json;
-          if (!res.ok) {
-            if (Array.isArray(json?.errors) && json.errors.length > 0) {
-              const msg = String(json.errors?.[0]?.message ?? "Sign up failed.");
-              return { ok: false as const, error: msg };
-            }
-            return {
-              ok: false as const,
-              error: String(json?.error ?? json?.message ?? "Sign up failed."),
-            };
-          }
+          let lastErrorMsg = "Sign up failed.";
+          for (let attempt = 0; attempt < (isAutoUsername ? 6 : 1); attempt++) {
+            const candidate = attempt === 0 ? base : withRandomTwoDigitSuffix(base);
 
-          if (Array.isArray(json?.errors) && json.errors.length > 0) {
-            const msg = String(json.errors?.[0]?.message ?? "Sign up failed.");
-            return { ok: false as const, error: msg };
-          }
-
-          // server returns token+user; if not, fall back to login
-          const nextToken = String(json?.token ?? "").trim();
-          const user = json?.user;
-          const uid = String(user?.id ?? "").trim();
-
-          if (nextToken && uid) {
-            await ensureDbReady();
-            const localUser = mapBackendUserToLocal(user);
-            await updateDb((prev) => {
-              const existing = (prev as any).users?.[uid];
-              return {
-                ...prev,
-                users: {
-                  ...(prev as any).users,
-                  [uid]: {
-                    ...(existing ?? {}),
-                    ...localUser,
-                    id: uid,
-                  },
-                },
-              };
+            const res = await apiFetch({
+              path: "/auth/register",
+              init: {
+                method: "POST",
+                body: JSON.stringify({
+                  email,
+                  password_hash: pw,
+                  username: candidate,
+                  name: String(args.name ?? ""),
+                  avatar_url: "",
+                }),
+              },
             });
 
-            await setSessionToken(nextToken);
-            await setSessionUserId(uid);
-            return { ok: true as const };
+            const json = res.json;
+
+            if (!res.ok || (Array.isArray(json?.errors) && json.errors.length > 0)) {
+              const errors = Array.isArray(json?.errors) ? json.errors : [];
+              const firstMsg =
+                typeof errors?.[0]?.message === "string"
+                  ? String(errors[0].message)
+                  : String(json?.error ?? json?.message ?? "Sign up failed.");
+
+              lastErrorMsg = firstMsg;
+
+              const isUsernameTaken = errors.some(
+                (e: any) =>
+                  typeof e?.message === "string" &&
+                  /username is already in use/i.test(String(e.message)),
+              );
+
+              if (isAutoUsername && isUsernameTaken) {
+                continue;
+              }
+
+              return { ok: false as const, error: firstMsg };
+            }
+
+            // server returns token+user; if not, fall back to login
+            const nextToken = String(json?.token ?? "").trim();
+            const user = json?.user;
+            const uid = String(user?.id ?? "").trim();
+
+            if (nextToken && uid) {
+              await ensureDbReady();
+              const localUser = mapBackendUserToLocal(user);
+              await updateDb((prev) => {
+                const existing = (prev as any).users?.[uid];
+                return {
+                  ...prev,
+                  users: {
+                    ...(prev as any).users,
+                    [uid]: {
+                      ...(existing ?? {}),
+                      ...localUser,
+                      id: uid,
+                    },
+                  },
+                };
+              });
+
+              await setSessionToken(nextToken);
+              await setSessionUserId(uid);
+              return { ok: true as const };
+            }
+
+            // fallback: login
+            return await signIn({ identifier: email, password: pw });
           }
 
-          // fallback: login
-          return await signIn({ identifier: email, password: pw });
+          return { ok: false as const, error: lastErrorMsg };
         } catch {
           return { ok: false as const, error: "Unable to reach server." };
         }
@@ -506,12 +534,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const taken = new Set<string>();
       for (const u of Object.values(users) as any[]) taken.add(normalizeIdentifier(u?.username));
 
-      const base = normalizeUsername(args.username ?? usernameFromEmail(email));
+      const base = normalizeUsernameForCreate(args.username ?? usernameFromEmail(email));
       let uname = base;
-      let i = 2;
-      while (taken.has(normalizeIdentifier(uname))) {
-        uname = `${base}${i}`;
-        i++;
+      let tries = 0;
+      while (taken.has(normalizeIdentifier(uname)) && tries < 200) {
+        uname = withRandomTwoDigitSuffix(base);
+        tries++;
+      }
+      if (taken.has(normalizeIdentifier(uname))) {
+        // Extremely unlikely unless the namespace is saturated.
+        uname = `${base}${Date.now().toString().slice(-4)}`.slice(0, USERNAME_MAX_LEN);
       }
 
       const id = newLocalId("u");
@@ -672,13 +704,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const baseUrl = apiBaseUrl();
       const t = String(token ?? "").trim();
       if (!baseUrl || !t) throw new Error("No backend or token");
+
+      const normalized = normalizeUsernameInput(username);
+
       const res = await apiFetch({
         path: "/users/username",
         token: t,
         init: {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ username }),
+          body: JSON.stringify({ username: normalized }),
         },
       });
       if (!res.ok) {
@@ -699,7 +734,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             ...(prev as any).users,
             [userId]: {
               ...existing,
-              username,
+              username: normalized,
               updatedAt: new Date().toISOString(),
             },
           },

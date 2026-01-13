@@ -2,6 +2,7 @@ import type { PoolClient } from "pg";
 import { pool } from "../config/database";
 import type { ProfileApi, ProfileRow } from "./profileModels";
 import { mapProfileRowToApi } from "./profileModels";
+import { normalizeHandle, validateHandle } from "../lib/handle";
 
 async function scenarioAccess(client: PoolClient, scenarioId: string, userId: string): Promise<boolean> {
   const res = await client.query(
@@ -126,9 +127,12 @@ export async function createProfileForScenario(args: {
   if (!sid || !uid) return null;
 
   const displayName = String(args.input?.displayName ?? "").trim();
-  const handle = String(args.input?.handle ?? "").trim();
+  const handle = normalizeHandle(args.input?.handle ?? "");
   if (!displayName) return { error: "displayName is required", status: 400 };
   if (!handle) return { error: "handle is required", status: 400 };
+
+  const handleErr = validateHandle(handle);
+  if (handleErr) return { error: handleErr, status: 400 };
 
   const avatarUrl = args.input?.avatarUrl != null ? String(args.input.avatarUrl) : "";
   const followerCount = Number.isFinite(Number(args.input?.followerCount)) ? Number(args.input?.followerCount) : 0;
@@ -343,10 +347,18 @@ export async function updateProfile(args: {
       return null;
     }
 
-    const nextHandle = (patch as any).handle != null ? String((patch as any).handle).trim() : null;
-    if (nextHandle && (await handleTaken(client, String(row0.scenario_id), nextHandle, pid))) {
-      await client.query("ROLLBACK");
-      return { error: "Handle taken", status: 409 };
+    const nextHandle = (patch as any).handle != null ? normalizeHandle((patch as any).handle) : null;
+    if (nextHandle) {
+      const nextHandleErr = validateHandle(nextHandle);
+      if (nextHandleErr) {
+        await client.query("ROLLBACK");
+        return { error: nextHandleErr, status: 400 };
+      }
+
+      if (await handleTaken(client, String(row0.scenario_id), nextHandle, pid)) {
+        await client.query("ROLLBACK");
+        return { error: "Handle taken", status: 409 };
+      }
     }
 
     // If requester is the owner, restrict update to owner_user_id = userId for safety.
