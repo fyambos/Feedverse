@@ -146,6 +146,7 @@ export default function TabLayout() {
         headerShown: false,
         tabBarButton: HapticTab,
         tabBarShowLabel: false,
+        sceneContainerStyle: { backgroundColor: colors.background },
       }}
     >
       <Tabs.Screen
