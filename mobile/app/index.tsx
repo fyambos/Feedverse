@@ -44,6 +44,7 @@ export default function ScenarioListScreen() {
     isReady,
     listScenarios,
     db,
+    syncScenarios,
     syncProfilesForScenario,
     transferScenarioOwnership,
     leaveScenario: leaveScenarioApi,
@@ -148,7 +149,11 @@ export default function ScenarioListScreen() {
     }
 
     return all
-      .filter((s: any) => (s?.playerIds ?? []).map(String).includes(uid))
+      .filter((s: any) => {
+        const ownerId = String((s as any)?.ownerUserId ?? "").trim();
+        if (ownerId && ownerId === uid) return true;
+        return (s?.playerIds ?? []).map(String).includes(uid);
+      })
       .sort(sortNewestFirst);
   }, [isReady, listScenarios, userId, isBackendMode]);
 
@@ -173,11 +178,18 @@ export default function ScenarioListScreen() {
   // When returning to this screen (e.g. after import), jump to top.
   useFocusEffect(
     useCallback(() => {
+      if (isBackendMode) {
+        try {
+          void syncScenarios?.({ force: true })?.catch?.(() => {});
+        } catch {
+          // ignore
+        }
+      }
       requestAnimationFrame(() => {
         listRef.current?.scrollToOffset({ offset: 0, animated: false });
       });
       return () => void 0;
-    }, [])
+    }, [isBackendMode, syncScenarios])
   );
 
   const openScenario = (scenarioId: string) => {
@@ -741,6 +753,9 @@ export default function ScenarioListScreen() {
             const usersMap = (db as any)?.users ?? {};
             // Start with declared playerIds on the scenario
             const playerIdSet = new Set<string>((item.playerIds ?? []).map((id: any) => String(id ?? "").trim()).filter(Boolean));
+            // Always include owner as a player/member
+            const ownerId = String((item as any)?.ownerUserId ?? "").trim();
+            if (ownerId) playerIdSet.add(ownerId);
             // Also include owners of profiles that belong to this scenario (cover cases where playerIds may be incomplete)
             try {
               const profiles = (db as any)?.profiles ?? {};

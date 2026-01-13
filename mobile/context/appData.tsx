@@ -125,6 +125,7 @@ type AppDataApi = {
   // scenarios
   getScenarioById: (id: string) => Scenario | null;
   listScenarios: () => Scenario[];
+  syncScenarios: (opts?: { force?: boolean }) => Promise<void>;
   upsertScenario: (s: Scenario) => Promise<void>;
   joinScenarioByInviteCode: (
     inviteCode: string,
@@ -877,9 +878,10 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     });
   }, [state.isReady, state.db, auth.isReady, auth.token, isBackendMode, isUuidLike]);
 
-  const scenariosSyncRef = React.useRef<{ token: string | null; inFlight: boolean }>({
+  const scenariosSyncRef = React.useRef<{ token: string | null; inFlight: boolean; lastSyncAt: number }>({
     token: null,
     inFlight: false,
+    lastSyncAt: 0,
   });
 
   const profilesSyncRef = React.useRef<{
@@ -919,112 +921,121 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     lastSyncAtByConversation: {},
   });
 
+  const syncScenariosFromBackend = React.useCallback(
+    async (opts?: { force?: boolean }) => {
+      if (!state.isReady || !state.db) return;
+      if (!auth.isReady) return;
+
+      const token = String(auth.token ?? "").trim();
+      const baseUrl = String(process.env.EXPO_PUBLIC_API_BASE_URL ?? "").trim();
+      if (!token || !baseUrl) return;
+
+      const force = Boolean(opts?.force);
+      const nowMs = Date.now();
+
+      if (scenariosSyncRef.current.inFlight) return;
+      if (!force && scenariosSyncRef.current.token === token) return; // already synced for this session token
+
+      // When forced, still throttle so we don't spam the backend.
+      if (force && nowMs - (scenariosSyncRef.current.lastSyncAt || 0) < 15_000) return;
+
+      scenariosSyncRef.current.inFlight = true;
+      try {
+        const [res, tagsRes] = await Promise.all([
+          apiFetch({ path: "/scenarios", token }),
+          apiFetch({ path: "/global-tags", token }),
+        ]);
+        if (!res.ok || !Array.isArray(res.json)) return;
+
+        const rows = res.json as any[];
+        const globalTagRows = tagsRes.ok && Array.isArray(tagsRes.json) ? (tagsRes.json as any[]) : [];
+        const nowIso = new Date().toISOString();
+
+        const nextDb = await updateDb((prev) => {
+          const nextScenarios = { ...(prev.scenarios ?? {}) } as any;
+          const nextTags = { ...((prev as any).tags ?? {}) } as Record<string, GlobalTag>;
+
+          for (const t of globalTagRows) {
+            const key = String(t?.key ?? "").trim().toLowerCase();
+            if (!key) continue;
+            nextTags[key] = {
+              key,
+              name: String(t?.name ?? key),
+              color: String(t?.color ?? "#000"),
+              createdAt: t?.createdAt
+                ? new Date(t.createdAt).toISOString()
+                : t?.created_at
+                  ? new Date(t.created_at).toISOString()
+                  : (nextTags[key]?.createdAt ?? nowIso),
+              updatedAt: t?.updatedAt
+                ? new Date(t.updatedAt).toISOString()
+                : t?.updated_at
+                  ? new Date(t.updated_at).toISOString()
+                  : nextTags[key]?.updatedAt,
+            };
+          }
+
+          for (const raw of rows) {
+            const id = String(raw?.id ?? "").trim();
+            if (!id) continue;
+
+            const existing = (prev.scenarios as any)?.[id];
+
+            const playerIdsRaw = raw?.player_ids ?? raw?.playerIds;
+            const playerIds = Array.isArray(playerIdsRaw) ? playerIdsRaw.map(String) : [];
+
+            const gmUserIdsRaw = raw?.gm_user_ids ?? raw?.gmUserIds;
+            const gmUserIds = Array.isArray(gmUserIdsRaw) ? gmUserIdsRaw.map(String).filter(Boolean) : undefined;
+
+            const settings = raw?.settings != null ? raw.settings : undefined;
+
+            nextScenarios[id] = {
+              ...(existing ?? {}),
+              id,
+              name: String(raw?.name ?? existing?.name ?? ""),
+              cover: String(raw?.cover ?? raw?.cover_url ?? existing?.cover ?? ""),
+              inviteCode: String(raw?.invite_code ?? raw?.inviteCode ?? existing?.inviteCode ?? ""),
+              ownerUserId: String(raw?.owner_user_id ?? raw?.ownerUserId ?? existing?.ownerUserId ?? ""),
+              description: raw?.description != null ? String(raw.description) : existing?.description,
+              mode: raw?.mode === "campaign" || raw?.mode === "story" ? raw.mode : (existing?.mode ?? "story"),
+              playerIds: playerIds.length > 0 ? playerIds : (existing?.playerIds ?? []),
+              tags: Array.isArray(raw?.tags) ? raw.tags : (existing?.tags ?? []),
+              gmUserIds: gmUserIds ?? (existing as any)?.gmUserIds,
+              settings: settings ?? (existing as any)?.settings,
+              createdAt: raw?.created_at
+                ? new Date(raw.created_at).toISOString()
+                : raw?.createdAt
+                  ? new Date(raw.createdAt).toISOString()
+                  : (existing?.createdAt ?? nowIso),
+              updatedAt: raw?.updated_at
+                ? new Date(raw.updated_at).toISOString()
+                : raw?.updatedAt
+                  ? new Date(raw.updatedAt).toISOString()
+                  : nowIso,
+            } as any;
+          }
+
+          return {
+            ...prev,
+            scenarios: nextScenarios,
+            tags: nextTags,
+          };
+        });
+
+        setState({ isReady: true, db: nextDb as any });
+        scenariosSyncRef.current.token = token;
+        scenariosSyncRef.current.lastSyncAt = nowMs;
+      } finally {
+        scenariosSyncRef.current.inFlight = false;
+      }
+    },
+    [state.isReady, state.db, auth.isReady, auth.token]
+  );
+
   // If backend auth is enabled, fetch scenarios from server and merge into local DB.
   React.useEffect(() => {
-    if (!state.isReady || !state.db) return;
-    if (!auth.isReady) return;
-
-    const token = String(auth.token ?? "").trim();
-    const baseUrl = String(process.env.EXPO_PUBLIC_API_BASE_URL ?? "").trim();
-    if (!token || !baseUrl) return;
-
-    if (scenariosSyncRef.current.inFlight) return;
-    if (scenariosSyncRef.current.token === token) return; // already synced for this session token
-
-    scenariosSyncRef.current.inFlight = true;
-
-    (async () => {
-      const [res, tagsRes] = await Promise.all([
-        apiFetch({ path: "/scenarios", token }),
-        apiFetch({ path: "/global-tags", token }),
-      ]);
-      if (!res.ok || !Array.isArray(res.json)) return;
-
-      const rows = res.json as any[];
-      const globalTagRows = tagsRes.ok && Array.isArray(tagsRes.json) ? (tagsRes.json as any[]) : [];
-      const now = new Date().toISOString();
-
-      const nextDb = await updateDb((prev) => {
-        const nextScenarios = { ...(prev.scenarios ?? {}) } as any;
-        const nextTags = { ...((prev as any).tags ?? {}) } as Record<string, GlobalTag>;
-
-        for (const t of globalTagRows) {
-          const key = String(t?.key ?? "").trim().toLowerCase();
-          if (!key) continue;
-          nextTags[key] = {
-            key,
-            name: String(t?.name ?? key),
-            color: String(t?.color ?? "#000"),
-            createdAt: t?.createdAt
-              ? new Date(t.createdAt).toISOString()
-              : t?.created_at
-                ? new Date(t.created_at).toISOString()
-                : (nextTags[key]?.createdAt ?? now),
-            updatedAt: t?.updatedAt
-              ? new Date(t.updatedAt).toISOString()
-              : t?.updated_at
-                ? new Date(t.updated_at).toISOString()
-                : nextTags[key]?.updatedAt,
-          };
-        }
-
-        for (const raw of rows) {
-          const id = String(raw?.id ?? "").trim();
-          if (!id) continue;
-
-          const existing = (prev.scenarios as any)?.[id];
-
-          const playerIdsRaw = raw?.player_ids ?? raw?.playerIds;
-          const playerIds = Array.isArray(playerIdsRaw) ? playerIdsRaw.map(String) : [];
-
-          const gmUserIdsRaw = raw?.gm_user_ids ?? raw?.gmUserIds;
-          const gmUserIds = Array.isArray(gmUserIdsRaw) ? gmUserIdsRaw.map(String).filter(Boolean) : undefined;
-
-          const settings = raw?.settings != null ? raw.settings : undefined;
-
-          nextScenarios[id] = {
-            ...(existing ?? {}),
-            id,
-            name: String(raw?.name ?? existing?.name ?? ""),
-            cover: String(raw?.cover ?? raw?.cover_url ?? existing?.cover ?? ""),
-            inviteCode: String(raw?.invite_code ?? raw?.inviteCode ?? existing?.inviteCode ?? ""),
-            ownerUserId: String(raw?.owner_user_id ?? raw?.ownerUserId ?? existing?.ownerUserId ?? ""),
-            description: raw?.description != null ? String(raw.description) : existing?.description,
-            mode: (raw?.mode === "campaign" || raw?.mode === "story") ? raw.mode : (existing?.mode ?? "story"),
-            playerIds: playerIds.length > 0 ? playerIds : (existing?.playerIds ?? []),
-            tags: Array.isArray(raw?.tags) ? raw.tags : (existing?.tags ?? []),
-            gmUserIds: gmUserIds ?? (existing as any)?.gmUserIds,
-            settings: settings ?? (existing as any)?.settings,
-            createdAt: raw?.created_at
-              ? new Date(raw.created_at).toISOString()
-              : raw?.createdAt
-                ? new Date(raw.createdAt).toISOString()
-                : (existing?.createdAt ?? now),
-            updatedAt: raw?.updated_at
-              ? new Date(raw.updated_at).toISOString()
-              : raw?.updatedAt
-                ? new Date(raw.updatedAt).toISOString()
-                : now,
-          } as any;
-        }
-
-        return {
-          ...prev,
-          scenarios: nextScenarios,
-          tags: nextTags,
-        };
-      });
-
-      setState({ isReady: true, db: nextDb as any });
-      scenariosSyncRef.current.token = token;
-    })()
-      .catch(() => {
-        // ignore
-      })
-      .finally(() => {
-        scenariosSyncRef.current.inFlight = false;
-      });
-  }, [state.isReady, state.db, auth.isReady, auth.token]);
+    void syncScenariosFromBackend({ force: false });
+  }, [syncScenariosFromBackend]);
 
   // Cleanup on unmount.
   React.useEffect(() => {
@@ -3260,6 +3271,9 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       // --- scenarios
       getScenarioById: (id) => (db ? db.scenarios[String(id)] ?? null : null),
       listScenarios: () => (db ? Object.values(db.scenarios) : []),
+      syncScenarios: async (opts) => {
+        await syncScenariosFromBackend({ force: Boolean(opts?.force) });
+      },
 
       upsertScenario: async (s) => {
         const upsertScenarioLocal = async (localScenario: Scenario) => {
@@ -5560,7 +5574,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         return { ok: true, conversationId: convId };
       },
     };
-  }, [db, currentUserId, auth.isReady]);
+  }, [db, currentUserId, auth.isReady, syncScenariosFromBackend]);
 
   // Ensure realtime (WS) connections stay active even when the user is on the
   // scenario list or other screens. Without this, realtime/notifications can
