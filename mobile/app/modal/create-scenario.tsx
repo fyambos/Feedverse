@@ -39,6 +39,7 @@ import {
 import { pickAndPersistOneImage } from "@/components/ui/ImagePicker";
 import { MAX_OWNED_PROFILES_PER_USER, MAX_TOTAL_PROFILES_PER_SCENARIO } from "@/lib/rules";
 import { generateInviteCode } from "@/lib/inviteCode";
+import { formatErrorMessage } from "@/lib/format";
 
 /* -------------------------------------------------------------------------- */
 /* Limits                                                                      */
@@ -426,7 +427,7 @@ export default function CreateScenarioModal() {
       }
       router.back();
     } catch (e: any) {
-      Alert.alert("Save failed", e?.message ?? "Could not save scenario.");
+      Alert.alert("Save failed", formatErrorMessage(e, "Could not save scenario."));
     } finally {
       savingRef.current = false;
       setSaving(false);
@@ -574,7 +575,7 @@ export default function CreateScenarioModal() {
                       try {
                         await setScenarioMode?.(String(existing.id), nextMode);
                       } catch (e: any) {
-                        Alert.alert("Update failed", e?.message ?? "Could not update scenario mode.");
+                        Alert.alert("Update failed", formatErrorMessage(e, "Could not update scenario mode."));
                       }
                     }
                   }}

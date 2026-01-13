@@ -14,6 +14,7 @@ import { Alert } from "@/context/dialog";
 
 import type { Profile } from "@/data/db/schema";
 import { canEditProfile } from "@/lib/permission";
+import { formatErrorMessage } from "@/lib/format";
 
 import {
   MAX_OWNED_PROFILES_PER_USER,
@@ -414,7 +415,7 @@ const allProfiles = React.useMemo<Profile[]>(() => {
         closeAdopt();
         await finishSelection(pid);
       } catch (e: any) {
-        Alert.alert("Adopt failed", e?.message ?? "Could not adopt profile.");
+        Alert.alert("Adopt failed", formatErrorMessage(e, "Could not adopt profile."));
       } finally {
         adoptConfirmRef.current = false;
         setAdoptBusy(false);
@@ -781,7 +782,7 @@ const allProfiles = React.useMemo<Profile[]>(() => {
 
         Alert.alert("Done", "Profiles transferred.");
       } catch (e: any) {
-        Alert.alert("Transfer failed", e?.message ?? "Could not transfer profiles.");
+        Alert.alert("Transfer failed", formatErrorMessage(e, "Could not transfer profiles."));
       } finally {
         transferConfirmRef.current = false;
         setTransferBusy(false);

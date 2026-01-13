@@ -23,6 +23,7 @@ import { canEditPost } from "@/lib/permission";
 import * as MediaLibrary from "expo-media-library";
 import { captureRef } from "react-native-view-shot";
 import { Alert } from "@/context/dialog";
+import { formatErrorMessage } from "@/lib/format";
 
 export default function PostScreen() {
   const { scenarioId, postId, from } = useLocalSearchParams<{
@@ -88,8 +89,7 @@ export default function PostScreen() {
                   else router.replace(fromPath as any);
                 } catch {}
               } catch (e: any) {
-                const msg = String(e?.message ?? "Could not delete post");
-                Alert.alert("Could not delete", msg);
+                Alert.alert("Could not delete", formatErrorMessage(e, "Could not delete post"));
               } finally {
                 deletePostRef.current = false;
                 resolve();
@@ -209,7 +209,7 @@ export default function PostScreen() {
       Alert.alert("Saved", "Screenshot saved to your gallery.");
     } catch (e: any) {
       setIsCapturing(false);
-      Alert.alert("Share failed", e?.message ?? "Could not save screenshot.");
+      Alert.alert("Share failed", formatErrorMessage(e, "Could not save screenshot."));
     }
   }, [thread]);
 

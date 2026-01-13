@@ -37,7 +37,7 @@ import { apiFetch } from "@/lib/apiClient";
 import { pickAndPersistManyImages } from "@/components/ui/ImagePicker";
 import { MediaGrid } from "@/components/media/MediaGrid";
 import { Lightbox } from "@/components/media/LightBox";
-import { formatNetworkError } from "@/lib/format";
+import { formatErrorMessage } from "@/lib/format";
 
 function parsePgTextArrayLiteral(input: string): string[] {
   const s = String(input ?? "").trim();
@@ -779,8 +779,7 @@ export default function ConversationThreadScreen() {
         await deleteMessage?.({ scenarioId: sid, messageId: mid });
         opts?.after?.();
       } catch (e: any) {
-        const msg = String(e?.message ?? "Could not delete message");
-        Alert.alert("Could not delete", msg);
+        Alert.alert("Could not delete", formatErrorMessage(e, "Could not delete message"));
       } finally {
         deleteMessageRef.current = false;
       }
@@ -807,8 +806,7 @@ export default function ConversationThreadScreen() {
       });
       closeEdit();
     } catch (e: any) {
-      const msg = String(e?.message ?? "Could not update message");
-      Alert.alert("Could not update", msg);
+      Alert.alert("Could not update", formatErrorMessage(e, "Could not update message"));
     }
   }, [sid, editMessageId, editText, editSenderId, editAllowedIds, updateMessage, closeEdit]);
 
@@ -921,7 +919,7 @@ export default function ConversationThreadScreen() {
         imageUris: imgs,
       });
     } catch (e) {
-      Alert.alert("Could not send", formatNetworkError(e, "Send failed"));
+      Alert.alert("Could not send", formatErrorMessage(e, "Send failed"));
       return;
     } finally {
       sendingRef.current = false;
@@ -1421,7 +1419,7 @@ export default function ConversationThreadScreen() {
                     imageUris: [],
                   });
                 } catch (e) {
-                  Alert.alert("Could not send", formatNetworkError(e, "Send failed"));
+                  Alert.alert("Could not send", formatErrorMessage(e, "Send failed"));
                   return;
                 } finally {
                   sendingRef.current = false;

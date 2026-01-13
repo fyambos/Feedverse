@@ -18,6 +18,7 @@ import { TagPill } from "@/components/ui/TagPill";
 
 import { createScenarioIO } from "@/lib/scenarioIO";
 import { Alert } from "@/context/dialog";
+import { formatErrorMessage } from "@/lib/format";
 import { MAX_TOTAL_PLAYERS_PER_SCENARIO } from "@/lib/rules";
 
 const MAX_PLAYERS = MAX_TOTAL_PLAYERS_PER_SCENARIO;
@@ -302,7 +303,7 @@ export default function ScenarioListScreen() {
       try {
         await leaveScenarioApi?.(sid, uid);
       } catch (e: any) {
-        Alert.alert("Leave failed", e?.message ?? "Could not leave scenario.");
+        Alert.alert("Leave failed", formatErrorMessage(e, "Could not leave scenario."));
       } finally {
         leaveRef.current = false;
         setLeaveBusy(false);
@@ -322,7 +323,7 @@ export default function ScenarioListScreen() {
         const ok = await deleteScenarioApi?.(sid, uid);
         if (!ok) Alert.alert("Delete failed", "Could not delete this scenario.");
       } catch (e: any) {
-        Alert.alert("Delete failed", e?.message ?? "Could not delete this scenario.");
+        Alert.alert("Delete failed", formatErrorMessage(e, "Could not delete this scenario."));
       } finally {
         deleteRef.current = false;
         setDeleteBusy(false);
@@ -663,7 +664,7 @@ export default function ScenarioListScreen() {
 
         Alert.alert("Done", "Ownership transferred.");
       } catch (e: any) {
-        Alert.alert("Transfer failed", e?.message ?? "Could not transfer ownership.");
+        Alert.alert("Transfer failed", formatErrorMessage(e, "Could not transfer ownership."));
       } finally {
         transferConfirmRef.current = false;
         setTransferConfirmBusy(false);

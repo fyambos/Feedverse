@@ -18,6 +18,7 @@ import type { UserSettings } from "@/data/db/schema";
 
 import { ProfileAvatarPicker } from "@/components/profile-edit/ProfileAvatarPicker";
 import { Alert } from "@/context/dialog";
+import { formatErrorMessage } from "@/lib/format";
 
 type DarkMode = "light" | "dark" | "system";
 
@@ -66,7 +67,7 @@ export default function UserSettingsScreen() {
       try {
         await updateUsername(username);
       } catch (e: any) {
-        setUsernameError(e?.message || "Could not update username");
+        setUsernameError(formatErrorMessage(e, "Could not update username"));
         setIsSavingUsername(false);
         return;
       }

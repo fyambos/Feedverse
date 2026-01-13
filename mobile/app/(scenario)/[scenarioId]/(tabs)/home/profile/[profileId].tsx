@@ -27,6 +27,7 @@ import { ProfilePostsList } from "@/components/profile/ProfilePostsList";
 import { ProfileStatusOverlay } from "@/components/profile/ProfileStatusOverlay";
 import { CreatePostFab } from "@/components/post/CreatePostFab";
 import type { ProfileOverlayConfig, ProfileViewState } from "@/components/profile/profileTypes";
+import { formatErrorMessage } from "@/lib/format";
 
 type Cursor = string | null;
 const PAGE_SIZE = 10;
@@ -408,8 +409,7 @@ export default function ProfileScreen() {
                 await deletePost(postId);
                 loadFirstPage();
               } catch (e: any) {
-                const msg = String(e?.message ?? "Could not delete post");
-                Alert.alert("Could not delete", msg);
+                Alert.alert("Could not delete", formatErrorMessage(e, "Could not delete post"));
               } finally {
                 deletePostRef.current = false;
                 resolve();

@@ -19,6 +19,7 @@ import { useAppData } from "@/context/appData";
 import { Avatar } from "@/components/ui/Avatar";
 import { SwipeableRow } from "@/components/ui/SwipeableRow";
 import type { Conversation, Message, Profile } from "@/data/db/schema";
+import { formatErrorMessage } from "@/lib/format";
 
 import { useFocusEffect } from "@react-navigation/native";
 
@@ -893,7 +894,7 @@ useEffect(() => {
                   participantProfileIds: nextParts,
                 });
               } catch (e: any) {
-                Alert.alert("Could not update chat", e?.message ?? "Please try again.");
+                Alert.alert("Could not update chat", formatErrorMessage(e, "Please try again."));
               } finally {
                 deleteConversationLockRef.current[lockKey] = false;
               }

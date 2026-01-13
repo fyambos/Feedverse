@@ -17,6 +17,7 @@ import { canEditPost } from "@/lib/permission";
 import { Avatar } from "@/components/ui/Avatar";
 import { createScenarioIO } from "@/lib/scenarioIO";
 import { Alert } from "@/context/dialog";
+import { formatErrorMessage } from "@/lib/format";
 
 type Cursor = string | null;
 const PAGE_SIZE = 12;
@@ -324,8 +325,7 @@ export default function HomeScreen() {
                 await deletePost(postId);
                 loadFirstPage();
               } catch (e: any) {
-                const msg = String(e?.message ?? "Could not delete post");
-                Alert.alert("Could not delete", msg);
+                Alert.alert("Could not delete", formatErrorMessage(e, "Could not delete post"));
               } finally {
                 deletePostRef.current = false;
                 resolve();

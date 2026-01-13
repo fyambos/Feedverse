@@ -12,6 +12,7 @@ import { Alert } from "@/context/dialog";
 import type { Conversation, Profile } from "@/data/db/schema";
 import { Avatar } from "@/components/ui/Avatar";
 import { pickAndPersistOneImage } from "@/components/ui/ImagePicker";
+import { formatErrorMessage } from "@/lib/format";
 
 export default function EditGroupChatModal() {
   const scheme = useColorScheme() ?? "light";
@@ -124,7 +125,7 @@ export default function EditGroupChatModal() {
 
       router.back();
     } catch (e: any) {
-      Alert.alert("Could not save", e?.message ?? "Something went wrong.");
+      Alert.alert("Could not save", formatErrorMessage(e, "Something went wrong."));
     } finally {
       setBusy(false);
     }

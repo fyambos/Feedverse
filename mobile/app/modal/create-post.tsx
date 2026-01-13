@@ -16,7 +16,7 @@ import { useColorScheme } from "@/hooks/use-color-scheme";
 import { pickAndPersistManyImages } from "@/components/ui/ImagePicker";
 import { takeAndPersistPhoto } from "@/lib/media/takePicture";
 import { makeId } from "@/lib/format";
-import { formatNetworkError } from "@/lib/format";
+import { formatErrorMessage } from "@/lib/format";
 
 import {
   clampCountFromText,
@@ -754,7 +754,7 @@ export default function CreatePostModal() {
     } catch (e) {
       Alert.alert(
         isEdit ? "Could not save post" : "Could not post",
-        formatNetworkError(e, "Network error. Please try again.")
+        formatErrorMessage(e, "Network error. Please try again.")
       );
     } finally {
       setPosting(false);
