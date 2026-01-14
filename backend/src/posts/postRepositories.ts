@@ -8,6 +8,8 @@ import { getMessaging } from "../config/firebaseAdmin";
 import { extractMentionHandles } from "../lib/mentions";
 import realtimeService from "../realtime/realtimeService";
 import websocketService from "../realtime/websocketService";
+import { sendExpoPush } from "../push/expoPush";
+import { UserRepository } from "../users/userRepositories";
 
 async function scenarioAccess(client: PoolClient, scenarioId: string, userId: string): Promise<boolean> {
   const res = await client.query(
@@ -520,29 +522,55 @@ export async function createPostForScenario(args: {
               }
 
               const messaging = getMessaging();
-              if (!messaging) return;
 
-              const promises: Promise<any>[] = [];
-              for (const ownerId of Array.from(ownerIds)) {
-                const topic = `user_${ownerId}`;
-                const msg: any = {
-                  topic,
-                  notification: { title, body: body || undefined },
-                  data: {
-                    scenarioId: sid,
-                    postId,
-                    kind: "mention",
-                    authorProfileId,
-                  },
-                };
-                promises.push(
-                  messaging.send(msg).catch((err: any) => {
-                    console.warn("FCM send to topic failed", topic, err?.message ?? err);
-                  }),
-                );
+              // FCM topic send (optional; requires client-side topic subscription).
+              if (messaging) {
+                const promises: Promise<any>[] = [];
+                for (const ownerId of Array.from(ownerIds)) {
+                  const topic = `user_${ownerId}`;
+                  const msg: any = {
+                    topic,
+                    notification: { title, body: body || undefined },
+                    data: {
+                      scenarioId: sid,
+                      postId,
+                      kind: "mention",
+                      authorProfileId,
+                    },
+                  };
+                  promises.push(
+                    messaging.send(msg).catch((err: any) => {
+                      console.warn("FCM send to topic failed", topic, err?.message ?? err);
+                    }),
+                  );
+                }
+
+                await Promise.all(promises);
               }
 
-              await Promise.all(promises);
+              // Expo push token send (works with expo-notifications in EAS builds).
+              try {
+                const repo = new UserRepository();
+                const tokenRows = await repo.listExpoPushTokensForUserIds(Array.from(ownerIds));
+                const expoMessages = tokenRows
+                  .map((r) => String((r as any)?.expo_push_token ?? (r as any)?.expoPushToken ?? "").trim())
+                  .filter(Boolean)
+                  .map((to) => ({
+                    to,
+                    title,
+                    body: body || undefined,
+                    data: {
+                      scenarioId: sid,
+                      postId,
+                      kind: "mention",
+                      authorProfileId,
+                    },
+                  }));
+
+                await sendExpoPush(expoMessages);
+              } catch (e: any) {
+                console.warn("Expo push send failed", e?.message ?? e);
+              }
             } finally {
               client2.release();
             }

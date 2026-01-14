@@ -42,6 +42,8 @@ import { mapMessageRowToApi } from "./messageModels";
 import realtimeService from "../realtime/realtimeService";
 import websocketService from "../realtime/websocketService";
 import { getMessaging } from "../config/firebaseAdmin";
+import { sendExpoPush } from "../push/expoPush";
+import { UserRepository } from "../users/userRepositories";
 
 async function scenarioAccess(client: PoolClient, scenarioId: string, userId: string): Promise<boolean> {
   const res = await client.query(
@@ -331,7 +333,9 @@ export async function sendMessage(args: {
       // console.log("websocket emit message.created failed", e);
     }
 
-    // Attempt to send push notifications via FCM to conversation participants' owners.
+    // Attempt to send push notifications to conversation participants' owners.
+    // Important: include scenarioId + conversationId + a recipient-owned profileId in payload data
+    // so mobile deep-linking doesn't lose context.
     (async () => {
       try {
         const client2 = await pool.connect();
@@ -344,47 +348,77 @@ export async function sendMessage(args: {
             [cid],
           );
 
+          const ownerToProfileIds = new Map<string, string[]>();
           const ownerIds = new Set<string>();
           for (const r of parts.rows) {
             const owner = String(r?.owner_user_id ?? "").trim();
-            if (owner) ownerIds.add(owner);
+            const pid = String(r?.profile_id ?? "").trim();
+            if (!owner) continue;
+            ownerIds.add(owner);
+            if (!ownerToProfileIds.has(owner)) ownerToProfileIds.set(owner, []);
+            if (pid) ownerToProfileIds.get(owner)!.push(pid);
           }
 
           // Remove sender's owner (if sender profile is owned) so sender doesn't get a push.
           try {
             const resSender = await client2.query(`SELECT owner_user_id FROM profiles WHERE id = $1 LIMIT 1`, [senderProfileId]);
             const senderOwner = String(resSender.rows?.[0]?.owner_user_id ?? "").trim();
-            if (senderOwner) ownerIds.delete(senderOwner);
+            if (senderOwner) {
+              ownerIds.delete(senderOwner);
+              ownerToProfileIds.delete(senderOwner);
+            }
           } catch {}
 
           if (ownerIds.size === 0) return;
-
-          const messaging = getMessaging();
-          if (!messaging) {
-            // no messaging available in this environment
-            // console.log("FCM messaging not available; skipping push send");
-            return;
-          }
 
           // Build notification payload
           const title = (await client2.query(`SELECT display_name FROM profiles WHERE id = $1 LIMIT 1`, [senderProfileId])).rows?.[0]?.display_name ?? "New message";
           const body = String(row.text ?? "");
 
-          // For each owner, send to topic `user_<ownerId>`; clients should subscribe to this topic or we can later add token registration.
-          const promises: Promise<any>[] = [];
-          for (const ownerId of Array.from(ownerIds)) {
-            const topic = `user_${ownerId}`;
-            const msg: any = {
-              topic,
-              notification: { title: String(title ?? "New message"), body: body ?? undefined },
-              data: { conversationId: cid, scenarioId: sid },
-            };
-            promises.push(messaging.send(msg).catch((err: any) => {
-              console.warn("FCM send to topic failed", topic, err?.message ?? err);
-            }));
+          // FCM topic send (optional; requires client-side topic subscription).
+          const messaging = getMessaging();
+          if (messaging) {
+            // For each owner, send to topic `user_<ownerId>`; clients should subscribe to this topic.
+            const promises: Promise<any>[] = [];
+            for (const ownerId of Array.from(ownerIds)) {
+              const topic = `user_${ownerId}`;
+              const profileId = String(ownerToProfileIds.get(ownerId)?.[0] ?? "").trim();
+              const msg: any = {
+                topic,
+                notification: { title: String(title ?? "New message"), body: body ?? undefined },
+                data: { conversationId: cid, scenarioId: sid, profileId },
+              };
+              promises.push(messaging.send(msg).catch((err: any) => {
+                console.warn("FCM send to topic failed", topic, err?.message ?? err);
+              }));
+            }
+
+            await Promise.all(promises);
           }
 
-          await Promise.all(promises);
+          // Expo push token send (works with expo-notifications in EAS builds; delivers when app is closed).
+          try {
+            const repo = new UserRepository();
+            const tokenRows = await repo.listExpoPushTokensForUserIds(Array.from(ownerIds));
+
+            const expoMessages = tokenRows
+              .map((r) => {
+                const ownerId = String((r as any)?.user_id ?? "").trim();
+                const to = String((r as any)?.expo_push_token ?? "").trim();
+                const profileId = String(ownerToProfileIds.get(ownerId)?.[0] ?? "").trim();
+                return {
+                  to,
+                  title: String(title ?? "New message"),
+                  body: body || undefined,
+                  data: { conversationId: cid, scenarioId: sid, profileId, kind: "message" },
+                };
+              })
+              .filter((m) => Boolean(m.to));
+
+            await sendExpoPush(expoMessages);
+          } catch (e: any) {
+            console.warn("Expo push send failed", e?.message ?? e);
+          }
         } finally {
           client2.release();
         }
@@ -540,6 +574,104 @@ export async function sendMessageWithImages(args: {
     }
 
     await client.query("COMMIT");
+
+    // Emit message.created for realtime subscribers
+    try {
+      const payload = { message: mapMessageRowToApi(row), senderUserId: uid };
+      realtimeService.emitScenarioEvent(sid, "message.created", payload);
+    } catch {}
+
+    try {
+      const payload = { message: mapMessageRowToApi(row), senderUserId: uid };
+      websocketService.broadcastScenarioEvent(sid, "message.created", payload);
+    } catch {}
+
+    // Best-effort push notifications (FCM + Expo).
+    (async () => {
+      try {
+        const client2 = await pool.connect();
+        try {
+          const parts = await client2.query(
+            `SELECT p.owner_user_id AS owner_user_id, p.id AS profile_id
+             FROM conversation_participants cp
+             JOIN profiles p ON p.id = cp.profile_id
+             WHERE cp.conversation_id = $1`,
+            [cid],
+          );
+
+          const ownerToProfileIds = new Map<string, string[]>();
+          const ownerIds = new Set<string>();
+          for (const r of parts.rows) {
+            const owner = String(r?.owner_user_id ?? "").trim();
+            const pid = String(r?.profile_id ?? "").trim();
+            if (!owner) continue;
+            ownerIds.add(owner);
+            if (!ownerToProfileIds.has(owner)) ownerToProfileIds.set(owner, []);
+            if (pid) ownerToProfileIds.get(owner)!.push(pid);
+          }
+
+          // Remove sender's owner (if sender profile is owned).
+          try {
+            const resSender = await client2.query(`SELECT owner_user_id FROM profiles WHERE id = $1 LIMIT 1`, [senderProfileId]);
+            const senderOwner = String(resSender.rows?.[0]?.owner_user_id ?? "").trim();
+            if (senderOwner) {
+              ownerIds.delete(senderOwner);
+              ownerToProfileIds.delete(senderOwner);
+            }
+          } catch {}
+
+          if (ownerIds.size === 0) return;
+
+          const title = (await client2.query(`SELECT display_name FROM profiles WHERE id = $1 LIMIT 1`, [senderProfileId])).rows?.[0]?.display_name ?? "New message";
+          const body = (String((row as any).text ?? "").trim() || (Array.isArray((row as any).image_urls) && (row as any).image_urls.length > 0 ? "Sent an image" : "New message"));
+
+          const messaging = getMessaging();
+          if (messaging) {
+            const promises: Promise<any>[] = [];
+            for (const ownerId of Array.from(ownerIds)) {
+              const topic = `user_${ownerId}`;
+              const profileId = String(ownerToProfileIds.get(ownerId)?.[0] ?? "").trim();
+              const msg: any = {
+                topic,
+                notification: { title: String(title ?? "New message"), body: body ?? undefined },
+                data: { conversationId: cid, scenarioId: sid, profileId },
+              };
+              promises.push(messaging.send(msg).catch((err: any) => {
+                console.warn("FCM send to topic failed", topic, err?.message ?? err);
+              }));
+            }
+            await Promise.all(promises);
+          }
+
+          try {
+            const repo = new UserRepository();
+            const tokenRows = await repo.listExpoPushTokensForUserIds(Array.from(ownerIds));
+            const expoMessages = tokenRows
+              .map((r) => {
+                const ownerId = String((r as any)?.user_id ?? "").trim();
+                const to = String((r as any)?.expo_push_token ?? "").trim();
+                const profileId = String(ownerToProfileIds.get(ownerId)?.[0] ?? "").trim();
+                return {
+                  to,
+                  title: String(title ?? "New message"),
+                  body: body || undefined,
+                  data: { conversationId: cid, scenarioId: sid, profileId, kind: "message" },
+                };
+              })
+              .filter((m) => Boolean(m.to));
+
+            await sendExpoPush(expoMessages);
+          } catch (e: any) {
+            console.warn("Expo push send failed", e?.message ?? e);
+          }
+        } finally {
+          client2.release();
+        }
+      } catch (e) {
+        console.warn("Error while attempting server-side push send:", (e as Error)?.message ?? e);
+      }
+    })();
+
     return { message: mapMessageRowToApi(row) };
   } catch (e: unknown) {
     try {

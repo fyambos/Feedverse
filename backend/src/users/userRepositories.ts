@@ -94,4 +94,29 @@ export class UserRepository {
     const result = await pool.query(query, [ids]);
     return result.rows || [];
   }
+
+  async upsertExpoPushToken(args: { userId: string; expoPushToken: string; platform?: string | null }): Promise<void> {
+    const userId = String(args.userId ?? "").trim();
+    const token = String(args.expoPushToken ?? "").trim();
+    const platform = args.platform == null ? null : String(args.platform).trim() || null;
+    if (!userId || !token) return;
+
+    const q = `
+      INSERT INTO user_push_tokens (user_id, expo_push_token, platform, created_at, updated_at)
+      VALUES ($1, $2, $3, now(), now())
+      ON CONFLICT (user_id, expo_push_token)
+      DO UPDATE SET platform = EXCLUDED.platform, updated_at = now()
+    `;
+
+    await pool.query(q, [userId, token, platform]);
+  }
+
+  async listExpoPushTokensForUserIds(userIds: string[]): Promise<Array<{ user_id: string; expo_push_token: string; platform: string | null }>> {
+    const ids = Array.isArray(userIds) ? userIds.map((s) => String(s).trim()).filter(Boolean) : [];
+    if (ids.length === 0) return [];
+
+    const q = `SELECT user_id, expo_push_token, platform FROM user_push_tokens WHERE user_id = ANY($1)`;
+    const res = await pool.query(q, [ids]);
+    return res.rows || [];
+  }
 }

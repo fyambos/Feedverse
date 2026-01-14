@@ -1,7 +1,7 @@
 import { Router } from "express";
 const userRouter = Router();
 
-import { GetUserProfileController, UpdateUserAvatarController, GetUsersByIdsController, UpdateUsernameController } from "./userControllers";
+import { GetUserProfileController, UpdateUserAvatarController, GetUsersByIdsController, UpdateUsernameController, UpsertUserPushTokenController } from "./userControllers";
 import { authMiddleware } from "../auth/authMiddleware";
 import { ROUTES_USERS } from "../config/constants";
 import { upload } from "../config/multer";
@@ -16,5 +16,8 @@ userRouter.post("/avatar", authMiddleware, upload.single("avatar"), UpdateUserAv
 
 // PATCH /username - update username
 userRouter.patch("/username", authMiddleware, UpdateUsernameController);
+
+// POST /push-token - register Expo push token for remote notifications
+userRouter.post("/push-token", authMiddleware, UpsertUserPushTokenController);
 
 export default userRouter;

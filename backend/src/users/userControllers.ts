@@ -132,3 +132,31 @@ export const GetUsersByIdsController = async (req: Request, res: Response) => {
     return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ message: USER_MESSAGES.FAILED_FETCH, error });
   }
 };
+
+// POST /users/push-token
+export const UpsertUserPushTokenController = async (req: Request, res: Response) => {
+  if (req.method !== HTTP_METHODS.POST) {
+    return res.status(HTTP_STATUS.BAD_REQUEST).send(ERROR_MESSAGES.METHOD_NOT_ALLOWED);
+  }
+
+  try {
+    const user: User = req.user;
+    const userId = String(user?.id ?? "").trim();
+    if (!userId) return res.status(HTTP_STATUS.UNAUTHORIZED).json({ error: "Unauthorized" });
+
+    const expoPushToken = String(req.body?.expoPushToken ?? req.body?.expo_push_token ?? "").trim();
+    const platformRaw = req.body?.platform;
+    const platform = platformRaw == null ? null : String(platformRaw).trim() || null;
+
+    if (!expoPushToken) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({ error: "expoPushToken is required" });
+    }
+
+    const repo = new UserRepository();
+    await repo.upsertExpoPushToken({ userId, expoPushToken, platform });
+
+    return res.status(HTTP_STATUS.OK).json({ ok: true });
+  } catch (error: any) {
+    return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ error: error?.message || "Failed to save push token" });
+  }
+};

@@ -631,6 +631,42 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
           }
         } catch {}
 
+        // In backend mode, register an Expo push token so the server can send
+        // real remote notifications (works even when the app is closed).
+        try {
+          const token = String(auth.token ?? "").trim();
+          if (isBackendMode(token) && token) {
+            // eslint-disable-next-line @typescript-eslint/no-var-requires
+            const Constants = require("expo-constants");
+            const projectId =
+              Constants?.expoConfig?.extra?.eas?.projectId ??
+              Constants?.easConfig?.projectId ??
+              Constants?.expoConfig?.extra?.projectId;
+
+            let expoPushToken = "";
+            try {
+              const res = await Notifications.getExpoPushTokenAsync?.(projectId ? { projectId } : undefined);
+              expoPushToken = String(res?.data ?? "").trim();
+            } catch {
+              expoPushToken = "";
+            }
+
+            if (expoPushToken) {
+              const platform = String(Constants?.platform?.ios ? "ios" : Constants?.platform?.android ? "android" : "");
+              await apiFetch({
+                path: "/users/push-token",
+                token,
+                init: {
+                  method: "POST",
+                  body: JSON.stringify({ expoPushToken, platform: platform || undefined }),
+                },
+              });
+            }
+          }
+        } catch {
+          // best-effort; don't block app startup if push registration fails
+        }
+
         // Register response handler: navigate to conversation when tapped
         try {
           notificationResponseListenerRef.current = Notifications.addNotificationResponseReceivedListener((response: any) => {
