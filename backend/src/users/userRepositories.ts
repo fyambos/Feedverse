@@ -5,6 +5,12 @@ import { pool } from "../config/database";
 import { User } from "./userModels";
 
 export class UserRepository {
+  async findById(userId: string): Promise<User | null> {
+    const query = "SELECT id, username, name, email, avatar_url, settings, created_at, updated_at FROM users WHERE id = $1";
+    const result = await pool.query(query, [userId]);
+    return result.rows[0] || null;
+  }
+
   async updateUsername(userId: string, username: string): Promise<void> {
     const query = "UPDATE users SET username = $1, updated_at = $2 WHERE id = $3";
     await pool.query(query, [username, new Date(), userId]);

@@ -15,6 +15,7 @@ import { readDb, updateDb } from "@/data/db/storage";
 import { seedDbIfNeeded } from "@/data/db/seed";
 import { apiFetch, setAuthInvalidationHandler } from "@/lib/apiClient";
 import { Alert } from "@/context/dialog";
+import { setCustomTintColor } from "@/constants/theme";
 import {
   normalizeUsernameForCreate,
   normalizeUsernameInput,
@@ -107,6 +108,30 @@ function apiBaseUrl() {
   return raw.replace(/\/$/, "");
 }
 
+function coerceUserSettings(raw: unknown): UserSettings {
+  let obj: any = raw;
+  if (typeof raw === "string") {
+    try {
+      obj = JSON.parse(raw);
+    } catch {
+      obj = null;
+    }
+  }
+
+  const out: UserSettings = {};
+  if (obj && typeof obj === "object") {
+    const dm = obj.darkMode;
+    if (dm === "light" || dm === "dark" || dm === "system") out.darkMode = dm;
+
+    const st = obj.showTimestamps ?? obj.show_timestamps;
+    if (typeof st === "boolean") out.showTimestamps = st;
+
+    const ct = obj.customTheme ?? obj.custom_theme;
+    if (typeof ct === "string") out.customTheme = ct;
+  }
+  return out;
+}
+
 function mapBackendUserToLocal(u: any): User {
   const now = nowIso();
   const id = String(u?.id ?? "");
@@ -118,7 +143,7 @@ function mapBackendUserToLocal(u: any): User {
     avatarUrl: String(u?.avatar_url ?? u?.avatarUrl ?? "") || `https://i.pravatar.cc/150?u=${encodeURIComponent(id || now)}`,
     createdAt: u?.created_at ? new Date(u.created_at).toISOString() : now,
     updatedAt: u?.updated_at ? new Date(u.updated_at).toISOString() : now,
-    settings: {},
+    settings: coerceUserSettings(u?.settings),
   };
 }
 
@@ -186,11 +211,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const refreshCurrentUser = useCallback(async () => {
     if (!userId) {
       setCurrentUser(null);
+      setCustomTintColor(null);
       return;
     }
 
     const db = await readDb();
-    setCurrentUser((db as any)?.users?.[String(userId)] ?? null);
+    const u = (db as any)?.users?.[String(userId)] ?? null;
+    try {
+      setCustomTintColor(u?.settings?.customTheme);
+    } catch {
+      // ignore
+    }
+    setCurrentUser(u);
   }, [userId]);
 
   const ensureDbReady = useCallback(async () => {
@@ -206,7 +238,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // best-effort refresh
       try {
         const db = await readDb();
-        setCurrentUser((db as any)?.users?.[String(nextUserId)] ?? null);
+        const u = (db as any)?.users?.[String(nextUserId)] ?? null;
+        try {
+          setCustomTintColor(u?.settings?.customTheme);
+        } catch {
+          // ignore
+        }
+        setCurrentUser(u);
       } catch {
         // ignore
       }
@@ -287,7 +325,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (String(userId) === uid) {
         try {
           const db = await readDb();
-          setCurrentUser((db as any)?.users?.[uid] ?? null);
+          const u = (db as any)?.users?.[uid] ?? null;
+          try {
+            setCustomTintColor(u?.settings?.customTheme);
+          } catch {
+            // ignore
+          }
+          setCurrentUser(u);
         } catch {
           // ignore
         }
@@ -365,6 +409,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
           await setSessionToken(nextToken);
           await setSessionUserId(uid);
+          try {
+            setCustomTintColor(localUser?.settings?.customTheme);
+          } catch {
+            // ignore
+          }
           return { ok: true as const };
         } catch {
           return { ok: false as const, error: "Unable to reach server." };
@@ -508,6 +557,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
               await setSessionToken(nextToken);
               await setSessionUserId(uid);
+              try {
+                setCustomTintColor(localUser?.settings?.customTheme);
+              } catch {
+                // ignore
+              }
               return { ok: true as const };
             }
 
@@ -580,6 +634,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUserId(null);
     setToken(null);
     setCurrentUser(null);
+    setCustomTintColor(null);
     await AsyncStorage.removeItem(KEY);
     await AsyncStorage.removeItem(TOKEN_KEY);
     authInvalidatedRef.current = false;
@@ -626,7 +681,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         };
       });
 
-      setCurrentUser((nextDb as any)?.users?.[id] ?? null);
+      const u = (nextDb as any)?.users?.[id] ?? null;
+      try {
+        setCustomTintColor(u?.settings?.customTheme);
+      } catch {
+        // ignore
+      }
+      setCurrentUser(u);
     },
     [userId]
   );

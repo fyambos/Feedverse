@@ -5,6 +5,7 @@ import { useCurrentUser } from "@/hooks/useCurrentUser";
 const DEFAULT_SETTINGS: Required<UserSettings> = {
   showTimestamps: true,
   darkMode: "system",
+  customTheme: "",
 };
 
 export function useUserSettings(): Required<UserSettings> {
@@ -15,6 +16,7 @@ export function useUserSettings(): Required<UserSettings> {
     return {
       showTimestamps: s.showTimestamps ?? DEFAULT_SETTINGS.showTimestamps,
       darkMode: s.darkMode ?? DEFAULT_SETTINGS.darkMode,
+      customTheme: typeof s.customTheme === "string" ? s.customTheme : DEFAULT_SETTINGS.customTheme,
     };
   }, [user?.settings]);
 }
