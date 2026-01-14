@@ -41,7 +41,6 @@ import type { MessageApi, MessageRow } from "./messageModels";
 import { mapMessageRowToApi } from "./messageModels";
 import realtimeService from "../realtime/realtimeService";
 import websocketService from "../realtime/websocketService";
-import { getMessaging } from "../config/firebaseAdmin";
 import { sendExpoPush } from "../push/expoPush";
 import { UserRepository } from "../users/userRepositories";
 
@@ -375,27 +374,6 @@ export async function sendMessage(args: {
           const title = (await client2.query(`SELECT display_name FROM profiles WHERE id = $1 LIMIT 1`, [senderProfileId])).rows?.[0]?.display_name ?? "New message";
           const body = String(row.text ?? "");
 
-          // FCM topic send (optional; requires client-side topic subscription).
-          const messaging = getMessaging();
-          if (messaging) {
-            // For each owner, send to topic `user_<ownerId>`; clients should subscribe to this topic.
-            const promises: Promise<any>[] = [];
-            for (const ownerId of Array.from(ownerIds)) {
-              const topic = `user_${ownerId}`;
-              const profileId = String(ownerToProfileIds.get(ownerId)?.[0] ?? "").trim();
-              const msg: any = {
-                topic,
-                notification: { title: String(title ?? "New message"), body: body ?? undefined },
-                data: { conversationId: cid, scenarioId: sid, profileId },
-              };
-              promises.push(messaging.send(msg).catch((err: any) => {
-                console.warn("FCM send to topic failed", topic, err?.message ?? err);
-              }));
-            }
-
-            await Promise.all(promises);
-          }
-
           // Expo push token send (works with expo-notifications in EAS builds; delivers when app is closed).
           try {
             const repo = new UserRepository();
@@ -624,24 +602,6 @@ export async function sendMessageWithImages(args: {
 
           const title = (await client2.query(`SELECT display_name FROM profiles WHERE id = $1 LIMIT 1`, [senderProfileId])).rows?.[0]?.display_name ?? "New message";
           const body = (String((row as any).text ?? "").trim() || (Array.isArray((row as any).image_urls) && (row as any).image_urls.length > 0 ? "Sent an image" : "New message"));
-
-          const messaging = getMessaging();
-          if (messaging) {
-            const promises: Promise<any>[] = [];
-            for (const ownerId of Array.from(ownerIds)) {
-              const topic = `user_${ownerId}`;
-              const profileId = String(ownerToProfileIds.get(ownerId)?.[0] ?? "").trim();
-              const msg: any = {
-                topic,
-                notification: { title: String(title ?? "New message"), body: body ?? undefined },
-                data: { conversationId: cid, scenarioId: sid, profileId },
-              };
-              promises.push(messaging.send(msg).catch((err: any) => {
-                console.warn("FCM send to topic failed", topic, err?.message ?? err);
-              }));
-            }
-            await Promise.all(promises);
-          }
 
           try {
             const repo = new UserRepository();

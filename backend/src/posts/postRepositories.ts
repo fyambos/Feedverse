@@ -4,7 +4,6 @@ import type { PostApi, PostRow } from "./postModels";
 import { mapPostRowToApi } from "./postModels";
 import { r2Service } from "../config/cloudflare/r2Service";
 import { deleteRepostsForPostCascade } from "../reposts/repostRepositories";
-import { getMessaging } from "../config/firebaseAdmin";
 import { extractMentionHandles } from "../lib/mentions";
 import realtimeService from "../realtime/realtimeService";
 import websocketService from "../realtime/websocketService";
@@ -519,33 +518,6 @@ export async function createPostForScenario(args: {
                 }
               } catch {
                 // ignore realtime failures
-              }
-
-              const messaging = getMessaging();
-
-              // FCM topic send (optional; requires client-side topic subscription).
-              if (messaging) {
-                const promises: Promise<any>[] = [];
-                for (const ownerId of Array.from(ownerIds)) {
-                  const topic = `user_${ownerId}`;
-                  const msg: any = {
-                    topic,
-                    notification: { title, body: body || undefined },
-                    data: {
-                      scenarioId: sid,
-                      postId,
-                      kind: "mention",
-                      authorProfileId,
-                    },
-                  };
-                  promises.push(
-                    messaging.send(msg).catch((err: any) => {
-                      console.warn("FCM send to topic failed", topic, err?.message ?? err);
-                    }),
-                  );
-                }
-
-                await Promise.all(promises);
               }
 
               // Expo push token send (works with expo-notifications in EAS builds).
