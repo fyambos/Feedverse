@@ -50,10 +50,19 @@ export const GetUserProfileController = async (req: Request, res: Response) => {
   }
 
   try {
-    // Récupération de l'utilisateur via requête client (la requête est de type `Request` de base + étendue avec `User`)
-    const user: User = req.user;
+    const tokenUser: User = req.user;
+    const userId = String(tokenUser?.id ?? "").trim();
+    if (!userId) return res.status(HTTP_STATUS.UNAUTHORIZED).json({ error: "Unauthorized" });
 
-    res.status(HTTP_STATUS.OK).send(user);
+    // IMPORTANT: req.user comes from the JWT payload and can be stale.
+    // Fetch the latest user record from DB so settings edits in NeonDB are reflected.
+    const repo = new UserRepository();
+    const user = await repo.findById(userId);
+    if (!user) return res.status(HTTP_STATUS.NOT_FOUND).json({ message: USER_MESSAGES.NOT_FOUND });
+
+    // Never return password hashes.
+    const { password_hash: _pw, ...safe } = user as any;
+    return res.status(HTTP_STATUS.OK).json(safe);
   } catch (error: unknown) {
     res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
       message: USER_MESSAGES.NOT_FOUND,

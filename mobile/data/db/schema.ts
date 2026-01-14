@@ -6,6 +6,12 @@ export type UserSettings = {
    */
   showTimestamps?: boolean;
   darkMode?: "light" | "dark" | "system";
+
+  /**
+   * Hidden/feature-flag style customization. Expected format: "#RRGGBB".
+   * (No UI yet; can be set directly in the backend DB.)
+   */
+  customTheme?: string;
 };
 
 export type User = {

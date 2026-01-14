@@ -44,6 +44,7 @@ function normalizeSettings(s?: UserSettings): Required<UserSettings> {
   return {
     showTimestamps: s?.showTimestamps ?? true,
     darkMode: s?.darkMode ?? "system",
+    customTheme: typeof s?.customTheme === "string" ? s.customTheme : "",
   };
 }
 

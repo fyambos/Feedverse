@@ -2,7 +2,7 @@
   "expo": {
     "name": "Feedverse",
     "slug": "mobile",
-    "version": "1.0.1",
+    "version": "1.0.2",
     "orientation": "portrait",
     "icon": "./assets/images/FeedverseIcon.png",
     "scheme": "mobile",
@@ -19,7 +19,6 @@
       }
     },
     "android": {
-      "versionCode": 8,
       "permissions": [
         "CAMERA",
         "READ_EXTERNAL_STORAGE",
