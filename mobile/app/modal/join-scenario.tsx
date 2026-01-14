@@ -21,6 +21,7 @@ import { useColorScheme } from "@/hooks/use-color-scheme";
 import { useAuth } from "@/context/auth";
 import { useAppData } from "@/context/appData";
 import { Alert } from "@/context/dialog";
+import { formatErrorMessage } from "@/lib/format";
 
 import * as Clipboard from "expo-clipboard";
 
@@ -78,7 +79,7 @@ export default function JoinScenarioModal() {
       router.back();
 
     } catch (e: any) {
-      Alert.alert("Join failed", e?.message ?? "Could not join scenario.");
+      Alert.alert("Join failed", formatErrorMessage(e, "Could not join scenario."));
     } finally {
       setSubmitting(false);
     }
@@ -102,7 +103,7 @@ export default function JoinScenarioModal() {
         Keyboard.dismiss();
         requestAnimationFrame(() => inputRef.current?.focus());
     } catch (e: any) {
-        Alert.alert("Paste failed", e?.message ?? "Could not read clipboard.");
+      Alert.alert("Paste failed", formatErrorMessage(e, "Could not read clipboard."));
     }
     }, [submitting]);
   return (

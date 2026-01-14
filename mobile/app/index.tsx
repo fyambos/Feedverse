@@ -18,8 +18,10 @@ import { TagPill } from "@/components/ui/TagPill";
 
 import { createScenarioIO } from "@/lib/scenarioIO";
 import { Alert } from "@/context/dialog";
+import { formatErrorMessage } from "@/lib/format";
+import { MAX_TOTAL_PLAYERS_PER_SCENARIO } from "@/lib/rules";
 
-const MAX_PLAYERS = 20;
+const MAX_PLAYERS = MAX_TOTAL_PLAYERS_PER_SCENARIO;
 
 type ScenarioMenuState = {
   open: boolean;
@@ -38,11 +40,13 @@ export default function ScenarioListScreen() {
   const colors = Colors[colorScheme];
   const insets = useSafeAreaInsets();
 
-  const { signOut, userId } = useAuth();
+  const { signOut, userId, token } = useAuth();
   const {
     isReady,
     listScenarios,
     db,
+    syncScenarios,
+    syncProfilesForScenario,
     transferScenarioOwnership,
     leaveScenario: leaveScenarioApi,
     deleteScenario: deleteScenarioApi,
@@ -91,8 +95,28 @@ export default function ScenarioListScreen() {
     toUserId: string | null;
   }>({ open: false, scenarioId: null, toUserId: null });
 
-  const closeTransfer = () => setTransfer({ open: false, scenarioId: null });
-  const closeConfirm = () => setConfirm({ open: false, scenarioId: null, toUserId: null });
+  const transferConfirmRef = useRef(false);
+  const [transferConfirmBusy, setTransferConfirmBusy] = useState(false);
+
+  const leaveRef = useRef(false);
+  const [leaveBusy, setLeaveBusy] = useState(false);
+  const leavePromptLockRef = useRef(false);
+
+  const deleteRef = useRef(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const deletePromptLockRef = useRef(false);
+
+  const closeTransfer = () => {
+    transferConfirmRef.current = false;
+    setTransferConfirmBusy(false);
+    setTransfer({ open: false, scenarioId: null });
+  };
+
+  const closeConfirm = () => {
+    transferConfirmRef.current = false;
+    setTransferConfirmBusy(false);
+    setConfirm({ open: false, scenarioId: null, toUserId: null });
+  };
 
   const onLogout = async () => {
     await signOut();
@@ -102,6 +126,14 @@ export default function ScenarioListScreen() {
   const openSettings = () => {
     router.push("/(scenario)/settings" as any);
   };
+
+  const isBackendMode = React.useMemo(() => {
+    const baseUrl = String(process.env.EXPO_PUBLIC_API_BASE_URL ?? "").trim();
+    const t = String(token ?? "").trim();
+    return Boolean(baseUrl && t);
+  }, [token]);
+
+  const isLocalScenarioId = (id: string) => String(id ?? "").startsWith("sc_");
 
   const openScenarioEdit = (scenarioId: string) => {
     router.push({ pathname: "/modal/create-scenario", params: { scenarioId } } as any);
@@ -120,33 +152,65 @@ export default function ScenarioListScreen() {
     const all = listScenarios?.() ?? [];
     const uid = String(userId ?? "").trim();
 
+    const sortNewestFirst = (a: any, b: any) => {
+      // In backend mode, surface server scenarios before local-only ones.
+      if (isBackendMode) {
+        const aLocal = isLocalScenarioId(String(a?.id ?? ""));
+        const bLocal = isLocalScenarioId(String(b?.id ?? ""));
+        if (aLocal !== bLocal) return aLocal ? 1 : -1;
+      }
+
+      const aTime = new Date(a.createdAt ?? 0).getTime();
+      const bTime = new Date(b.createdAt ?? 0).getTime();
+      return bTime - aTime;
+    };
+
     if (!uid) {
-      return all.sort((a: any, b: any) => {
-        const aTime = new Date(a.createdAt ?? 0).getTime();
-        const bTime = new Date(b.createdAt ?? 0).getTime();
-        return bTime - aTime;
-      });
+      return all.sort(sortNewestFirst);
     }
 
     return all
-      .filter((s: any) => (s?.playerIds ?? []).map(String).includes(uid))
-      .sort((a: any, b: any) => {
-        const aTime = new Date(a.createdAt ?? 0).getTime();
-        const bTime = new Date(b.createdAt ?? 0).getTime();
-        return bTime - aTime;
-      });
-  }, [isReady, listScenarios, userId]);
+      .filter((s: any) => {
+        const ownerId = String((s as any)?.ownerUserId ?? "").trim();
+        if (ownerId && ownerId === uid) return true;
+        return (s?.playerIds ?? []).map(String).includes(uid);
+      })
+      .sort(sortNewestFirst);
+  }, [isReady, listScenarios, userId, isBackendMode]);
+
+  // Ensure profile data for server scenarios is fetched so participant avatars/users appear.
+  React.useEffect(() => {
+    if (!isReady) return;
+    if (!isBackendMode) return;
+    try {
+      for (const s of scenarios) {
+        const sid = String(s?.id ?? "").trim();
+        if (!sid) continue;
+        // Fire-and-forget; app will merge into local DB when complete
+        void syncProfilesForScenario?.(sid).catch(() => {});
+      }
+    } catch {
+      // ignore
+    }
+  }, [isReady, isBackendMode, scenarios, syncProfilesForScenario]);
 
   const listRef = useRef<FlatList<any> | null>(null);
 
   // When returning to this screen (e.g. after import), jump to top.
   useFocusEffect(
     useCallback(() => {
+      if (isBackendMode) {
+        try {
+          void syncScenarios?.({ force: true })?.catch?.(() => {});
+        } catch {
+          // ignore
+        }
+      }
       requestAnimationFrame(() => {
         listRef.current?.scrollToOffset({ offset: 0, animated: false });
       });
       return () => void 0;
-    }, [])
+    }, [isBackendMode, syncScenarios])
   );
 
   const openScenario = (scenarioId: string) => {
@@ -157,6 +221,20 @@ export default function ScenarioListScreen() {
     const selected = (db as any)?.selectedProfileByScenario?.[sid];
     if (selected) {
       router.push(`/(scenario)/${sid}/home` as any);
+      return;
+    }
+
+    // In backend mode, always go through profile selection.
+    // This triggers a backend sync and avoids treating “not yet synced” as “no profiles exist”.
+    if (isBackendMode) {
+      router.push({
+        pathname: "/modal/select-profile",
+        params: {
+          scenarioId: sid,
+          returnTo: encodeURIComponent(`/(scenario)/${sid}/home`),
+          replace: "1",
+        },
+      } as any);
       return;
     }
 
@@ -215,8 +293,52 @@ export default function ScenarioListScreen() {
     Alert.alert("Copied", "Invite code copied to clipboard.");
   };
 
+  const runLeaveScenario = useCallback(
+    async (sid: string, uid: string) => {
+      if (!sid || !uid) return;
+      if (leaveRef.current) return;
+      leaveRef.current = true;
+      setLeaveBusy(true);
+
+      try {
+        await leaveScenarioApi?.(sid, uid);
+      } catch (e: any) {
+        Alert.alert("Leave failed", formatErrorMessage(e, "Could not leave scenario."));
+      } finally {
+        leaveRef.current = false;
+        setLeaveBusy(false);
+      }
+    },
+    [leaveScenarioApi]
+  );
+
+  const runDeleteScenario = useCallback(
+    async (sid: string, uid: string) => {
+      if (!sid || !uid) return;
+      if (deleteRef.current) return;
+      deleteRef.current = true;
+      setDeleteBusy(true);
+
+      try {
+        const ok = await deleteScenarioApi?.(sid, uid);
+        if (!ok) Alert.alert("Delete failed", "Could not delete this scenario.");
+      } catch (e: any) {
+        Alert.alert("Delete failed", formatErrorMessage(e, "Could not delete this scenario."));
+      } finally {
+        deleteRef.current = false;
+        setDeleteBusy(false);
+      }
+    },
+    [deleteScenarioApi]
+  );
+
   const leaveScenario = () => {
     if (!isReady) return;
+    if (leavePromptLockRef.current) return;
+    leavePromptLockRef.current = true;
+    setTimeout(() => {
+      leavePromptLockRef.current = false;
+    }, 600);
 
     const sid = String(menu.scenarioId ?? "").trim();
     if (!sid) return;
@@ -243,7 +365,7 @@ export default function ScenarioListScreen() {
     // owner alone => leave silently (no alert) per your rule
     if (isOwner && otherPlayersCount === 0) {
       closeScenarioMenu();
-      Promise.resolve(leaveScenarioApi?.(sid, uid)).catch(() => {});
+      void runLeaveScenario(sid, uid);
       return;
     }
 
@@ -255,11 +377,7 @@ export default function ScenarioListScreen() {
         text: "Leave",
         style: "destructive",
         onPress: async () => {
-          try {
-            await leaveScenarioApi?.(sid, uid);
-          } catch (e: any) {
-            Alert.alert("Leave failed", e?.message ?? "Could not leave scenario.");
-          }
+          await runLeaveScenario(sid, uid);
         },
       },
     ]);
@@ -287,6 +405,11 @@ export default function ScenarioListScreen() {
 
   const deleteScenario = () => {
     if (!isReady) return;
+    if (deletePromptLockRef.current) return;
+    deletePromptLockRef.current = true;
+    setTimeout(() => {
+      deletePromptLockRef.current = false;
+    }, 600);
 
     const sid = String(menu.scenarioId ?? "").trim();
     if (!sid) return;
@@ -315,12 +438,7 @@ export default function ScenarioListScreen() {
           text: "Delete",
           style: "destructive",
           onPress: async () => {
-            try {
-              const ok = await deleteScenarioApi?.(sid, uid);
-              if (!ok) Alert.alert("Delete failed", "Could not delete this scenario.");
-            } catch (e: any) {
-              Alert.alert("Delete failed", e?.message ?? "Could not delete this scenario.");
-            }
+            await runDeleteScenario(sid, uid);
           },
         },
       ]
@@ -408,11 +526,12 @@ export default function ScenarioListScreen() {
           {/* Leave scenario */}
           <Pressable
             onPress={leaveScenario}
+            disabled={leaveBusy || deleteBusy || transferConfirmBusy}
             style={({ pressed }) => [styles.menuItem, { backgroundColor: pressed ? colors.pressed : "transparent" }]}
           >
             <Ionicons name="exit-outline" size={18} color="#ff3b30" />
             <ThemedText style={{ color: "#ff3b30", fontSize: 15, fontWeight: "700" }}>
-              Leave Scenario
+              {leaveBusy ? "Leaving…" : "Leave Scenario"}
             </ThemedText>
           </Pressable>
 
@@ -424,11 +543,12 @@ export default function ScenarioListScreen() {
           String((db as any)?.scenarios?.[String(menu.scenarioId)]?.ownerUserId ?? "") === String(userId) ? (
             <Pressable
               onPress={deleteScenario}
+              disabled={deleteBusy || leaveBusy || transferConfirmBusy}
               style={({ pressed }) => [styles.menuItem, { backgroundColor: pressed ? colors.pressed : "transparent" }]}
             >
               <Ionicons name="trash-outline" size={18} color="#ff3b30" />
               <ThemedText style={{ color: "#ff3b30", fontSize: 15, fontWeight: "700" }}>
-                Delete Scenario
+                {deleteBusy ? "Deleting…" : "Delete Scenario"}
               </ThemedText>
             </Pressable>
           ) : null}
@@ -528,6 +648,9 @@ export default function ScenarioListScreen() {
 
     const onConfirm = async () => {
       if (!sid || !toId || !userId) return;
+      if (transferConfirmRef.current) return;
+      transferConfirmRef.current = true;
+      setTransferConfirmBusy(true);
 
       try {
         const updated = await transferScenarioOwnership(sid, String(userId), toId);
@@ -541,7 +664,10 @@ export default function ScenarioListScreen() {
 
         Alert.alert("Done", "Ownership transferred.");
       } catch (e: any) {
-        Alert.alert("Transfer failed", e?.message ?? "Could not transfer ownership.");
+        Alert.alert("Transfer failed", formatErrorMessage(e, "Could not transfer ownership."));
+      } finally {
+        transferConfirmRef.current = false;
+        setTransferConfirmBusy(false);
       }
     };
 
@@ -582,12 +708,19 @@ export default function ScenarioListScreen() {
 
               <Pressable
                 onPress={onConfirm}
+                disabled={transferConfirmBusy}
                 style={({ pressed }) => [
                   styles.confirmBtn,
-                  { borderColor: "#ff3b30", backgroundColor: pressed ? "rgba(255,59,48,0.12)" : "transparent" },
+                  {
+                    borderColor: "#ff3b30",
+                    backgroundColor: pressed ? "rgba(255,59,48,0.12)" : "transparent",
+                    opacity: transferConfirmBusy ? 0.55 : 1,
+                  },
                 ]}
               >
-                <ThemedText style={{ color: "#ff3b30", fontWeight: "900" }}>Transfer</ThemedText>
+                <ThemedText style={{ color: "#ff3b30", fontWeight: "900" }}>
+                  {transferConfirmBusy ? "Transferring…" : "Transfer"}
+                </ThemedText>
               </Pressable>
             </View>
           </Pressable>
@@ -694,8 +827,49 @@ export default function ScenarioListScreen() {
           contentContainerStyle={styles.list}
           renderItem={({ item }) => {
             const usersMap = (db as any)?.users ?? {};
-            const players = (item.playerIds ?? [])
-              .map((id: string) => usersMap[String(id)] ?? null)
+            // Start with declared playerIds on the scenario
+            const playerIdSet = new Set<string>((item.playerIds ?? []).map((id: any) => String(id ?? "").trim()).filter(Boolean));
+            // Always include owner as a player/member
+            const ownerId = String((item as any)?.ownerUserId ?? "").trim();
+            if (ownerId) playerIdSet.add(ownerId);
+            // Also include owners of profiles that belong to this scenario (cover cases where playerIds may be incomplete)
+            try {
+              const profiles = (db as any)?.profiles ?? {};
+              for (const p of Object.values(profiles)) {
+                if (String((p as any).scenarioId ?? "") !== String(item.id)) continue;
+                const owner = String((p as any).ownerUserId ?? "").trim();
+                if (owner) playerIdSet.add(owner);
+              }
+            } catch {
+              // ignore
+            }
+
+            const players = Array.from(playerIdSet)
+              .map((id: string) => {
+                const uid = String(id);
+                const user = usersMap[uid];
+                if (user) return user;
+
+                // Fall back to a profile owned by this user in this scenario (prefer displayName/handle)
+                try {
+                  const profiles = (db as any)?.profiles ?? {};
+                  for (const p of Object.values(profiles)) {
+                    if (String((p as any).ownerUserId ?? "") !== uid) continue;
+                    if (String((p as any).scenarioId ?? "") !== String(item.id)) continue;
+                    const display = String((p as any).displayName ?? (p as any).handle ?? "").trim();
+                    return {
+                      id: uid,
+                      username: display || String((p as any).handle ?? uid),
+                      displayName: display || undefined,
+                      avatarUrl: String((p as any).avatarUrl ?? undefined) || undefined,
+                    } as any;
+                  }
+                } catch {
+                  // ignore
+                }
+
+                return { id: uid, username: uid, avatarUrl: undefined };
+              })
               .filter(Boolean);
 
             const inviteCode = item.inviteCode ? String(item.inviteCode) : null;
@@ -763,19 +937,65 @@ export default function ScenarioListScreen() {
 
                   <View style={styles.playersRow}>
                     <View style={styles.avatars}>
-                      {players.slice(0, 4).map((player: any, index: number) => (
-                        <Image
-                          key={String(player!.id)}
-                          source={{ uri: player!.avatarUrl }}
-                          style={[
-                            styles.avatar,
-                            {
-                              marginLeft: index === 0 ? 0 : -8,
-                              borderColor: colors.border,
-                            },
-                          ]}
-                        />
-                      ))}
+                      {players.slice(0, 4).map((player: any, index: number) => {
+                        const pid = String((player as any)?.id ?? "");
+                        const userAvatar = String((player as any)?.avatarUrl ?? "").trim() || null;
+                        let uri: string | null = userAvatar;
+                        if (!uri) {
+                          try {
+                            const profiles = (db as any)?.profiles ?? {};
+                            for (const p of Object.values(profiles)) {
+                              if (String((p as any).ownerUserId ?? "") !== pid) continue;
+                              if (String((p as any).scenarioId ?? "") !== String(item.id)) continue;
+                              const pa = String((p as any).avatarUrl ?? "").trim();
+                              if (pa) {
+                                uri = pa;
+                                break;
+                              }
+                            }
+                          } catch {
+                            // ignore
+                          }
+                        }
+
+                        const displayName = String((player as any)?.username ?? (player as any)?.displayName ?? "").trim();
+                        const initials = displayName
+                          .split(" ")
+                          .map((s) => (s ? s[0] : ""))
+                          .join("")
+                          .slice(0, 2)
+                          .toUpperCase();
+
+                        return uri ? (
+                          <Image
+                            key={pid || String(index)}
+                            source={{ uri }}
+                            style={[
+                              styles.avatar,
+                              {
+                                marginLeft: index === 0 ? 0 : -8,
+                                borderColor: colors.border,
+                              },
+                            ]}
+                          />
+                        ) : (
+                          <View
+                            key={pid || String(index)}
+                            style={[
+                              styles.avatar,
+                              {
+                                marginLeft: index === 0 ? 0 : -8,
+                                borderColor: colors.border,
+                                alignItems: "center",
+                                justifyContent: "center",
+                                backgroundColor: colors.card,
+                              },
+                            ]}
+                          >
+                            <Ionicons name="person" size={14} color={colors.textSecondary} />
+                          </View>
+                        );
+                      })}
                     </View>
 
                     <ThemedText style={[styles.playerCount, { color: colors.textMuted }]}>

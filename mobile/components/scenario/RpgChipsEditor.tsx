@@ -3,7 +3,6 @@
 import React from "react";
 import {
   Alert as RNAlert,
-  Modal,
   Platform,
   Pressable,
   StyleSheet,
@@ -13,7 +12,6 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ThemedText } from "@/components/themed-text";
-import { Alert } from "@/context/dialog";
 
 // ---------- Types ----------
 type ColorsLike = {
@@ -223,7 +221,7 @@ export function RpgChipsEditor({ colors, value, onChange, editable = false, read
 
     const name = norm(editorName);
     if (!name) {
-      (Platform.OS === "ios" ? RNAlert : Alert).alert("Missing name", "Please type a name.");
+      RNAlert.alert("Missing name", "Please type a name.");
       return;
     }
 
@@ -265,8 +263,8 @@ export function RpgChipsEditor({ colors, value, onChange, editable = false, read
       return;
     }
 
-    // Android: keep our custom modal UX
-    Alert.alert("Remove", "Delete this item?", [
+    // Use native RN alert for delete confirmation
+    RNAlert.alert("Remove", "Delete this item?", [
       { text: "Cancel", style: "cancel" },
       {
         text: "Delete",
@@ -368,12 +366,12 @@ export function RpgChipsEditor({ colors, value, onChange, editable = false, read
 
   return (
     <>
-      {/* editor modal */}
-      <Modal transparent visible={editorOpen} animationType="fade" onRequestClose={closeEditor}>
+      {/* editor modal (overlay to avoid RN Modal unmount/update loops) */}
+      {editorOpen ? (
         <Pressable style={styles.editorBackdrop} onPress={closeEditor}>
           <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ width: "100%" }}>
             <Pressable
-              onPress={() => {}}
+              onPress={(e) => e?.stopPropagation?.()}
               style={[
                 styles.editorCard,
                 {
@@ -460,7 +458,7 @@ export function RpgChipsEditor({ colors, value, onChange, editable = false, read
             </Pressable>
           </KeyboardAvoidingView>
         </Pressable>
-      </Modal>
+      ) : null}
 
       {/* blocks */}
       <Section

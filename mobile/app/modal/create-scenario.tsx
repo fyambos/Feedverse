@@ -38,6 +38,7 @@ import {
 import { pickAndPersistOneImage } from "@/components/ui/ImagePicker";
 import { MAX_OWNED_PROFILES_PER_USER, MAX_TOTAL_PROFILES_PER_SCENARIO } from "@/lib/rules";
 import { generateInviteCode } from "@/lib/inviteCode";
+import { formatErrorMessage } from "@/lib/format";
 
 /* -------------------------------------------------------------------------- */
 /* Limits                                                                      */
@@ -147,6 +148,9 @@ export default function CreateScenarioModal() {
   // cover: picked image uri
   const [cover, setCover] = useState<string>(String(existing?.cover ?? "").trim());
   const [pickingCover, setPickingCover] = useState(false);
+
+  const savingRef = useRef(false);
+  const [saving, setSaving] = useState(false);
 
   const [inviteCode, setInviteCode] = useState<string>(() => {
     const existingCode = String(existing?.inviteCode ?? "").trim();
@@ -343,8 +347,12 @@ export default function CreateScenarioModal() {
   ]);
 
   const onSave = useCallback(async () => {
+    if (savingRef.current) return;
     if (!isReady) return;
     if (!validate()) return;
+
+    savingRef.current = true;
+    setSaving(true);
 
     const now = new Date().toISOString();
 
@@ -389,10 +397,14 @@ export default function CreateScenarioModal() {
     };
 
     try {
+      // Local/AsyncStorage mode: save scenario directly, including any local cover URI.
       await upsertScenario(next);
       router.back();
     } catch (e: any) {
-      Alert.alert("Save failed", e?.message ?? "Could not save scenario.");
+      Alert.alert("Save failed", formatErrorMessage(e, "Could not save scenario."));
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
     }
   }, [
     isReady,
@@ -436,11 +448,12 @@ export default function CreateScenarioModal() {
             {canEdit ? (
               <Pressable
                 onPress={onSave}
+                disabled={saving}
                 hitSlop={12}
-                style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}
+                style={({ pressed }) => [{ opacity: saving ? 0.5 : pressed ? 0.7 : 1 }]}
               >
                 <ThemedText style={{ color: colors.tint, fontWeight: "800" }}>
-                  {isEdit ? "Save" : "Create"}
+                  {saving ? (isEdit ? "Saving…" : "Creating…") : isEdit ? "Save" : "Create"}
                 </ThemedText>
               </Pressable>
             ) : (
@@ -536,7 +549,7 @@ export default function CreateScenarioModal() {
                       try {
                         await setScenarioMode?.(String(existing.id), nextMode);
                       } catch (e: any) {
-                        Alert.alert("Update failed", e?.message ?? "Could not update scenario mode.");
+                        Alert.alert("Update failed", formatErrorMessage(e, "Could not update scenario mode."));
                       }
                     }
                   }}

@@ -18,7 +18,7 @@ type AlertOptions = {
 
 type ConfirmOptions = {
   title?: string;
-  message: string;
+  message?: string;
   confirmText?: string;
   cancelText?: string;
   destructive?: boolean;
@@ -164,6 +164,34 @@ export const Alert = {
       .then(() => void 0)
       .catch(() => void 0);
   },
+  confirm: async ({
+    title,
+    message,
+    confirmText,
+    cancelText,
+    destructive,
+  }: {
+    title?: string;
+    message?: string;
+    confirmText?: string;
+    cancelText?: string;
+    destructive?: boolean;
+  }) => {
+    if (!dialogApi) {
+      return new Promise<boolean>((resolve) => {
+        RNAlert.alert(title ?? "", message ?? "", [
+          { text: cancelText ?? "Cancel", style: "cancel", onPress: () => resolve(false) },
+          { text: confirmText ?? "OK", style: destructive ? "destructive" : "default", onPress: () => resolve(true) },
+        ] as any);
+      });
+    }
+
+    try {
+      return await dialogApi.confirm({ title, message, confirmText, cancelText, destructive });
+    } catch {
+      return false;
+    }
+  },
 };
 
 export function DialogProvider({ children }: { children: React.ReactNode }) {
@@ -209,28 +237,35 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
     async ({ title, message, buttons, input }: DialogOptions) => {
       return new Promise<number>((resolve) => {
         const run = () => {
-          setTitle(title);
-          setMessage(message);
+            // Defer applying state to avoid calling setState synchronously during
+            // React commit/unmount phases (this can trigger maximum update depth
+            // errors when other components mount/unmount Modals). Scheduling with
+            // setTimeout ensures the dialog UI is mounted after the current
+            // render cycle completes.
+            setTimeout(() => {
+              setTitle(title);
+              setMessage(message);
 
-          setInput(input ?? null);
-          setInputText(input?.defaultValue ?? "");
+              setInput(input ?? null);
+              setInputText(input?.defaultValue ?? "");
 
-          const wrapped: AppDialogButton[] = buttons.map((b, idx) => {
-            const original = b.onPress as any;
-            return {
-              ...b,
-              variant: b.variant ?? "default",
-              onPress: () => {
-                const value = input ? inputTextRef.current : undefined;
-                close();
-                resolve(idx);
-                original?.(value);
-              },
-            };
-          });
+              const wrapped: AppDialogButton[] = buttons.map((b, idx) => {
+                const original = b.onPress as any;
+                return {
+                  ...b,
+                  variant: b.variant ?? "default",
+                  onPress: () => {
+                    const value = input ? inputTextRef.current : undefined;
+                    close();
+                    resolve(idx);
+                    original?.(value);
+                  },
+                };
+              });
 
-          setButtons(wrapped);
-          setVisible(true);
+              setButtons(wrapped);
+              setVisible(true);
+            }, 0);
         };
 
         enqueueOrRun(run);
@@ -323,31 +358,39 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
     };
   }, [value]);
 
+  // NOTE: During debugging of a nested update loop we allow disabling the
+  // app-level dialog modal via env to avoid mounting modal internals which
+  // can interact badly with navigation modals. Set DISABLE_APP_DIALOGS=1
+  // in the env to skip rendering the modal UI.
+  const disableAppDialogs = String(process.env.DISABLE_APP_DIALOGS ?? "").trim() === "1";
+
   return (
     <DialogContext.Provider value={value}>
       {children}
-      <AppDialogModal
-        visible={visible}
-        title={title}
-        message={message}
-        buttons={buttons}
-        input={
-          input
-            ? {
-                value: inputText,
-                onChangeText: setInputText,
-                placeholder: input.placeholder,
-                keyboardType: input.keyboardType,
-                secureTextEntry: input.secureTextEntry,
-                autoFocus: true,
-              }
-            : undefined
-        }
-        onRequestClose={() => {
-          const cancelBtn = buttons.find((b) => b.variant === "cancel");
-          (cancelBtn ?? buttons[0])?.onPress?.();
-        }}
-      />
+      {!disableAppDialogs ? (
+        <AppDialogModal
+          visible={visible}
+          title={title}
+          message={message}
+          buttons={buttons}
+          input={
+            input
+              ? {
+                  value: inputText,
+                  onChangeText: setInputText,
+                  placeholder: input.placeholder,
+                  keyboardType: input.keyboardType,
+                  secureTextEntry: input.secureTextEntry,
+                  autoFocus: true,
+                }
+              : undefined
+          }
+          onRequestClose={() => {
+            const cancelBtn = buttons.find((b) => b.variant === "cancel");
+            (cancelBtn ?? buttons[0])?.onPress?.();
+          }}
+        />
+      ) : null}
     </DialogContext.Provider>
   );
 }

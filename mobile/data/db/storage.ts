@@ -85,6 +85,24 @@ export async function updateDb(fn: (prev: DbV5) => DbV5): Promise<DbV5> {
 
   scheduleFlush();
 
+  // Notify subscribers synchronously so callers (e.g. auth) that update the DB
+  // cause UI providers to refresh their state.
+  try {
+    for (const s of dbChangeSubscribers) {
+      try {
+        s(next);
+      } catch {}
+    }
+  } catch {}
+
   // Return immediately; persistence is deferred.
   return next;
+}
+
+type DbChangeListener = (db: DbV5) => void;
+const dbChangeSubscribers = new Set<DbChangeListener>();
+
+export function subscribeDbChanges(fn: DbChangeListener) {
+  dbChangeSubscribers.add(fn);
+  return () => dbChangeSubscribers.delete(fn);
 }

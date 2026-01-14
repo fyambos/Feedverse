@@ -7,11 +7,15 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { useAuth } from '@/context/auth';
 import { AuthScreen } from '@/components/auth/AuthScreen';
-import { isValidEmail, isValidPassword } from '@/lib/validation/auth';
+import {
+  getPasswordValidationError,
+  isValidEmail,
+  isValidPassword,
+  PASSWORD_MAX_LEN,
+  PASSWORD_MIN_LEN,
+} from '@/lib/validation/auth';
 
 const MAX_IDENTIFIER_LEN = 128;
-const MAX_PASSWORD_LEN = 128;
-const MIN_PASSWORD_LEN = 8;
 
 export default function SignupScreen() {
   const scheme = useColorScheme() ?? 'light';
@@ -26,9 +30,12 @@ export default function SignupScreen() {
 
   const normalizedIdentifier = useMemo(() => identifier.trim(), [identifier]);
 
-  const canSubmit =
-    isValidEmail(normalizedIdentifier) &&
-    isValidPassword(password);
+  const passwordError = useMemo(() => {
+    if (!password) return null;
+    return getPasswordValidationError(password);
+  }, [password]);
+
+  const canSubmit = isValidEmail(normalizedIdentifier) && isValidPassword(password);
 
   useEffect(() => {
     return () => {
@@ -46,7 +53,7 @@ export default function SignupScreen() {
     }
 
     if (!isValidPassword(password)) {
-      alert(`Password must be at least ${MIN_PASSWORD_LEN} characters, including one letter and one number.`);
+      alert(`Password must be at least ${PASSWORD_MIN_LEN} characters, including one letter and one number.`);
       return;
     }
 
@@ -131,7 +138,7 @@ export default function SignupScreen() {
           <TextInput
             ref={passwordRef}
             value={password}
-            onChangeText={(t) => setPassword(t.slice(0, MAX_PASSWORD_LEN))}
+            onChangeText={(t) => setPassword(t.slice(0, PASSWORD_MAX_LEN))}
             secureTextEntry={!showPw}
             autoCapitalize="none"
             autoCorrect={false}
@@ -146,8 +153,17 @@ export default function SignupScreen() {
             style={[styles.input, { color: colors.text }]}
           />
 
-          <ThemedText style={[styles.hint, { color: colors.textSecondary }]}>
-            Use at least {MIN_PASSWORD_LEN} characters.
+          <ThemedText
+            style={[
+              styles.hint,
+              {
+                color: passwordError ? (scheme === 'dark' ? '#FF6B6B' : '#B00020') : colors.textSecondary,
+              },
+            ]}
+          >
+            {passwordError
+              ? passwordError
+              : `Use at least ${PASSWORD_MIN_LEN} characters, including one letter and one number.`}
           </ThemedText>
         </View>
 

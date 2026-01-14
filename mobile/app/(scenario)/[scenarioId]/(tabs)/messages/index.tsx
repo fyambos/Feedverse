@@ -1,4 +1,11 @@
-import React, { useEffect, useMemo } from "react";
+// mobile/app/(scenario)/[scenarioId]/(tabs)/messages/index.tsx
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  subscribeToMessageEvents,
+  subscribeToTypingEvents,
+  useAppData,
+} from "@/context/appData";
+
 import { Alert, FlatList, Modal, Pressable, StyleSheet, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams, usePathname } from "expo-router";
@@ -8,12 +15,15 @@ import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { Colors } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
-import { useAppData } from "@/context/appData";
 import { Avatar } from "@/components/ui/Avatar";
 import { SwipeableRow } from "@/components/ui/SwipeableRow";
-import type { Conversation, Message, Profile } from "@/data/db/schema";
+import type { Conversation, Profile } from "@/data/db/schema";
+import { formatErrorMessage } from "@/lib/format";
+
+import { useFocusEffect } from "@react-navigation/native";
 
 function scenarioIdFromPathname(pathname: string): string {
+  
   const parts = pathname
     .split("/")
     .map((p) => p.trim())
@@ -40,6 +50,12 @@ function scenarioIdFromPathname(pathname: string): string {
 }
 
 export default function MessagesScreen() {
+    // Force re-render on message event
+    const [messageVersion, setMessageVersion] = useState(0);
+
+  // Prevent destructive actions from double-firing (Alert confirm double-taps)
+  const deleteConversationLockRef = useRef<Record<string, boolean>>({});
+  // Debug: log messagesMap on every render
   const scheme = useColorScheme() ?? "light";
   const colors = Colors[scheme];
 
@@ -63,6 +79,7 @@ export default function MessagesScreen() {
     listConversationsForScenario,
     getProfileById,
     listProfilesForScenario,
+    syncProfilesForScenario,
     getOrCreateConversation,
     listSendAsProfilesForScenario,
     deleteConversationCascade,
@@ -72,12 +89,293 @@ export default function MessagesScreen() {
   const [composerOpen, setComposerOpen] = React.useState(false);
   const [picked, setPicked] = React.useState<Set<string>>(() => new Set());
 
+  const [optimisticallyReadIds, setOptimisticallyReadIds] = useState<Set<string>>(() => new Set());
+
+  // Typing indicators map: conversationId -> profileId[]
+  const [typingMap, setTypingMap] = useState<Record<string, string[]>>({});
+  const typingTimersRef = React.useRef<Record<string, Record<string, ReturnType<typeof setTimeout> | null>>>({});
+
   const selectedProfileId: string | null = useMemo(
     () => (sid ? (getSelectedProfileId?.(sid) ?? null) : null),
     [sid, getSelectedProfileId]
   );
 
   const openOnceRef = React.useRef<string | null>(null);
+
+  const syncOnceRef = React.useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!isReady) return;
+    if (!sid) return;
+
+    if (syncOnceRef.current === sid) return;
+    syncOnceRef.current = sid;
+
+    (async () => {
+      try {
+        await syncProfilesForScenario?.(sid);
+        await app?.syncConversationsForScenario?.(sid);
+      } catch {
+        // ignore
+      }
+    })();
+  }, [isReady, sid, app, syncProfilesForScenario]);
+
+  // Live update: sync conversations when a new message arrives for this scenario
+  useEffect(() => {
+    if (!sid) return;
+    interface MessageEvent {
+      scenarioId: string;
+      [key: string]: any;
+    }
+
+    const handler = (msg: MessageEvent) => {
+      const msgSid = String(msg?.scenarioId ?? msg?.scenario_id ?? "").trim();
+      if (!msgSid || String(msgSid) !== String(sid)) return;
+
+      // Detect either an event wrapper (with `event`) or a raw message payload (with `id`).
+      const isEvent = String(msg.event ?? "").startsWith("message");
+      const isRawMessage = Boolean(msg.id);
+      if (!isEvent && !isRawMessage) return;
+
+      // Refresh conversations on message.created or when receiving a raw message
+      try {
+        app?.syncConversationsForScenario?.(sid);
+        const convId = String(msg.conversationId ?? msg.conversation_id ?? "").trim();
+        if (convId) {
+          app?.syncMessagesForConversation?.({ scenarioId: sid, conversationId: convId, limit: 30 });
+
+          // If the user is currently viewing this conversation, optimistically
+          // clear the unread badge locally and skip the immediate unread API refetch
+          // (the conversation screen should also post the read to the server).
+          try {
+            const viewingConvId = (app?.db as any)?.selectedConversationByScenario?.[sid] ?? null;
+            const selectedPid = (app?.db as any)?.selectedProfileByScenario?.[sid] ?? null;
+            if (viewingConvId && String(viewingConvId) === String(convId) && selectedPid) {
+              setUnreadCounts((prev) => ({ ...(prev ?? {}), [convId]: 0 }));
+              markOptimisticallyRead(convId);
+              setMessageVersion((v) => v + 1);
+              return;
+            } else {
+              // If not viewing, always fetch unread counts from server
+              fetchUnreadCounts();
+            }
+          } catch {}
+        }
+      } catch {
+        // ignore
+      }
+      setMessageVersion((v) => v + 1); // force re-render
+    };
+    const unsubscribe = subscribeToMessageEvents(handler);
+    return () => {
+      unsubscribe();
+    };
+  }, [sid, app]);
+
+  // Subscribe to typing events and maintain per-conversation typing lists
+  useEffect(() => {
+    if (!sid) return;
+    const handler = (ev: any) => {
+      try {
+        if (String(ev?.scenarioId ?? "") !== String(sid)) return;
+        const convId = String(ev?.conversationId ?? "").trim();
+        const pid = String(ev?.profileId ?? "").trim();
+        if (!convId || !pid) return;
+
+        setTypingMap((prev) => {
+          const next = { ...(prev ?? {}) };
+          const existing = Array.isArray(next[convId]) ? [...next[convId]] : [];
+          if (ev.typing) {
+            if (!existing.includes(pid)) existing.push(pid);
+          } else {
+            const idx = existing.indexOf(pid);
+            if (idx >= 0) existing.splice(idx, 1);
+          }
+          next[convId] = existing;
+          return next;
+        });
+
+        // manage per-conversation per-profile timers to clear typing after timeout
+        const tmap = (typingTimersRef.current[convId] ??= {});
+        if (ev.typing) {
+          if (tmap[pid]) clearTimeout(tmap[pid] as any);
+          tmap[pid] = setTimeout(() => {
+            setTypingMap((prev) => {
+              const next = { ...(prev ?? {}) };
+              const arr = Array.isArray(next[convId]) ? next[convId].filter((x) => x !== pid) : [];
+              next[convId] = arr;
+              return next;
+            });
+            tmap[pid] = null;
+          }, 4000);
+        } else {
+          if (tmap[pid]) {
+            clearTimeout(tmap[pid] as any);
+            tmap[pid] = null;
+          }
+        }
+      } catch {
+        // ignore
+      }
+    };
+
+    const unsub = (subscribeToMessageEvents as any)(() => {}); // keep message subscription intact
+    const unsubTyping = (subscribeToMessageEvents as any) === null ? () => {} : (() => {});
+    // Use the dedicated typing subscription if available
+    const s = (subscribeToTypingEvents as any)(handler);
+    return () => {
+      try { s(); } catch {}
+      try {
+        for (const conv of Object.keys(typingTimersRef.current)) {
+          for (const pid of Object.keys(typingTimersRef.current[conv] ?? {})) {
+            const t = typingTimersRef.current[conv][pid];
+            if (t) clearTimeout(t as any);
+          }
+        }
+      } catch {}
+      typingTimersRef.current = {};
+    };
+  }, [sid]);
+
+    // Unread counts state
+  const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
+
+  // Fetch unread counts for selected profile
+  const fetchUnreadCounts = useCallback(() => {
+    if (!isReady || !sid || !selectedProfileId) return;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        // Local/AsyncStorage mode: compute unread counts from local DB/messages.
+        const map: Record<string, number> = {};
+        const msgs = (db as any)?.messages ?? {};
+        for (const _id of Object.keys(msgs)) {
+          const m = msgs[_id];
+          const convId = String(m.conversation_id ?? m.conversationId ?? m.convId ?? "");
+          if (!convId) continue;
+          const read = !!m.read || !!m.is_read || false;
+          if (!read) map[convId] = (map[convId] || 0) + 1;
+        }
+        if (!cancelled) setUnreadCounts(map);
+      } catch {
+        // ignore
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isReady, sid, selectedProfileId, db]);
+  
+  useEffect(() => {
+    fetchUnreadCounts();
+  }, [fetchUnreadCounts]);
+
+  // Optimistic UI override: once tapped, keep dot hidden until counts truly reach 0
+
+const markOptimisticallyRead = useCallback((conversationId: string) => {
+  const cid = String(conversationId ?? "").trim();
+  if (!cid) return;
+  setOptimisticallyReadIds((prev) => {
+    if (prev.has(cid)) return prev;
+    const next = new Set(prev);
+    next.add(cid);
+    return next;
+  });
+}, []);
+
+  useFocusEffect(
+  useCallback(() => {
+    fetchUnreadCounts();
+    // optional but nice: keep conversations fresh too
+    if (sid) app?.syncConversationsForScenario?.(sid);
+  }, [fetchUnreadCounts, sid, app])
+);
+
+  // Mark a conversation as read (optimistic UI + server/local fallback)
+  const markConversationRead = useCallback(
+    async (conversationId: string) => {
+      const convId = String(conversationId ?? "").trim();
+      if (!convId) return;
+      if (!isReady || !sid || !selectedProfileId) return;
+
+      markOptimisticallyRead(convId);
+
+      // Optimistic UI: remove the unread dot immediately
+      setUnreadCounts((prev) => ({ ...(prev ?? {}), [convId]: 0 }));
+
+      try {
+        // Local mark: update message records to include `read: true`.
+        const msgs = (db as any)?.messages ?? {};
+        const ids: string[] = [];
+        for (const id of Object.keys(msgs)) {
+          const m = msgs[id];
+          const midConv = String(m.conversation_id ?? m.conversationId ?? m.convId ?? "");
+          if (midConv !== convId) continue;
+          ids.push(id);
+        }
+
+        // best-effort, don't block UI
+        for (const mid of ids.slice(0, 250)) {
+          try {
+            await app?.updateMessage?.({ scenarioId: sid, messageId: String(mid), read: true });
+          } catch {
+            // ignore
+          }
+        }
+      } catch {
+        // ignore
+      } finally {
+        // Re-sync counts to ensure UI matches backend
+        fetchUnreadCounts();
+      }
+    },
+    [isReady, sid, selectedProfileId, db, fetchUnreadCounts, markOptimisticallyRead, app]
+  );
+
+  
+
+useEffect(() => {
+  setOptimisticallyReadIds((prev) => {
+    let changed = false;
+    const next = new Set(prev);
+    for (const id of prev) {
+      if ((unreadCounts?.[id] ?? 0) <= 0) {
+        next.delete(id);
+        changed = true;
+      }
+    }
+    return changed ? next : prev;
+  });
+}, [unreadCounts]);
+
+useEffect(() => {
+  setOptimisticallyReadIds(new Set());
+}, [sid, selectedProfileId]);
+
+    // Subscribe to message events to refetch unread counts in real time
+
+    useEffect(() => {
+      if (!sid) return;
+      interface MessageEvent {
+        scenarioId: string;
+        [key: string]: any;
+      }
+
+      const handler = (msg: MessageEvent) => {
+        if (String(msg.scenarioId) === String(sid)) {
+          // console.log("message event for sid received, refetching unread counts", msg);
+          fetchUnreadCounts();
+        }
+      };
+      const unsubscribe = subscribeToMessageEvents(handler);
+      return () => {
+        unsubscribe(); // Don't return the result
+      };
+    }, [sid, app, fetchUnreadCounts]);
+
 
   useEffect(() => {
     const cid = typeof openConversationId === "string" ? openConversationId.trim() : "";
@@ -92,56 +390,44 @@ export default function MessagesScreen() {
     // clear the param so we don't re-open on re-render
     router.setParams({ openConversationId: undefined } as any);
 
-    router.push({
-      pathname: "/(scenario)/[scenarioId]/(tabs)/messages/[conversationId]",
-      params: { scenarioId: sid, conversationId: cid },
-    } as any);
-  }, [openConversationId, isReady, sid, selectedProfileId]);
+    (async () => {
+      try {
+        // Ensure we have the conversation + at least a page of messages before opening the thread.
+        // This avoids getting stuck on the thread's loading state when launched from a notification.
+        try { await app?.syncConversationsForScenario?.(sid); } catch {}
+        try { await app?.syncMessagesForConversation?.({ scenarioId: sid, conversationId: cid, limit: 60 }); } catch {}
+      } catch {}
 
-  const messagesMap: Record<string, Message> = useMemo(() => ((db as any)?.messages ?? {}) as any, [db]);
+      try { await markConversationRead(cid); } catch {}
 
-  const inboxLastMessageAtByConversationId: Record<string, string> = useMemo(() => {
-    if (!isReady) return {};
-    if (!sid) return {};
+      try {
+        router.push({
+          pathname: "/(scenario)/[scenarioId]/(tabs)/messages/[conversationId]",
+          params: { scenarioId: sid, conversationId: cid },
+        } as any);
+      } catch {}
+    })();
+  }, [openConversationId, isReady, sid, selectedProfileId, markConversationRead]);
 
-    const best: Record<string, string> = {};
-    for (const m of Object.values(messagesMap)) {
-      if (String((m as any).scenarioId ?? "") !== String(sid)) continue;
-      const cid = String((m as any).conversationId ?? "");
-      if (!cid) continue;
-      const t = String((m as any).createdAt ?? "");
-      if (!t) continue;
-      if (!best[cid] || t > best[cid]) best[cid] = t;
-    }
-    return best;
-  }, [isReady, sid, messagesMap]);
-
+  // Conversation list should not depend on scanning all messages.
+  // Use cached conversations + server-provided preview fields.
   const conversations: Conversation[] = useMemo(() => {
     if (!isReady) return [];
     if (!sid) return [];
     if (!selectedProfileId) return [];
 
-    const items = (listConversationsForScenario?.(sid, selectedProfileId) ?? []) as Conversation[];
-    return items.slice().sort((a, b) => {
-      const aId = String((a as any).id ?? "");
-      const bId = String((b as any).id ?? "");
-      const aT =
-        inboxLastMessageAtByConversationId[aId] ??
-        String((a as any).lastMessageAt ?? (a as any).updatedAt ?? (a as any).createdAt ?? "");
-      const bT =
-        inboxLastMessageAtByConversationId[bId] ??
-        String((b as any).lastMessageAt ?? (b as any).updatedAt ?? (b as any).createdAt ?? "");
-      const c = String(bT).localeCompare(String(aT));
-      if (c !== 0) return c;
-      return String(bId).localeCompare(String(aId));
-    });
-  }, [isReady, sid, selectedProfileId, listConversationsForScenario, inboxLastMessageAtByConversationId]);
+    try {
+      return (listConversationsForScenario?.(sid, selectedProfileId) ?? []) as Conversation[];
+    } catch {
+      return [];
+    }
+  }, [isReady, sid, selectedProfileId, listConversationsForScenario, db, messageVersion]);
 
   const allScenarioProfiles: Profile[] = useMemo(() => {
     if (!isReady) return [];
     if (!sid) return [];
     return (listProfilesForScenario?.(sid) ?? []) as Profile[];
-  }, [isReady, sid, listProfilesForScenario]);
+  }, [isReady, sid, listProfilesForScenario, db]);
 
   const pickableProfiles: Profile[] = useMemo(() => {
     const me = String(selectedProfileId ?? "");
@@ -169,23 +455,6 @@ export default function MessagesScreen() {
   const ownedProfileIds = useMemo(() => {
     return new Set((sendAsCandidates.owned ?? []).map((p) => String((p as any).id ?? "")).filter(Boolean));
   }, [sendAsCandidates.owned]);
-
-  const getLastMessageForConversation = (conversationId: string): Message | null => {
-    const cid = String(conversationId);
-    let best: Message | null = null;
-    for (const m of Object.values(messagesMap)) {
-      if (String((m as any).conversationId) !== cid) continue;
-      if (String((m as any).scenarioId) !== String(sid)) continue;
-      if (!best) {
-        best = m;
-        continue;
-      }
-      const a = String((best as any).createdAt ?? "");
-      const b = String((m as any).createdAt ?? "");
-      if (b > a) best = m;
-    }
-    return best;
-  };
 
   const getConversationTitleAndAvatar = (c: Conversation): { title: string; avatarUrl: string | null } => {
       const customTitle = String((c as any)?.title ?? "").trim();
@@ -296,7 +565,8 @@ export default function MessagesScreen() {
     if (!base) return;
 
     const participantProfileIds = [base, ...Array.from(picked)];
-    const res = await getOrCreateConversation?.({ scenarioId: sid, participantProfileIds });
+    // Pass selectedProfileId to getOrCreateConversation
+    const res = await getOrCreateConversation?.({ scenarioId: sid, participantProfileIds, selectedProfileId: base });
     if (!res?.ok) return;
 
     const conversationId = String(res.conversationId);
@@ -393,12 +663,22 @@ export default function MessagesScreen() {
           data={conversations}
           keyExtractor={(c) => String((c as any).id)}
           contentContainerStyle={{ paddingBottom: 10 }}
+          extraData={messageVersion}
           ListHeaderComponent={() => {
             return (
               <View style={[styles.header, { borderBottomColor: colors.border, backgroundColor: colors.background }]}>
                 <ThemedText style={[styles.headerTitle, { color: colors.text }]}>messages</ThemedText>
                 <Pressable
-                  onPress={() => setComposerOpen(true)}
+                  onPress={() => {
+                    (async () => {
+                      try {
+                        await syncProfilesForScenario?.(sid);
+                      } catch {
+                        // ignore
+                      }
+                      setComposerOpen(true);
+                    })();
+                  }}
                   hitSlop={12}
                   style={({ pressed }) => [
                     styles.plus,
@@ -424,8 +704,12 @@ export default function MessagesScreen() {
             const c = item as Conversation;
             const convId = String((c as any).id);
             const meta = getConversationTitleAndAvatar(c);
-            const last = getLastMessageForConversation(convId);
-            const preview = last?.text ? String(last.text) : "";
+
+            let preview = String((c as any).lastMessageText ?? "").trim();
+            if (!preview) {
+              const kind = String((c as any).lastMessageKind ?? "").trim();
+              if (kind && kind !== "text") preview = kind === "image" ? "photo" : kind;
+            }
 
             const parts = Array.isArray((c as any).participantProfileIds)
               ? (c as any).participantProfileIds.map(String).filter(Boolean)
@@ -436,6 +720,10 @@ export default function MessagesScreen() {
             const onDelete = async () => {
               if (!canManageChatsAsSelected) return;
               if (!sid || !selectedProfileId) return;
+
+              const lockKey = `${sid}:${convId}:${String(selectedProfileId)}:${canHardDelete ? "hard" : "soft"}`;
+              if (deleteConversationLockRef.current[lockKey]) return;
+              deleteConversationLockRef.current[lockKey] = true;
 
               try {
                 if (canHardDelete) {
@@ -454,8 +742,10 @@ export default function MessagesScreen() {
                   conversationId: convId,
                   participantProfileIds: nextParts,
                 });
-              } catch {
-                // ignore
+              } catch (e: any) {
+                Alert.alert("Could not update chat", formatErrorMessage(e, "Please try again."));
+              } finally {
+                deleteConversationLockRef.current[lockKey] = false;
               }
             };
 
@@ -473,40 +763,7 @@ export default function MessagesScreen() {
               } as any);
             };
 
-            const row = (
-              <Pressable
-                onPress={() => {
-                  router.push({
-                    pathname: "/(scenario)/[scenarioId]/(tabs)/messages/[conversationId]",
-                    params: { scenarioId: sid, conversationId: convId },
-                  } as any);
-                }}
-                style={({ pressed }) => [
-                  styles.row,
-                  {
-                    backgroundColor: pressed ? colors.pressed : colors.background,
-                    borderBottomColor: colors.border,
-                  },
-                ]}
-              >
-                <Avatar uri={meta.avatarUrl} size={42} fallbackColor={colors.border} />
-
-                <View style={{ flex: 1, minWidth: 0 }}>
-                  <View style={styles.rowTop}>
-                    <ThemedText style={[styles.rowTitle, { color: colors.text }]} numberOfLines={1}>
-                      {meta.title}
-                    </ThemedText>
-                  </View>
-
-                  {!!preview && (
-                    <ThemedText style={[styles.rowSubtitle, { color: colors.textSecondary }]} numberOfLines={1}>
-                      {preview}
-                    </ThemedText>
-                  )}
-                </View>
-              </Pressable>
-            );
-
+            const unread = unreadCounts[convId] > 0;
             return (
               <SwipeableRow
                 enabled={canManageChatsAsSelected}
@@ -526,7 +783,39 @@ export default function MessagesScreen() {
                   );
                 }}
               >
-                {row}
+                <Pressable
+                  onPress={() => {
+                    void markConversationRead(convId);
+                    router.push({
+                      pathname: "/(scenario)/[scenarioId]/(tabs)/messages/[conversationId]",
+                      params: { scenarioId: sid, conversationId: convId },
+                    } as any);
+                  }}
+                  style={({ pressed }) => [
+                    styles.row,
+                    {
+                      backgroundColor: pressed ? colors.pressed : colors.background,
+                      borderBottomColor: colors.border,
+                    },
+                  ]}
+                >
+                  <Avatar uri={meta.avatarUrl} size={42} fallbackColor={colors.border} />
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <View style={styles.rowTop}>
+                      <ThemedText style={[styles.rowTitle, { color: colors.text }]} numberOfLines={1}>
+                        {meta.title}
+                      </ThemedText>
+                    </View>
+                    {!!preview && (
+                      <ThemedText style={[styles.rowSubtitle, { color: colors.textSecondary }]} numberOfLines={1}>
+                        {preview}
+                      </ThemedText>
+                    )}
+                  </View>
+                  {unread && (
+                    <View style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: colors.tint, marginLeft: 8 }} />
+                  )}
+                </Pressable>
               </SwipeableRow>
             );
           }}
@@ -619,3 +908,4 @@ const styles = StyleSheet.create({
   pickName: { fontSize: 15, fontWeight: "900" },
   pickHandle: { fontSize: 13, marginTop: 2 },
 });
+

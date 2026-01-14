@@ -9,6 +9,7 @@ import {
   StyleSheet,
   TextInput,
   View,
+  Alert as RNAlert,
 } from "react-native";
 import { router, Stack, useLocalSearchParams } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -26,6 +27,7 @@ import { Alert } from "@/context/dialog";
 import type { CharacterSheet } from "@/data/db/schema";
 import { RowCard } from "@/components/ui/RowCard";
 import { RpgChipsEditor, type ProfileRpgData } from "@/components/scenario/RpgChipsEditor";
+import { formatErrorMessage } from "@/lib/format";
 
 type Params = { scenarioId: string; profileId: string; mode?: "edit" | "create" };
 
@@ -86,6 +88,14 @@ export default function EditSheetModal() {
     return String((profile as any).ownerUserId ?? "") === String(userId);
   }, [profile, userId]);
 
+  const isPublic = useMemo(() => {
+    try {
+      return Boolean((profile as any)?.isPublic);
+    } catch {
+      return false;
+    }
+  }, [profile]);
+
   const isGm = useMemo(() => {
     if (!scenario || !userId) return false;
     const gmIds: string[] = Array.isArray((scenario as any).gmUserIds)
@@ -102,7 +112,7 @@ export default function EditSheetModal() {
     (field: FieldKey) => {
       if (isCreate) return true;
       if (isGm) return true;
-      if (!isOwner) return false;
+      if (!isOwner && !isPublic) return false;
 
       // owner-editable fields in EDIT mode
       if (field === "identity") return true;
@@ -119,15 +129,15 @@ export default function EditSheetModal() {
       // gm-only / turns-only
       return false;
     },
-    [isCreate, isGm, isOwner]
+    [isCreate, isGm, isOwner, isPublic]
   );
 
   // Level should only be editable by GM (or turns). Not by owner in EDIT mode.
   const canEditLevel = useMemo(() => (isCreate ? true : isGm), [isCreate, isGm]);
   const canSave = useMemo(() => {
-    if (isCreate) return isGm || isOwner; // create allowed for owner/gm
-    return isGm || isOwner; // edit allowed for owner/gm but fields restricted by canEdit()
-  }, [isCreate, isGm, isOwner]);
+    if (isCreate) return isGm || isOwner || isPublic; // create allowed for owner/gm/public
+    return isGm || isOwner || isPublic; // edit allowed for owner/gm/public but fields restricted by canEdit()
+  }, [isCreate, isGm, isOwner, isPublic]);
 
   // ------------------------------
   // form state
@@ -176,15 +186,18 @@ export default function EditSheetModal() {
 
   // CREATE mode warning (show once per (scenario, profile))
   const createWarnKey = React.useMemo(() => `${sid}::${pid}`, [sid, pid]);
-
+  
   React.useEffect(() => {
     if (!isCreate) return;
     if (__warnedCreateSheetKeys.has(createWarnKey)) return;
 
     __warnedCreateSheetKeys.add(createWarnKey);
-    Alert.alert(
+    // Use the native RN Alert directly to avoid triggering app-level dialog
+    // components that can cause re-render/update loops when mounted inside
+    // navigation modals.
+    RNAlert.alert(
       "Creating a Character Sheet",
-      "Everything is editable right now. After creation, some fields will be auto-updated by turns and won’t be editable by the owner.",
+      "Everything is editable right now. After creation, some fields will only be editable by the GM during turns.",
       [{ text: "OK" }]
     );
   }, [isCreate, createWarnKey]);
@@ -195,11 +208,11 @@ export default function EditSheetModal() {
 
     // In CREATE mode, allow creating even if there was no sheet
     if (!sheet && !isCreate) {
-      Alert.alert("No sheet", "This profile has no character sheet to edit.");
+      RNAlert.alert("No sheet", "This profile has no character sheet to edit.");
       return;
     }
     if (!canSave) {
-      Alert.alert("Not allowed", "You can’t edit this character sheet.");
+      RNAlert.alert("Not allowed", "You can’t edit this character sheet.");
       return;
     }
 
@@ -271,7 +284,7 @@ export default function EditSheetModal() {
       await upsertCharacterSheet(next);
       router.back();
     } catch (e: any) {
-      Alert.alert("Save failed", e?.message ?? "Could not save character sheet.");
+      RNAlert.alert("Save failed", formatErrorMessage(e, "Could not save character sheet."));
     }
   }, [
     isReady,
@@ -304,7 +317,10 @@ export default function EditSheetModal() {
 
   return (
     <>
-      <Stack.Screen options={{ headerShown: false, presentation: "modal" }} />
+      {/** stabilize options object to avoid triggering navigation updates */}
+      <Stack.Screen
+        options={React.useMemo(() => ({ headerShown: false, presentation: "modal" }), [])}
+      />
 
       <SafeAreaView edges={["top"]} style={{ flex: 1, backgroundColor: colors.background }}>
         <ThemedView style={[styles.container, { backgroundColor: colors.background }]}>
@@ -454,7 +470,13 @@ export default function EditSheetModal() {
                       colors={colors}
                       value={rpgValue}
                       onChange={setRpgValue}
-                      editable={isCreate} 
+                      editable={
+                        isCreate ||
+                        canEdit("inventory") ||
+                        canEdit("equipment") ||
+                        canEdit("abilities") ||
+                        canEdit("spells")
+                      }
                       readonlyHint={
                         !(canEdit("inventory") || canEdit("equipment") || canEdit("abilities") || canEdit("spells"))
                           ? "only the scenario owner / gms can edit."
