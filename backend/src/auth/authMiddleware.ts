@@ -22,8 +22,6 @@ export const authMiddleware = async (
 
     const decoded = jwt.verify(token, AUTH.SECRET_KEY) as JwtTokenPayload;
 
-    console.log("Token décodé:", decoded);
-
     const user = await userRepository.findById(decoded.id);
 
     if (!user) {

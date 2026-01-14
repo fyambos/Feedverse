@@ -3,6 +3,7 @@ import { ValidationError } from "../utils/models";
 import {
   CreateScenarioRequest,
   CreateScenarioResponse,
+  Scenario,
 } from "./scenarioModels";
 import {
   validateScenarioName,
@@ -83,5 +84,46 @@ export const CreateScenarioService = async (
     Scenario: scenarioCreated,
   };
 
+  return { scenario };
+};
+
+export const GetScenarioByIdService = async (
+  scenarioId: string,
+  userId: string,
+): Promise<{
+  scenario?: Scenario;
+  errors?: ValidationError[];
+}> => {
+  const uuidRegex =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+  if (!uuidRegex.test(scenarioId)) {
+    return {
+      errors: [
+        {
+          fields: "id",
+          message: "Format d'identifiant invalide",
+        },
+      ],
+    };
+  }
+
+  const scenario = await scenarioRepository.findById(scenarioId);
+
+  if (!scenario) {
+    return {
+      errors: [
+        {
+          fields: "id",
+          message: SCENARIO_MESSAGES.NOT_FOUND,
+        },
+      ],
+    };
+  }
+
+  /*
+  PLUS TARD :
+  Vérifier si l'utilisateur a accès au scénario (membre du scénario ou scénario public).
+  */
   return { scenario };
 };
