@@ -78,10 +78,10 @@ export class ScenarioRepository {
     await pool.query(query, [cover, new Date(), ScenarioId]);
   }
 
-  async delete(id: string): Promise<Scenario | null> {
-    const query = "DELETE FROM scenarios WHERE id = $1";
+  async delete(id: string): Promise<boolean> {
+    const query = "DELETE FROM scenarios WHERE id = $1 RETURNING id";
     const result = await pool.query(query, [id]);
-    return result.rows[0] || null;
+    return result.rowCount !== null && result.rowCount > 0;
   }
 
   async inviteCodeExists(inviteCode: string): Promise<boolean> {

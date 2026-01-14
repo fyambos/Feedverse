@@ -127,3 +127,65 @@ export const GetScenarioByIdService = async (
   */
   return { scenario };
 };
+
+export const DeleteScenarioService = async (
+  scenarioId: string,
+  userId: string,
+): Promise<{
+  success?: boolean;
+  errors?: ValidationError[];
+}> => {
+  const uuidRegex =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+  if (!uuidRegex.test(scenarioId)) {
+    return {
+      errors: [
+        {
+          fields: "id",
+          message: "Format d'identifiant invalide",
+        },
+      ],
+    };
+  }
+
+  // Vérifier que le scénario existe
+  const scenario = await scenarioRepository.findById(scenarioId);
+
+  if (!scenario) {
+    return {
+      errors: [
+        {
+          fields: "id",
+          message: SCENARIO_MESSAGES.NOT_FOUND,
+        },
+      ],
+    };
+  }
+
+  if (scenario.owner_user_id !== userId) {
+    return {
+      errors: [
+        {
+          fields: "authorization",
+          message: SCENARIO_MESSAGES.UNAUTHORIZED,
+        },
+      ],
+    };
+  }
+
+  const deleted = await scenarioRepository.delete(scenarioId);
+
+  if (!deleted) {
+    return {
+      errors: [
+        {
+          fields: "id",
+          message: "Échec de la suppression du scénario",
+        },
+      ],
+    };
+  }
+
+  return { success: true };
+};

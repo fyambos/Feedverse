@@ -8,6 +8,7 @@ import {
 } from "../config/constants";
 import {
   CreateScenarioService,
+  DeleteScenarioService,
   GetScenarioByIdService,
 } from "./scenarioServices";
 import { upload } from "../config/multer";
@@ -99,6 +100,46 @@ export const GetScenarioByIdController = async (
     });
   } catch (error: unknown) {
     console.error("Erreur lors de la récupération du scénario:", error);
+    res
+      .status(HTTP_STATUS.INTERNAL_SERVER_ERROR)
+      .json({ error: ERROR_MESSAGES.INTERNAL_SERVER_ERROR });
+  }
+};
+
+export const DeleteScenarioController = async (req: Request, res: Response) => {
+  if (req.method !== HTTP_METHODS.DELETE) {
+    return res
+      .status(HTTP_STATUS.BAD_REQUEST)
+      .send(ERROR_MESSAGES.METHOD_NOT_ALLOWED);
+  }
+
+  try {
+    const { id } = req.params;
+    const userId: string = req.user.id;
+
+    if (!userId) {
+      return res.status(HTTP_STATUS.UNAUTHORIZED).json({
+        error: AUTH.INVALID_TOKEN,
+      });
+    }
+
+    const result = await DeleteScenarioService(id, userId);
+
+    if (result.errors) {
+      const isForbidden = result.errors.some(
+        (err) => err.fields === "authorization",
+      );
+
+      return res
+        .status(isForbidden ? HTTP_STATUS.FORBIDDEN : HTTP_STATUS.NOT_FOUND)
+        .json({ errors: result.errors });
+    }
+
+    res.status(HTTP_STATUS.OK).json({
+      message: SCENARIO_MESSAGES.DELETION_SUCCESS,
+    });
+  } catch (error: unknown) {
+    console.error("Erreur lors de la suppression du scénario:", error);
     res
       .status(HTTP_STATUS.INTERNAL_SERVER_ERROR)
       .json({ error: ERROR_MESSAGES.INTERNAL_SERVER_ERROR });
