@@ -1,6 +1,5 @@
 // mobile/context/appData.tsx
 import React from "react";
-import { v4 as uuidv4 } from "uuid";
 import type {
   DbV5,
   Post,
@@ -21,6 +20,7 @@ import { importScenarioFromJson } from "@/lib/importExport/importScenario";
 import { useAuth } from "@/context/auth";
 import { buildScenarioExportBundleV1 } from "@/lib/importExport/exportScenarioBundle";
 import { saveAndShareScenarioExport } from "@/lib/importExport/exportScenario";
+import { makeLocalUuid } from "@/lib/ids";
 
 type AppDataState = {
   isReady: boolean;
@@ -99,6 +99,11 @@ type MessagesPageResult = {
 };
 
 type AppDataApi = {
+  // ===== optional sync (backend WIP in feedverse-dev) =====
+  syncScenarios?: (opts?: { force?: boolean }) => Promise<void>;
+  syncProfilesForScenario?: (scenarioId: string) => Promise<void>;
+  syncConversationsForScenario?: (scenarioId: string) => Promise<void>;
+  syncMessagesForConversation?: (args: { scenarioId: string; conversationId: string; limit?: number }) => Promise<void>;
   // scenarios
   getScenarioById: (id: string) => Scenario | null;
   listScenarios: () => Scenario[];
@@ -264,13 +269,24 @@ type AppDataApi = {
     conversationId: string;
     senderProfileId: string;
     text: string;
+    imageUris?: string[];
   }) => Promise<{ ok: true; messageId: string } | { ok: false; error: string }>;
+
+  // typing indicator support (local event emitter)
+  sendTyping?: (args: {
+    scenarioId: string;
+    conversationId: string;
+    profileId: string;
+    typing: boolean;
+    userId?: string;
+  }) => Promise<void> | void;
 
   updateMessage: (args: {
     scenarioId: string;
     messageId: string;
     text?: string;
     senderProfileId?: string;
+    read?: boolean;
   }) => Promise<void>;
   deleteMessage: (args: { scenarioId: string; messageId: string }) => Promise<void>;
   reorderMessagesInConversation: (args: {
@@ -287,6 +303,88 @@ type AppDataApi = {
   }) => Promise<{ ok: true; conversationId: string } | { ok: false, error: string }>;
   listSendAsProfilesForScenario: (scenarioId: string) => { owned: Profile[]; public: Profile[] };
 };
+
+// Non-reactive tracker for which conversation is currently being viewed.
+// Using a module-level map avoids React state update loops and stays
+// consistent across iOS/Android timings.
+const activeConversationByScenario: Record<string, string | null> = {};
+
+export function setActiveConversation(scenarioId: string, conversationId: string | null) {
+  const sid = String(scenarioId ?? "").trim();
+  if (!sid) return;
+  activeConversationByScenario[sid] = conversationId == null ? null : String(conversationId).trim();
+}
+
+export function getActiveConversation(scenarioId: string): string | null {
+  const sid = String(scenarioId ?? "").trim();
+  if (!sid) return null;
+  return activeConversationByScenario[sid] ?? null;
+}
+
+// Simple event emitter for message events
+type MessageEventHandler = (msg: Message) => void;
+const messageEventHandlers = new Set<MessageEventHandler>();
+export function subscribeToMessageEvents(handler: MessageEventHandler) {
+  messageEventHandlers.add(handler);
+  return () => messageEventHandlers.delete(handler);
+}
+
+// Typing event emitter
+type TypingEvent = {
+  scenarioId?: string;
+  conversationId?: string;
+  profileId?: string;
+  typing?: boolean;
+  userId?: string;
+};
+type TypingEventHandler = (ev: TypingEvent) => void;
+const typingEventHandlers = new Set<TypingEventHandler>();
+export function subscribeToTypingEvents(handler: TypingEventHandler) {
+  typingEventHandlers.add(handler);
+  return () => typingEventHandlers.delete(handler);
+}
+
+// Notification event emitter (fallback if native notifications not available)
+type AppNotification = {
+  id: string;
+  title: string;
+  body?: string | null;
+  scenarioId?: string | null;
+  conversationId?: string | null;
+  data?: Record<string, any> | null;
+};
+type NotificationHandler = (n: AppNotification) => void;
+const notificationHandlers = new Set<NotificationHandler>();
+export function subscribeToNotifications(handler: NotificationHandler) {
+  notificationHandlers.add(handler);
+  return () => notificationHandlers.delete(handler);
+}
+
+export async function presentNotification(n: AppNotification) {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const Notifications = require("expo-notifications");
+    if (Notifications && typeof Notifications.scheduleNotificationAsync === "function") {
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title: n.title,
+          body: n.body ?? undefined,
+          data: { scenarioId: n.scenarioId, conversationId: n.conversationId, ...n.data },
+        },
+        trigger: null,
+      });
+      return;
+    }
+  } catch {
+    // ignore - fallback to in-app handlers
+  }
+
+  for (const h of notificationHandlers) {
+    try {
+      h(n);
+    } catch {}
+  }
+}
 
 const Ctx = React.createContext<(AppDataState & AppDataApi) | null>(null);
 
@@ -462,6 +560,30 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     };
 
     return {
+      // ===== backend sync (WIP in feedverse-dev) =====
+      // Provide these for UI parity; they are no-ops in local/AsyncStorage mode.
+      syncScenarios: async () => {},
+      syncProfilesForScenario: async () => {},
+      syncConversationsForScenario: async () => {},
+      syncMessagesForConversation: async () => {},
+
+      // ===== typing (local event emitter) =====
+      sendTyping: async ({ scenarioId, conversationId, profileId, typing, userId }) => {
+        const ev = {
+          scenarioId: String(scenarioId ?? "").trim() || undefined,
+          conversationId: String(conversationId ?? "").trim() || undefined,
+          profileId: String(profileId ?? "").trim() || undefined,
+          typing: !!typing,
+          userId: userId == null ? undefined : String(userId),
+        };
+
+        for (const h of typingEventHandlers) {
+          try {
+            h(ev);
+          } catch {}
+        }
+      },
+
       // --- profiles
       getProfileById: (id) => (db ? db.profiles[String(id)] ?? null : null),
 
@@ -2158,16 +2280,18 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         setState({ isReady: true, db: next as any });
       },
 
-      sendMessage: async ({ scenarioId, conversationId, senderProfileId, text }) => {
+      sendMessage: async ({ scenarioId, conversationId, senderProfileId, text, imageUris }) => {
         const sid = String(scenarioId ?? "").trim();
         const cid = String(conversationId ?? "").trim();
         const from = String(senderProfileId ?? "").trim();
         const body = String(text ?? "").trim();
+        const imgs = Array.isArray(imageUris) ? imageUris.map(String).map((s) => s.trim()).filter(Boolean) : [];
+
         if (!sid || !cid || !from) return { ok: false, error: "Missing ids" };
-        if (!body) return { ok: false, error: "Message is empty" };
+        if (!body && imgs.length === 0) return { ok: false, error: "Message is empty" };
 
         const now = new Date().toISOString();
-        const messageId = uuidv4();
+        const messageId = makeLocalUuid();
 
         const nextDb = await updateDb((prev) => {
           const conversations = { ...((prev as any).conversations ?? {}) } as Record<string, Conversation>;
@@ -2183,6 +2307,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
             conversationId: cid,
             senderProfileId: from,
             text: body,
+            imageUrls: imgs.length > 0 ? imgs : undefined,
             createdAt: now,
             updatedAt: now,
             editedAt: undefined,
@@ -2194,14 +2319,28 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         });
 
         setState({ isReady: true, db: nextDb as any });
+
+        // Notify listeners (Messages screens use this as a lightweight refresh signal)
+        try {
+          const msg = (nextDb as any)?.messages?.[messageId] as Message | undefined;
+          if (msg) {
+            for (const h of messageEventHandlers) {
+              try {
+                h(msg);
+              } catch {}
+            }
+          }
+        } catch {}
+
         return { ok: true, messageId };
       },
 
-      updateMessage: async ({ scenarioId, messageId, text, senderProfileId }) => {
+      updateMessage: async ({ scenarioId, messageId, text, senderProfileId, read }) => {
         const sid = String(scenarioId ?? "").trim();
         const mid = String(messageId ?? "").trim();
         const nextText = text == null ? undefined : String(text);
         const nextSender = senderProfileId == null ? undefined : String(senderProfileId);
+        const nextRead = read == null ? undefined : !!read;
         if (!sid || !mid) return;
 
         const nextDb = await updateDb((prev) => {
@@ -2232,6 +2371,11 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
               patched.senderProfileId = from;
               changed = true;
             }
+          }
+
+          if (nextRead !== undefined) {
+            (patched as any).read = nextRead;
+            changed = true;
           }
 
           if (!changed) return prev;
@@ -2452,7 +2596,7 @@ function sortDescByLastMessageAtThenId(a: Conversation, b: Conversation) {
 
 function makeConversationId(scenarioId: string) {
   void scenarioId;
-  return uuidv4();
+  return makeLocalUuid();
 }
 
 function findConversationIdByExactParticipants(db: DbV5 | null, scenarioId: string, participantProfileIds: string[]) {

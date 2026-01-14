@@ -142,7 +142,7 @@ export default function CharacterSheetScreen() {
             <Pressable
               onPress={() => {
                 const nextMode = sheet ? "edit" : "create";
-                router.push({
+                router.replace({
                   pathname: `/modal/create-sheet`,
                   params: { scenarioId: sid, profileId: pid, mode: nextMode },
                 } as any);

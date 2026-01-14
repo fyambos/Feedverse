@@ -13,11 +13,15 @@ import * as bcrypt from "bcryptjs";
 import type { User, UserSettings } from "@/data/db/schema";
 import { readDb, updateDb } from "@/data/db/storage"; 
 import { seedDbIfNeeded } from "@/data/db/seed";
+import { normalizeUsernameInput } from "@/lib/validation/auth";
 
 type AuthState = {
   isReady: boolean;
   isLoggedIn: boolean;
   userId: string | null;
+
+  // backend auth is not wired in feedverse-dev yet; keep token for UI compatibility
+  token: string | null;
 
   // current user (cached for UI convenience)
   currentUser: User | null;
@@ -35,6 +39,7 @@ type AuthState = {
   refreshCurrentUser: () => Promise<void>;
   updateUserSettings: (settings: UserSettings) => Promise<void>;
   updateUserAvatar: (avatarUrl?: string | null) => Promise<void>;
+  updateUsername: (username: string) => Promise<void>;
 };
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -110,6 +115,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [authReady, setAuthReady] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [token] = useState<string | null>(null);
 
   // hydrate stored auth id once
   useEffect(() => {
@@ -359,12 +365,57 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [userId]
   );
 
+  const updateUsername = useCallback(
+    async (username: string) => {
+      if (!userId) throw new Error("Not logged in");
+
+      const normalized = normalizeUsernameInput(username);
+      if (!normalized) throw new Error("Please enter a valid username.");
+
+      const db = await readDb();
+      const users = (db as any)?.users ?? {};
+
+      // enforce uniqueness (case-insensitive)
+      const nextLower = String(normalized).toLowerCase();
+      for (const u of Object.values(users) as any[]) {
+        if (!u) continue;
+        if (String(u.id) === String(userId)) continue;
+        const uname = String(u.username ?? "").trim().toLowerCase();
+        if (uname && uname === nextLower) {
+          throw new Error("That username is already taken.");
+        }
+      }
+
+      const id = String(userId);
+      const now = nowIso();
+      const nextDb = await updateDb((prev) => {
+        const existing = (prev as any).users?.[id];
+        if (!existing) return prev;
+        return {
+          ...prev,
+          users: {
+            ...(prev as any).users,
+            [id]: {
+              ...existing,
+              username: normalized,
+              updatedAt: now,
+            },
+          },
+        };
+      });
+
+      setCurrentUser((nextDb as any)?.users?.[id] ?? null);
+    },
+    [userId]
+  );
+
   const value = useMemo<AuthState>(
     () => ({
       // auth is ready when storage hydration is done
       isReady: authReady,
       isLoggedIn: !!userId,
       userId,
+      token,
 
       currentUser,
 
@@ -376,10 +427,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       refreshCurrentUser,
       updateUserSettings,
       updateUserAvatar,
+      updateUsername,
     }),
     [
       authReady,
       userId,
+      token,
       currentUser,
       signInMock,
       signIn,
@@ -388,6 +441,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       refreshCurrentUser,
       updateUserSettings,
       updateUserAvatar,
+      updateUsername,
     ]
   );
 

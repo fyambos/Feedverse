@@ -7,6 +7,7 @@ import { router } from "expo-router";
 import { ThemedText } from "@/components/themed-text";
 import { MediaGrid } from "@/components/media/MediaGrid";
 import { Lightbox } from "@/components/media/LightBox";
+import { useAppData } from "@/context/appData";
 
 import type { Post as DbPost } from "@/data/db/schema";
 
@@ -75,6 +76,7 @@ export function PostBody({
   textStyle,
   addVideoIcon,
 }: Props) {
+  const app = useAppData() as any;
   const isDetail = variant === "detail";
 
   const mediaUrls = (item.imageUrls ?? [])
@@ -97,10 +99,21 @@ export function PostBody({
   const linkColor = colors.tint ?? "#1d9bf0";
 
   const onPressMention = (raw: string) => {
-    const handle = raw.slice(1);
+    const handle = String(raw ?? "").trim().replace(/^@+/, "");
+    if (!sid || !handle) return;
+
+    const p = app?.getProfileByHandle?.(sid, handle) ?? null;
+    if (p?.id) {
+      router.push({
+        pathname: "/(scenario)/[scenarioId]/(tabs)/home/profile/[profileId]",
+        params: { scenarioId: sid, profileId: String(p.id) },
+      } as any);
+      return;
+    }
+
     router.push({
-      pathname: `/(scenario)/${encodeURIComponent(sid)}/(tabs)/search`,
-      params: { q: handle },
+      pathname: "/(scenario)/[scenarioId]/(tabs)/home/user-not-found",
+      params: { scenarioId: sid, handle },
     } as any);
   };
 

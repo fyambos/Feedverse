@@ -6,6 +6,7 @@ import {
   StyleSheet,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
@@ -23,6 +24,7 @@ export function AuthScreen({
 }) {
   const scheme = useColorScheme() ?? 'light';
   const colors = Colors[scheme];
+  const insets = useSafeAreaInsets();
 
   return (
     <ThemedView style={[styles.screen, { backgroundColor: colors.background }]}>
@@ -30,7 +32,15 @@ export function AuthScreen({
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={styles.kav}
       >
-        <View style={styles.centerWrap}>
+        <View
+          style={[
+            styles.centerWrap,
+            {
+              paddingTop: (styles.centerWrap.paddingTop as number) + (insets.top || 0),
+              paddingBottom: (styles.centerWrap.paddingBottom as number) + (insets.bottom || 0),
+            },
+          ]}
+        >
           <View style={styles.logoWrap}>
             <Image
               source={require('@/assets/images/FeedverseIcon.png')}
@@ -46,7 +56,16 @@ export function AuthScreen({
           {children}
         </View>
 
-        <View style={[styles.bottomBar, { borderTopColor: colors.border }]}>
+        <View
+          style={[
+            styles.bottomBar,
+            {
+              borderTopColor: colors.border,
+              paddingBottom: 14 + (insets.bottom || 0),
+              paddingTop: 14,
+            },
+          ]}
+        >
           {bottom}
         </View>
       </KeyboardAvoidingView>
@@ -62,6 +81,7 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: 20,
     paddingTop: 18,
+    paddingBottom: 0,
     justifyContent: 'flex-start',
   },
 
@@ -86,7 +106,6 @@ const styles = StyleSheet.create({
   bottomBar: {
     flexDirection: 'row',
     justifyContent: 'center',
-    paddingVertical: 14,
     borderTopWidth: StyleSheet.hairlineWidth,
   },
 });
