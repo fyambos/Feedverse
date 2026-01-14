@@ -29,6 +29,7 @@ import { ThemedView } from "@/components/themed-view";
 import { Colors } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { useAppData } from "@/context/appData";
+import { useAuth } from "@/context/auth";
 import type { Conversation, Message, Profile } from "@/data/db/schema";
 import { AuthorAvatarPicker } from "@/components/postComposer/AuthorAvatarPicker";
 import { Avatar } from "@/components/ui/Avatar";
@@ -117,6 +118,7 @@ export default function ConversationThreadScreen() {
   const cid = String(conversationId ?? "");
 
   const app = useAppData() as any;
+  const auth = useAuth();
   const {
     isReady,
     db,
@@ -130,12 +132,45 @@ export default function ConversationThreadScreen() {
     reorderMessagesInConversation,
   } = app;
 
+  const selectedProfileId: string | null = useMemo(
+    () => (sid ? (getSelectedProfileId?.(sid) ?? null) : null),
+    [sid, getSelectedProfileId]
+  );
+
+  const markReadThrottleRef = useRef<{ lastAtMs: number }>({ lastAtMs: 0 });
+  const markConversationRead = useCallback(async () => {
+    try {
+      const token = String(auth?.token ?? "").trim();
+      if (!token) return;
+      if (!sid || !cid) return;
+      if (!selectedProfileId) return;
+
+      const nowMs = Date.now();
+      if (nowMs - markReadThrottleRef.current.lastAtMs < 900) return;
+      markReadThrottleRef.current.lastAtMs = nowMs;
+
+      await apiFetch({
+        path: `/conversations/${encodeURIComponent(String(cid))}/read`,
+        token,
+        init: {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ profileId: String(selectedProfileId) }),
+        },
+      });
+    } catch {
+      // ignore
+    }
+  }, [auth?.token, sid, cid, selectedProfileId]);
+
   // Track which conversation is currently active (non-reactive; avoids update loops)
   useFocusEffect(
     useCallback(() => {
       setActiveConversation(sid, cid);
+      // While viewing this thread, keep it marked read so unread counts don't accumulate.
+      void markConversationRead();
       return () => setActiveConversation(sid, null);
-    }, [sid, cid])
+    }, [sid, cid, markConversationRead])
   );
 
   // Live message subscription: append new messages for this conversation
@@ -146,18 +181,15 @@ export default function ConversationThreadScreen() {
       if (String(msg.scenarioId) === sid && String(msg.conversationId) === cid) {
         // Force a state update by syncing messages for this conversation
         app?.syncMessagesForConversation?.({ scenarioId: sid, conversationId: cid, limit: 200 });
+        // If we're currently viewing this thread, immediately mark read.
+        void markConversationRead();
       }
     };
     const unsubscribe = subscribeToMessageEvents(handler);
     return () => {
       unsubscribe();
     };
-  }, [sid, cid, app]);
-
-  const selectedProfileId: string | null = useMemo(
-    () => (sid ? (getSelectedProfileId?.(sid) ?? null) : null),
-    [sid, getSelectedProfileId]
-  );
+  }, [sid, cid, app, markConversationRead]);
 
   const conversation: Conversation | null = useMemo(
     () => (cid ? (getConversationById?.(cid) ?? null) : null),

@@ -6,7 +6,7 @@
 
 import { Platform } from 'react-native';
 
-const DEFAULT_TINT_COLOR = '#ecdb7c'// '#7c96ec'; // '#1D9BF0';
+const DEFAULT_TINT_COLOR = '#7c96ec'; // '#1D9BF0';
 
 function normalizeHexColor(input: unknown): string | null {
   if (typeof input !== 'string') return null;

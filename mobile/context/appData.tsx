@@ -20,10 +20,75 @@ import { buildGlobalTagFromKey } from "@/lib/tags";
 import { pickScenarioExportJson } from "@/lib/importExport/importFromFile";
 import { importScenarioFromJson } from "@/lib/importExport/importScenario";
 import { useAuth } from "@/context/auth";
-import { useRouter } from "expo-router";
+import { usePathname, useRouter } from "expo-router";
 import { apiFetch } from "@/lib/apiClient";
 import { buildScenarioExportBundleV1 } from "@/lib/importExport/exportScenarioBundle";
 import { saveAndShareScenarioExport } from "@/lib/importExport/exportScenario";
+
+function scenarioIdFromPathname(pathname: string): string {
+  const parts = String(pathname ?? "")
+    .split("/")
+    .map((p) => p.trim())
+    .filter(Boolean);
+
+  const scenarioIdx = parts.findIndex((p) => p === "(scenario)" || p === "scenario");
+  const candidate =
+    scenarioIdx >= 0
+      ? parts[scenarioIdx + 1]
+      : parts.length > 0
+        ? parts[0]
+        : "";
+
+  const raw = String(candidate ?? "").trim();
+  if (!raw) return "";
+  if (raw === "modal") return "";
+  if (raw.startsWith("(")) return "";
+
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+}
+
+function conversationIdFromPathname(pathname: string): string {
+  const parts = String(pathname ?? "")
+    .split("/")
+    .map((p) => p.trim())
+    .filter(Boolean);
+
+  const idx = parts.findIndex((p) => p === "messages");
+  if (idx < 0) return "";
+  const candidate = String(parts[idx + 1] ?? "").trim();
+  if (!candidate) return "";
+  if (candidate === "index") return "";
+  if (candidate.startsWith("(")) return "";
+
+  try {
+    return decodeURIComponent(candidate);
+  } catch {
+    return candidate;
+  }
+}
+
+function postIdFromPathname(pathname: string): string {
+  const parts = String(pathname ?? "")
+    .split("/")
+    .map((p) => p.trim())
+    .filter(Boolean);
+
+  const idx = parts.findIndex((p) => p === "post");
+  if (idx < 0) return "";
+  const candidate = String(parts[idx + 1] ?? "").trim();
+  if (!candidate) return "";
+  if (candidate.startsWith("(")) return "";
+
+  try {
+    return decodeURIComponent(candidate);
+  } catch {
+    return candidate;
+  }
+}
 
 // Non-reactive tracker for which conversation is currently being viewed.
 // Using a module-level map avoids React state update loops and stays
@@ -589,14 +654,23 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
   const currentUserId = String(auth.userId ?? "");
 
   const router = useRouter();
+  const pathname = usePathname();
+  const dbReady = Boolean(state.db);
+
+  const pathnameRef = React.useRef<string>("");
+  React.useEffect(() => {
+    pathnameRef.current = String(pathname ?? "");
+  }, [pathname]);
 
   // Notification listener refs
   const notificationResponseListenerRef = React.useRef<any | null>(null);
   const notificationReceivedListenerRef = React.useRef<any | null>(null);
+  const notificationNavRef = React.useRef<{ key: string; atMs: number } | null>(null);
+  const notificationNavTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Request notification permissions and register handlers when ready
   React.useEffect(() => {
-    if (!state.isReady || !state.db) return;
+    if (!state.isReady || !dbReady) return;
     if (!auth.isReady) return;
 
     let cancelled = false;
@@ -617,7 +691,21 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         if (Notifications.setNotificationHandler) {
           try {
             Notifications.setNotificationHandler({
-              handleNotification: async () => ({ shouldShowAlert: true, shouldPlaySound: false, shouldSetBadge: false }),
+              handleNotification: async (notification: any) => {
+                try {
+                  const data = notification?.request?.content?.data ?? notification?.data ?? {};
+                  const sid = String(data?.scenarioId ?? data?.scenario_id ?? "").trim();
+                  const conv = String(data?.conversationId ?? data?.conversation_id ?? "").trim();
+                  if (sid && conv) {
+                    const viewing = getActiveConversation(sid);
+                    if (viewing && String(viewing) === String(conv)) {
+                      return { shouldShowAlert: false, shouldPlaySound: false, shouldSetBadge: false };
+                    }
+                  }
+                } catch {}
+
+                return { shouldShowAlert: true, shouldPlaySound: false, shouldSetBadge: false };
+              },
             });
           } catch {}
         }
@@ -631,6 +719,42 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
           }
         } catch {}
 
+        // In backend mode, register an Expo push token so the server can send
+        // real remote notifications (works even when the app is closed).
+        try {
+          const token = String(auth.token ?? "").trim();
+          if (isBackendMode(token) && token) {
+            // eslint-disable-next-line @typescript-eslint/no-var-requires
+            const Constants = require("expo-constants");
+            const projectId =
+              Constants?.expoConfig?.extra?.eas?.projectId ??
+              Constants?.easConfig?.projectId ??
+              Constants?.expoConfig?.extra?.projectId;
+
+            let expoPushToken = "";
+            try {
+              const res = await Notifications.getExpoPushTokenAsync?.(projectId ? { projectId } : undefined);
+              expoPushToken = String(res?.data ?? "").trim();
+            } catch {
+              expoPushToken = "";
+            }
+
+            if (expoPushToken) {
+              const platform = String(Constants?.platform?.ios ? "ios" : Constants?.platform?.android ? "android" : "");
+              await apiFetch({
+                path: "/users/push-token",
+                token,
+                init: {
+                  method: "POST",
+                  body: JSON.stringify({ expoPushToken, platform: platform || undefined }),
+                },
+              });
+            }
+          }
+        } catch {
+          // best-effort; don't block app startup if push registration fails
+        }
+
         // Register response handler: navigate to conversation when tapped
         try {
           notificationResponseListenerRef.current = Notifications.addNotificationResponseReceivedListener((response: any) => {
@@ -638,9 +762,14 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
               const data = response?.notification?.request?.content?.data ?? response?.notification?.data ?? {};
               const sid = String(data?.scenarioId ?? data?.scenario_id ?? "");
               const conv = String(data?.conversationId ?? data?.conversation_id ?? "");
+              const messageId = String(data?.messageId ?? data?.message_id ?? "").trim();
+              const kind = String(data?.kind ?? "").trim();
+              const postId = String(data?.postId ?? data?.post_id ?? "").trim();
               const targetProfileId = String(data?.profileId ?? data?.profile_id ?? "").trim();
-              if (sid && conv) {
-                // If notification is for a specific owned profile, switch selection first.
+
+              // ---- Mention deep-link (open post) ----
+              if (sid && postId) {
+                // Switch selection first (even if we skip navigation).
                 if (targetProfileId) {
                   try {
                     void updateDb((prev) => ({
@@ -652,6 +781,110 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                     })).catch(() => {});
                   } catch {}
                 }
+
+                // If we're already at the destination post, do nothing.
+                try {
+                  const curPath = String(pathnameRef.current ?? "");
+                  const curSid = scenarioIdFromPathname(curPath);
+                  const curPost = postIdFromPathname(curPath);
+                  if (curSid && String(curSid) === String(sid) && curPost && String(curPost) === String(postId)) return;
+                } catch {}
+
+                // Dedupe: mention pushes can be tapped multiple times or callbacks can double-fire.
+                try {
+                  const key = `${sid}|post|${postId}|${targetProfileId}`;
+                  const nowMs = Date.now();
+                  const last = notificationNavRef.current;
+                  if (last && last.key === key && nowMs - last.atMs < 2500) return;
+                  notificationNavRef.current = { key, atMs: nowMs };
+
+                  if (notificationNavTimerRef.current) {
+                    clearTimeout(notificationNavTimerRef.current);
+                    notificationNavTimerRef.current = null;
+                  }
+                } catch {}
+
+                notificationNavTimerRef.current = setTimeout(() => {
+                  if (cancelled) return;
+                  try {
+                    const currentPath = String(pathnameRef.current ?? "");
+                    const fromScenarioList = currentPath === "/" || currentPath === "";
+
+                    const sidEnc = encodeURIComponent(String(sid));
+                    const postEnc = encodeURIComponent(String(postId));
+
+                    // Step 1: establish correct scenario tab context.
+                    const step1 = { pathname: `/(scenario)/${sidEnc}/home`, params: {} } as any;
+                    // Step 2: open post screen in that scenario.
+                    const step2 = { pathname: `/(scenario)/${sidEnc}/home/post/${postEnc}`, params: {} } as any;
+
+                    if (fromScenarioList) {
+                      // Preserve back: list -> home -> post
+                      router.push(step1);
+                      setTimeout(() => {
+                        try { router.push(step2); } catch {}
+                      }, 0);
+                    } else {
+                      // Switch scenarios without stacking old scenario.
+                      router.replace(step1);
+                      setTimeout(() => {
+                        try { router.push(step2); } catch {}
+                      }, 0);
+                    }
+                  } catch {}
+                }, 0);
+
+                return;
+              }
+
+              // ---- Message deep-link (open conversation) ----
+              if (sid && conv) {
+                // If notification is for a specific owned profile, switch selection first.
+                // Do this even if we end up skipping navigation because we're already at the destination.
+                if (targetProfileId) {
+                  try {
+                    void updateDb((prev) => ({
+                      ...(prev as any),
+                      selectedProfileByScenario: {
+                        ...((prev as any).selectedProfileByScenario ?? {}),
+                        [sid]: targetProfileId,
+                      },
+                    })).catch(() => {});
+                  } catch {}
+                }
+
+                // If we're already viewing this conversation, do nothing.
+                try {
+                  const viewing = getActiveConversation(sid);
+                  if (viewing && String(viewing) === String(conv)) return;
+                } catch {}
+
+                // If our current path already points at the same destination, do nothing.
+                try {
+                  const curPath = String(pathnameRef.current ?? "");
+                  const curSid = scenarioIdFromPathname(curPath);
+                  const curConv = conversationIdFromPathname(curPath);
+                  if (curSid && String(curSid) === String(sid) && curConv && String(curConv) === String(conv)) return;
+                } catch {}
+
+                // Dedupe: some environments/devices can fire multiple response callbacks
+                // for a single tap (or our navigation can retrigger handlers on remount).
+                // Prevent repeated replace/push loops.
+                try {
+                  // Prefer payload-based dedupe keys (notification identifiers can differ
+                  // across platforms / delivery mechanisms for the same tap).
+                  const key = `${sid}|${conv}|${messageId || ""}|${targetProfileId}`;
+                  const nowMs = Date.now();
+                  const last = notificationNavRef.current;
+                  if (last && last.key === key && nowMs - last.atMs < 2500) return;
+                  notificationNavRef.current = { key, atMs: nowMs };
+
+                  if (notificationNavTimerRef.current) {
+                    clearTimeout(notificationNavTimerRef.current);
+                    notificationNavTimerRef.current = null;
+                  }
+                } catch {}
+
                 // Navigate via the inbox screen so it can sync state before opening the thread.
                 // Jumping directly to the thread can land on an infinite loading state if the
                 // conversation/messages haven't been synced yet.
@@ -659,12 +892,37 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                   // Use replace (not push) so the app's active tab navigator
                   // becomes the notification's scenario. Avoid dismissAll(): it
                   // can dispatch POP_TO_TOP when no stack is present.
-                  setTimeout(() => {
+                  notificationNavTimerRef.current = setTimeout(() => {
+                    if (cancelled) return;
                     try {
-                      router.replace({
-                        pathname: "/(scenario)/[scenarioId]/(tabs)/messages",
-                        params: { scenarioId: sid, openConversationId: conv },
-                      } as any);
+                      const currentPath = String(pathnameRef.current ?? "");
+                      const fromScenarioList = currentPath === "/" || currentPath === "";
+
+                      const sidEnc = encodeURIComponent(String(sid));
+
+                      // Step 1: ensure the Tab navigator is scoped to the correct scenario.
+                      // When switching scenarios from inside another scenario, navigating
+                      // directly to messages can leave the active Tabs instance on the old sid.
+                      const step1 = { pathname: `/(scenario)/${sidEnc}/home`, params: {} } as any;
+
+                      // Step 2: open messages in that scenario (which will then deep-link
+                      // into the conversation via openConversationId).
+                      // Do NOT pass scenarioId as a param when it's already in the path.
+                      const step2 = { pathname: `/(scenario)/${sidEnc}/messages`, params: { openConversationId: conv } } as any;
+
+                      if (fromScenarioList) {
+                        // Preserve back navigation to scenario list.
+                        router.push(step1);
+                        setTimeout(() => {
+                          try { router.replace(step2); } catch {}
+                        }, 0);
+                      } else {
+                        // Replace to avoid stacking scenarios.
+                        router.replace(step1);
+                        setTimeout(() => {
+                          try { router.replace(step2); } catch {}
+                        }, 0);
+                      }
                     } catch {}
                   }, 0);
                 } catch {}
@@ -684,10 +942,16 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
 
     return () => {
       cancelled = true;
+      try {
+        if (notificationNavTimerRef.current) {
+          clearTimeout(notificationNavTimerRef.current);
+          notificationNavTimerRef.current = null;
+        }
+      } catch {}
       try { notificationResponseListenerRef.current?.remove?.(); } catch {}
       try { notificationReceivedListenerRef.current?.remove?.(); } catch {}
     };
-  }, [state.isReady, state.db, auth.isReady, router]);
+  }, [state.isReady, dbReady, auth.isReady, router]);
 
   const lastBackendUserIdRef = React.useRef<string | null>(null);
   const autoSelectFirstProfileRef = React.useRef<{ inFlight: boolean; lastAtMs: number }>({ inFlight: false, lastAtMs: 0 });
@@ -1550,10 +1814,18 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                           try { handler(m); } catch {}
                         }
 
-                        // Present a notification when appropriate:
+                        // Present a local notification when appropriate:
+                        // In backend mode we rely on remote pushes (Expo push) and MUST NOT
+                        // also schedule local notifications, otherwise users get duplicates.
                         try {
                           const mid2 = String(m.id ?? "");
                           const convId = String(m.conversationId ?? m.conversation_id ?? "");
+
+                          const tokenLocal = String(auth.token ?? "").trim();
+                          if (isBackendMode(tokenLocal)) {
+                            // Remote push is responsible for notifications.
+                            return;
+                          }
 
                           // IMPORTANT: use a fresh DB snapshot here (not `state.db`), because
                           // `state` can be stale across platforms/timings and cause iOS/Android
@@ -1635,6 +1907,9 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                         }
                     } else if (evName === "mention.created" && payload) {
                       try {
+                        const tokenLocal = String(auth.token ?? "").trim();
+                        if (isBackendMode(tokenLocal)) return;
+
                         const sid2 = String(payload?.scenarioId ?? sid);
                         const postId = String(payload?.postId ?? "").trim();
                         const authorProfileId = String(payload?.authorProfileId ?? "").trim();

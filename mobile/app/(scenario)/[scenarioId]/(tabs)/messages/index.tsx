@@ -1,5 +1,5 @@
 // mobile/app/(scenario)/[scenarioId]/(tabs)/messages/index.tsx
-import { subscribeToMessageEvents, subscribeToTypingEvents } from "@/context/appData";
+import { getActiveConversation, subscribeToMessageEvents, subscribeToTypingEvents } from "@/context/appData";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/context/auth";
@@ -102,7 +102,13 @@ export default function MessagesScreen() {
     [sid, getSelectedProfileId]
   );
 
-  const openOnceRef = React.useRef<string | null>(null);
+  const openOnceRef = React.useRef<{ key: string; atMs: number } | null>(null);
+
+  // Keep unstable values out of deep-link effect dependencies.
+  const appRef = React.useRef<any>(null);
+  React.useEffect(() => {
+    appRef.current = app;
+  }, [app]);
 
   const syncOnceRef = React.useRef<string | null>(null);
 
@@ -277,6 +283,11 @@ export default function MessagesScreen() {
             const read = !!m.read || !!m.is_read || false;
             if (!read) map[convId] = (map[convId] || 0) + 1;
           }
+          // Never show unread for the currently open conversation.
+          try {
+            const active = getActiveConversation(sid);
+            if (active) map[String(active)] = 0;
+          } catch {}
           if (!cancelled) setUnreadCounts(map);
           return;
         }
@@ -291,6 +302,11 @@ export default function MessagesScreen() {
           for (const row of res.json.unread) {
             map[String(row.conversation_id)] = Number(row.unread_count) || 0;
           }
+          // Never show unread for the currently open conversation.
+          try {
+            const active = getActiveConversation(sid);
+            if (active) map[String(active)] = 0;
+          } catch {}
           if (!cancelled) setUnreadCounts(map);
         } else {
           // console.log("unread API returned no data or unexpected shape", { ok: res.ok, json: res.json });
@@ -374,6 +390,11 @@ const markOptimisticallyRead = useCallback((conversationId: string) => {
     [isReady, sid, selectedProfileId, app?.auth?.token, db, fetchUnreadCounts, markOptimisticallyRead]
   );
 
+  const markConversationReadRef = React.useRef<typeof markConversationRead>(() => Promise.resolve());
+  React.useEffect(() => {
+    markConversationReadRef.current = markConversationRead;
+  }, [markConversationRead]);
+
   
 
 useEffect(() => {
@@ -423,21 +444,36 @@ useEffect(() => {
     if (!sid) return;
     if (!selectedProfileId) return;
 
-    if (openOnceRef.current === cid) return;
-    openOnceRef.current = cid;
+    // Guard against duplicate navigations caused by repeated notification callbacks / remounts.
+    // Allow re-opening the same conversation later (don’t permanently block by id).
+    // Dedupe by destination only; selected profile can legitimately change
+    // and should not cause repeated opens.
+    const key = `${sid}|${cid}`;
+    const nowMs = Date.now();
+    const last = openOnceRef.current;
+    if (last && last.key === key && nowMs - last.atMs < 1500) return;
+    openOnceRef.current = { key, atMs: nowMs };
 
-    // clear the param so we don't re-open on re-render
-    router.setParams({ openConversationId: undefined } as any);
+    // Clear the param so we don't re-open on re-render.
+    // `setParams({ ...: undefined })` is not reliably removing params across
+    // platforms, so also `replace` the same route without the param.
+    try { router.setParams({ openConversationId: undefined } as any); } catch {}
+    try {
+      router.replace({
+        pathname: `/(scenario)/${encodeURIComponent(String(sid))}/messages`,
+        params: {},
+      } as any);
+    } catch {}
 
     (async () => {
       try {
         // Ensure we have the conversation + at least a page of messages before opening the thread.
         // This avoids getting stuck on the thread's loading state when launched from a notification.
-        try { await app?.syncConversationsForScenario?.(sid); } catch {}
-        try { await app?.syncMessagesForConversation?.({ scenarioId: sid, conversationId: cid, limit: 60 }); } catch {}
+        try { await appRef.current?.syncConversationsForScenario?.(sid); } catch {}
+        try { await appRef.current?.syncMessagesForConversation?.({ scenarioId: sid, conversationId: cid, limit: 60 }); } catch {}
       } catch {}
 
-      try { await markConversationRead(cid); } catch {}
+      try { await markConversationReadRef.current?.(cid); } catch {}
 
       try {
         router.push({
@@ -446,7 +482,7 @@ useEffect(() => {
         } as any);
       } catch {}
     })();
-  }, [openConversationId, isReady, sid, selectedProfileId, markConversationRead]);
+  }, [openConversationId, isReady, sid, selectedProfileId]);
 
   // Conversation list should not depend on scanning all messages.
   // Use cached conversations + server-provided preview fields.
@@ -802,7 +838,15 @@ useEffect(() => {
               } as any);
             };
 
-            const unread = unreadCounts[convId] > 0;
+            const activeConvId = (() => {
+              try {
+                return sid ? getActiveConversation(sid) : null;
+              } catch {
+                return null;
+              }
+            })();
+
+            const unread = String(activeConvId ?? "") === String(convId) ? false : (unreadCounts[convId] ?? 0) > 0;
             return (
               <SwipeableRow
                 enabled={canManageChatsAsSelected}
