@@ -79,6 +79,8 @@ export const CreateScenarioService = async (
     coverFile,
   );
 
+  await scenarioRepository.addPlayer(uuid, ownerUserId);
+
   const scenario: CreateScenarioResponse = {
     message: SCENARIO_MESSAGES.CREATION_SUCCESS,
     Scenario: scenarioCreated,

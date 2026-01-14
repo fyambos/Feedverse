@@ -1,4 +1,6 @@
-interface User {
+import { ScenarioMode } from "../scenarios/scenarioModels";
+
+export interface User {
   id: string;
   username: string;
   name: string;
@@ -11,8 +13,24 @@ interface User {
   // last_login: Date | null;
 }
 
-interface GetUser {
+export interface GetUser {
   User: User;
 }
 
-export { User, GetUser };
+export interface UserScenario {
+  id: string;
+  name: string;
+  cover: string;
+  invite_code: string;
+  owner_user_id: string;
+  description: string | null;
+  mode: ScenarioMode;
+  is_owner: boolean;
+  created_at: Date;
+  updated_at: Date | null;
+}
+
+export interface GetUserScenariosResponse {
+  scenarios: UserScenario[];
+  count: number;
+}

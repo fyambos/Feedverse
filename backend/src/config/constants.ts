@@ -91,6 +91,7 @@ export const USER_MESSAGES = {
   DOES_NOT_EXISTS: "L'utilisateur n'existe pas",
   FAILED_FETCH: "Impossible de récupérer les informations utilisateur",
   UNAUTHORIZED: "Votre email Google n'est pas vérifié",
+  SCENARIOS_FETCH_SUCCESS: "Scénarios récupérés avec succès",
 } as const;
 
 // ============================================================================
@@ -200,6 +201,7 @@ export const ROUTES_USERS = {
   BY_ID: "/:id",
   PROFILE: "/profile",
   SETTINGS: "/settings",
+  SCENARIOS: "/scenarios",
 } as const;
 
 export const ASSETS = {

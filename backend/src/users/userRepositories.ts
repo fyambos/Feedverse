@@ -2,7 +2,7 @@ import { CreateUserData } from "../auth/authModels";
 import { r2Service } from "../config/cloudflare/r2Service";
 import { APP_CONFIG } from "../config/constants";
 import { pool } from "../config/database";
-import { User } from "./userModels";
+import { User, UserScenario } from "./userModels";
 
 export class UserRepository {
   async findByEmail(email: string): Promise<User | null> {
@@ -66,5 +66,27 @@ export class UserRepository {
     const query = "SELECT * FROM users WHERE google_id = $1";
     const result = await pool.query(query, [googleId]);
     return result.rows[0] || null;
+  }
+
+  async findUserScenarios(userId: string): Promise<UserScenario[]> {
+    const query = `
+      SELECT
+        s.id,
+        s.name,
+        s.cover,
+        s.invite_code,
+        s.owner_user_id,
+        s.description,
+        s.mode,
+        s.created_at,
+        s.updated_at,
+        (s.owner_user_id = $1) as is_owner
+      FROM scenarios s
+      INNER JOIN scenario_players sp ON s.id = sp.scenario_id
+      WHERE sp.user_id = $1
+      ORDER BY s.created_at DESC
+    `;
+    const result = await pool.query(query, [userId]);
+    return result.rows;
   }
 }

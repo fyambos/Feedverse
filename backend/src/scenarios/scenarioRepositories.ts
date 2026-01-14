@@ -90,4 +90,13 @@ export class ScenarioRepository {
     const result = await pool.query(query, [inviteCode]);
     return result.rows[0].exists;
   }
+
+  async addPlayer(scenarioId: string, userId: string): Promise<void> {
+    const query = `
+      INSERT INTO scenario_players (scenario_id, user_id)
+      VALUES ($1, $2)
+      ON CONFLICT (scenario_id, user_id) DO NOTHING
+    `;
+    await pool.query(query, [scenarioId, userId]);
+  }
 }
