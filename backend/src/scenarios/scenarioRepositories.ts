@@ -273,7 +273,6 @@ export class ScenarioRepository {
     const mode = String(args.mode ?? "").trim();
 
     if (!name) throw new Error("name is required");
-    if (!cover) throw new Error("cover is required");
     if (!inviteCode) throw new Error("inviteCode is required");
     if (!mode) throw new Error("mode is required");
 

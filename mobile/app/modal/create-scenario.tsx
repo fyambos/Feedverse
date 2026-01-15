@@ -398,33 +398,40 @@ export default function CreateScenarioModal() {
     };
 
     try {
-      // 1. Create scenario (without uploading cover if it's a local file)
-      let scenarioId = next.id;
-      let coverUrl = String(cover).trim();
-      let uploadedCoverUrl = coverUrl;
-      let isLocalCover = coverUrl && !/^https?:\/\//i.test(coverUrl);
+      // 1) Create/update scenario first.
+      // If cover is a local file URI, we temporarily save it as empty
+      const coverUrl = String(cover).trim();
+      const isLocalCover = coverUrl && !/^https?:\/\//i.test(coverUrl);
 
-      // Save scenario with empty cover if local file
       const scenarioToSave = isLocalCover ? { ...next, cover: "" } : next;
-      await upsertScenario(scenarioToSave);
+      const saved: Scenario = await upsertScenario(scenarioToSave);
 
-      // 2. If cover is a local file, upload to backend
+      // 2) If cover is local and we're online, upload using the server UUID.
       if (isLocalCover && token) {
+        const serverScenarioId = String((saved as any)?.id ?? "").trim();
+        if (!serverScenarioId) throw new Error("Invalid server response");
+
         const form = new FormData();
-        form.append("cover", { uri: coverUrl, name: `cover_${scenarioId}.jpg`, type: "image/jpeg" } as any);
+        form.append(
+          "cover",
+          { uri: coverUrl, name: `cover_${serverScenarioId}.jpg`, type: "image/jpeg" } as any
+        );
+
         const res = await apiFetch({
-          path: `/scenarios/${scenarioId}/cover`,
+          path: `/scenarios/${encodeURIComponent(serverScenarioId)}/cover`,
           token,
           init: { method: "POST", body: form as any },
         });
+
         if (res.ok && res.json?.coverUrl) {
-          uploadedCoverUrl = String(res.json.coverUrl);
-          // Update scenario with new cover URL
-          await upsertScenario({ ...next, cover: uploadedCoverUrl });
+          const uploadedCoverUrl = String(res.json.coverUrl);
+          await upsertScenario({ ...saved, ...next, id: serverScenarioId, cover: uploadedCoverUrl });
         } else {
           Alert.alert("Cover upload failed", res.json?.error || res.text || "Unknown error");
+          return;
         }
       }
+
       router.back();
     } catch (e: any) {
       Alert.alert("Save failed", formatErrorMessage(e, "Could not save scenario."));
@@ -445,6 +452,7 @@ export default function CreateScenarioModal() {
     upsertScenario,
     mode,
     profileLimitMode,
+    token,
   ]);
 
   const headerTitle = isEdit ? (isOwner ? "Edit scenario" : "Scenario details") : "Create scenario";

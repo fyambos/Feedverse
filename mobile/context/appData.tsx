@@ -191,7 +191,7 @@ type AppDataApi = {
   getScenarioById: (id: string) => Scenario | null;
   listScenarios: () => Scenario[];
   syncScenarios: (opts?: { force?: boolean }) => Promise<void>;
-  upsertScenario: (s: Scenario) => Promise<void>;
+  upsertScenario: (s: Scenario) => Promise<Scenario>;
   joinScenarioByInviteCode: (
     inviteCode: string,
     userId: string
@@ -3851,7 +3851,8 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         const baseUrl = String(process.env.EXPO_PUBLIC_API_BASE_URL ?? "").trim();
         if (token && baseUrl) {
           const sid = String((s as any)?.id ?? "").trim();
-          const isEdit = Boolean(sid && (db as any)?.scenarios?.[sid]);
+          const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sid);
+          const isEdit = Boolean(sid && isUuid);
 
           const payload = {
             name: String((s as any)?.name ?? "").trim(),
@@ -3890,10 +3891,11 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
           if (!String((normalized as any)?.id ?? "").trim()) throw new Error("Invalid server response");
 
           await upsertScenarioLocal(normalized);
-          return;
+          return normalized;
         }
 
         await upsertScenarioLocal(s);
+        return s;
       },
 
       joinScenarioByInviteCode: async (inviteCode, userId) => {
