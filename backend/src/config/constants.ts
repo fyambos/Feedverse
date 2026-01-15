@@ -92,6 +92,7 @@ export const USER_MESSAGES = {
   FAILED_FETCH: "Impossible de récupérer les informations utilisateur",
   UNAUTHORIZED: "Votre email Google n'est pas vérifié",
   SCENARIOS_FETCH_SUCCESS: "Scénarios récupérés avec succès",
+  ALREADY_DELETED: "Ce compte a déjà été supprimé",
 } as const;
 
 // ============================================================================

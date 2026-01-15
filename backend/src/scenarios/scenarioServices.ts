@@ -113,6 +113,7 @@ export const GetScenarioByIdService = async (
   const scenario = await scenarioRepository.findById(scenarioId);
 
   if (!scenario) {
+    console.error(userId);
     return {
       errors: [
         {

@@ -4,6 +4,7 @@ const userRouter = Router();
 import {
   GetUserProfileController,
   GetUserScenariosController,
+  DeleteUserController,
 } from "./userControllers";
 import { authMiddleware } from "../auth/authMiddleware";
 import { ROUTES_USERS } from "../config/constants";
@@ -14,5 +15,6 @@ userRouter.get(
   authMiddleware,
   GetUserScenariosController,
 );
+userRouter.delete(ROUTES_USERS.BY_ID, authMiddleware, DeleteUserController);
 
 export default userRouter;

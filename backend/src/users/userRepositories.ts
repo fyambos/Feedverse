@@ -5,14 +5,15 @@ import { pool } from "../config/database";
 import { User, UserScenario } from "./userModels";
 
 export class UserRepository {
-  async findByEmail(email: string): Promise<User | null> {
-    const query = "SELECT * FROM users WHERE email = $1";
-    const result = await pool.query(query, [email]);
+  async findById(id: string): Promise<User | null> {
+    const query = "SELECT * FROM users WHERE id = $1 AND is_deleted = false";
+    const result = await pool.query(query, [id]);
     return result.rows[0] || null;
   }
-  async findById(id: string): Promise<User | null> {
-    const query = "SELECT * FROM users WHERE id = $1";
-    const result = await pool.query(query, [id]);
+
+  async findByEmail(email: string): Promise<User | null> {
+    const query = "SELECT * FROM users WHERE email = $1 AND is_deleted = false";
+    const result = await pool.query(query, [email]);
     return result.rows[0] || null;
   }
 
@@ -88,5 +89,25 @@ export class UserRepository {
     `;
     const result = await pool.query(query, [userId]);
     return result.rows;
+  }
+
+  async softDelete(userId: string): Promise<boolean> {
+    const query = `
+      UPDATE users
+      SET
+        is_deleted = true,
+        deleted_at = $2,
+        updated_at = $2,
+        -- Anonymisation des données personnelles
+        email = CONCAT('deleted_', id, '@feedverse.deleted'),
+        username = CONCAT('deleted_user_', SUBSTRING(id::text, 1, 8)),
+        name = 'Compte supprimé',
+        password_hash = NULL,
+        settings = '{}'::jsonb
+      WHERE id = $1 AND is_deleted = false
+      RETURNING id
+    `;
+    const result = await pool.query(query, [userId, new Date()]);
+    return result.rowCount !== null && result.rowCount > 0;
   }
 }
