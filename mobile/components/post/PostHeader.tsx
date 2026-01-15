@@ -151,7 +151,7 @@ export function PostHeader({
         {!!isReply && !!replyingToHandle && (
           <View style={styles.replyingInline}>
             <ThemedText style={[styles.replyingText, { color: colors.textSecondary }]}>
-              replying to <ThemedText type="link">@{replyingToHandle}</ThemedText>
+              Replying to <ThemedText type="link">@{replyingToHandle}</ThemedText>
             </ThemedText>
           </View>
         )}
@@ -203,7 +203,7 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   replyingInline: { marginTop: 0 },
-  replyingText: { fontSize: 13, lineHeight: 17 },
+  replyingText: { fontSize: 16, lineHeight: 17, paddingBottom: 6, paddingTop: 2},
 
   // detail
   detailHeaderRow: {
