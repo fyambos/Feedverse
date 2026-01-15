@@ -1,0 +1,995 @@
+# Documentation API Feedverse
+
+**Version :** 1.0.0  
+**Mise à jour :** 15 janvier 2026  
+**Base URL :** `https://api.feedverse.com/v1`
+
+---
+
+## Table des matières
+
+- [Authentification](#authentification)
+- [Endpoints utilisateurs](#endpoints-utilisateurs)
+  - [Récupérer le profil utilisateur](#récupérer-le-profil-utilisateur)
+  - [Récupérer les scénarios d'un utilisateur](#récupérer-les-scénarios-dun-utilisateur)
+  - [Supprimer un compte utilisateur](#supprimer-un-compte-utilisateur)
+- [Endpoints scénarios](#endpoints-scénarios)
+  - [Créer un scénario](#créer-un-scénario)
+  - [Récupérer un scénario](#récupérer-un-scénario)
+  - [Supprimer un scénario](#supprimer-un-scénario)
+- [Codes de statut HTTP](#codes-de-statut-http)
+- [Gestion des erreurs](#gestion-des-erreurs)
+
+---
+
+## Authentification
+
+**Type :** Bearer Token (JSON Web Token)
+
+Tous les endpoints nécessitent une authentification via JSON Web Token (JWT). Le token doit être inclus dans le header `Authorization` de chaque requête.
+
+### Format du header
+
+```
+Authorization: Bearer <votre_jwt_token>
+```
+
+### Obtention du token
+
+Le token est obtenu lors de la connexion via OAuth (Google, Apple, GitHub) ou via authentification email/password. Consultez la documentation d'authentification pour plus de détails.
+
+### Expiration
+
+Les tokens JWT expirent après 7 jours. Un nouveau token doit être généré après expiration.
+
+---
+
+## Endpoints utilisateurs
+
+### Récupérer le profil utilisateur
+
+**Endpoint :** `GET /users/profile`
+
+**Description :** Récupère les informations du profil de l'utilisateur authentifié. Cet endpoint permet d'obtenir les données personnelles, les préférences et les paramètres du compte.
+
+**Authentification :** Requise
+
+#### Paramètres de requête
+
+Aucun paramètre requis.
+
+#### Réponse de succès
+
+**Code :** `200 OK`
+
+**Structure :**
+
+```json
+{
+  "id": "uuid",
+  "username": "string",
+  "name": "string",
+  "email": "string",
+  "avatar_url": "string",
+  "settings": {
+    "showTimestamps": "boolean",
+    "darkMode": "string"
+  },
+  "created_at": "timestamp",
+  "updated_at": "timestamp | null",
+  "deleted_at": "timestamp | null",
+  "is_deleted": "boolean"
+}
+```
+
+#### Exemple de réponse
+
+```json
+{
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "username": "jiniret",
+  "name": "Hyunjin",
+  "email": "hyunjin@example.com",
+  "avatar_url": "https://cdn.feedverse.com/avatars/550e8400.jpg",
+  "settings": {
+    "showTimestamps": true,
+    "darkMode": "system"
+  },
+  "created_at": "2024-01-15T10:30:00Z",
+  "updated_at": "2024-06-20T14:22:00Z",
+  "deleted_at": null,
+  "is_deleted": false
+}
+```
+
+#### Exemple de code
+
+**JavaScript (Fetch API) :**
+
+```javascript
+const response = await fetch('https://api.feedverse.com/v1/users/profile', {
+  method: 'GET',
+  headers: {
+    'Authorization': `Bearer ${token}`,
+    'Content-Type': 'application/json'
+  }
+});
+
+const user = await response.json();
+```
+
+**cURL :**
+
+```bash
+curl -X GET https://api.feedverse.com/v1/users/profile \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json"
+```
+
+#### Codes de statut
+
+| Code | Description |
+|------|-------------|
+| `200` | Succès - Profil récupéré |
+| `401` | Non autorisé - Token invalide ou expiré |
+| `500` | Erreur serveur interne |
+
+#### Erreurs possibles
+
+**401 Unauthorized :**
+
+```json
+{
+  "error": "Token invalide ou expiré"
+}
+```
+
+---
+
+### Récupérer les scénarios d'un utilisateur
+
+**Endpoint :** `GET /users/scenarios`
+
+**Description :** Récupère la liste complète des scénarios auxquels l'utilisateur authentifié participe. Inclut les scénarios créés par l'utilisateur et ceux où il a été invité. La réponse indique également si l'utilisateur est propriétaire de chaque scénario.
+
+**Authentification :** Requise
+
+#### Paramètres de requête
+
+Aucun paramètre requis.
+
+#### Réponse de succès
+
+**Code :** `200 OK`
+
+**Structure :**
+
+```json
+{
+  "message": "string",
+  "scenarios": [
+    {
+      "id": "uuid",
+      "name": "string",
+      "cover": "string",
+      "invite_code": "string",
+      "owner_user_id": "uuid",
+      "description": "string | null",
+      "mode": "story | campaign",
+      "is_owner": "boolean",
+      "created_at": "timestamp",
+      "updated_at": "timestamp | null"
+    }
+  ],
+  "count": "number"
+}
+```
+
+#### Champs de la réponse
+
+- **message** : Message de confirmation de succès
+- **scenarios** : Tableau des scénarios de l'utilisateur
+  - **id** : Identifiant unique du scénario (UUID v4)
+  - **name** : Nom du scénario
+  - **cover** : URL de l'image de couverture
+  - **invite_code** : Code d'invitation unique (en majuscules)
+  - **owner_user_id** : Identifiant du propriétaire du scénario
+  - **description** : Description optionnelle du scénario
+  - **mode** : Mode du scénario (`story` pour narration libre, `campaign` pour jeu de rôle)
+  - **is_owner** : Indique si l'utilisateur est le propriétaire (utile pour afficher des options spécifiques)
+  - **created_at** : Date de création du scénario
+  - **updated_at** : Date de dernière modification
+- **count** : Nombre total de scénarios retournés
+
+#### Exemple de réponse
+
+```json
+{
+  "message": "Scénarios récupérés avec succès",
+  "scenarios": [
+    {
+      "id": "123e4567-e89b-12d3-a456-426614174000",
+      "name": "K-Pop Universe",
+      "cover": "https://cdn.feedverse.com/covers/kpop-universe.jpg",
+      "invite_code": "KPOP2024",
+      "owner_user_id": "550e8400-e29b-41d4-a716-446655440000",
+      "description": "Un univers narratif centré sur le monde de la K-Pop",
+      "mode": "story",
+      "is_owner": true,
+      "created_at": "2024-01-15T10:00:00Z",
+      "updated_at": "2024-06-20T15:30:00Z"
+    },
+    {
+      "id": "987f6543-e21c-43d2-b654-321987654321",
+      "name": "Fantasy Campaign",
+      "cover": "https://cdn.feedverse.com/covers/fantasy-campaign.jpg",
+      "invite_code": "FANTASY",
+      "owner_user_id": "999e8400-e29b-41d4-a716-446655440999",
+      "description": null,
+      "mode": "campaign",
+      "is_owner": false,
+      "created_at": "2024-03-10T14:22:00Z",
+      "updated_at": null
+    }
+  ],
+  "count": 2
+}
+```
+
+#### Exemple de code
+
+**JavaScript (Fetch API) :**
+
+```javascript
+const response = await fetch('https://api.feedverse.com/v1/users/scenarios', {
+  method: 'GET',
+  headers: {
+    'Authorization': `Bearer ${token}`,
+    'Content-Type': 'application/json'
+  }
+});
+
+const { scenarios, count } = await response.json();
+console.log(`Vous participez à ${count} scénario(s)`);
+```
+
+**cURL :**
+
+```bash
+curl -X GET https://api.feedverse.com/v1/users/scenarios \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json"
+```
+
+#### Codes de statut
+
+| Code | Description |
+|------|-------------|
+| `200` | Succès - Liste récupérée |
+| `401` | Non autorisé - Token invalide ou expiré |
+| `500` | Erreur serveur interne |
+
+#### Notes techniques
+
+- Les scénarios sont triés par date de création décroissante (plus récents en premier)
+- La requête utilise une jointure SQL entre `scenarios` et `scenario_players`
+- Le champ `is_owner` est calculé dynamiquement via une comparaison SQL
+
+---
+
+### Supprimer un compte utilisateur
+
+**Endpoint :** `DELETE /users/:id`
+
+**Description :** Supprime le compte de l'utilisateur authentifié via soft delete. Cette opération anonymise les données personnelles (email, nom, mot de passe) tout en préservant les contenus créés (posts, profils) pour maintenir la cohérence narrative des scénarios partagés.
+
+**Authentification :** Requise
+
+**Type de suppression :** Soft delete (suppression logique)
+
+#### Paramètres de route
+
+| Paramètre | Type | Description |
+|-----------|------|-------------|
+| `id` | UUID | Identifiant de l'utilisateur à supprimer |
+
+#### Validation
+
+- L'identifiant doit être au format UUID v4
+- L'utilisateur ne peut supprimer que son propre compte (vérification via JWT)
+- Le compte ne doit pas avoir déjà été supprimé
+
+#### Comportement de la suppression
+
+**Données anonymisées :**
+- Email remplacé par `deleted_<id>@feedverse.deleted`
+- Username remplacé par `deleted_user_<8_premiers_caractères_uuid>`
+- Name remplacé par `Compte supprimé`
+- Password hash supprimé (NULL)
+- Settings réinitialisés (`{}`)
+
+**Données préservées :**
+- ID du compte (pour maintenir les relations)
+- Posts et profils créés (visibles avec "Compte supprimé")
+- Participations aux scénarios (historique narratif)
+- Messages dans les conversations
+
+#### Réponse de succès
+
+**Code :** `200 OK`
+
+**Structure :**
+
+```json
+{
+  "message": "string"
+}
+```
+
+#### Exemple de réponse
+
+```json
+{
+  "message": "Compte supprimé avec succès"
+}
+```
+
+#### Exemple de code
+
+**JavaScript (Fetch API) :**
+
+```javascript
+const userId = '550e8400-e29b-41d4-a716-446655440000';
+
+const response = await fetch(`https://api.feedverse.com/v1/users/${userId}`, {
+  method: 'DELETE',
+  headers: {
+    'Authorization': `Bearer ${token}`,
+    'Content-Type': 'application/json'
+  }
+});
+
+const { message } = await response.json();
+```
+
+**cURL :**
+
+```bash
+curl -X DELETE https://api.feedverse.com/v1/users/550e8400-e29b-41d4-a716-446655440000 \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json"
+```
+
+#### Codes de statut
+
+| Code | Description |
+|------|-------------|
+| `200` | Succès - Compte supprimé |
+| `400` | Requête invalide - Format UUID incorrect |
+| `401` | Non autorisé - Token invalide ou expiré |
+| `403` | Interdit - Tentative de suppression d'un autre compte |
+| `404` | Non trouvé - Utilisateur inexistant ou déjà supprimé |
+| `500` | Erreur serveur interne |
+
+#### Erreurs possibles
+
+**400 Bad Request :**
+
+```json
+{
+  "errors": [
+    {
+      "fields": "id",
+      "message": "Format d'identifiant invalide"
+    }
+  ]
+}
+```
+
+**403 Forbidden :**
+
+```json
+{
+  "errors": [
+    {
+      "fields": "authorization",
+      "message": "Vous ne pouvez supprimer que votre propre compte"
+    }
+  ]
+}
+```
+
+**404 Not Found :**
+
+```json
+{
+  "errors": [
+    {
+      "fields": "id",
+      "message": "Utilisateur introuvable"
+    }
+  ]
+}
+```
+
+#### Notes importantes
+
+- **Irréversibilité partielle** : Les données personnelles sont définitivement anonymisées
+- **Conformité RGPD** : Suppression complète des données à caractère personnel
+- **Impact minimal** : Les autres utilisateurs conservent l'accès aux conversations et contenus partagés
+- **Restauration** : Impossible sans intervention manuelle de l'administrateur
+- **Connexion** : Le token JWT devient invalide après suppression
+
+---
+
+## Endpoints scénarios
+
+### Créer un scénario
+
+**Endpoint :** `POST /scenarios/create`
+
+**Description :** Crée un nouveau scénario narratif. L'utilisateur authentifié devient automatiquement le propriétaire et le premier participant du scénario. Si le mode est `campaign`, l'utilisateur est également ajouté comme Maître du Jeu (MJ).
+
+**Authentification :** Requise
+
+**Content-Type :** `multipart/form-data` (pour l'upload de la couverture)
+
+#### Paramètres du corps de requête
+
+| Paramètre | Type | Requis | Description |
+|-----------|------|--------|-------------|
+| `name` | string | Oui | Nom du scénario (1-100 caractères) |
+| `invite_code` | string | Oui | Code d'invitation unique (4-20 caractères, alphanumérique, insensible à la casse) |
+| `description` | string | Non | Description du scénario (max 500 caractères) |
+| `mode` | string | Oui | Mode du scénario : `story` ou `campaign` |
+| `cover` | file | Non | Image de couverture (JPG, PNG, max 5 Mo) |
+
+#### Validation des champs
+
+**name :**
+- Longueur : 1 à 100 caractères
+- Trim automatique des espaces
+
+**invite_code :**
+- Longueur : 4 à 20 caractères
+- Caractères autorisés : lettres, chiffres, underscore
+- Converti automatiquement en majuscules
+- Doit être unique globalement
+
+**mode :**
+- Valeurs acceptées : `story`, `campaign`
+- Par défaut : `story`
+
+**cover :**
+- Formats acceptés : JPEG, PNG, WEBP
+- Taille maximale : 5 Mo
+- Stockage : Amazon Web Services (AWS) S3 / Cloudflare R2
+
+#### Réponse de succès
+
+**Code :** `201 Created`
+
+**Structure :**
+
+```json
+{
+  "message": "string",
+  "scenario": {
+    "Scenario": {
+      "id": "uuid",
+      "name": "string",
+      "cover": "string",
+      "invite_code": "string",
+      "owner_user_id": "uuid",
+      "description": "string | null",
+      "mode": "story | campaign",
+      "gm_user_ids": ["uuid"],
+      "settings": {},
+      "created_at": "timestamp",
+      "updated_at": "timestamp | null"
+    }
+  }
+}
+```
+
+#### Exemple de requête
+
+**JavaScript (Fetch API avec FormData) :**
+
+```javascript
+const formData = new FormData();
+formData.append('name', 'K-Pop Universe');
+formData.append('invite_code', 'KPOP2024');
+formData.append('description', 'Un univers narratif K-Pop');
+formData.append('mode', 'story');
+formData.append('cover', coverImageFile); // File object
+
+const response = await fetch('https://api.feedverse.com/v1/scenarios/create', {
+  method: 'POST',
+  headers: {
+    'Authorization': `Bearer ${token}`
+  },
+  body: formData
+});
+
+const { scenario } = await response.json();
+```
+
+**cURL :**
+
+```bash
+curl -X POST https://api.feedverse.com/v1/scenarios/create \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -F "name=K-Pop Universe" \
+  -F "invite_code=KPOP2024" \
+  -F "description=Un univers narratif K-Pop" \
+  -F "mode=story" \
+  -F "cover=@/path/to/cover.jpg"
+```
+
+#### Exemple de réponse
+
+```json
+{
+  "message": "Scénario créé avec succès",
+  "scenario": {
+    "Scenario": {
+      "id": "123e4567-e89b-12d3-a456-426614174000",
+      "name": "K-Pop Universe",
+      "cover": "https://cdn.feedverse.com/scenarios/123e4567/cover.jpg",
+      "invite_code": "KPOP2024",
+      "owner_user_id": "550e8400-e29b-41d4-a716-446655440000",
+      "description": "Un univers narratif K-Pop",
+      "mode": "story",
+      "gm_user_ids": [],
+      "settings": {},
+      "created_at": "2026-01-15T10:30:00Z",
+      "updated_at": null
+    }
+  }
+}
+```
+
+#### Codes de statut
+
+| Code | Description |
+|------|-------------|
+| `201` | Succès - Scénario créé |
+| `400` | Requête invalide - Validation échouée |
+| `401` | Non autorisé - Token invalide ou expiré |
+| `409` | Conflit - Code d'invitation déjà utilisé |
+| `500` | Erreur serveur interne |
+
+#### Erreurs possibles
+
+**400 Bad Request (validation) :**
+
+```json
+{
+  "errors": [
+    {
+      "fields": "name",
+      "message": "Le nom du scénario doit contenir entre 1 et 100 caractères"
+    },
+    {
+      "fields": "invite_code",
+      "message": "Le code d'invitation doit contenir entre 4 et 20 caractères"
+    }
+  ]
+}
+```
+
+**409 Conflict :**
+
+```json
+{
+  "errors": [
+    {
+      "fields": "invite_code",
+      "message": "Ce code d'invitation est déjà utilisé"
+    }
+  ]
+}
+```
+
+#### Notes techniques
+
+- Le créateur est automatiquement ajouté à la table `scenario_players`
+- Si `mode = "campaign"`, le `owner_user_id` est ajouté au tableau `gm_user_ids`
+- L'image de couverture est uploadée sur Cloudflare R2 si fournie
+- Le champ `settings` est initialisé à `{}` (extensible pour futures fonctionnalités)
+- L'`invite_code` est converti en majuscules avant stockage
+
+---
+
+### Récupérer un scénario
+
+**Endpoint :** `GET /scenarios/:id`
+
+**Description :** Récupère les informations détaillées d'un scénario spécifique. L'utilisateur doit être participant du scénario pour y accéder.
+
+**Authentification :** Requise
+
+#### Paramètres de route
+
+| Paramètre | Type | Description |
+|-----------|------|-------------|
+| `id` | UUID | Identifiant unique du scénario |
+
+#### Validation
+
+- L'identifiant doit être au format UUID v4
+- L'utilisateur doit avoir accès au scénario (membre de `scenario_players`)
+
+#### Réponse de succès
+
+**Code :** `200 OK`
+
+**Structure :**
+
+```json
+{
+  "scenario": {
+    "id": "uuid",
+    "name": "string",
+    "cover": "string",
+    "invite_code": "string",
+    "owner_user_id": "uuid",
+    "description": "string | null",
+    "mode": "story | campaign",
+    "gm_user_ids": ["uuid"],
+    "settings": {},
+    "created_at": "timestamp",
+    "updated_at": "timestamp | null"
+  }
+}
+```
+
+#### Exemple de réponse
+
+```json
+{
+  "scenario": {
+    "id": "123e4567-e89b-12d3-a456-426614174000",
+    "name": "K-Pop Universe",
+    "cover": "https://cdn.feedverse.com/scenarios/123e4567/cover.jpg",
+    "invite_code": "KPOP2024",
+    "owner_user_id": "550e8400-e29b-41d4-a716-446655440000",
+    "description": "Un univers narratif centré sur le monde de la K-Pop",
+    "mode": "story",
+    "gm_user_ids": [],
+    "settings": {
+      "profileLimitMode": "per_owner",
+      "pinnedPostIds": []
+    },
+    "created_at": "2024-01-15T10:00:00Z",
+    "updated_at": "2024-06-20T15:30:00Z"
+  }
+}
+```
+
+#### Exemple de code
+
+**JavaScript (Fetch API) :**
+
+```javascript
+const scenarioId = '123e4567-e89b-12d3-a456-426614174000';
+
+const response = await fetch(`https://api.feedverse.com/v1/scenarios/${scenarioId}`, {
+  method: 'GET',
+  headers: {
+    'Authorization': `Bearer ${token}`,
+    'Content-Type': 'application/json'
+  }
+});
+
+const { scenario } = await response.json();
+```
+
+**cURL :**
+
+```bash
+curl -X GET https://api.feedverse.com/v1/scenarios/123e4567-e89b-12d3-a456-426614174000 \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json"
+```
+
+#### Codes de statut
+
+| Code | Description |
+|------|-------------|
+| `200` | Succès - Scénario récupéré |
+| `400` | Requête invalide - Format UUID incorrect |
+| `401` | Non autorisé - Token invalide ou expiré |
+| `404` | Non trouvé - Scénario inexistant ou accès refusé |
+| `500` | Erreur serveur interne |
+
+#### Erreurs possibles
+
+**400 Bad Request :**
+
+```json
+{
+  "errors": [
+    {
+      "fields": "id",
+      "message": "Format d'identifiant invalide"
+    }
+  ]
+}
+```
+
+**404 Not Found :**
+
+```json
+{
+  "errors": [
+    {
+      "fields": "id",
+      "message": "Scénario introuvable"
+    }
+  ]
+}
+```
+
+#### Notes techniques
+
+- La vérification d'accès au scénario sera implémentée ultérieurement
+- Pour l'instant, tous les scénarios sont accessibles si l'utilisateur est authentifié
+- Le champ `settings` peut contenir des configurations spécifiques au mode (story/campaign)
+
+---
+
+### Supprimer un scénario
+
+**Endpoint :** `DELETE /scenarios/:id`
+
+**Description :** Supprime définitivement un scénario et toutes ses données associées (hard delete). Cette opération est irréversible et supprime en cascade tous les profils, posts, likes, reposts, conversations et messages liés au scénario.
+
+**Authentification :** Requise
+
+**Type de suppression :** Hard delete (suppression physique)
+
+#### Paramètres de route
+
+| Paramètre | Type | Description |
+|-----------|------|-------------|
+| `id` | UUID | Identifiant unique du scénario à supprimer |
+
+#### Validation
+
+- L'identifiant doit être au format UUID v4
+- Seul le propriétaire du scénario (`owner_user_id`) peut le supprimer
+- Le scénario doit exister dans la base de données
+
+#### Comportement de la suppression
+
+**Données supprimées en cascade (via contraintes SQL) :**
+- Tous les profils du scénario (`profiles`)
+- Tous les posts du scénario (`posts`)
+- Tous les likes du scénario (`likes`)
+- Tous les reposts du scénario (`reposts`)
+- Toutes les conversations du scénario (`conversations`)
+- Tous les messages du scénario (`messages`)
+- Toutes les participations au scénario (`scenario_players`)
+- Tous les tags du scénario (`scenario_tags`)
+- Toutes les feuilles de personnage associées (`character_sheets`)
+
+#### Réponse de succès
+
+**Code :** `200 OK`
+
+**Structure :**
+
+```json
+{
+  "message": "string"
+}
+```
+
+#### Exemple de réponse
+
+```json
+{
+  "message": "Scénario supprimé avec succès"
+}
+```
+
+#### Exemple de code
+
+**JavaScript (Fetch API) :**
+
+```javascript
+const scenarioId = '123e4567-e89b-12d3-a456-426614174000';
+
+const response = await fetch(`https://api.feedverse.com/v1/scenarios/${scenarioId}`, {
+  method: 'DELETE',
+  headers: {
+    'Authorization': `Bearer ${token}`,
+    'Content-Type': 'application/json'
+  }
+});
+
+const { message } = await response.json();
+```
+
+**cURL :**
+
+```bash
+curl -X DELETE https://api.feedverse.com/v1/scenarios/123e4567-e89b-12d3-a456-426614174000 \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json"
+```
+
+#### Codes de statut
+
+| Code | Description |
+|------|-------------|
+| `200` | Succès - Scénario supprimé |
+| `400` | Requête invalide - Format UUID incorrect |
+| `401` | Non autorisé - Token invalide ou expiré |
+| `403` | Interdit - L'utilisateur n'est pas le propriétaire |
+| `404` | Non trouvé - Scénario inexistant |
+| `500` | Erreur serveur interne |
+
+#### Erreurs possibles
+
+**400 Bad Request :**
+
+```json
+{
+  "errors": [
+    {
+      "fields": "id",
+      "message": "Format d'identifiant invalide"
+    }
+  ]
+}
+```
+
+**403 Forbidden :**
+
+```json
+{
+  "errors": [
+    {
+      "fields": "authorization",
+      "message": "Votre email Google n'est pas vérifié"
+    }
+  ]
+}
+```
+
+**404 Not Found :**
+
+```json
+{
+  "errors": [
+    {
+      "fields": "id",
+      "message": "Scénario introuvable"
+    }
+  ]
+}
+```
+
+#### Notes importantes
+
+- **Irréversibilité** : La suppression est définitive et ne peut pas être annulée
+- **Impact sur les participants** : Tous les participants perdent l'accès au scénario et à son contenu
+- **Suppression en cascade** : Les contraintes SQL `ON DELETE CASCADE` gèrent automatiquement la suppression de toutes les données liées
+- **Permissions** : Seul le propriétaire (`owner_user_id`) peut supprimer le scénario
+- **Alternative** : Pour conserver l'historique, envisagez un transfert de propriété (`PATCH /scenarios/:id/owner`) avant suppression
+
+---
+
+## Codes de statut HTTP
+
+### Codes de succès
+
+| Code | Nom | Description |
+|------|-----|-------------|
+| `200` | OK | Requête réussie, données retournées |
+| `201` | Created | Ressource créée avec succès |
+| `204` | No Content | Requête réussie, pas de contenu retourné |
+
+### Codes d'erreur client
+
+| Code | Nom | Description |
+|------|-----|-------------|
+| `400` | Bad Request | Requête invalide ou malformée |
+| `401` | Unauthorized | Authentification requise ou token invalide |
+| `403` | Forbidden | Accès refusé, permissions insuffisantes |
+| `404` | Not Found | Ressource introuvable |
+| `409` | Conflict | Conflit avec l'état actuel (ex: doublon) |
+| `422` | Unprocessable Entity | Validation des données échouée |
+
+### Codes d'erreur serveur
+
+| Code | Nom | Description |
+|------|-----|-------------|
+| `500` | Internal Server Error | Erreur interne du serveur |
+| `503` | Service Unavailable | Service temporairement indisponible |
+
+---
+
+## Gestion des erreurs
+
+### Format standard des erreurs
+
+Toutes les erreurs suivent un format cohérent pour faciliter le traitement côté client.
+
+**Structure de base :**
+
+```json
+{
+  "errors": [
+    {
+      "fields": "string",
+      "message": "string"
+    }
+  ]
+}
+```
+
+**ou :**
+
+```json
+{
+  "error": "string"
+}
+```
+
+### Types d'erreurs
+
+#### Erreurs de validation
+
+Retournées lors de la validation des données d'entrée. Le champ `fields` indique le nom du champ concerné.
+
+**Exemple :**
+
+```json
+{
+  "errors": [
+    {
+      "fields": "name",
+      "message": "Le nom du scénario doit contenir entre 1 et 100 caractères"
+    },
+    {
+      "fields": "invite_code",
+      "message": "Le code d'invitation doit contenir entre 4 et 20 caractères"
+    }
+  ]
+}
+```
+
+#### Erreurs d'authentification
+
+Retournées lorsque le token JWT est invalide, expiré ou manquant.
+
+**Exemple :**
+
+```json
+{
+  "error": "Token invalide ou expiré"
+}
+```
+
+#### Erreurs d'autorisation
+
+Retournées lorsque l'utilisateur n'a pas les permissions nécessaires.
+
+**Exemple :**
+
+```json
+{
+  "errors": [
+    {
+      "fields": "authorization",
+      "message": "Vous ne pouvez supprimer que votre propre compte"
+    }
+  ]
+}
+```
+
+####
