@@ -203,6 +203,7 @@ export function Post({
         <PostHeader
           variant="detail"
           colors={colors}
+          scenarioId={sid}
           profile={profile}
           createdAtIso={item.createdAt}
           refreshTick={refreshTick}
@@ -336,6 +337,7 @@ export function Post({
           <PostHeader
             variant={isReply ? "reply" : "feed"}
             colors={colors}
+            scenarioId={sid}
             profile={profile}
             createdAtIso={item.createdAt}
             refreshTick={refreshTick}
