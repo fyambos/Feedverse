@@ -930,29 +930,56 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                       const currentPath = String(pathnameRef.current ?? "");
                       const fromScenarioList = currentPath === "/" || currentPath === "";
 
+                      const curSid = scenarioIdFromPathname(currentPath);
+                      const curConv = conversationIdFromPathname(currentPath);
+                      const inMessages = String(currentPath).split("/").includes("messages");
+                      const sameScenario = Boolean(curSid && String(curSid) === String(sid));
+
                       const sidEnc = encodeURIComponent(String(sid));
+                      const stepHome = { pathname: `/(scenario)/${sidEnc}/home`, params: {} } as any;
 
-                      // Step 1: ensure the Tab navigator is scoped to the correct scenario.
-                      // When switching scenarios from inside another scenario, navigating
-                      // directly to messages can leave the active Tabs instance on the old sid.
-                      const step1 = { pathname: `/(scenario)/${sidEnc}/home`, params: {} } as any;
+                      const stepMessagesOpen = {
+                        pathname: `/(scenario)/${sidEnc}/messages`,
+                        params: { openConversationId: conv },
+                      } as any;
 
-                      // Step 2: open messages in that scenario (which will then deep-link
-                      // into the conversation via openConversationId).
-                      // Do NOT pass scenarioId as a param when it's already in the path.
-                      const step2 = { pathname: `/(scenario)/${sidEnc}/messages`, params: { openConversationId: conv } } as any;
+                      const stepConversation = {
+                        pathname: "/(scenario)/[scenarioId]/(tabs)/messages/[conversationId]",
+                        params: { scenarioId: sid, conversationId: conv },
+                      } as any;
+
+                      // Smart routing:
+                      // - If already in the same scenario + inside Messages, go straight to the conversation.
+                      //   - from list => push (so back goes to list)
+                      //   - from another thread => replace (so back goes to list, not the previous thread)
+                      // - If same scenario but different tab (home feed / search / notifications), go to messages
+                      //   with openConversationId so the inbox can sync before opening.
+                      // - If different scenario (or coming from scenario list), do the full route: home -> messages.
+                      if (sameScenario) {
+                        if (inMessages) {
+                          if (curConv) {
+                            try { router.replace(stepConversation); } catch {}
+                          } else {
+                            try { router.push(stepConversation); } catch {}
+                          }
+                        } else {
+                          // Preserve back to whatever screen/tab the user was on.
+                          try { router.push(stepMessagesOpen); } catch {}
+                        }
+                        return;
+                      }
 
                       if (fromScenarioList) {
                         // Preserve back navigation to scenario list.
-                        router.push(step1);
+                        router.push(stepHome);
                         setTimeout(() => {
-                          try { router.replace(step2); } catch {}
+                          try { router.replace(stepMessagesOpen); } catch {}
                         }, 0);
                       } else {
                         // Replace to avoid stacking scenarios.
-                        router.replace(step1);
+                        router.replace(stepHome);
                         setTimeout(() => {
-                          try { router.replace(step2); } catch {}
+                          try { router.replace(stepMessagesOpen); } catch {}
                         }, 0);
                       }
                     } catch {}
@@ -6242,8 +6269,54 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
 
 export function useAppData() {
   const v = React.useContext(Ctx);
-  if (!v) throw new Error("useAppData must be used within AppDataProvider");
-  return v;
+  if (v) return v;
+
+  // Defensive fallback: in rare cold-start / notification timing cases, a screen can
+  // render before the provider tree is fully mounted. Avoid a hard crash and let the
+  // app recover once the provider mounts.
+  try {
+    if (!(globalThis as any).__feedverse_warned_missing_appdata) {
+      (globalThis as any).__feedverse_warned_missing_appdata = true;
+      // eslint-disable-next-line no-console
+      console.warn("useAppData called without AppDataProvider; returning fallback shim");
+    }
+  } catch {}
+
+  const fallback: any = (globalThis as any).__feedverse_appdata_fallback ?? null;
+  if (fallback) return fallback;
+
+  const base = { isReady: false, db: null } as any;
+  const proxy = new Proxy(base, {
+    get(target, prop) {
+      if (prop in target) return (target as any)[prop as any];
+      const key = String(prop);
+
+      if (key.startsWith("list")) return () => [];
+      if (key.startsWith("get")) return () => null;
+      if (key.startsWith("has")) return () => false;
+      if (key.startsWith("is")) return () => false;
+
+      if (
+        key.startsWith("sync") ||
+        key.startsWith("send") ||
+        key.startsWith("create") ||
+        key.startsWith("delete") ||
+        key.startsWith("update") ||
+        key.startsWith("mark") ||
+        key.startsWith("set")
+      ) {
+        return async () => {};
+      }
+
+      return undefined;
+    },
+  });
+
+  try {
+    (globalThis as any).__feedverse_appdata_fallback = proxy;
+  } catch {}
+
+  return proxy;
 }
 
 function likeKeyV1(profileId: string, postId: string) {
