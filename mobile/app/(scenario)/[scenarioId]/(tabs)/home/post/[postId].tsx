@@ -1,6 +1,6 @@
 // mobile/app/(scenario)/[scenarioId]/(tabs)/home/post/[postId].tsx
 
-import React, { useCallback, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Dimensions, FlatList, Pressable, StyleSheet, View } from "react-native";
 import { Stack, useLocalSearchParams, router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -26,10 +26,11 @@ import { Alert } from "@/context/dialog";
 import { formatErrorMessage } from "@/lib/format";
 
 export default function PostScreen() {
-  const { scenarioId, postId, from } = useLocalSearchParams<{
+  const { scenarioId, postId, from, focusPostId: focusPostIdParam } = useLocalSearchParams<{
     scenarioId: string;
     postId: string;
     from?: string;
+    focusPostId?: string;
   }>();
 
   const scheme = useColorScheme() ?? "light";
@@ -37,6 +38,11 @@ export default function PostScreen() {
 
   const sid = decodeURIComponent(String(scenarioId ?? ""));
   const pid = decodeURIComponent(String(postId ?? ""));
+  const focusPostId = (() => {
+    const raw = Array.isArray(focusPostIdParam) ? focusPostIdParam[0] : focusPostIdParam;
+    const v = String(raw ?? "");
+    return v ? decodeURIComponent(v) : "";
+  })();
 
   const fromPath =
     typeof from === "string" && from.length > 0
@@ -129,6 +135,29 @@ export default function PostScreen() {
     walk(pid);
     return result;
   }, [isReady, root, pid, listRepliesForPost]);
+
+  const listRef = useRef<FlatList<any> | null>(null);
+  const [highlightPostId, setHighlightPostId] = useState<string>("");
+
+  useEffect(() => {
+    if (!focusPostId) return;
+    setHighlightPostId(String(focusPostId));
+    const t = setTimeout(() => setHighlightPostId(""), 3200);
+    return () => clearTimeout(t);
+  }, [focusPostId, pid]);
+
+  useEffect(() => {
+    if (!focusPostId) return;
+    if (!thread || thread.length === 0) return;
+    const idx = thread.findIndex((p) => String((p as any)?.id ?? "") === String(focusPostId));
+    if (idx < 0) return;
+    // Scroll after layout.
+    requestAnimationFrame(() => {
+      try {
+        listRef.current?.scrollToIndex?.({ index: idx, animated: true, viewPosition: 0.2 });
+      } catch {}
+    });
+  }, [focusPostId, thread?.length]);
 
   const onBack = useCallback(() => {
     if (router.canGoBack?.()) router.back();
@@ -230,8 +259,17 @@ export default function PostScreen() {
       ) : (
         <>
           <FlatList
+            ref={(r) => {
+              listRef.current = r as any;
+            }}
             data={thread}
             keyExtractor={(i) => String(i.id)}
+            onScrollToIndexFailed={() => {
+              // Best-effort: don't crash if the item isn't measured yet.
+              try {
+                listRef.current?.scrollToOffset?.({ offset: 0, animated: true });
+              } catch {}
+            }}
             ListHeaderComponent={
               <View>
                 {HeaderInScreenshot}
@@ -289,6 +327,7 @@ export default function PostScreen() {
                   replyingTo={parentProfile?.handle}
                   showActions
                   showThreadLine={showThreadLine}
+                  highlighted={String(itemId) === String(highlightPostId)}
                   isLiked={liked}
                   onLike={() => toggleLike(sid, itemId)}
                   isReposted={reposted}

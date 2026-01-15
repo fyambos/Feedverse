@@ -765,10 +765,39 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
               const messageId = String(data?.messageId ?? data?.message_id ?? "").trim();
               const kind = String(data?.kind ?? "").trim();
               const postId = String(data?.postId ?? data?.post_id ?? "").trim();
+              const parentPostId = String(data?.parentPostId ?? data?.parent_post_id ?? "").trim();
+              const rootPostId = String(data?.rootPostId ?? data?.root_post_id ?? "").trim();
               const targetProfileId = String(data?.profileId ?? data?.profile_id ?? "").trim();
 
-              // ---- Mention deep-link (open post) ----
+              // ---- Post deep-link (open post) ----
               if (sid && postId) {
+                const focusPostId = kind === "reply" ? postId : "";
+
+                // For reply notifications, open the thread root (first-line parent post),
+                // matching the behavior in the Profile "Replies" tab.
+                let destPostId = postId;
+                if (kind === "reply") {
+                  destPostId = rootPostId || parentPostId || postId;
+                  try {
+                    const postsMap = (state.db as any)?.posts ?? {};
+                    let curId = String(postId || parentPostId);
+                    const seen = new Set<string>();
+                    for (let i = 0; i < 50; i++) {
+                      if (!curId || seen.has(curId)) break;
+                      seen.add(curId);
+                      const cur = postsMap[curId];
+                      if (!cur) break;
+                      const ppid = String(cur.parentPostId ?? "").trim();
+                      if (!ppid) {
+                        destPostId = curId;
+                        break;
+                      }
+                      curId = ppid;
+                    }
+                  } catch {
+                    // fall back to parentPostId/postId
+                  }
+                }
                 // Switch selection first (even if we skip navigation).
                 if (targetProfileId) {
                   try {
@@ -787,12 +816,12 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                   const curPath = String(pathnameRef.current ?? "");
                   const curSid = scenarioIdFromPathname(curPath);
                   const curPost = postIdFromPathname(curPath);
-                  if (curSid && String(curSid) === String(sid) && curPost && String(curPost) === String(postId)) return;
+                  if (curSid && String(curSid) === String(sid) && curPost && String(curPost) === String(destPostId)) return;
                 } catch {}
 
                 // Dedupe: mention pushes can be tapped multiple times or callbacks can double-fire.
                 try {
-                  const key = `${sid}|post|${postId}|${targetProfileId}`;
+                  const key = `${sid}|post|${destPostId}|${focusPostId}|${targetProfileId}`;
                   const nowMs = Date.now();
                   const last = notificationNavRef.current;
                   if (last && last.key === key && nowMs - last.atMs < 2500) return;
@@ -811,12 +840,15 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                     const fromScenarioList = currentPath === "/" || currentPath === "";
 
                     const sidEnc = encodeURIComponent(String(sid));
-                    const postEnc = encodeURIComponent(String(postId));
+                    const postEnc = encodeURIComponent(String(destPostId));
 
                     // Step 1: establish correct scenario tab context.
                     const step1 = { pathname: `/(scenario)/${sidEnc}/home`, params: {} } as any;
                     // Step 2: open post screen in that scenario.
-                    const step2 = { pathname: `/(scenario)/${sidEnc}/home/post/${postEnc}`, params: {} } as any;
+                    const step2 = {
+                      pathname: `/(scenario)/${sidEnc}/home/post/${postEnc}`,
+                      params: focusPostId ? { focusPostId } : {},
+                    } as any;
 
                     if (fromScenarioList) {
                       // Preserve back: list -> home -> post
