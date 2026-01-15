@@ -489,6 +489,32 @@ export async function createPostForScenario(args: {
               const title = `${senderLabel} mentioned you`;
               const body = String(text ?? "").trim();
 
+              // If the mentioned post is a reply, include parent/root info so clients
+              // can open the thread root and highlight this post.
+              const parentPid = String(parentPostId ?? "").trim();
+              let rootPostId = postId;
+              if (parentPid) {
+                rootPostId = parentPid;
+                try {
+                  let cur = rootPostId;
+                  const seen = new Set<string>();
+                  for (let i = 0; i < 25; i++) {
+                    if (!cur || seen.has(cur)) break;
+                    seen.add(cur);
+                    const r = await client2.query<{ parent_post_id: string | null }>(
+                      "SELECT parent_post_id FROM posts WHERE id = $1 LIMIT 1",
+                      [cur],
+                    );
+                    const ppid = String(r.rows?.[0]?.parent_post_id ?? "").trim();
+                    if (!ppid) break;
+                    cur = ppid;
+                    rootPostId = cur;
+                  }
+                } catch {
+                  // best-effort
+                }
+              }
+
               // Broadcast a realtime mention event so clients can display in-app/native notifications.
               // We intentionally include profile ids (not user ids) so clients can decide if they own
               // the mentioned profile(s) without leaking extra user identifiers.
@@ -525,20 +551,40 @@ export async function createPostForScenario(args: {
               try {
                 const repo = new UserRepository();
                 const tokenRows = await repo.listExpoPushTokensForUserIds(Array.from(ownerIds));
+
+                // Pick a stable recipient profileId for each owner so mobile can
+                // switch selection correctly when multiple mentioned profiles exist.
+                const ownerToProfileId = new Map<string, string>();
+                for (const r of resProfiles.rows) {
+                  const owner = String((r as any)?.owner_user_id ?? "").trim();
+                  const pid = String((r as any)?.id ?? "").trim();
+                  if (!owner || !pid) continue;
+                  if (!ownerIds.has(owner)) continue;
+                  if (senderOwner && owner === senderOwner) continue;
+                  if (!ownerToProfileId.has(owner)) ownerToProfileId.set(owner, pid);
+                }
+
                 const expoMessages = tokenRows
-                  .map((r) => String((r as any)?.expo_push_token ?? (r as any)?.expoPushToken ?? "").trim())
-                  .filter(Boolean)
-                  .map((to) => ({
-                    to,
-                    title,
-                    body: body || undefined,
-                    data: {
-                      scenarioId: sid,
-                      postId,
-                      kind: "mention",
-                      authorProfileId,
-                    },
-                  }));
+                  .map((r) => {
+                    const ownerId = String((r as any)?.user_id ?? "").trim();
+                    const to = String((r as any)?.expo_push_token ?? (r as any)?.expoPushToken ?? "").trim();
+                    const recipientProfileId = String(ownerToProfileId.get(ownerId) ?? "").trim();
+                    return {
+                      to,
+                      title,
+                      body: body || undefined,
+                      data: {
+                        scenarioId: sid,
+                        postId,
+                        parentPostId: parentPid || undefined,
+                        rootPostId: rootPostId || undefined,
+                        kind: "mention",
+                        authorProfileId,
+                        profileId: recipientProfileId || undefined,
+                      },
+                    };
+                  })
+                  .filter((m) => Boolean(m.to));
 
                 await sendExpoPush(expoMessages);
               } catch (e: any) {

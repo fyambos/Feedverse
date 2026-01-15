@@ -771,32 +771,43 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
 
               // ---- Post deep-link (open post) ----
               if (sid && postId) {
-                const focusPostId = kind === "reply" ? postId : "";
-
-                // For reply notifications, open the thread root (first-line parent post),
-                // matching the behavior in the Profile "Replies" tab.
+                let focusPostId = "";
                 let destPostId = postId;
-                if (kind === "reply") {
-                  destPostId = rootPostId || parentPostId || postId;
-                  try {
-                    const postsMap = (state.db as any)?.posts ?? {};
-                    let curId = String(postId || parentPostId);
+
+                // If the notification is for a reply (or the target post itself is a reply),
+                // open the thread root and highlight the reply.
+                try {
+                  const postsMap = (state.db as any)?.posts ?? {};
+
+                  const local = postsMap?.[postId];
+                  const localParent = String(local?.parentPostId ?? local?.parent_post_id ?? "").trim();
+                  const payloadParent = String(parentPostId ?? "").trim();
+                  const isReplyLike = kind === "reply" || Boolean(localParent) || Boolean(payloadParent);
+
+                  if (isReplyLike) {
+                    focusPostId = postId;
+                    destPostId = rootPostId || payloadParent || localParent || postId;
+
+                    // Best-effort: walk up parent chain from the actual post id.
+                    let curId = String(postId);
                     const seen = new Set<string>();
                     for (let i = 0; i < 50; i++) {
                       if (!curId || seen.has(curId)) break;
                       seen.add(curId);
-                      const cur = postsMap[curId];
+                      const cur = postsMap?.[curId];
                       if (!cur) break;
-                      const ppid = String(cur.parentPostId ?? "").trim();
+                      const ppid = String(cur?.parentPostId ?? cur?.parent_post_id ?? "").trim();
                       if (!ppid) {
                         destPostId = curId;
                         break;
                       }
                       curId = ppid;
                     }
-                  } catch {
-                    // fall back to parentPostId/postId
                   }
+                } catch {
+                  // best-effort
+                  if (kind === "reply") focusPostId = postId;
+                  if (kind === "reply") destPostId = rootPostId || parentPostId || postId;
                 }
                 // Switch selection first (even if we skip navigation).
                 if (targetProfileId) {
@@ -811,12 +822,17 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                   } catch {}
                 }
 
-                // If we're already at the destination post, do nothing.
+                // If we're already at the destination post, do nothing (but still trigger focus).
                 try {
                   const curPath = String(pathnameRef.current ?? "");
                   const curSid = scenarioIdFromPathname(curPath);
                   const curPost = postIdFromPathname(curPath);
-                  if (curSid && String(curSid) === String(sid) && curPost && String(curPost) === String(destPostId)) return;
+                  if (curSid && String(curSid) === String(sid) && curPost && String(curPost) === String(destPostId)) {
+                    if (focusPostId) {
+                      try { router.setParams({ focusPostId } as any); } catch {}
+                    }
+                    return;
+                  }
                 } catch {}
 
                 // Dedupe: mention pushes can be tapped multiple times or callbacks can double-fire.
@@ -839,28 +855,51 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                     const currentPath = String(pathnameRef.current ?? "");
                     const fromScenarioList = currentPath === "/" || currentPath === "";
 
+                    const curSid = scenarioIdFromPathname(currentPath);
+                    const sameScenario = Boolean(curSid && String(curSid) === String(sid));
+                    const inHome = String(currentPath).split("/").includes("home");
+                    const curPost = postIdFromPathname(currentPath);
+
                     const sidEnc = encodeURIComponent(String(sid));
                     const postEnc = encodeURIComponent(String(destPostId));
 
-                    // Step 1: establish correct scenario tab context.
-                    const step1 = { pathname: `/(scenario)/${sidEnc}/home`, params: {} } as any;
-                    // Step 2: open post screen in that scenario.
-                    const step2 = {
+                    const stepHome = { pathname: `/(scenario)/${sidEnc}/home`, params: {} } as any;
+                    const stepPost = {
                       pathname: `/(scenario)/${sidEnc}/home/post/${postEnc}`,
                       params: focusPostId ? { focusPostId } : {},
                     } as any;
 
+                    // Smart routing:
+                    // - Same scenario:
+                    //   - already in home tab:
+                    //     - from a different post thread => replace
+                    //     - from the home feed list => push
+                    //   - from another tab => push directly to the post (keeps back to current tab)
+                    // - Different scenario:
+                    //   - scenario list => push home then push post (keeps back)
+                    //   - inside another scenario => replace home then push post
+                    if (sameScenario) {
+                      if (inHome) {
+                        if (curPost) {
+                          try { router.replace(stepPost); } catch {}
+                        } else {
+                          try { router.push(stepPost); } catch {}
+                        }
+                      } else {
+                        try { router.push(stepPost); } catch {}
+                      }
+                      return;
+                    }
+
                     if (fromScenarioList) {
-                      // Preserve back: list -> home -> post
-                      router.push(step1);
+                      router.push(stepHome);
                       setTimeout(() => {
-                        try { router.push(step2); } catch {}
+                        try { router.push(stepPost); } catch {}
                       }, 0);
                     } else {
-                      // Switch scenarios without stacking old scenario.
-                      router.replace(step1);
+                      router.replace(stepHome);
                       setTimeout(() => {
-                        try { router.push(step2); } catch {}
+                        try { router.push(stepPost); } catch {}
                       }, 0);
                     }
                   } catch {}

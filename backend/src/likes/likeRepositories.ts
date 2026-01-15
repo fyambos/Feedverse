@@ -201,6 +201,7 @@ export async function setLikeState(args: {
     if (ensureLiked && !had) {
       const recipientProfileId = String((p0 as any)?.author_profile_id ?? "").trim();
       const postText = String((p0 as any)?.text ?? "").trim();
+      const parentPostId = String((p0 as any)?.parent_post_id ?? "").trim();
 
       if (recipientProfileId) {
         (async () => {
@@ -242,6 +243,31 @@ export async function setLikeState(args: {
               const title = `${senderLabel} liked your post`;
               const body = postText ? (postText.length > 140 ? postText.slice(0, 137) + "…" : postText) : undefined;
 
+              // If the liked post is a reply, compute the thread root (best-effort)
+              // so clients can open the first-line parent post and highlight the reply.
+              let rootPostId = postId;
+              if (parentPostId) {
+                rootPostId = parentPostId;
+                try {
+                  let cur = rootPostId;
+                  const seen = new Set<string>();
+                  for (let i = 0; i < 25; i++) {
+                    if (!cur || seen.has(cur)) break;
+                    seen.add(cur);
+                    const r = await client2.query<{ parent_post_id: string | null }>(
+                      "SELECT parent_post_id FROM posts WHERE id = $1 LIMIT 1",
+                      [cur],
+                    );
+                    const ppid = String(r.rows?.[0]?.parent_post_id ?? "").trim();
+                    if (!ppid) break;
+                    cur = ppid;
+                    rootPostId = cur;
+                  }
+                } catch {
+                  // best-effort
+                }
+              }
+
               try {
                 const repo = new UserRepository();
                 const tokenRows = await repo.listExpoPushTokensForUserIds([recipientOwnerId]);
@@ -255,6 +281,8 @@ export async function setLikeState(args: {
                     data: {
                       scenarioId: sid,
                       postId,
+                      parentPostId: parentPostId || undefined,
+                      rootPostId: rootPostId || undefined,
                       kind: "like",
                       profileId: recipientProfileId,
                       actorProfileId: profileId,
