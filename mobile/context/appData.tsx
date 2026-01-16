@@ -687,6 +687,19 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         }
         if (!Notifications) return;
 
+        // Android: ensure a notification channel exists so notifications can display.
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-var-requires
+          const { Platform } = require("react-native");
+          if (Platform?.OS === "android" && typeof Notifications.setNotificationChannelAsync === "function") {
+            const importance = Notifications.AndroidImportance?.MAX ?? 5;
+            await Notifications.setNotificationChannelAsync("default", {
+              name: "default",
+              importance,
+            });
+          }
+        } catch {}
+
         // Ensure notifications show while foregrounded (optional)
         if (Notifications.setNotificationHandler) {
           try {

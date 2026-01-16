@@ -388,6 +388,8 @@ export async function sendMessage(args: {
                   to,
                   title: String(title ?? "New message"),
                   body: body || undefined,
+                  channelId: "default",
+                  priority: "high" as const,
                   data: { conversationId: cid, scenarioId: sid, profileId, kind: "message" },
                 };
               })
@@ -615,6 +617,8 @@ export async function sendMessageWithImages(args: {
                   to,
                   title: String(title ?? "New message"),
                   body: body || undefined,
+                  channelId: "default",
+                  priority: "high" as const,
                   data: { conversationId: cid, scenarioId: sid, profileId, kind: "message" },
                 };
               })

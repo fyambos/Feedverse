@@ -573,6 +573,8 @@ export async function createPostForScenario(args: {
                       to,
                       title,
                       body: body || undefined,
+                      channelId: "default",
+                      priority: "high" as const,
                       data: {
                         scenarioId: sid,
                         postId,
@@ -685,6 +687,8 @@ export async function createPostForScenario(args: {
                   to,
                   title,
                   body,
+                  channelId: "default",
+                  priority: "high" as const,
                   data: {
                     scenarioId: sid,
                     postId,
