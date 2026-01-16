@@ -65,13 +65,10 @@ export default function TabLayout() {
   const lastSidRef = React.useRef<string>("");
 
   const sid = useMemo(() => {
-    const fromParams =
-      typeof params?.scenarioId === "string" ? params.scenarioId.trim() : "";
-
-    if (fromParams) {
-      lastSidRef.current = fromParams;
-      return fromParams;
-    }
+    // IMPORTANT: Prefer the pathname-derived scenarioId.
+    // In some navigation flows (notably notification-driven pushes/replaces),
+    // `useLocalSearchParams()` can temporarily reflect a stale scenarioId from
+    // the previous scenario. The URL/pathname is the source of truth.
 
     if (pathname.startsWith("/modal")) {
       return lastSidRef.current;
@@ -81,6 +78,12 @@ export default function TabLayout() {
     if (fromPath) {
       lastSidRef.current = fromPath;
       return fromPath;
+    }
+
+    const fromParams = typeof params?.scenarioId === "string" ? params.scenarioId.trim() : "";
+    if (fromParams) {
+      lastSidRef.current = fromParams;
+      return fromParams;
     }
 
     return lastSidRef.current;
@@ -152,6 +155,12 @@ export default function TabLayout() {
         name="home"
         options={{
           title: "",
+          href: sid
+            ? ({
+                pathname: "/(scenario)/[scenarioId]/(tabs)/home",
+                params: { scenarioId: sid },
+              } as any)
+            : undefined,
           tabBarIcon: ({ color }) => (
             <TabIcon iosName="house.fill" androidIonicon="home" color={color} />
           ),
@@ -162,6 +171,12 @@ export default function TabLayout() {
         name="search"
         options={{
           title: "",
+          href: sid
+            ? ({
+                pathname: "/(scenario)/[scenarioId]/(tabs)/search",
+                params: { scenarioId: sid },
+              } as any)
+            : undefined,
           tabBarIcon: ({ color }) => (
             <TabIcon iosName="magnifyingglass" androidIonicon="search" color={color} />
           ),
@@ -172,6 +187,12 @@ export default function TabLayout() {
         name="notifications"
         options={{
           title: "",
+          href: sid
+            ? ({
+                pathname: "/(scenario)/[scenarioId]/(tabs)/notifications",
+                params: { scenarioId: sid },
+              } as any)
+            : undefined,
           tabBarIcon: ({ color }) => (
             <TabIcon iosName="bell.fill" androidIonicon="notifications" color={color} />
           ),
@@ -182,6 +203,12 @@ export default function TabLayout() {
         name="messages"
         options={{
           title: "",
+          href: sid
+            ? ({
+                pathname: "/(scenario)/[scenarioId]/(tabs)/messages",
+                params: { scenarioId: sid },
+              } as any)
+            : undefined,
           tabBarIcon: ({ color }) => (
             <TabIcon iosName="envelope.fill" androidIonicon="mail" color={color} />
           ),

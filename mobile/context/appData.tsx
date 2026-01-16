@@ -712,12 +712,25 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                   if (sid && conv) {
                     const viewing = getActiveConversation(sid);
                     if (viewing && String(viewing) === String(conv)) {
-                      return { shouldShowAlert: false, shouldPlaySound: false, shouldSetBadge: false };
+                      return {
+                        // shouldShowAlert is deprecated; keep banner/list for new API.
+                        shouldShowAlert: false,
+                        shouldShowBanner: false,
+                        shouldShowList: false,
+                        shouldPlaySound: false,
+                        shouldSetBadge: false,
+                      };
                     }
                   }
                 } catch {}
 
-                return { shouldShowAlert: true, shouldPlaySound: false, shouldSetBadge: false };
+                return {
+                  shouldShowAlert: true,
+                  shouldShowBanner: true,
+                  shouldShowList: true,
+                  shouldPlaySound: false,
+                  shouldSetBadge: false,
+                };
               },
             });
           } catch {}
@@ -873,13 +886,13 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                     const inHome = String(currentPath).split("/").includes("home");
                     const curPost = postIdFromPathname(currentPath);
 
-                    const sidEnc = encodeURIComponent(String(sid));
-                    const postEnc = encodeURIComponent(String(destPostId));
-
-                    const stepHome = { pathname: `/(scenario)/${sidEnc}/home`, params: {} } as any;
+                    const stepHome = {
+                      pathname: "/(scenario)/[scenarioId]/(tabs)/home",
+                      params: { scenarioId: sid },
+                    } as any;
                     const stepPost = {
-                      pathname: `/(scenario)/${sidEnc}/home/post/${postEnc}`,
-                      params: focusPostId ? { focusPostId } : {},
+                      pathname: "/(scenario)/[scenarioId]/(tabs)/home/post/[postId]",
+                      params: { scenarioId: sid, postId: destPostId, ...(focusPostId ? { focusPostId } : {}) },
                     } as any;
 
                     // Smart routing:
@@ -986,13 +999,14 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                       const curConv = conversationIdFromPathname(currentPath);
                       const inMessages = String(currentPath).split("/").includes("messages");
                       const sameScenario = Boolean(curSid && String(curSid) === String(sid));
-
-                      const sidEnc = encodeURIComponent(String(sid));
-                      const stepHome = { pathname: `/(scenario)/${sidEnc}/home`, params: {} } as any;
+                      const stepHome = {
+                        pathname: "/(scenario)/[scenarioId]/(tabs)/home",
+                        params: { scenarioId: sid },
+                      } as any;
 
                       const stepMessagesOpen = {
-                        pathname: `/(scenario)/${sidEnc}/messages`,
-                        params: { openConversationId: conv },
+                        pathname: "/(scenario)/[scenarioId]/(tabs)/messages",
+                        params: { scenarioId: sid, openConversationId: conv },
                       } as any;
 
                       const stepConversation = {

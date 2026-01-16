@@ -72,6 +72,7 @@ export default function MessagesScreen() {
     return scenarioIdFromPathname(pathname);
   }, [scenarioId, pathname]);
 
+
   const app = useAppData() as any;
   const auth = useAuth();
   const {
