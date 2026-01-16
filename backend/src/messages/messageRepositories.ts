@@ -12,6 +12,7 @@ export async function markConversationMessagesRead(conversationId: string, profi
         AND NOT EXISTS (
           SELECT 1 FROM message_reads r WHERE r.message_id = m.id AND r.profile_id = $2
         )
+      ON CONFLICT (message_id, profile_id) DO NOTHING
     `, [conversationId, profileId]);
   } finally {
     client.release();
