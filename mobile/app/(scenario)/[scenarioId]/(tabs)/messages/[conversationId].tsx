@@ -1088,6 +1088,8 @@ export default function ConversationThreadScreen() {
       onLongPress?: () => void;
       active?: boolean;
       drag?: () => void;
+      prev?: Message | null;
+      next?: Message | null;
     }
   ) => {
     const senderId = String((item as any).senderProfileId ?? "");
@@ -1140,8 +1142,36 @@ export default function ConversationThreadScreen() {
       );
     }
 
-    const showLeftAvatar = !isRight && !isOneToOne;
-    const showSenderNameAbove = !isRight && !isOneToOne;
+    const prevSenderId = String((opts?.prev as any)?.senderProfileId ?? "");
+    const prevKind = String((opts?.prev as any)?.kind ?? "text").trim();
+    const prevIsGroupBreak = !opts?.prev || prevKind === "separator";
+    const isSameSenderAsPrev = !prevIsGroupBreak && prevSenderId && prevSenderId === senderId;
+
+    const nextSenderId = String((opts?.next as any)?.senderProfileId ?? "");
+    const nextKind = String((opts?.next as any)?.kind ?? "text").trim();
+    const nextIsGroupBreak = !opts?.next || nextKind === "separator";
+    const isSameSenderAsNext = !nextIsGroupBreak && nextSenderId && nextSenderId === senderId;
+
+    const isGroupChat = !isOneToOne;
+    const isLeft = !isRight;
+    const groupStart = isGroupChat && isLeft && !isSameSenderAsPrev;
+    const groupEnd = isGroupChat && isLeft && !isSameSenderAsNext;
+
+    // iMessage-like grouping:
+    // - name above first message of a run
+    // - avatar next to last message of a run
+    // - reserve avatar gutter for all left messages so bubbles align
+    const showSenderNameAbove = groupStart;
+    const showLeftAvatar = groupEnd;
+
+    const onPressSenderAvatar = () => {
+      if (!sid) return;
+      if (!senderId) return;
+      router.push({
+        pathname: "/(scenario)/[scenarioId]/(tabs)/home/profile/[profileId]",
+        params: { scenarioId: sid, profileId: senderId },
+      } as any);
+    };
 
     const row = (
       <Pressable
@@ -1163,7 +1193,21 @@ export default function ConversationThreadScreen() {
         ]}
       >
         <View style={[styles.bubbleRow, { justifyContent: isRight ? "flex-end" : "flex-start" }]}>
-          {showLeftAvatar ? <Avatar uri={sender?.avatarUrl ?? null} size={26} fallbackColor={colors.border} /> : null}
+          {isLeft && isGroupChat ? (
+            <View style={{ width: 26, alignItems: "center", justifyContent: "flex-end" }}>
+              {showLeftAvatar ? (
+                <Pressable
+                  onPress={onPressSenderAvatar}
+                  hitSlop={10}
+                  style={({ pressed }) => [pressed && { opacity: 0.8 }]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Open profile"
+                >
+                  <Avatar uri={sender?.avatarUrl ?? null} size={26} fallbackColor={colors.border} />
+                </Pressable>
+              ) : null}
+            </View>
+          ) : null}
 
           <View style={[{ maxWidth: "78%" }, forceColumnWidth ? { width: "78%" } : null]}>
             {showSenderNameAbove ? (
@@ -1271,9 +1315,13 @@ export default function ConversationThreadScreen() {
       </View>
     ) : null;
 
-  const renderBubble = ({ item }: { item: Message }) => renderBubbleRow(item);
-
   const dataForList = reorderMode ? reorderDraft ?? messages : visibleMessages;
+
+  const renderBubble = ({ item, index }: { item: Message; index: number }) =>
+    renderBubbleRow(item, {
+      prev: index > 0 ? dataForList[index - 1] : null,
+      next: index + 1 < dataForList.length ? dataForList[index + 1] : null,
+    });
 
   if (!isReady || !receiverProfile || !conversation) {
     return (
@@ -1381,9 +1429,15 @@ export default function ConversationThreadScreen() {
             contentContainerStyle={{ padding: 14, paddingBottom: 10 }}
             activationDistance={12}
             dragItemOverflow
-            renderItem={({ item, drag, isActive }: RenderItemParams<Message>) =>
-              renderBubbleRow(item, { drag, active: isActive })
-            }
+            renderItem={({ item, drag, isActive, getIndex }: RenderItemParams<Message>) => {
+              const index = Number(getIndex?.() ?? 0);
+              return renderBubbleRow(item, {
+                drag,
+                active: isActive,
+                prev: index > 0 ? dataForList[index - 1] : null,
+                next: index + 1 < dataForList.length ? dataForList[index + 1] : null,
+              });
+            }}
             onDragEnd={({ data: next }) => {
               setReorderDraft(next);
               if (!sid || !cid) return;
