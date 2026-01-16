@@ -278,6 +278,8 @@ export async function setLikeState(args: {
                     to,
                     title,
                     body,
+                    channelId: "default",
+                    priority: "high" as const,
                     data: {
                       scenarioId: sid,
                       postId,

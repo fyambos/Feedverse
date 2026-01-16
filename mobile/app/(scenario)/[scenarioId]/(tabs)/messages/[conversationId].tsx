@@ -12,6 +12,7 @@ import {
   Modal,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   TextInput,
   View,
@@ -39,6 +40,9 @@ import { pickAndPersistManyImages } from "@/components/ui/ImagePicker";
 import { MediaGrid } from "@/components/media/MediaGrid";
 import { Lightbox } from "@/components/media/LightBox";
 import { formatErrorMessage } from "@/lib/format";
+
+const SEND_BTN_SCALE_DOWN = 0.92;
+const SEND_BTN_SCALE_DOWN_MS = 60;
 
 function parsePgTextArrayLiteral(input: string): string[] {
   const s = String(input ?? "").trim();
@@ -242,6 +246,7 @@ export default function ConversationThreadScreen() {
   const [imageUris, setImageUris] = useState<string[]>([]);
   const [sendAsId, setSendAsId] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [ownedOpen, setOwnedOpen] = useState(true);
   const [publicOpen, setPublicOpen] = useState(false);
 
   const sendingRef = useRef(false);
@@ -346,6 +351,7 @@ export default function ConversationThreadScreen() {
     // Fast path: use per-conversation id index (avoids scanning all messages).
     if (messageIds && messageIds.length > 0) {
       const out: Message[] = [];
+      const idSet = new Set(messageIds.map(String));
       for (const mid of messageIds) {
         const m = messagesMap[mid];
         if (!m) continue;
@@ -353,6 +359,33 @@ export default function ConversationThreadScreen() {
         if (String((m as any).conversationId) !== cid) continue;
         out.push(m);
       }
+
+      // IMPORTANT: preserve optimistic client_* messages even if a sync temporarily
+      // replaces conversation.messageIds with server-only IDs.
+      const cutoffMs = Date.now() - 10 * 60_000;
+      for (const m of Object.values(messagesMap)) {
+        const id = String((m as any)?.id ?? "").trim();
+        if (!id || idSet.has(id)) continue;
+        if (String((m as any).scenarioId) !== sid) continue;
+        if (String((m as any).conversationId) !== cid) continue;
+
+        const status = String((m as any)?.clientStatus ?? "").trim();
+        const isOptimistic = id.startsWith("client_") || status === "sending" || status === "failed";
+        if (!isOptimistic) continue;
+
+        const ms = Date.parse(String((m as any)?.createdAt ?? ""));
+        if (Number.isFinite(ms) && ms < cutoffMs) continue;
+
+        out.push(m);
+      }
+
+      out.sort((a, b) => {
+        const ca = String((a as any).createdAt ?? "");
+        const cb = String((b as any).createdAt ?? "");
+        if (ca !== cb) return ca.localeCompare(cb);
+        return String((a as any).id ?? "").localeCompare(String((b as any).id ?? ""));
+      });
+
       return out;
     }
 
@@ -738,6 +771,27 @@ export default function ConversationThreadScreen() {
   }, [isOneToOne, selectedProfileId, sendAsId]);
 
   const senderSlider = useRef(new Animated.Value(oneToOneSide === "right" ? 1 : 0)).current;
+  const sendBtnScale = useRef(new Animated.Value(1)).current;
+
+  const bumpSendBtn = useCallback(() => {
+    try {
+      sendBtnScale.stopAnimation();
+      sendBtnScale.setValue(1);
+      Animated.sequence([
+        Animated.timing(sendBtnScale, {
+          toValue: SEND_BTN_SCALE_DOWN,
+          duration: SEND_BTN_SCALE_DOWN_MS,
+          useNativeDriver: true,
+        }),
+        Animated.spring(sendBtnScale, {
+          toValue: 1,
+          friction: 4,
+          tension: 220,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    } catch {}
+  }, [sendBtnScale]);
 
   useEffect(() => {
     Animated.timing(senderSlider, {
@@ -920,6 +974,9 @@ export default function ConversationThreadScreen() {
 
   const openPicker = useCallback(() => {
     if (isOneToOne) return; // 1:1 uses toggle
+    // Defaults each time the modal opens.
+    setOwnedOpen(true);
+    setPublicOpen(false);
     setPickerOpen(true);
   }, [isOneToOne]);
 
@@ -957,14 +1014,15 @@ export default function ConversationThreadScreen() {
     const imgs = Array.isArray(imageUris) ? imageUris.map(String).filter(Boolean) : [];
     if (!body && imgs.length === 0) return;
 
+    if (sendingRef.current) return;
+    sendingRef.current = true;
+    setSending(true);
+
+    bumpSendBtn();
     // Clear composer immediately so send feels instant.
     setText("");
     setImageUris([]);
     try { scrollToBottom(true); } catch {}
-
-    if (sendingRef.current) return;
-    sendingRef.current = true;
-    setSending(true);
 
     const p = Promise.resolve(
       sendMessage?.({
@@ -1030,7 +1088,7 @@ export default function ConversationThreadScreen() {
         sendingRef.current = false;
         setSending(false);
       });
-  }, [sid, cid, sendAsId, text, imageUris, sendMessage, selectedProfileId, scrollToBottom]);
+  }, [sid, cid, sendAsId, text, imageUris, sendMessage, selectedProfileId, scrollToBottom, bumpSendBtn]);
 
   const onPickImages = useCallback(async () => {
     const remaining = Math.max(0, 4 - (imageUris?.length ?? 0));
@@ -1083,6 +1141,8 @@ export default function ConversationThreadScreen() {
       onLongPress?: () => void;
       active?: boolean;
       drag?: () => void;
+      prev?: Message | null;
+      next?: Message | null;
     }
   ) => {
     const senderId = String((item as any).senderProfileId ?? "");
@@ -1135,8 +1195,36 @@ export default function ConversationThreadScreen() {
       );
     }
 
-    const showLeftAvatar = !isRight && !isOneToOne;
-    const showSenderNameAbove = !isRight && !isOneToOne;
+    const prevSenderId = String((opts?.prev as any)?.senderProfileId ?? "");
+    const prevKind = String((opts?.prev as any)?.kind ?? "text").trim();
+    const prevIsGroupBreak = !opts?.prev || prevKind === "separator";
+    const isSameSenderAsPrev = !prevIsGroupBreak && prevSenderId && prevSenderId === senderId;
+
+    const nextSenderId = String((opts?.next as any)?.senderProfileId ?? "");
+    const nextKind = String((opts?.next as any)?.kind ?? "text").trim();
+    const nextIsGroupBreak = !opts?.next || nextKind === "separator";
+    const isSameSenderAsNext = !nextIsGroupBreak && nextSenderId && nextSenderId === senderId;
+
+    const isGroupChat = !isOneToOne;
+    const isLeft = !isRight;
+    const groupStart = isGroupChat && isLeft && !isSameSenderAsPrev;
+    const groupEnd = isGroupChat && isLeft && !isSameSenderAsNext;
+
+    // iMessage-like grouping:
+    // - name above first message of a run
+    // - avatar next to last message of a run
+    // - reserve avatar gutter for all left messages so bubbles align
+    const showSenderNameAbove = groupStart;
+    const showLeftAvatar = groupEnd;
+
+    const onPressSenderAvatar = () => {
+      if (!sid) return;
+      if (!senderId) return;
+      router.push({
+        pathname: "/(scenario)/[scenarioId]/(tabs)/home/profile/[profileId]",
+        params: { scenarioId: sid, profileId: senderId },
+      } as any);
+    };
 
     const row = (
       <Pressable
@@ -1158,7 +1246,21 @@ export default function ConversationThreadScreen() {
         ]}
       >
         <View style={[styles.bubbleRow, { justifyContent: isRight ? "flex-end" : "flex-start" }]}>
-          {showLeftAvatar ? <Avatar uri={sender?.avatarUrl ?? null} size={26} fallbackColor={colors.border} /> : null}
+          {isLeft && isGroupChat ? (
+            <View style={{ width: 26, alignItems: "center", justifyContent: "flex-end" }}>
+              {showLeftAvatar ? (
+                <Pressable
+                  onPress={onPressSenderAvatar}
+                  hitSlop={10}
+                  style={({ pressed }) => [pressed && { opacity: 0.8 }]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Open profile"
+                >
+                  <Avatar uri={sender?.avatarUrl ?? null} size={26} fallbackColor={colors.border} />
+                </Pressable>
+              ) : null}
+            </View>
+          ) : null}
 
           <View style={[{ maxWidth: "78%" }, forceColumnWidth ? { width: "78%" } : null]}>
             {showSenderNameAbove ? (
@@ -1266,9 +1368,13 @@ export default function ConversationThreadScreen() {
       </View>
     ) : null;
 
-  const renderBubble = ({ item }: { item: Message }) => renderBubbleRow(item);
-
   const dataForList = reorderMode ? reorderDraft ?? messages : visibleMessages;
+
+  const renderBubble = ({ item, index }: { item: Message; index: number }) =>
+    renderBubbleRow(item, {
+      prev: index > 0 ? dataForList[index - 1] : null,
+      next: index + 1 < dataForList.length ? dataForList[index + 1] : null,
+    });
 
   if (!isReady || !receiverProfile || !conversation) {
     return (
@@ -1372,13 +1478,19 @@ export default function ConversationThreadScreen() {
               dragListRef.current = r;
             }}
             data={dataForList}
-            keyExtractor={(m) => String((m as any).id)}
+            keyExtractor={(m) => String((m as any)?.clientMessageId ?? (m as any)?.client_message_id ?? (m as any)?.id)}
             contentContainerStyle={{ padding: 14, paddingBottom: 10 }}
             activationDistance={12}
             dragItemOverflow
-            renderItem={({ item, drag, isActive }: RenderItemParams<Message>) =>
-              renderBubbleRow(item, { drag, active: isActive })
-            }
+            renderItem={({ item, drag, isActive, getIndex }: RenderItemParams<Message>) => {
+              const index = Number(getIndex?.() ?? 0);
+              return renderBubbleRow(item, {
+                drag,
+                active: isActive,
+                prev: index > 0 ? dataForList[index - 1] : null,
+                next: index + 1 < dataForList.length ? dataForList[index + 1] : null,
+              });
+            }}
             onDragEnd={({ data: next }) => {
               setReorderDraft(next);
               if (!sid || !cid) return;
@@ -1392,7 +1504,7 @@ export default function ConversationThreadScreen() {
               listRef.current = r;
             }}
             data={dataForList}
-            keyExtractor={(m) => String((m as any).id)}
+            keyExtractor={(m) => String((m as any)?.clientMessageId ?? (m as any)?.client_message_id ?? (m as any)?.id)}
             renderItem={renderBubble}
             contentContainerStyle={{ padding: 14, paddingBottom: 24, flexGrow: 1 }}
             scrollEventThrottle={16}
@@ -1478,30 +1590,31 @@ export default function ConversationThreadScreen() {
               <Ionicons name="image-outline" size={18} color={colors.text} />
             </Pressable>
 
-            <Pressable
-              onPress={onSend}
-              disabled={
-                sending ||
-                !sendAsId ||
-                (!String(text ?? "").trim() && (imageUris?.length ?? 0) === 0) ||
-                !sendAsAllowedIds.has(String(sendAsId))
-              }
-              style={({ pressed }) => [
-                styles.sendBtn,
-                {
-                  backgroundColor: colors.tint,
-                  opacity:
-                    sending ||
-                    !sendAsId ||
-                    (!String(text ?? "").trim() && (imageUris?.length ?? 0) === 0) ||
-                    !sendAsAllowedIds.has(String(sendAsId))
-                      ? 0.4
-                      : pressed
-                        ? 0.85
-                        : 1,
-                },
-              ]}
-              onLongPress={async () => {
+            <Animated.View style={{ transform: [{ scale: sendBtnScale }] }}>
+              <Pressable
+                onPress={onSend}
+                disabled={
+                  sending ||
+                  !sendAsId ||
+                  (!String(text ?? "").trim() && (imageUris?.length ?? 0) === 0) ||
+                  !sendAsAllowedIds.has(String(sendAsId))
+                }
+                style={({ pressed }) => [
+                  styles.sendBtn,
+                  {
+                    backgroundColor: colors.tint,
+                    opacity:
+                      sending ||
+                      !sendAsId ||
+                      (!String(text ?? "").trim() && (imageUris?.length ?? 0) === 0) ||
+                      !sendAsAllowedIds.has(String(sendAsId))
+                        ? 0.4
+                        : pressed
+                          ? 0.85
+                          : 1,
+                  },
+                ]}
+                onLongPress={async () => {
                 // long-press send: if there is text, send as a centered small 'separator' message
                 const body = String(text ?? "").trim();
                 if (!sendAsId || !sendAsAllowedIds.has(String(sendAsId))) return;
@@ -1513,6 +1626,11 @@ export default function ConversationThreadScreen() {
                 if (sendingRef.current) return;
                 sendingRef.current = true;
                 setSending(true);
+
+                bumpSendBtn();
+                // Clear message box immediately (keep attachments).
+                setText("");
+                try { scrollToBottom(true); } catch {}
 
                 let res: any;
                 try {
@@ -1538,17 +1656,17 @@ export default function ConversationThreadScreen() {
                   return;
                 }
 
-                setText("");
               }}
-              accessibilityRole="button"
-              accessibilityLabel="Send"
-            >
-              {sending ? (
-                <ActivityIndicator size="small" color={colors.background} />
-              ) : (
-                <Ionicons name="arrow-up" size={18} color={colors.background} />
-              )}
-            </Pressable>
+                accessibilityRole="button"
+                accessibilityLabel="Send"
+              >
+                {sending ? (
+                  <ActivityIndicator size="small" color={colors.background} />
+                ) : (
+                  <Ionicons name="arrow-up" size={18} color={colors.background} />
+                )}
+              </Pressable>
+            </Animated.View>
           </View>
         </SafeAreaView>
       </KeyboardAvoidingView>
@@ -1575,74 +1693,104 @@ export default function ConversationThreadScreen() {
               </Pressable>
             </View>
 
-            <ThemedText style={[styles.sectionTitle, { color: colors.textSecondary }]}>your profiles</ThemedText>
-            {candidates.owned.map((p) => {
-              const active = String((p as any).id) === String(sendAsId ?? "");
-              return (
-                <Pressable
-                  key={String((p as any).id)}
-                  onPress={() => onPickSendAs(String((p as any).id))}
-                  style={({ pressed }) => [
-                    styles.pickRow,
-                    { backgroundColor: pressed ? colors.pressed : "transparent", borderColor: colors.border },
-                  ]}
-                >
-                  <Avatar uri={String((p as any).avatarUrl ?? "") || null} size={30} fallbackColor={colors.border} />
-                  <View style={{ flex: 1, minWidth: 0 }}>
-                    <ThemedText style={{ color: colors.text, fontWeight: "800" }} numberOfLines={1}>
-                      {String((p as any).displayName ?? "")}
-                    </ThemedText>
-                    <ThemedText style={{ color: colors.textSecondary, fontSize: 12 }} numberOfLines={1}>
-                      @{String((p as any).handle ?? "")}
-                    </ThemedText>
-                  </View>
-                  {active ? <Ionicons name="checkmark" size={18} color={colors.tint} /> : null}
-                </Pressable>
-              );
-            })}
-
-            <Pressable
-              onPress={() => setPublicOpen((v) => !v)}
-              hitSlop={10}
-              style={({ pressed }) => [styles.sectionHeaderRow, pressed && { opacity: 0.8 }]}
+            <ScrollView
+              style={styles.pickerBody}
+              contentContainerStyle={styles.pickerBodyContent}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
             >
-              <ThemedText style={[styles.sectionTitle, { color: colors.textSecondary, marginTop: 12 }]}>
-                public profiles
-              </ThemedText>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                <ThemedText style={{ color: colors.textSecondary, fontWeight: "900", fontSize: 12 }}>
-                  {candidates.public.length}
-                </ThemedText>
-                <Ionicons name={publicOpen ? "chevron-up" : "chevron-down"} size={16} color={colors.textSecondary} />
-              </View>
-            </Pressable>
+              <Pressable
+                onPress={() => setOwnedOpen((v) => !v)}
+                hitSlop={10}
+                style={({ pressed }) => [styles.sectionHeaderRow, pressed && { opacity: 0.8 }]}
+              >
+                <ThemedText style={[styles.sectionTitle, { color: colors.textSecondary }]}>your profiles</ThemedText>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  <ThemedText style={{ color: colors.textSecondary, fontWeight: "900", fontSize: 12 }}>
+                    {candidates.owned.length}
+                  </ThemedText>
+                  <Ionicons name={ownedOpen ? "chevron-up" : "chevron-down"} size={16} color={colors.textSecondary} />
+                </View>
+              </Pressable>
 
-            {publicOpen
-              ? candidates.public.map((p) => {
-                  const active = String((p as any).id) === String(sendAsId ?? "");
-                  return (
-                    <Pressable
-                      key={String((p as any).id)}
-                      onPress={() => onPickSendAs(String((p as any).id))}
-                      style={({ pressed }) => [
-                        styles.pickRow,
-                        { backgroundColor: pressed ? colors.pressed : "transparent", borderColor: colors.border },
-                      ]}
-                    >
-                      <Avatar uri={String((p as any).avatarUrl ?? "") || null} size={30} fallbackColor={colors.border} />
-                      <View style={{ flex: 1, minWidth: 0 }}>
-                        <ThemedText style={{ color: colors.text, fontWeight: "800" }} numberOfLines={1}>
-                          {String((p as any).displayName ?? "")}
-                        </ThemedText>
-                        <ThemedText style={{ color: colors.textSecondary, fontSize: 12 }} numberOfLines={1}>
-                          @{String((p as any).handle ?? "")}
-                        </ThemedText>
-                      </View>
-                      {active ? <Ionicons name="checkmark" size={18} color={colors.tint} /> : null}
-                    </Pressable>
-                  );
-                })
-              : null}
+              {ownedOpen
+                ? candidates.owned.map((p) => {
+                    const active = String((p as any).id) === String(sendAsId ?? "");
+                    return (
+                      <Pressable
+                        key={String((p as any).id)}
+                        onPress={() => onPickSendAs(String((p as any).id))}
+                        style={({ pressed }) => [
+                          styles.pickRow,
+                          { backgroundColor: pressed ? colors.pressed : "transparent", borderColor: colors.border },
+                        ]}
+                      >
+                        <Avatar
+                          uri={String((p as any).avatarUrl ?? "") || null}
+                          size={30}
+                          fallbackColor={colors.border}
+                        />
+                        <View style={{ flex: 1, minWidth: 0 }}>
+                          <ThemedText style={{ color: colors.text, fontWeight: "800" }} numberOfLines={1}>
+                            {String((p as any).displayName ?? "")}
+                          </ThemedText>
+                          <ThemedText style={{ color: colors.textSecondary, fontSize: 12 }} numberOfLines={1}>
+                            @{String((p as any).handle ?? "")}
+                          </ThemedText>
+                        </View>
+                        {active ? <Ionicons name="checkmark" size={18} color={colors.tint} /> : null}
+                      </Pressable>
+                    );
+                  })
+                : null}
+
+              <Pressable
+                onPress={() => setPublicOpen((v) => !v)}
+                hitSlop={10}
+                style={({ pressed }) => [styles.sectionHeaderRow, pressed && { opacity: 0.8 }]}
+              >
+                <ThemedText style={[styles.sectionTitle, { color: colors.textSecondary, marginTop: 12 }]}>
+                  shared profiles
+                </ThemedText>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  <ThemedText style={{ color: colors.textSecondary, fontWeight: "900", fontSize: 12 }}>
+                    {candidates.public.length}
+                  </ThemedText>
+                  <Ionicons name={publicOpen ? "chevron-up" : "chevron-down"} size={16} color={colors.textSecondary} />
+                </View>
+              </Pressable>
+
+              {publicOpen
+                ? candidates.public.map((p) => {
+                    const active = String((p as any).id) === String(sendAsId ?? "");
+                    return (
+                      <Pressable
+                        key={String((p as any).id)}
+                        onPress={() => onPickSendAs(String((p as any).id))}
+                        style={({ pressed }) => [
+                          styles.pickRow,
+                          { backgroundColor: pressed ? colors.pressed : "transparent", borderColor: colors.border },
+                        ]}
+                      >
+                        <Avatar
+                          uri={String((p as any).avatarUrl ?? "") || null}
+                          size={30}
+                          fallbackColor={colors.border}
+                        />
+                        <View style={{ flex: 1, minWidth: 0 }}>
+                          <ThemedText style={{ color: colors.text, fontWeight: "800" }} numberOfLines={1}>
+                            {String((p as any).displayName ?? "")}
+                          </ThemedText>
+                          <ThemedText style={{ color: colors.textSecondary, fontSize: 12 }} numberOfLines={1}>
+                            @{String((p as any).handle ?? "")}
+                          </ThemedText>
+                        </View>
+                        {active ? <Ionicons name="checkmark" size={18} color={colors.tint} /> : null}
+                      </Pressable>
+                    );
+                  })
+                : null}
+            </ScrollView>
           </Pressable>
         </Pressable>
       </Modal>
@@ -1886,11 +2034,15 @@ const styles = StyleSheet.create({
   pickerCard: {
     width: "100%",
     maxWidth: 520,
+    maxHeight: "85%",
     borderRadius: 16,
     borderWidth: StyleSheet.hairlineWidth,
     padding: 14,
+    overflow: "hidden",
   },
   pickerHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  pickerBody: { marginTop: 8 },
+  pickerBodyContent: { paddingBottom: 6 },
   sectionTitle: { marginTop: 12, fontSize: 12, fontWeight: "900", letterSpacing: 2 },
   sectionHeaderRow: {
     flexDirection: "row",

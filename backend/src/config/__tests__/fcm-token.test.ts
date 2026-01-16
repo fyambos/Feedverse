@@ -21,6 +21,11 @@ function loadServiceAccountFromEnv(): any | null {
         try {
           return JSON.parse(raw.replace(/\\n/g, '\n'));
         } catch (e3) {
+          // Helpful hint without logging secrets.
+          console.warn(
+            'FIREBASE_SERVICE_ACCOUNT is set but could not be parsed as JSON. ' +
+              'Use FIREBASE_SERVICE_ACCOUNT_B64 (base64-encoded JSON) or ensure the value is valid JSON with \\n escapes inside private_key.'
+          );
           return null;
         }
       }

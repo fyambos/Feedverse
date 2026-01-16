@@ -687,6 +687,19 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         }
         if (!Notifications) return;
 
+        // Android: ensure a notification channel exists so notifications can display.
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-var-requires
+          const { Platform } = require("react-native");
+          if (Platform?.OS === "android" && typeof Notifications.setNotificationChannelAsync === "function") {
+            const importance = Notifications.AndroidImportance?.MAX ?? 5;
+            await Notifications.setNotificationChannelAsync("default", {
+              name: "default",
+              importance,
+            });
+          }
+        } catch {}
+
         // Ensure notifications show while foregrounded (optional)
         if (Notifications.setNotificationHandler) {
           try {
@@ -699,12 +712,25 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                   if (sid && conv) {
                     const viewing = getActiveConversation(sid);
                     if (viewing && String(viewing) === String(conv)) {
-                      return { shouldShowAlert: false, shouldPlaySound: false, shouldSetBadge: false };
+                      return {
+                        // shouldShowAlert is deprecated; keep banner/list for new API.
+                        shouldShowAlert: false,
+                        shouldShowBanner: false,
+                        shouldShowList: false,
+                        shouldPlaySound: false,
+                        shouldSetBadge: false,
+                      };
                     }
                   }
                 } catch {}
 
-                return { shouldShowAlert: true, shouldPlaySound: false, shouldSetBadge: false };
+                return {
+                  shouldShowAlert: true,
+                  shouldShowBanner: true,
+                  shouldShowList: true,
+                  shouldPlaySound: false,
+                  shouldSetBadge: false,
+                };
               },
             });
           } catch {}
@@ -860,13 +886,13 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                     const inHome = String(currentPath).split("/").includes("home");
                     const curPost = postIdFromPathname(currentPath);
 
-                    const sidEnc = encodeURIComponent(String(sid));
-                    const postEnc = encodeURIComponent(String(destPostId));
-
-                    const stepHome = { pathname: `/(scenario)/${sidEnc}/home`, params: {} } as any;
+                    const stepHome = {
+                      pathname: "/(scenario)/[scenarioId]/(tabs)/home",
+                      params: { scenarioId: sid },
+                    } as any;
                     const stepPost = {
-                      pathname: `/(scenario)/${sidEnc}/home/post/${postEnc}`,
-                      params: focusPostId ? { focusPostId } : {},
+                      pathname: "/(scenario)/[scenarioId]/(tabs)/home/post/[postId]",
+                      params: { scenarioId: sid, postId: destPostId, ...(focusPostId ? { focusPostId } : {}) },
                     } as any;
 
                     // Smart routing:
@@ -973,13 +999,14 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                       const curConv = conversationIdFromPathname(currentPath);
                       const inMessages = String(currentPath).split("/").includes("messages");
                       const sameScenario = Boolean(curSid && String(curSid) === String(sid));
-
-                      const sidEnc = encodeURIComponent(String(sid));
-                      const stepHome = { pathname: `/(scenario)/${sidEnc}/home`, params: {} } as any;
+                      const stepHome = {
+                        pathname: "/(scenario)/[scenarioId]/(tabs)/home",
+                        params: { scenarioId: sid },
+                      } as any;
 
                       const stepMessagesOpen = {
-                        pathname: `/(scenario)/${sidEnc}/messages`,
-                        params: { openConversationId: conv },
+                        pathname: "/(scenario)/[scenarioId]/(tabs)/messages",
+                        params: { scenarioId: sid, openConversationId: conv },
                       } as any;
 
                       const stepConversation = {
@@ -1873,6 +1900,11 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                             }
 
                             if (optimisticId) {
+                              // Preserve the optimistic client id on the server message so the UI can
+                              // keep a stable key across the optimistic->server swap.
+                              try {
+                                (messages[mid] as any).clientMessageId = optimisticId;
+                              } catch {}
                               try {
                                 delete (messages as any)[optimisticId];
                               } catch {}
@@ -2132,11 +2164,27 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
           const messages = { ...((prev as any).messages ?? {}) } as Record<string, Message>;
           const conversations = { ...((prev as any).conversations ?? {}) } as Record<string, Conversation>;
 
-          // Replace messages for this conversation (server is source of truth).
+          const serverIds = new Set(
+            rows
+              .map((r) => String((r as any)?.id ?? "").trim())
+              .filter(Boolean)
+          );
+
+          // Server is source of truth, but DO NOT delete optimistic client_* messages.
+          // Also, keep existing server messages where possible so we preserve extra
+          // client-only fields (e.g. clientMessageId) to avoid UI flicker.
           for (const [mid, m] of Object.entries(messages)) {
             if (String((m as any).scenarioId ?? "") !== sid) continue;
             if (String((m as any).conversationId ?? "") !== cid) continue;
-            delete (messages as any)[mid];
+
+            const id = String((m as any)?.id ?? mid).trim();
+            const status = String((m as any)?.clientStatus ?? "").trim();
+            const keepOptimistic = id.startsWith("client_") || status === "sending" || status === "failed";
+            if (keepOptimistic) continue;
+
+            if (!serverIds.has(id)) {
+              delete (messages as any)[mid];
+            }
           }
 
           let lastMessageAt: string | undefined = undefined;
@@ -2152,7 +2200,9 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                 ? new Date(raw.created_at).toISOString()
                 : now;
 
+            const existing = messages[id] ?? ({} as any);
             messages[id] = {
+              ...existing,
               id,
               scenarioId: String(raw?.scenarioId ?? raw?.scenario_id ?? sid),
               conversationId: String(raw?.conversationId ?? raw?.conversation_id ?? cid),
@@ -5832,6 +5882,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
 
             messages[mid] = {
               id: mid,
+              clientMessageId: optimisticId,
               scenarioId: sid,
               conversationId: cid,
               senderProfileId: from,

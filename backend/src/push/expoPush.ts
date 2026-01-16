@@ -5,6 +5,8 @@ type ExpoPushMessage = {
   data?: Record<string, any>;
   sound?: "default" | null;
   priority?: "default" | "normal" | "high";
+  // Android: notification channel id (must exist on device).
+  channelId?: string;
 };
 
 function isProbablyExpoPushToken(token: string): boolean {
@@ -58,6 +60,23 @@ export async function sendExpoPush(messages: ExpoPushMessage[]): Promise<void> {
           text = await res.text();
         } catch {}
         console.warn("Expo push send failed", res?.status, text || "");
+      } else {
+        // Expo often returns 200 even when individual tickets contain errors.
+        try {
+          const json = await res.json();
+          const tickets = Array.isArray((json as any)?.data) ? (json as any).data : [];
+          for (const t of tickets) {
+            if (t?.status === "error") {
+              console.warn(
+                "Expo push ticket error",
+                String(t?.message ?? ""),
+                t?.details ? JSON.stringify(t.details) : "",
+              );
+            }
+          }
+        } catch {
+          // ignore parse errors
+        }
       }
     } catch (e: any) {
       console.warn("Expo push send error", e?.message ?? e);
