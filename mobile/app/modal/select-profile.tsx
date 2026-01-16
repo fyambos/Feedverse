@@ -49,6 +49,8 @@ export default function SelectProfileModal() {
     setSelectedProfileId,
     db,
     getScenarioById,
+    syncScenarios,
+    syncProfilesForScenario,
     transferProfilesToUser,
     adoptPublicProfile,
   } = useAppData() as any;
@@ -62,6 +64,40 @@ export default function SelectProfileModal() {
   };
   const [tab, setTab] = React.useState<TabKey>("mine");
   const [mode, setMode] = React.useState<ViewMode>("tabs");
+
+  // When viewing Shared profiles, we need fresh scenario.playerIds to avoid
+  // offering "Adopt" while the owner is actually still in the scenario.
+  const [sharedSyncing, setSharedSyncing] = React.useState(false);
+  const sharedSyncCompleteRef = React.useRef(false);
+
+  React.useEffect(() => {
+    if (!isReady) return;
+    if (!sid) return;
+    if (!(mode === "tabs" && tab === "public")) return;
+
+    let cancelled = false;
+    sharedSyncCompleteRef.current = false;
+    setSharedSyncing(true);
+
+    Promise.resolve()
+      .then(async () => {
+        // Best-effort: refresh scenario list (players/owners) and profiles.
+        await syncScenarios?.({ force: true });
+        await syncProfilesForScenario?.(sid);
+      })
+      .catch(() => {
+        // ignore: still allow UI to proceed
+      })
+      .finally(() => {
+        if (cancelled) return;
+        sharedSyncCompleteRef.current = true;
+        setSharedSyncing(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isReady, sid, mode, tab, syncScenarios, syncProfilesForScenario]);
 
   // state for multi select
   const [multi, setMulti] = React.useState<boolean>(false);
@@ -298,6 +334,11 @@ const allProfiles = React.useMemo<Profile[]>(() => {
 
           // shared profile from someone else
           if (isSharedFromOther) {
+            if (sharedSyncing || !sharedSyncCompleteRef.current) {
+              Alert.alert("Loading…", "Refreshing scenario players. Try again in a moment.");
+              return;
+            }
+
             // If the owner is still in the scenario, just select the profile (no adopt)
             const ownerId = String(item.ownerUserId ?? "");
             const scenarioPlayerIds = Array.isArray((scenario as any)?.playerIds)
