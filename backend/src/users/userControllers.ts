@@ -156,10 +156,9 @@ export const UpsertUserPushTokenController = async (req: Request, res: Response)
     try {
       const t = String(expoPushToken);
       const preview = t.length <= 18 ? t : `${t.slice(0, 10)}…${t.slice(-6)}`;
-      console.log("push-token register", { userId, platform, token: preview });
+      // console.log("push-token register", { userId, platform, token: preview });
     } catch {
-      // debug log
-      console.log("push-token register: failed to format token preview", { userId, platform });
+      // console.log("push-token register: failed to format token preview", { userId, platform });
     }
 
     const repo = new UserRepository();
