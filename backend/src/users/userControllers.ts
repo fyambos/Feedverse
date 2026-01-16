@@ -18,7 +18,7 @@ export const UpdateUsernameController = async (req: Request, res: Response) => {
     return res.status(405).json({ error: "Method not allowed" });
   }
   try {
-    const user: User = req.user;
+    const user = req.user as User | undefined;
     const userId = String(user?.id ?? "").trim();
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
@@ -46,11 +46,11 @@ export const UpdateUsernameController = async (req: Request, res: Response) => {
 
 export const GetUserProfileController = async (req: Request, res: Response) => {
   if (req.method !== HTTP_METHODS.GET) {
-    res.status(HTTP_STATUS.BAD_REQUEST).send(ERROR_MESSAGES.METHOD_NOT_ALLOWED);
+    return res.status(HTTP_STATUS.BAD_REQUEST).send(ERROR_MESSAGES.METHOD_NOT_ALLOWED);
   }
 
   try {
-    const tokenUser: User = req.user;
+    const tokenUser = req.user as User | undefined;
     const userId = String(tokenUser?.id ?? "").trim();
     if (!userId) return res.status(HTTP_STATUS.UNAUTHORIZED).json({ error: "Unauthorized" });
 
@@ -77,7 +77,7 @@ export const UpdateUserAvatarController = async (req: Request, res: Response) =>
   }
 
   try {
-    const user: User = req.user;
+    const user = req.user as User | undefined;
     const userId = String(user?.id ?? "").trim();
     if (!userId) return res.status(HTTP_STATUS.UNAUTHORIZED).json({ error: "Unauthorized" });
 
@@ -140,7 +140,7 @@ export const UpsertUserPushTokenController = async (req: Request, res: Response)
   }
 
   try {
-    const user: User = req.user;
+    const user = req.user as User | undefined;
     const userId = String(user?.id ?? "").trim();
     if (!userId) return res.status(HTTP_STATUS.UNAUTHORIZED).json({ error: "Unauthorized" });
 
@@ -150,6 +150,16 @@ export const UpsertUserPushTokenController = async (req: Request, res: Response)
 
     if (!expoPushToken) {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({ error: "expoPushToken is required" });
+    }
+
+    // Debug aid: log registration without leaking full token.
+    try {
+      const t = String(expoPushToken);
+      const preview = t.length <= 18 ? t : `${t.slice(0, 10)}…${t.slice(-6)}`;
+      console.log("push-token register", { userId, platform, token: preview });
+    } catch {
+      // debug log
+      console.log("push-token register: failed to format token preview", { userId, platform });
     }
 
     const repo = new UserRepository();
