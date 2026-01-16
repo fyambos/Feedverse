@@ -4,6 +4,8 @@ import type { LikeApi, LikeRow } from "./likeModels";
 import { mapLikeRowToApi } from "./likeModels";
 import type { PostApi, PostRow } from "../posts/postModels";
 import { mapPostRowToApi } from "../posts/postModels";
+import { sendExpoPush } from "../push/expoPush";
+import { UserRepository } from "../users/userRepositories";
 
 async function scenarioAccess(client: PoolClient, scenarioId: string, userId: string): Promise<boolean> {
   const res = await client.query(
@@ -27,16 +29,17 @@ async function scenarioAccess(client: PoolClient, scenarioId: string, userId: st
 }
 
 async function requireOwnedProfileInScenario(client: PoolClient, scenarioId: string, userId: string, profileId: string) {
+  // NOTE: despite the name, we intentionally allow acting as ANY profile in the scenario.
+  // In Feedverse, users can like/repost as any scenario profile.
   const res = await client.query(
     `
     SELECT 1
     FROM profiles
     WHERE id = $1
       AND scenario_id = $2
-      AND owner_user_id = $3
     LIMIT 1
   `,
-    [profileId, scenarioId, userId],
+    [profileId, scenarioId],
   );
   return (res.rowCount ?? 0) > 0;
 }
@@ -193,6 +196,112 @@ export async function setLikeState(args: {
     }
 
     await client.query("COMMIT");
+
+    // Best-effort push notifications for new likes.
+    if (ensureLiked && !had) {
+      const recipientProfileId = String((p0 as any)?.author_profile_id ?? "").trim();
+      const postText = String((p0 as any)?.text ?? "").trim();
+      const parentPostId = String((p0 as any)?.parent_post_id ?? "").trim();
+
+      if (recipientProfileId) {
+        (async () => {
+          try {
+            const client2 = await pool.connect();
+            try {
+              const profRes = await client2.query<{
+                id: string;
+                owner_user_id: string | null;
+                handle: string | null;
+                display_name: string | null;
+              }>(
+                "SELECT id, owner_user_id, handle, display_name FROM profiles WHERE id = ANY($1::uuid[])",
+                [[recipientProfileId, profileId]],
+              );
+
+              let recipientOwnerId = "";
+              let senderOwnerId = "";
+              let senderLabel = "Someone";
+
+              for (const r of profRes.rows) {
+                const pid = String(r?.id ?? "").trim();
+                const owner = String(r?.owner_user_id ?? "").trim();
+
+                if (pid === recipientProfileId) {
+                  recipientOwnerId = owner;
+                }
+                if (pid === profileId) {
+                  senderOwnerId = owner;
+                  const h = String(r?.handle ?? "").trim();
+                  const dn = String(r?.display_name ?? "").trim();
+                  senderLabel = h ? `@${h}` : dn || senderLabel;
+                }
+              }
+
+              if (!recipientOwnerId) return;
+              if (senderOwnerId && senderOwnerId === recipientOwnerId) return;
+
+              const title = `${senderLabel} liked your post`;
+              const body = postText ? (postText.length > 140 ? postText.slice(0, 137) + "…" : postText) : undefined;
+
+              // If the liked post is a reply, compute the thread root (best-effort)
+              // so clients can open the first-line parent post and highlight the reply.
+              let rootPostId = postId;
+              if (parentPostId) {
+                rootPostId = parentPostId;
+                try {
+                  let cur = rootPostId;
+                  const seen = new Set<string>();
+                  for (let i = 0; i < 25; i++) {
+                    if (!cur || seen.has(cur)) break;
+                    seen.add(cur);
+                    const r = await client2.query<{ parent_post_id: string | null }>(
+                      "SELECT parent_post_id FROM posts WHERE id = $1 LIMIT 1",
+                      [cur],
+                    );
+                    const ppid = String(r.rows?.[0]?.parent_post_id ?? "").trim();
+                    if (!ppid) break;
+                    cur = ppid;
+                    rootPostId = cur;
+                  }
+                } catch {
+                  // best-effort
+                }
+              }
+
+              try {
+                const repo = new UserRepository();
+                const tokenRows = await repo.listExpoPushTokensForUserIds([recipientOwnerId]);
+                const expoMessages = tokenRows
+                  .map((r) => String((r as any)?.expo_push_token ?? (r as any)?.expoPushToken ?? "").trim())
+                  .filter(Boolean)
+                  .map((to) => ({
+                    to,
+                    title,
+                    body,
+                    data: {
+                      scenarioId: sid,
+                      postId,
+                      parentPostId: parentPostId || undefined,
+                      rootPostId: rootPostId || undefined,
+                      kind: "like",
+                      profileId: recipientProfileId,
+                      actorProfileId: profileId,
+                    },
+                  }));
+
+                await sendExpoPush(expoMessages);
+              } catch (e: any) {
+                console.warn("Expo push send failed", e?.message ?? e);
+              }
+            } finally {
+              client2.release();
+            }
+          } catch (e) {
+            console.warn("Error while attempting like push send:", (e as Error)?.message ?? e);
+          }
+        })();
+      }
+    }
 
     return { liked: ensureLiked ? true : false, like: ensureLiked ? (had ? null : like) : null, post: mapPostRowToApi(p0) };
   } catch (e: unknown) {

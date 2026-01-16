@@ -99,6 +99,7 @@ export function PostQuoted({ sid, isDetail, quotedPostId, colors }: Props) {
             <PostHeader
               variant="feed"
               colors={colors as any}
+              scenarioId={sid}
               profile={profile}
               createdAtIso={post.createdAt}
               onOpenProfile={() => {}}

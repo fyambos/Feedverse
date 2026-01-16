@@ -191,7 +191,7 @@ type AppDataApi = {
   getScenarioById: (id: string) => Scenario | null;
   listScenarios: () => Scenario[];
   syncScenarios: (opts?: { force?: boolean }) => Promise<void>;
-  upsertScenario: (s: Scenario) => Promise<void>;
+  upsertScenario: (s: Scenario) => Promise<Scenario>;
   joinScenarioByInviteCode: (
     inviteCode: string,
     userId: string
@@ -765,10 +765,50 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
               const messageId = String(data?.messageId ?? data?.message_id ?? "").trim();
               const kind = String(data?.kind ?? "").trim();
               const postId = String(data?.postId ?? data?.post_id ?? "").trim();
+              const parentPostId = String(data?.parentPostId ?? data?.parent_post_id ?? "").trim();
+              const rootPostId = String(data?.rootPostId ?? data?.root_post_id ?? "").trim();
               const targetProfileId = String(data?.profileId ?? data?.profile_id ?? "").trim();
 
-              // ---- Mention deep-link (open post) ----
+              // ---- Post deep-link (open post) ----
               if (sid && postId) {
+                let focusPostId = "";
+                let destPostId = postId;
+
+                // If the notification is for a reply (or the target post itself is a reply),
+                // open the thread root and highlight the reply.
+                try {
+                  const postsMap = (state.db as any)?.posts ?? {};
+
+                  const local = postsMap?.[postId];
+                  const localParent = String(local?.parentPostId ?? local?.parent_post_id ?? "").trim();
+                  const payloadParent = String(parentPostId ?? "").trim();
+                  const isReplyLike = kind === "reply" || Boolean(localParent) || Boolean(payloadParent);
+
+                  if (isReplyLike) {
+                    focusPostId = postId;
+                    destPostId = rootPostId || payloadParent || localParent || postId;
+
+                    // Best-effort: walk up parent chain from the actual post id.
+                    let curId = String(postId);
+                    const seen = new Set<string>();
+                    for (let i = 0; i < 50; i++) {
+                      if (!curId || seen.has(curId)) break;
+                      seen.add(curId);
+                      const cur = postsMap?.[curId];
+                      if (!cur) break;
+                      const ppid = String(cur?.parentPostId ?? cur?.parent_post_id ?? "").trim();
+                      if (!ppid) {
+                        destPostId = curId;
+                        break;
+                      }
+                      curId = ppid;
+                    }
+                  }
+                } catch {
+                  // best-effort
+                  if (kind === "reply") focusPostId = postId;
+                  if (kind === "reply") destPostId = rootPostId || parentPostId || postId;
+                }
                 // Switch selection first (even if we skip navigation).
                 if (targetProfileId) {
                   try {
@@ -782,17 +822,22 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                   } catch {}
                 }
 
-                // If we're already at the destination post, do nothing.
+                // If we're already at the destination post, do nothing (but still trigger focus).
                 try {
                   const curPath = String(pathnameRef.current ?? "");
                   const curSid = scenarioIdFromPathname(curPath);
                   const curPost = postIdFromPathname(curPath);
-                  if (curSid && String(curSid) === String(sid) && curPost && String(curPost) === String(postId)) return;
+                  if (curSid && String(curSid) === String(sid) && curPost && String(curPost) === String(destPostId)) {
+                    if (focusPostId) {
+                      try { router.setParams({ focusPostId } as any); } catch {}
+                    }
+                    return;
+                  }
                 } catch {}
 
                 // Dedupe: mention pushes can be tapped multiple times or callbacks can double-fire.
                 try {
-                  const key = `${sid}|post|${postId}|${targetProfileId}`;
+                  const key = `${sid}|post|${destPostId}|${focusPostId}|${targetProfileId}`;
                   const nowMs = Date.now();
                   const last = notificationNavRef.current;
                   if (last && last.key === key && nowMs - last.atMs < 2500) return;
@@ -810,25 +855,51 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                     const currentPath = String(pathnameRef.current ?? "");
                     const fromScenarioList = currentPath === "/" || currentPath === "";
 
-                    const sidEnc = encodeURIComponent(String(sid));
-                    const postEnc = encodeURIComponent(String(postId));
+                    const curSid = scenarioIdFromPathname(currentPath);
+                    const sameScenario = Boolean(curSid && String(curSid) === String(sid));
+                    const inHome = String(currentPath).split("/").includes("home");
+                    const curPost = postIdFromPathname(currentPath);
 
-                    // Step 1: establish correct scenario tab context.
-                    const step1 = { pathname: `/(scenario)/${sidEnc}/home`, params: {} } as any;
-                    // Step 2: open post screen in that scenario.
-                    const step2 = { pathname: `/(scenario)/${sidEnc}/home/post/${postEnc}`, params: {} } as any;
+                    const sidEnc = encodeURIComponent(String(sid));
+                    const postEnc = encodeURIComponent(String(destPostId));
+
+                    const stepHome = { pathname: `/(scenario)/${sidEnc}/home`, params: {} } as any;
+                    const stepPost = {
+                      pathname: `/(scenario)/${sidEnc}/home/post/${postEnc}`,
+                      params: focusPostId ? { focusPostId } : {},
+                    } as any;
+
+                    // Smart routing:
+                    // - Same scenario:
+                    //   - already in home tab:
+                    //     - from a different post thread => replace
+                    //     - from the home feed list => push
+                    //   - from another tab => push directly to the post (keeps back to current tab)
+                    // - Different scenario:
+                    //   - scenario list => push home then push post (keeps back)
+                    //   - inside another scenario => replace home then push post
+                    if (sameScenario) {
+                      if (inHome) {
+                        if (curPost) {
+                          try { router.replace(stepPost); } catch {}
+                        } else {
+                          try { router.push(stepPost); } catch {}
+                        }
+                      } else {
+                        try { router.push(stepPost); } catch {}
+                      }
+                      return;
+                    }
 
                     if (fromScenarioList) {
-                      // Preserve back: list -> home -> post
-                      router.push(step1);
+                      router.push(stepHome);
                       setTimeout(() => {
-                        try { router.push(step2); } catch {}
+                        try { router.push(stepPost); } catch {}
                       }, 0);
                     } else {
-                      // Switch scenarios without stacking old scenario.
-                      router.replace(step1);
+                      router.replace(stepHome);
                       setTimeout(() => {
-                        try { router.push(step2); } catch {}
+                        try { router.push(stepPost); } catch {}
                       }, 0);
                     }
                   } catch {}
@@ -898,29 +969,56 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                       const currentPath = String(pathnameRef.current ?? "");
                       const fromScenarioList = currentPath === "/" || currentPath === "";
 
+                      const curSid = scenarioIdFromPathname(currentPath);
+                      const curConv = conversationIdFromPathname(currentPath);
+                      const inMessages = String(currentPath).split("/").includes("messages");
+                      const sameScenario = Boolean(curSid && String(curSid) === String(sid));
+
                       const sidEnc = encodeURIComponent(String(sid));
+                      const stepHome = { pathname: `/(scenario)/${sidEnc}/home`, params: {} } as any;
 
-                      // Step 1: ensure the Tab navigator is scoped to the correct scenario.
-                      // When switching scenarios from inside another scenario, navigating
-                      // directly to messages can leave the active Tabs instance on the old sid.
-                      const step1 = { pathname: `/(scenario)/${sidEnc}/home`, params: {} } as any;
+                      const stepMessagesOpen = {
+                        pathname: `/(scenario)/${sidEnc}/messages`,
+                        params: { openConversationId: conv },
+                      } as any;
 
-                      // Step 2: open messages in that scenario (which will then deep-link
-                      // into the conversation via openConversationId).
-                      // Do NOT pass scenarioId as a param when it's already in the path.
-                      const step2 = { pathname: `/(scenario)/${sidEnc}/messages`, params: { openConversationId: conv } } as any;
+                      const stepConversation = {
+                        pathname: "/(scenario)/[scenarioId]/(tabs)/messages/[conversationId]",
+                        params: { scenarioId: sid, conversationId: conv },
+                      } as any;
+
+                      // Smart routing:
+                      // - If already in the same scenario + inside Messages, go straight to the conversation.
+                      //   - from list => push (so back goes to list)
+                      //   - from another thread => replace (so back goes to list, not the previous thread)
+                      // - If same scenario but different tab (home feed / search / notifications), go to messages
+                      //   with openConversationId so the inbox can sync before opening.
+                      // - If different scenario (or coming from scenario list), do the full route: home -> messages.
+                      if (sameScenario) {
+                        if (inMessages) {
+                          if (curConv) {
+                            try { router.replace(stepConversation); } catch {}
+                          } else {
+                            try { router.push(stepConversation); } catch {}
+                          }
+                        } else {
+                          // Preserve back to whatever screen/tab the user was on.
+                          try { router.push(stepMessagesOpen); } catch {}
+                        }
+                        return;
+                      }
 
                       if (fromScenarioList) {
                         // Preserve back navigation to scenario list.
-                        router.push(step1);
+                        router.push(stepHome);
                         setTimeout(() => {
-                          try { router.replace(step2); } catch {}
+                          try { router.replace(stepMessagesOpen); } catch {}
                         }, 0);
                       } else {
                         // Replace to avoid stacking scenarios.
-                        router.replace(step1);
+                        router.replace(stepHome);
                         setTimeout(() => {
-                          try { router.replace(step2); } catch {}
+                          try { router.replace(stepMessagesOpen); } catch {}
                         }, 0);
                       }
                     } catch {}
@@ -3851,7 +3949,8 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         const baseUrl = String(process.env.EXPO_PUBLIC_API_BASE_URL ?? "").trim();
         if (token && baseUrl) {
           const sid = String((s as any)?.id ?? "").trim();
-          const isEdit = Boolean(sid && (db as any)?.scenarios?.[sid]);
+          const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sid);
+          const isEdit = Boolean(sid && isUuid);
 
           const payload = {
             name: String((s as any)?.name ?? "").trim(),
@@ -3890,10 +3989,11 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
           if (!String((normalized as any)?.id ?? "").trim()) throw new Error("Invalid server response");
 
           await upsertScenarioLocal(normalized);
-          return;
+          return normalized;
         }
 
         await upsertScenarioLocal(s);
+        return s;
       },
 
       joinScenarioByInviteCode: async (inviteCode, userId) => {
@@ -6208,8 +6308,54 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
 
 export function useAppData() {
   const v = React.useContext(Ctx);
-  if (!v) throw new Error("useAppData must be used within AppDataProvider");
-  return v;
+  if (v) return v;
+
+  // Defensive fallback: in rare cold-start / notification timing cases, a screen can
+  // render before the provider tree is fully mounted. Avoid a hard crash and let the
+  // app recover once the provider mounts.
+  try {
+    if (!(globalThis as any).__feedverse_warned_missing_appdata) {
+      (globalThis as any).__feedverse_warned_missing_appdata = true;
+      // eslint-disable-next-line no-console
+      console.warn("useAppData called without AppDataProvider; returning fallback shim");
+    }
+  } catch {}
+
+  const fallback: any = (globalThis as any).__feedverse_appdata_fallback ?? null;
+  if (fallback) return fallback;
+
+  const base = { isReady: false, db: null } as any;
+  const proxy = new Proxy(base, {
+    get(target, prop) {
+      if (prop in target) return (target as any)[prop as any];
+      const key = String(prop);
+
+      if (key.startsWith("list")) return () => [];
+      if (key.startsWith("get")) return () => null;
+      if (key.startsWith("has")) return () => false;
+      if (key.startsWith("is")) return () => false;
+
+      if (
+        key.startsWith("sync") ||
+        key.startsWith("send") ||
+        key.startsWith("create") ||
+        key.startsWith("delete") ||
+        key.startsWith("update") ||
+        key.startsWith("mark") ||
+        key.startsWith("set")
+      ) {
+        return async () => {};
+      }
+
+      return undefined;
+    },
+  });
+
+  try {
+    (globalThis as any).__feedverse_appdata_fallback = proxy;
+  } catch {}
+
+  return proxy;
 }
 
 function likeKeyV1(profileId: string, postId: string) {

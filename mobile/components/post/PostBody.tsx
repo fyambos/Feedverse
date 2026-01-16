@@ -5,6 +5,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 
 import { ThemedText } from "@/components/themed-text";
+import { DEFAULT_TINT_COLOR } from "@/constants/theme";
 import { MediaGrid } from "@/components/media/MediaGrid";
 import { Lightbox } from "@/components/media/LightBox";
 import { useAppData } from "@/context/appData";
@@ -96,7 +97,7 @@ export function PostBody({
 
   const singleUri = mediaUrls[0];
 
-  const linkColor = colors.tint ?? "#1d9bf0";
+  const linkColor = colors.tint ?? DEFAULT_TINT_COLOR;
 
   const onPressMention = (raw: string) => {
     const handle = String(raw ?? "").trim().replace(/^@+/, "");

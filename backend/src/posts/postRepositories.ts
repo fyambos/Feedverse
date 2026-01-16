@@ -423,9 +423,10 @@ export async function createPostForScenario(args: {
     const row = res.rows[0];
     if (!row) return { error: "Insert failed", status: 500 };
 
+    const postId = String(row.id ?? "").trim();
+
     // Mention notifications (best-effort) for new posts/replies.
     if (isNewInsert && text.includes("@")) {
-      const postId = String(row.id ?? "").trim();
       const mentionedHandles = extractMentionHandles(text);
 
       if (postId && mentionedHandles.length > 0) {
@@ -488,6 +489,32 @@ export async function createPostForScenario(args: {
               const title = `${senderLabel} mentioned you`;
               const body = String(text ?? "").trim();
 
+              // If the mentioned post is a reply, include parent/root info so clients
+              // can open the thread root and highlight this post.
+              const parentPid = String(parentPostId ?? "").trim();
+              let rootPostId = postId;
+              if (parentPid) {
+                rootPostId = parentPid;
+                try {
+                  let cur = rootPostId;
+                  const seen = new Set<string>();
+                  for (let i = 0; i < 25; i++) {
+                    if (!cur || seen.has(cur)) break;
+                    seen.add(cur);
+                    const r = await client2.query<{ parent_post_id: string | null }>(
+                      "SELECT parent_post_id FROM posts WHERE id = $1 LIMIT 1",
+                      [cur],
+                    );
+                    const ppid = String(r.rows?.[0]?.parent_post_id ?? "").trim();
+                    if (!ppid) break;
+                    cur = ppid;
+                    rootPostId = cur;
+                  }
+                } catch {
+                  // best-effort
+                }
+              }
+
               // Broadcast a realtime mention event so clients can display in-app/native notifications.
               // We intentionally include profile ids (not user ids) so clients can decide if they own
               // the mentioned profile(s) without leaking extra user identifiers.
@@ -524,20 +551,40 @@ export async function createPostForScenario(args: {
               try {
                 const repo = new UserRepository();
                 const tokenRows = await repo.listExpoPushTokensForUserIds(Array.from(ownerIds));
+
+                // Pick a stable recipient profileId for each owner so mobile can
+                // switch selection correctly when multiple mentioned profiles exist.
+                const ownerToProfileId = new Map<string, string>();
+                for (const r of resProfiles.rows) {
+                  const owner = String((r as any)?.owner_user_id ?? "").trim();
+                  const pid = String((r as any)?.id ?? "").trim();
+                  if (!owner || !pid) continue;
+                  if (!ownerIds.has(owner)) continue;
+                  if (senderOwner && owner === senderOwner) continue;
+                  if (!ownerToProfileId.has(owner)) ownerToProfileId.set(owner, pid);
+                }
+
                 const expoMessages = tokenRows
-                  .map((r) => String((r as any)?.expo_push_token ?? (r as any)?.expoPushToken ?? "").trim())
-                  .filter(Boolean)
-                  .map((to) => ({
-                    to,
-                    title,
-                    body: body || undefined,
-                    data: {
-                      scenarioId: sid,
-                      postId,
-                      kind: "mention",
-                      authorProfileId,
-                    },
-                  }));
+                  .map((r) => {
+                    const ownerId = String((r as any)?.user_id ?? "").trim();
+                    const to = String((r as any)?.expo_push_token ?? (r as any)?.expoPushToken ?? "").trim();
+                    const recipientProfileId = String(ownerToProfileId.get(ownerId) ?? "").trim();
+                    return {
+                      to,
+                      title,
+                      body: body || undefined,
+                      data: {
+                        scenarioId: sid,
+                        postId,
+                        parentPostId: parentPid || undefined,
+                        rootPostId: rootPostId || undefined,
+                        kind: "mention",
+                        authorProfileId,
+                        profileId: recipientProfileId || undefined,
+                      },
+                    };
+                  })
+                  .filter((m) => Boolean(m.to));
 
                 await sendExpoPush(expoMessages);
               } catch (e: any) {
@@ -551,6 +598,115 @@ export async function createPostForScenario(args: {
           }
         })();
       }
+    }
+
+    // Reply notifications (best-effort) for new replies.
+    if (isNewInsert && parentPostId && postId) {
+      (async () => {
+        try {
+          const client2 = await pool.connect();
+          try {
+            // Find parent post author profile.
+            const parentRes = await client2.query<{ author_profile_id: string | null }>(
+              "SELECT author_profile_id FROM posts WHERE id = $1 LIMIT 1",
+              [parentPostId],
+            );
+            const parentAuthorProfileId = String(parentRes.rows?.[0]?.author_profile_id ?? "").trim();
+            if (!parentAuthorProfileId) return;
+
+            // Resolve recipient owner and sender label/owner (skip self-notifies).
+            const profRes = await client2.query<{
+              id: string;
+              owner_user_id: string | null;
+              handle: string | null;
+              display_name: string | null;
+            }>(
+              "SELECT id, owner_user_id, handle, display_name FROM profiles WHERE id = ANY($1::uuid[])",
+              [[parentAuthorProfileId, authorProfileId]],
+            );
+
+            let recipientOwnerId = "";
+            let senderOwnerId = "";
+            let senderLabel = "Someone";
+
+            for (const r of profRes.rows) {
+              const pid = String(r?.id ?? "").trim();
+              const owner = String(r?.owner_user_id ?? "").trim();
+
+              if (pid === parentAuthorProfileId) {
+                recipientOwnerId = owner;
+              }
+              if (pid === authorProfileId) {
+                senderOwnerId = owner;
+                const h = String(r?.handle ?? "").trim();
+                const dn = String(r?.display_name ?? "").trim();
+                senderLabel = h ? `@${h}` : dn || senderLabel;
+              }
+            }
+
+            if (!recipientOwnerId) return;
+            if (senderOwnerId && senderOwnerId === recipientOwnerId) return;
+
+            const title = `${senderLabel} replied to your post`;
+            const bodyRaw = String(text ?? "").trim();
+            const body = bodyRaw ? (bodyRaw.length > 140 ? bodyRaw.slice(0, 137) + "…" : bodyRaw) : undefined;
+
+            // Compute the thread root (best-effort) so clients can open the first-line parent post.
+            let rootPostId = String(parentPostId ?? "").trim();
+            try {
+              let cur = rootPostId;
+              const seen = new Set<string>();
+              for (let i = 0; i < 25; i++) {
+                if (!cur || seen.has(cur)) break;
+                seen.add(cur);
+
+                const r = await client2.query<{ parent_post_id: string | null }>(
+                  "SELECT parent_post_id FROM posts WHERE id = $1 LIMIT 1",
+                  [cur],
+                );
+                const ppid = String(r.rows?.[0]?.parent_post_id ?? "").trim();
+                if (!ppid) {
+                  rootPostId = cur;
+                  break;
+                }
+                cur = ppid;
+              }
+            } catch {
+              // ignore; fall back to parentPostId
+            }
+
+            try {
+              const repo = new UserRepository();
+              const tokenRows = await repo.listExpoPushTokensForUserIds([recipientOwnerId]);
+              const expoMessages = tokenRows
+                .map((r) => String((r as any)?.expo_push_token ?? (r as any)?.expoPushToken ?? "").trim())
+                .filter(Boolean)
+                .map((to) => ({
+                  to,
+                  title,
+                  body,
+                  data: {
+                    scenarioId: sid,
+                    postId,
+                    parentPostId,
+                    rootPostId,
+                    kind: "reply",
+                    authorProfileId,
+                    profileId: parentAuthorProfileId,
+                  },
+                }));
+
+              await sendExpoPush(expoMessages);
+            } catch (e: any) {
+              console.warn("Expo push send failed", e?.message ?? e);
+            }
+          } finally {
+            client2.release();
+          }
+        } catch (e) {
+          console.warn("Error while attempting reply push send:", (e as Error)?.message ?? e);
+        }
+      })();
     }
 
     return { post: mapPostRowToApi(row) };

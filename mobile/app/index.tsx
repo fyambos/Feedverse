@@ -892,7 +892,26 @@ export default function ScenarioListScreen() {
                   pressed && { backgroundColor: colors.pressed },
                 ]}
               >
-                <Image source={{ uri: item.cover }} style={styles.cover} resizeMode="cover" />
+                {String((item as any)?.cover ?? "").trim() ? (
+                  <Image
+                    source={{ uri: String((item as any)?.cover ?? "").trim() }}
+                    style={styles.cover}
+                    resizeMode="cover"
+                  />
+                ) : (
+                  <View
+                    style={[
+                      styles.cover,
+                      {
+                        backgroundColor: colors.border,
+                        alignItems: "center",
+                        justifyContent: "center",
+                      },
+                    ]}
+                  >
+                    <Ionicons name="image-outline" size={18} color={colors.textSecondary} />
+                  </View>
+                )}
 
                 <View style={styles.cardContent}>
                   <View style={styles.titleRow}>

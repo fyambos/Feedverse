@@ -2,11 +2,13 @@ import React from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import Fontisto from "@expo/vector-icons/Fontisto";
+import { router } from "expo-router";
 
 import { Avatar } from "@/components/ui/Avatar";
 import { ThemedText } from "@/components/themed-text";
 import { formatRelativeTime } from "@/lib/format";
 import type { Profile } from "@/data/db/schema";
+import { useAppData } from "@/context/appData";
 
 type ColorsLike = {
   textSecondary: string;
@@ -18,6 +20,8 @@ type ColorsLike = {
 type Props = {
   variant: "feed" | "detail" | "reply";
   colors: ColorsLike;
+
+  scenarioId?: string;
 
   profile: Profile;
   createdAtIso: string;
@@ -46,6 +50,7 @@ function clipText(input: unknown, maxChars: number) {
 export function PostHeader({
   variant,
   colors,
+  scenarioId,
   profile,
   createdAtIso,
   refreshTick,
@@ -57,6 +62,7 @@ export function PostHeader({
   isInteractive = true,
   showTimestamps = true,
 }: Props) {
+  const app = useAppData() as any;
   const isDetail = variant === "detail";
   const showRelative = !isDetail;
 
@@ -151,7 +157,33 @@ export function PostHeader({
         {!!isReply && !!replyingToHandle && (
           <View style={styles.replyingInline}>
             <ThemedText style={[styles.replyingText, { color: colors.textSecondary }]}>
-              replying to <ThemedText type="link">@{replyingToHandle}</ThemedText>
+              Replying to{" "}
+              <ThemedText
+                type="link"
+                onPress={() => {
+                  if (!isInteractive) return;
+                  const sid = String(scenarioId ?? "").trim();
+                  const handle = String(replyingToHandle ?? "").trim().replace(/^@+/, "");
+                  if (!sid || !handle) return;
+
+                  const p = app?.getProfileByHandle?.(sid, handle) ?? null;
+                  if (p?.id) {
+                    router.push({
+                      pathname: "/(scenario)/[scenarioId]/(tabs)/home/profile/[profileId]",
+                      params: { scenarioId: sid, profileId: String(p.id) },
+                    } as any);
+                    return;
+                  }
+
+                  router.push({
+                    pathname: "/(scenario)/[scenarioId]/(tabs)/home/user-not-found",
+                    params: { scenarioId: sid, handle },
+                  } as any);
+                }}
+                accessibilityRole={isInteractive ? "link" : undefined}
+              >
+                @{replyingToHandle}
+              </ThemedText>
             </ThemedText>
           </View>
         )}
@@ -203,7 +235,7 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   replyingInline: { marginTop: 0 },
-  replyingText: { fontSize: 13, lineHeight: 17 },
+  replyingText: { fontSize: 16, lineHeight: 17, paddingBottom: 6, paddingTop: 2},
 
   // detail
   detailHeaderRow: {

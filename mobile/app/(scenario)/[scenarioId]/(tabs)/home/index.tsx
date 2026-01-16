@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { FlatList, StyleSheet, View, Pressable, ActivityIndicator, Image, RefreshControl } from "react-native";
+import { FlatList, StyleSheet, View, Pressable, ActivityIndicator, Image, RefreshControl, Animated } from "react-native";
 import { router, useLocalSearchParams, usePathname } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -202,6 +202,27 @@ export default function HomeScreen() {
   const listRef = useRef<FlatList<any> | null>(null);
   const deletePostRef = useRef(false);
 
+  const avatarScale = useRef(new Animated.Value(1)).current;
+  const logoScale = useRef(new Animated.Value(1)).current;
+
+  const pressIn = useCallback((v: Animated.Value) => {
+    Animated.spring(v, {
+      toValue: 0.92,
+      speed: 30,
+      bounciness: 0,
+      useNativeDriver: true,
+    }).start();
+  }, []);
+
+  const pressOut = useCallback((v: Animated.Value) => {
+    Animated.spring(v, {
+      toValue: 1,
+      speed: 20,
+      bounciness: 8,
+      useNativeDriver: true,
+    }).start();
+  }, []);
+
   const loadFirstPage = useCallback(() => {
     if (!isReady) return;
 
@@ -348,12 +369,30 @@ export default function HomeScreen() {
         <View style={[styles.topbar, { borderBottomColor: colors.border }]}>
           <Pressable
             onPress={openScenarioMenu}
+            onLongPress={() => {
+              const pid = selectedProfile?.id ? String(selectedProfile.id) : null;
+              if (!pid) {
+                router.push({
+                  pathname: "/modal/select-profile",
+                  params: { scenarioId: sid },
+                } as any);
+                return;
+              }
+              router.push({
+                pathname: "/(scenario)/[scenarioId]/(tabs)/home/profile/[profileId]",
+                params: { scenarioId: sid, profileId: pid },
+              } as any);
+            }}
             hitSlop={12}
             accessibilityRole="button"
             accessibilityLabel="Scenario menu"
+            onPressIn={() => pressIn(avatarScale)}
+            onPressOut={() => pressOut(avatarScale)}
             style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}
           >
-            <Avatar uri={selectedProfile?.avatarUrl ?? null} size={30} fallbackColor={colors.border} />
+            <Animated.View style={{ transform: [{ scale: avatarScale }] }}>
+              <Avatar uri={selectedProfile?.avatarUrl ?? null} size={30} fallbackColor={colors.border} />
+            </Animated.View>
           </Pressable>
 
           <View style={{ flex: 1, alignItems: "center" }}>
@@ -364,30 +403,20 @@ export default function HomeScreen() {
                   params: { scenarioId: sid },
                 } as any)
               }
-              onLongPress={() => {
-                const pid = selectedProfile?.id ? String(selectedProfile.id) : null;
-                if (!pid) {
-                  router.push({
-                    pathname: "/modal/select-profile",
-                    params: { scenarioId: sid },
-                  } as any);
-                  return;
-                }
-                router.push({
-                  pathname: "/(scenario)/[scenarioId]/(tabs)/home/profile/[profileId]",
-                  params: { scenarioId: sid, profileId: pid },
-                } as any);
-              }}
               hitSlop={12}
               accessibilityRole="button"
               accessibilityLabel="Select profile"
+              onPressIn={() => pressIn(logoScale)}
+              onPressOut={() => pressOut(logoScale)}
               style={({ pressed }) => [{ opacity: pressed ? 0.75 : 1 }]}
             >
-              <Image
-                source={require("@/assets/images/FeedverseIcon.png")}
-                style={{ width: 32, height: 32 }}
-                resizeMode="contain"
-              />
+              <Animated.View style={{ transform: [{ scale: logoScale }] }}>
+                <Image
+                  source={require("@/assets/images/FeedverseIcon.png")}
+                  style={{ width: 32, height: 32 }}
+                  resizeMode="contain"
+                />
+              </Animated.View>
             </Pressable>
           </View>
 
@@ -395,7 +424,18 @@ export default function HomeScreen() {
         </View>
       </SafeAreaView>
     );
-  }, [colors.background, colors.border, openScenarioMenu, selectedProfile?.avatarUrl, selectedProfile?.id, sid]);
+  }, [
+    avatarScale,
+    colors.background,
+    colors.border,
+    logoScale,
+    openScenarioMenu,
+    pressIn,
+    pressOut,
+    selectedProfile?.avatarUrl,
+    selectedProfile?.id,
+    sid,
+  ]);
 
   const data = useMemo(() => items, [items]);
 
