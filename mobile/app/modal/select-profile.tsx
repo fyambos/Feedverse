@@ -242,7 +242,8 @@ const allProfiles = React.useMemo<Profile[]>(() => {
   // ---- RENDERING ----
 
   const Row = ({ item }: { item: Profile }) => {
-    const selectEnabled = mode !== "all";
+    const isAllMode = mode === "all";
+    const selectEnabled = !isAllMode;
     const active = String(item.id) === String(current);
 
     const id = String(item.id);
@@ -262,8 +263,33 @@ const allProfiles = React.useMemo<Profile[]>(() => {
 
     return (
       <Pressable
-        disabled={!selectEnabled}
         onPress={async () => {
+          if (isAllMode) {
+            // In "All profiles" mode, rows act as links to the profile page.
+            const profileId = String(item.id);
+            if (!sid || !profileId) return;
+
+            // Close this modal first, then navigate.
+            try {
+              if (router.canGoBack?.()) router.back();
+            } catch {
+              // ignore
+            }
+
+            setTimeout(() => {
+              try {
+                router.push({
+                  pathname: "/(scenario)/[scenarioId]/(tabs)/home/profile/[profileId]",
+                  params: { scenarioId: sid, profileId },
+                } as any);
+              } catch {
+                // ignore
+              }
+            }, 60);
+
+            return;
+          }
+
           if (!selectEnabled) return;
           if (showCheckbox) {
             toggleOne(id);
@@ -291,8 +317,7 @@ const allProfiles = React.useMemo<Profile[]>(() => {
         style={({ pressed }) => [
           styles.row,
           {
-            backgroundColor: pressed && selectEnabled ? colors.pressed : colors.background,
-            opacity: selectEnabled ? 1 : 0.88,
+            backgroundColor: pressed ? colors.pressed : colors.background,
           },
         ]}
       >

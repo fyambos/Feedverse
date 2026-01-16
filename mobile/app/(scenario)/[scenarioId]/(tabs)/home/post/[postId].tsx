@@ -402,7 +402,7 @@ export default function PostScreen() {
                       item={item as any}
                       variant={variant}
                       replyingTo={parentProfile?.handle}
-                      showActions={false} // ✅ cleaner screenshot (no buttons)
+                      showActions
                       showThreadLine={showThreadLine}
                       isLiked={liked}
                       onLike={() => {}}

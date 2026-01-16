@@ -12,6 +12,7 @@ import {
   Modal,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   TextInput,
   View,
@@ -242,6 +243,7 @@ export default function ConversationThreadScreen() {
   const [imageUris, setImageUris] = useState<string[]>([]);
   const [sendAsId, setSendAsId] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [ownedOpen, setOwnedOpen] = useState(true);
   const [publicOpen, setPublicOpen] = useState(false);
 
   const sendingRef = useRef(false);
@@ -920,6 +922,9 @@ export default function ConversationThreadScreen() {
 
   const openPicker = useCallback(() => {
     if (isOneToOne) return; // 1:1 uses toggle
+    // Defaults each time the modal opens.
+    setOwnedOpen(true);
+    setPublicOpen(false);
     setPickerOpen(true);
   }, [isOneToOne]);
 
@@ -1575,74 +1580,104 @@ export default function ConversationThreadScreen() {
               </Pressable>
             </View>
 
-            <ThemedText style={[styles.sectionTitle, { color: colors.textSecondary }]}>your profiles</ThemedText>
-            {candidates.owned.map((p) => {
-              const active = String((p as any).id) === String(sendAsId ?? "");
-              return (
-                <Pressable
-                  key={String((p as any).id)}
-                  onPress={() => onPickSendAs(String((p as any).id))}
-                  style={({ pressed }) => [
-                    styles.pickRow,
-                    { backgroundColor: pressed ? colors.pressed : "transparent", borderColor: colors.border },
-                  ]}
-                >
-                  <Avatar uri={String((p as any).avatarUrl ?? "") || null} size={30} fallbackColor={colors.border} />
-                  <View style={{ flex: 1, minWidth: 0 }}>
-                    <ThemedText style={{ color: colors.text, fontWeight: "800" }} numberOfLines={1}>
-                      {String((p as any).displayName ?? "")}
-                    </ThemedText>
-                    <ThemedText style={{ color: colors.textSecondary, fontSize: 12 }} numberOfLines={1}>
-                      @{String((p as any).handle ?? "")}
-                    </ThemedText>
-                  </View>
-                  {active ? <Ionicons name="checkmark" size={18} color={colors.tint} /> : null}
-                </Pressable>
-              );
-            })}
-
-            <Pressable
-              onPress={() => setPublicOpen((v) => !v)}
-              hitSlop={10}
-              style={({ pressed }) => [styles.sectionHeaderRow, pressed && { opacity: 0.8 }]}
+            <ScrollView
+              style={styles.pickerBody}
+              contentContainerStyle={styles.pickerBodyContent}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
             >
-              <ThemedText style={[styles.sectionTitle, { color: colors.textSecondary, marginTop: 12 }]}>
-                public profiles
-              </ThemedText>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                <ThemedText style={{ color: colors.textSecondary, fontWeight: "900", fontSize: 12 }}>
-                  {candidates.public.length}
-                </ThemedText>
-                <Ionicons name={publicOpen ? "chevron-up" : "chevron-down"} size={16} color={colors.textSecondary} />
-              </View>
-            </Pressable>
+              <Pressable
+                onPress={() => setOwnedOpen((v) => !v)}
+                hitSlop={10}
+                style={({ pressed }) => [styles.sectionHeaderRow, pressed && { opacity: 0.8 }]}
+              >
+                <ThemedText style={[styles.sectionTitle, { color: colors.textSecondary }]}>your profiles</ThemedText>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  <ThemedText style={{ color: colors.textSecondary, fontWeight: "900", fontSize: 12 }}>
+                    {candidates.owned.length}
+                  </ThemedText>
+                  <Ionicons name={ownedOpen ? "chevron-up" : "chevron-down"} size={16} color={colors.textSecondary} />
+                </View>
+              </Pressable>
 
-            {publicOpen
-              ? candidates.public.map((p) => {
-                  const active = String((p as any).id) === String(sendAsId ?? "");
-                  return (
-                    <Pressable
-                      key={String((p as any).id)}
-                      onPress={() => onPickSendAs(String((p as any).id))}
-                      style={({ pressed }) => [
-                        styles.pickRow,
-                        { backgroundColor: pressed ? colors.pressed : "transparent", borderColor: colors.border },
-                      ]}
-                    >
-                      <Avatar uri={String((p as any).avatarUrl ?? "") || null} size={30} fallbackColor={colors.border} />
-                      <View style={{ flex: 1, minWidth: 0 }}>
-                        <ThemedText style={{ color: colors.text, fontWeight: "800" }} numberOfLines={1}>
-                          {String((p as any).displayName ?? "")}
-                        </ThemedText>
-                        <ThemedText style={{ color: colors.textSecondary, fontSize: 12 }} numberOfLines={1}>
-                          @{String((p as any).handle ?? "")}
-                        </ThemedText>
-                      </View>
-                      {active ? <Ionicons name="checkmark" size={18} color={colors.tint} /> : null}
-                    </Pressable>
-                  );
-                })
-              : null}
+              {ownedOpen
+                ? candidates.owned.map((p) => {
+                    const active = String((p as any).id) === String(sendAsId ?? "");
+                    return (
+                      <Pressable
+                        key={String((p as any).id)}
+                        onPress={() => onPickSendAs(String((p as any).id))}
+                        style={({ pressed }) => [
+                          styles.pickRow,
+                          { backgroundColor: pressed ? colors.pressed : "transparent", borderColor: colors.border },
+                        ]}
+                      >
+                        <Avatar
+                          uri={String((p as any).avatarUrl ?? "") || null}
+                          size={30}
+                          fallbackColor={colors.border}
+                        />
+                        <View style={{ flex: 1, minWidth: 0 }}>
+                          <ThemedText style={{ color: colors.text, fontWeight: "800" }} numberOfLines={1}>
+                            {String((p as any).displayName ?? "")}
+                          </ThemedText>
+                          <ThemedText style={{ color: colors.textSecondary, fontSize: 12 }} numberOfLines={1}>
+                            @{String((p as any).handle ?? "")}
+                          </ThemedText>
+                        </View>
+                        {active ? <Ionicons name="checkmark" size={18} color={colors.tint} /> : null}
+                      </Pressable>
+                    );
+                  })
+                : null}
+
+              <Pressable
+                onPress={() => setPublicOpen((v) => !v)}
+                hitSlop={10}
+                style={({ pressed }) => [styles.sectionHeaderRow, pressed && { opacity: 0.8 }]}
+              >
+                <ThemedText style={[styles.sectionTitle, { color: colors.textSecondary, marginTop: 12 }]}>
+                  shared profiles
+                </ThemedText>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  <ThemedText style={{ color: colors.textSecondary, fontWeight: "900", fontSize: 12 }}>
+                    {candidates.public.length}
+                  </ThemedText>
+                  <Ionicons name={publicOpen ? "chevron-up" : "chevron-down"} size={16} color={colors.textSecondary} />
+                </View>
+              </Pressable>
+
+              {publicOpen
+                ? candidates.public.map((p) => {
+                    const active = String((p as any).id) === String(sendAsId ?? "");
+                    return (
+                      <Pressable
+                        key={String((p as any).id)}
+                        onPress={() => onPickSendAs(String((p as any).id))}
+                        style={({ pressed }) => [
+                          styles.pickRow,
+                          { backgroundColor: pressed ? colors.pressed : "transparent", borderColor: colors.border },
+                        ]}
+                      >
+                        <Avatar
+                          uri={String((p as any).avatarUrl ?? "") || null}
+                          size={30}
+                          fallbackColor={colors.border}
+                        />
+                        <View style={{ flex: 1, minWidth: 0 }}>
+                          <ThemedText style={{ color: colors.text, fontWeight: "800" }} numberOfLines={1}>
+                            {String((p as any).displayName ?? "")}
+                          </ThemedText>
+                          <ThemedText style={{ color: colors.textSecondary, fontSize: 12 }} numberOfLines={1}>
+                            @{String((p as any).handle ?? "")}
+                          </ThemedText>
+                        </View>
+                        {active ? <Ionicons name="checkmark" size={18} color={colors.tint} /> : null}
+                      </Pressable>
+                    );
+                  })
+                : null}
+            </ScrollView>
           </Pressable>
         </Pressable>
       </Modal>
@@ -1886,11 +1921,15 @@ const styles = StyleSheet.create({
   pickerCard: {
     width: "100%",
     maxWidth: 520,
+    maxHeight: "85%",
     borderRadius: 16,
     borderWidth: StyleSheet.hairlineWidth,
     padding: 14,
+    overflow: "hidden",
   },
   pickerHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  pickerBody: { marginTop: 8 },
+  pickerBodyContent: { paddingBottom: 6 },
   sectionTitle: { marginTop: 12, fontSize: 12, fontWeight: "900", letterSpacing: 2 },
   sectionHeaderRow: {
     flexDirection: "row",
