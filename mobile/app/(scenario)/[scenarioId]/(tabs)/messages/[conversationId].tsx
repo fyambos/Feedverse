@@ -351,6 +351,7 @@ export default function ConversationThreadScreen() {
     // Fast path: use per-conversation id index (avoids scanning all messages).
     if (messageIds && messageIds.length > 0) {
       const out: Message[] = [];
+      const idSet = new Set(messageIds.map(String));
       for (const mid of messageIds) {
         const m = messagesMap[mid];
         if (!m) continue;
@@ -358,6 +359,33 @@ export default function ConversationThreadScreen() {
         if (String((m as any).conversationId) !== cid) continue;
         out.push(m);
       }
+
+      // IMPORTANT: preserve optimistic client_* messages even if a sync temporarily
+      // replaces conversation.messageIds with server-only IDs.
+      const cutoffMs = Date.now() - 10 * 60_000;
+      for (const m of Object.values(messagesMap)) {
+        const id = String((m as any)?.id ?? "").trim();
+        if (!id || idSet.has(id)) continue;
+        if (String((m as any).scenarioId) !== sid) continue;
+        if (String((m as any).conversationId) !== cid) continue;
+
+        const status = String((m as any)?.clientStatus ?? "").trim();
+        const isOptimistic = id.startsWith("client_") || status === "sending" || status === "failed";
+        if (!isOptimistic) continue;
+
+        const ms = Date.parse(String((m as any)?.createdAt ?? ""));
+        if (Number.isFinite(ms) && ms < cutoffMs) continue;
+
+        out.push(m);
+      }
+
+      out.sort((a, b) => {
+        const ca = String((a as any).createdAt ?? "");
+        const cb = String((b as any).createdAt ?? "");
+        if (ca !== cb) return ca.localeCompare(cb);
+        return String((a as any).id ?? "").localeCompare(String((b as any).id ?? ""));
+      });
+
       return out;
     }
 
@@ -1450,7 +1478,7 @@ export default function ConversationThreadScreen() {
               dragListRef.current = r;
             }}
             data={dataForList}
-            keyExtractor={(m) => String((m as any).id)}
+            keyExtractor={(m) => String((m as any)?.clientMessageId ?? (m as any)?.client_message_id ?? (m as any)?.id)}
             contentContainerStyle={{ padding: 14, paddingBottom: 10 }}
             activationDistance={12}
             dragItemOverflow
@@ -1476,7 +1504,7 @@ export default function ConversationThreadScreen() {
               listRef.current = r;
             }}
             data={dataForList}
-            keyExtractor={(m) => String((m as any).id)}
+            keyExtractor={(m) => String((m as any)?.clientMessageId ?? (m as any)?.client_message_id ?? (m as any)?.id)}
             renderItem={renderBubble}
             contentContainerStyle={{ padding: 14, paddingBottom: 24, flexGrow: 1 }}
             scrollEventThrottle={16}

@@ -1900,6 +1900,11 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                             }
 
                             if (optimisticId) {
+                              // Preserve the optimistic client id on the server message so the UI can
+                              // keep a stable key across the optimistic->server swap.
+                              try {
+                                (messages[mid] as any).clientMessageId = optimisticId;
+                              } catch {}
                               try {
                                 delete (messages as any)[optimisticId];
                               } catch {}
@@ -2159,11 +2164,27 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
           const messages = { ...((prev as any).messages ?? {}) } as Record<string, Message>;
           const conversations = { ...((prev as any).conversations ?? {}) } as Record<string, Conversation>;
 
-          // Replace messages for this conversation (server is source of truth).
+          const serverIds = new Set(
+            rows
+              .map((r) => String((r as any)?.id ?? "").trim())
+              .filter(Boolean)
+          );
+
+          // Server is source of truth, but DO NOT delete optimistic client_* messages.
+          // Also, keep existing server messages where possible so we preserve extra
+          // client-only fields (e.g. clientMessageId) to avoid UI flicker.
           for (const [mid, m] of Object.entries(messages)) {
             if (String((m as any).scenarioId ?? "") !== sid) continue;
             if (String((m as any).conversationId ?? "") !== cid) continue;
-            delete (messages as any)[mid];
+
+            const id = String((m as any)?.id ?? mid).trim();
+            const status = String((m as any)?.clientStatus ?? "").trim();
+            const keepOptimistic = id.startsWith("client_") || status === "sending" || status === "failed";
+            if (keepOptimistic) continue;
+
+            if (!serverIds.has(id)) {
+              delete (messages as any)[mid];
+            }
           }
 
           let lastMessageAt: string | undefined = undefined;
@@ -2179,7 +2200,9 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                 ? new Date(raw.created_at).toISOString()
                 : now;
 
+            const existing = messages[id] ?? ({} as any);
             messages[id] = {
+              ...existing,
               id,
               scenarioId: String(raw?.scenarioId ?? raw?.scenario_id ?? sid),
               conversationId: String(raw?.conversationId ?? raw?.conversation_id ?? cid),
@@ -5859,6 +5882,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
 
             messages[mid] = {
               id: mid,
+              clientMessageId: optimisticId,
               scenarioId: sid,
               conversationId: cid,
               senderProfileId: from,
