@@ -28,14 +28,16 @@ export async function sendExpoPush(messages: ExpoPushMessage[]): Promise<void> {
     return;
   }
 
-  const valid = (messages ?? [])
+  const normalized = (messages ?? [])
     .map((m) => ({
       ...m,
       to: String(m?.to ?? "").trim(),
       title: String(m?.title ?? "").trim(),
       body: m?.body == null ? undefined : String(m.body),
     }))
-    .filter((m) => m.to && m.title && isProbablyExpoPushToken(m.to));
+    .filter((m) => m.to && m.title);
+
+  const valid = normalized.filter((m) => isProbablyExpoPushToken(m.to));
 
   if (valid.length === 0) return;
 
@@ -65,6 +67,7 @@ export async function sendExpoPush(messages: ExpoPushMessage[]): Promise<void> {
         try {
           const json = await res.json();
           const tickets = Array.isArray((json as any)?.data) ? (json as any).data : [];
+
           for (const t of tickets) {
             if (t?.status === "error") {
               console.warn(
@@ -72,6 +75,8 @@ export async function sendExpoPush(messages: ExpoPushMessage[]): Promise<void> {
                 String(t?.message ?? ""),
                 t?.details ? JSON.stringify(t.details) : "",
               );
+            } else {
+              // ok
             }
           }
         } catch {

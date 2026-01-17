@@ -320,8 +320,8 @@ export default function ProfileScreen() {
 
       if (!repostedByViewing) return null;
 
-      if (isCurrentSelected) return "retweeted by you";
-      return `retweeted by ${profile.displayName}`;
+      if (isCurrentSelected) return "reposted by you";
+      return `reposted by ${profile.displayName}`;
     },
     [profile, isCurrentSelected, isPostRepostedByProfileId]
   );

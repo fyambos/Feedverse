@@ -407,7 +407,9 @@ type TypingEventHandler = (ev: TypingEvent) => void;
 const typingEventHandlers = new Set<TypingEventHandler>();
 export function subscribeToTypingEvents(handler: TypingEventHandler) {
   typingEventHandlers.add(handler);
-  return () => typingEventHandlers.delete(handler);
+  return () => {
+    typingEventHandlers.delete(handler);
+  };
 }
 
 // Notification event emitter (fallback if native notifications not available)
@@ -693,7 +695,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
           const { Platform } = require("react-native");
           if (Platform?.OS === "android" && typeof Notifications.setNotificationChannelAsync === "function") {
             const importance = Notifications.AndroidImportance?.MAX ?? 5;
-            await Notifications.setNotificationChannelAsync("default", {
+            const channel = await Notifications.setNotificationChannelAsync("default", {
               name: "default",
               importance,
             });
@@ -738,10 +740,21 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
 
         // Request permissions (best-effort)
         try {
-          const perms = await (Notifications.getPermissionsAsync?.() ?? Notifications.requestPermissionsAsync?.());
-          const status = perms?.status ?? (perms?.granted ? "granted" : undefined);
-          if (status !== "granted") {
-            try { await Notifications.requestPermissionsAsync?.(); } catch {}
+          const before = await (Notifications.getPermissionsAsync?.() ?? Notifications.requestPermissionsAsync?.());
+          const beforeStatus = before?.status ?? (before?.granted ? "granted" : undefined);
+          if (beforeStatus !== "granted") {
+            try {
+              await Notifications.requestPermissionsAsync?.();
+            } catch (e: any) {
+              // ignore
+            }
+          }
+        } catch {}
+
+        // Best-effort: obtain device push token (APNS/FCM) to ensure credentials are wired.
+        try {
+          if (typeof Notifications.getDevicePushTokenAsync === "function") {
+            await Notifications.getDevicePushTokenAsync();
           }
         } catch {}
 
@@ -766,8 +779,19 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
             }
 
             if (expoPushToken) {
-              const platform = String(Constants?.platform?.ios ? "ios" : Constants?.platform?.android ? "android" : "");
-              await apiFetch({
+              let platform = "";
+              try {
+                // Prefer react-native Platform.OS; expo-constants platform fields can be missing
+                // in some environments (e.g. newer Expo Go).
+                // eslint-disable-next-line @typescript-eslint/no-var-requires
+                const { Platform } = require("react-native");
+                platform = String(Platform?.OS ?? "");
+              } catch {
+                platform = "";
+              }
+              let regRes: any = null;
+              try {
+                regRes = await apiFetch({
                 path: "/users/push-token",
                 token,
                 init: {
@@ -775,6 +799,10 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                   body: JSON.stringify({ expoPushToken, platform: platform || undefined }),
                 },
               });
+              } catch (e: any) {
+                // ignore
+              }
+              void regRes;
             }
           }
         } catch {
@@ -1054,10 +1082,12 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
               }
             } catch {}
           });
+        } catch {}
 
-          // optional: received listener (foreground)
+        // Register received handler: fires while app is foregrounded.
+        try {
           notificationReceivedListenerRef.current = Notifications.addNotificationReceivedListener((notif: any) => {
-            // we could update badge or local state here
+            void notif;
           });
         } catch {}
       } catch (e) {
@@ -1305,6 +1335,11 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
 
   // WebSocket connections for realtime.
   const wsConnectionsRef = React.useRef<Record<string, WebSocket | null>>({});
+
+  // Throttle WS bootstrap attempts from typing events.
+  const typingWsBootstrapRef = React.useRef<{ lastAttemptAtByScenario: Record<string, number> }>({
+    lastAttemptAtByScenario: {},
+  });
 
   const messagesSyncRef = React.useRef<{
     inFlightByConversation: Record<string, boolean>;
@@ -5974,7 +6009,25 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
           if (!sid) return;
           try {
             const ws = wsConnectionsRef.current[sid];
-            if (!ws) return;
+
+            // If WS is missing (or not open yet), trigger a sync to establish it.
+            // This is important in backend mode when a user deep-links directly into a
+            // conversation before the Messages tab has synced conversations.
+            const readyState = ws && (ws as any).readyState != null ? Number((ws as any).readyState) : null;
+            const isOpen = readyState === 1;
+
+            if (!ws || !isOpen) {
+              const nowMs = Date.now();
+              const lastAt = typingWsBootstrapRef.current.lastAttemptAtByScenario[sid] ?? 0;
+              if (nowMs - lastAt > 10_000) {
+                typingWsBootstrapRef.current.lastAttemptAtByScenario[sid] = nowMs;
+                try {
+                  void syncConversationsForScenarioImpl(sid).catch(() => {});
+                } catch {}
+              }
+              return;
+            }
+
             const payload: Record<string, unknown> = {
               scenarioId: sid,
               typing: Boolean(typing),

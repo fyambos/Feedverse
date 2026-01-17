@@ -709,6 +709,30 @@ export default function ConversationThreadScreen() {
     setNewMsgCount(0);
   }, [messages.length, reorderMode]);
 
+  const typingFooter = useMemo(() => {
+    if (reorderMode) return null;
+    if (!typingProfileIds || typingProfileIds.length === 0) return null;
+
+    const firstPid = String(typingProfileIds[0] ?? "").trim();
+    const firstProfile = firstPid ? ((getProfileById?.(firstPid) as Profile | null) ?? null) : null;
+    const showAvatar = !isOneToOne;
+
+    return (
+      <View style={styles.typingRowWrap}>
+        {showAvatar ? (
+          <View style={styles.typingRowAvatar}>
+            <Avatar
+              uri={(firstProfile as any)?.avatarUrl ?? null}
+              size={28}
+              fallbackColor={colors.border}
+            />
+          </View>
+        ) : null}
+        <TypingIndicator names={typingProfileIds.map(String)} variant="thread" />
+      </View>
+    );
+  }, [reorderMode, typingProfileIds, isOneToOne, getProfileById, colors.border]);
+
   useEffect(() => {
     if (!reorderMode) {
       setReorderDraft(null);
@@ -1414,6 +1438,17 @@ export default function ConversationThreadScreen() {
             <View style={styles.headerCenterInner}>
               <Pressable
                 onPress={() => {
+                  // 1:1: avatar should open the other participant's profile
+                  if (isOneToOne) {
+                    if (!sid || !otherProfileId) return;
+                    router.push({
+                      pathname: "/(scenario)/[scenarioId]/(tabs)/home/profile/[profileId]",
+                      params: { scenarioId: sid, profileId: String(otherProfileId) },
+                    } as any);
+                    return;
+                  }
+
+                  // Group chat: keep existing behavior (open editor)
                   if (!canEditGroup) return;
                   onPressHeader();
                 }}
@@ -1421,10 +1456,10 @@ export default function ConversationThreadScreen() {
                   // Enter reorder mode when the avatar is long-pressed (GC or DM)
                   setReorderMode(true);
                 }}
-                disabled={!canEditGroup}
+                disabled={false}
                 hitSlop={12}
                 accessibilityRole="button"
-                accessibilityLabel="Reorder messages"
+                accessibilityLabel={isOneToOne ? "Open profile" : "Reorder messages"}
               >
                 <Avatar uri={headerAvatarUrl} size={38} fallbackColor={colors.border} />
               </Pressable>
@@ -1507,6 +1542,7 @@ export default function ConversationThreadScreen() {
             keyExtractor={(m) => String((m as any)?.clientMessageId ?? (m as any)?.client_message_id ?? (m as any)?.id)}
             renderItem={renderBubble}
             contentContainerStyle={{ padding: 14, paddingBottom: 24, flexGrow: 1 }}
+            ListFooterComponent={typingFooter}
             scrollEventThrottle={16}
             onScroll={handleScroll}
             onLayout={handleListLayout}
@@ -1517,16 +1553,6 @@ export default function ConversationThreadScreen() {
 
         <SafeAreaView edges={["bottom"]} style={{ backgroundColor: colors.background }}>
           {composerAttachments}
-          {/* Typing indicator */}
-          {typingProfileIds.length > 0 ? (
-            <TypingIndicator
-              names={typingProfileIds
-                .map((id) => (getProfileById?.(String(id)) as Profile | null)?.displayName ?? "")
-                .filter(Boolean)}
-              variant="thread"
-              color={colors.textSecondary}
-            />
-          ) : null}
           <View style={[styles.composer, { borderTopColor: colors.border, backgroundColor: colors.background }]}>
             {isOneToOne ? (
               <Pressable
@@ -2103,4 +2129,14 @@ floaterBtn: {
   borderRadius: 999,
   borderWidth: StyleSheet.hairlineWidth,
 },
+  typingRowWrap: {
+    paddingTop: 2,
+    paddingBottom: 8,
+    flexDirection: "row",
+    alignItems: "flex-end",
+    gap: 8,
+  },
+  typingRowAvatar: {
+    paddingBottom: 2,
+  },
 });

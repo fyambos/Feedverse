@@ -152,15 +152,6 @@ export const UpsertUserPushTokenController = async (req: Request, res: Response)
       return res.status(HTTP_STATUS.BAD_REQUEST).json({ error: "expoPushToken is required" });
     }
 
-    // Debug aid: log registration without leaking full token.
-    try {
-      const t = String(expoPushToken);
-      const preview = t.length <= 18 ? t : `${t.slice(0, 10)}…${t.slice(-6)}`;
-      // console.log("push-token register", { userId, platform, token: preview });
-    } catch {
-      // console.log("push-token register: failed to format token preview", { userId, platform });
-    }
-
     const repo = new UserRepository();
     await repo.upsertExpoPushToken({ userId, expoPushToken, platform });
 
