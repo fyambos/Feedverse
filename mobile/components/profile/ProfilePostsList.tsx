@@ -186,11 +186,11 @@ export function ProfilePostsList({
           const reposterProfile = getProfileById(String(feedItem.repost.profileId));
           const reposterId = String(feedItem.repost.profileId);
           if (reposterId === String(viewingProfileId)) {
-            repostLabel = "retweeted by you";
+            repostLabel = "reposted by you";
           } else if (reposterProfile) {
-            repostLabel = `retweeted by ${reposterProfile.displayName}`;
+            repostLabel = `reposted by ${reposterProfile.displayName}`;
           } else {
-            repostLabel = "retweeted";
+            repostLabel = "reposted";
           }
         } else {
           repostLabel = repostLabelForPost

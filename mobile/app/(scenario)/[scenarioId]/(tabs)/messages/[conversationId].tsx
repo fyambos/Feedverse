@@ -1473,11 +1473,8 @@ export default function ConversationThreadScreen() {
           {/* Typing indicator */}
           {typingProfileIds.length > 0 ? (
             <TypingIndicator
-              names={typingProfileIds
-                .map((id) => (getProfileById?.(String(id)) as Profile | null)?.displayName ?? "")
-                .filter(Boolean)}
+              names={typingProfileIds.map(String)}
               variant="thread"
-              color={colors.textSecondary}
             />
           ) : null}
           <View style={[styles.composer, { borderTopColor: colors.border, backgroundColor: colors.background }]}>
