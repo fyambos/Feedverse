@@ -41,6 +41,9 @@ import { MediaGrid } from "@/components/media/MediaGrid";
 import { Lightbox } from "@/components/media/LightBox";
 import { formatErrorMessage } from "@/lib/format";
 
+const SEND_BTN_SCALE_DOWN = 0.92;
+const SEND_BTN_SCALE_DOWN_MS = 60;
+
 function parsePgTextArrayLiteral(input: string): string[] {
   const s = String(input ?? "").trim();
   if (!s.startsWith("{") || !s.endsWith("}")) return [];
@@ -739,6 +742,27 @@ export default function ConversationThreadScreen() {
   }, [isOneToOne, selectedProfileId, sendAsId]);
 
   const senderSlider = useRef(new Animated.Value(oneToOneSide === "right" ? 1 : 0)).current;
+  const sendBtnScale = useRef(new Animated.Value(1)).current;
+
+  const bumpSendBtn = useCallback(() => {
+    try {
+      sendBtnScale.stopAnimation();
+      sendBtnScale.setValue(1);
+      Animated.sequence([
+        Animated.timing(sendBtnScale, {
+          toValue: SEND_BTN_SCALE_DOWN,
+          duration: SEND_BTN_SCALE_DOWN_MS,
+          useNativeDriver: true,
+        }),
+        Animated.spring(sendBtnScale, {
+          toValue: 1,
+          friction: 4,
+          tension: 220,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    } catch {}
+  }, [sendBtnScale]);
 
   useEffect(() => {
     Animated.timing(senderSlider, {
@@ -958,14 +982,15 @@ export default function ConversationThreadScreen() {
     const imgs = Array.isArray(imageUris) ? imageUris.map(String).filter(Boolean) : [];
     if (!body && imgs.length === 0) return;
 
+    if (sendingRef.current) return;
+    sendingRef.current = true;
+    setSending(true);
+
+    bumpSendBtn();
     // Clear composer immediately so send feels instant.
     setText("");
     setImageUris([]);
     try { scrollToBottom(true); } catch {}
-
-    if (sendingRef.current) return;
-    sendingRef.current = true;
-    setSending(true);
 
     const p = Promise.resolve(
       sendMessage?.({
@@ -1031,7 +1056,7 @@ export default function ConversationThreadScreen() {
         sendingRef.current = false;
         setSending(false);
       });
-  }, [sid, cid, sendAsId, text, imageUris, sendMessage, selectedProfileId, scrollToBottom]);
+  }, [sid, cid, sendAsId, text, imageUris, sendMessage, selectedProfileId, scrollToBottom, bumpSendBtn]);
 
   const onPickImages = useCallback(async () => {
     const remaining = Math.max(0, 4 - (imageUris?.length ?? 0));
@@ -1334,6 +1359,17 @@ export default function ConversationThreadScreen() {
             <View style={styles.headerCenterInner}>
               <Pressable
                 onPress={() => {
+                  // 1:1: avatar should open the other participant's profile
+                  if (isOneToOne) {
+                    if (!sid || !otherProfileId) return;
+                    router.push({
+                      pathname: "/(scenario)/[scenarioId]/(tabs)/home/profile/[profileId]",
+                      params: { scenarioId: sid, profileId: String(otherProfileId) },
+                    } as any);
+                    return;
+                  }
+
+                  // Group chat: keep existing behavior (open editor)
                   if (!canEditGroup) return;
                   onPressHeader();
                 }}
@@ -1341,10 +1377,10 @@ export default function ConversationThreadScreen() {
                   // Enter reorder mode when the avatar is long-pressed (GC or DM)
                   setReorderMode(true);
                 }}
-                disabled={!canEditGroup}
+                disabled={false}
                 hitSlop={12}
                 accessibilityRole="button"
-                accessibilityLabel="Reorder messages"
+                accessibilityLabel={isOneToOne ? "Open profile" : "Reorder messages"}
               >
                 <Avatar uri={headerAvatarUrl} size={38} fallbackColor={colors.border} />
               </Pressable>
@@ -1507,30 +1543,31 @@ export default function ConversationThreadScreen() {
               <Ionicons name="image-outline" size={18} color={colors.text} />
             </Pressable>
 
-            <Pressable
-              onPress={onSend}
-              disabled={
-                sending ||
-                !sendAsId ||
-                (!String(text ?? "").trim() && (imageUris?.length ?? 0) === 0) ||
-                !sendAsAllowedIds.has(String(sendAsId))
-              }
-              style={({ pressed }) => [
-                styles.sendBtn,
-                {
-                  backgroundColor: colors.tint,
-                  opacity:
-                    sending ||
-                    !sendAsId ||
-                    (!String(text ?? "").trim() && (imageUris?.length ?? 0) === 0) ||
-                    !sendAsAllowedIds.has(String(sendAsId))
-                      ? 0.4
-                      : pressed
-                        ? 0.85
-                        : 1,
-                },
-              ]}
-              onLongPress={async () => {
+            <Animated.View style={{ transform: [{ scale: sendBtnScale }] }}>
+              <Pressable
+                onPress={onSend}
+                disabled={
+                  sending ||
+                  !sendAsId ||
+                  (!String(text ?? "").trim() && (imageUris?.length ?? 0) === 0) ||
+                  !sendAsAllowedIds.has(String(sendAsId))
+                }
+                style={({ pressed }) => [
+                  styles.sendBtn,
+                  {
+                    backgroundColor: colors.tint,
+                    opacity:
+                      sending ||
+                      !sendAsId ||
+                      (!String(text ?? "").trim() && (imageUris?.length ?? 0) === 0) ||
+                      !sendAsAllowedIds.has(String(sendAsId))
+                        ? 0.4
+                        : pressed
+                          ? 0.85
+                          : 1,
+                  },
+                ]}
+                onLongPress={async () => {
                 // long-press send: if there is text, send as a centered small 'separator' message
                 const body = String(text ?? "").trim();
                 if (!sendAsId || !sendAsAllowedIds.has(String(sendAsId))) return;
@@ -1542,6 +1579,11 @@ export default function ConversationThreadScreen() {
                 if (sendingRef.current) return;
                 sendingRef.current = true;
                 setSending(true);
+
+                bumpSendBtn();
+                // Clear message box immediately (keep attachments).
+                setText("");
+                try { scrollToBottom(true); } catch {}
 
                 let res: any;
                 try {
@@ -1567,17 +1609,17 @@ export default function ConversationThreadScreen() {
                   return;
                 }
 
-                setText("");
               }}
-              accessibilityRole="button"
-              accessibilityLabel="Send"
-            >
-              {sending ? (
-                <ActivityIndicator size="small" color={colors.background} />
-              ) : (
-                <Ionicons name="arrow-up" size={18} color={colors.background} />
-              )}
-            </Pressable>
+                accessibilityRole="button"
+                accessibilityLabel="Send"
+              >
+                {sending ? (
+                  <ActivityIndicator size="small" color={colors.background} />
+                ) : (
+                  <Ionicons name="arrow-up" size={18} color={colors.background} />
+                )}
+              </Pressable>
+            </Animated.View>
           </View>
         </SafeAreaView>
       </KeyboardAvoidingView>
