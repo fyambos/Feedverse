@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   KeyboardAvoidingView,
   Modal,
@@ -10,7 +10,7 @@ import {
   View,
 } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 
 import { ThemedView } from "@/components/themed-view";
@@ -55,6 +55,7 @@ export default function CreateProfileModal() {
 
   const scheme = useColorScheme() ?? "light";
   const colors = Colors[scheme];
+  const insets = useSafeAreaInsets();
 
   const { userId } = useAuth();
   const { getProfileById, upsertProfile, listProfilesForScenario, deleteProfileCascade } = useAppData();
@@ -131,6 +132,7 @@ export default function CreateProfileModal() {
   const [link, setLink] = useState((existing as any)?.link ?? "");
 
   const [submitting, setSubmitting] = useState(false);
+  const deleteProfileRef = useRef(false);
 
   /* -------------------------------------------------------------------------- */
   /* Submit                                                                     */
@@ -239,6 +241,8 @@ export default function CreateProfileModal() {
     if (!existing) return;
     if (!canDelete) return;
     if (submitting) return;
+    if (deleteProfileRef.current) return;
+    deleteProfileRef.current = true;
 
     setSubmitting(true);
     try {
@@ -251,6 +255,7 @@ export default function CreateProfileModal() {
     } catch {
       Alert.alert("Delete failed", "Could not delete profile.");
     } finally {
+      deleteProfileRef.current = false;
       setSubmitting(false);
     }
   };
@@ -296,7 +301,12 @@ export default function CreateProfileModal() {
             style={{ flex: 1 }}
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
-            contentContainerStyle={{ paddingBottom: 24 }}
+            contentContainerStyle={{
+              paddingBottom: 24 + (insets.bottom || 0) + (Platform.OS === "ios" ? 320 : 240),
+            }}
+            scrollIndicatorInsets={{
+              bottom: (insets.bottom || 0) + (Platform.OS === "ios" ? 320 : 240),
+            }}
           >
             {/* Avatar */}
             <ProfileAvatarPicker avatarUrl={avatarUrl} setAvatarUrl={setAvatarUrl} colors={colors} />
@@ -308,6 +318,7 @@ export default function CreateProfileModal() {
                 onChangeText={(v) => setDisplayName(v.slice(0, PROFILE_LIMITS.MAX_DISPLAY_NAME))}
                 placeholder="Display name"
                 placeholderTextColor={colors.textSecondary}
+                maxLength={PROFILE_LIMITS.MAX_DISPLAY_NAME}
                 style={[styles.input, { color: colors.text, borderColor: colors.border }]}
               />
 

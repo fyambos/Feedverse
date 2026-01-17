@@ -14,6 +14,7 @@ import { Alert } from "@/context/dialog";
 
 import type { Profile } from "@/data/db/schema";
 import { canEditProfile } from "@/lib/permission";
+import { formatErrorMessage } from "@/lib/format";
 
 import {
   MAX_OWNED_PROFILES_PER_USER,
@@ -48,14 +49,55 @@ export default function SelectProfileModal() {
     setSelectedProfileId,
     db,
     getScenarioById,
+    syncScenarios,
+    syncProfilesForScenario,
     transferProfilesToUser,
     adoptPublicProfile,
   } = useAppData() as any;
 
   const usersMap = (db as any)?.users ?? {};
 
+
+  const looksLikeUuid = (v?: string | null) => {
+    if (!v) return false;
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(v));
+  };
   const [tab, setTab] = React.useState<TabKey>("mine");
   const [mode, setMode] = React.useState<ViewMode>("tabs");
+
+  // When viewing Shared profiles, we need fresh scenario.playerIds to avoid
+  // offering "Adopt" while the owner is actually still in the scenario.
+  const [sharedSyncing, setSharedSyncing] = React.useState(false);
+  const sharedSyncCompleteRef = React.useRef(false);
+
+  React.useEffect(() => {
+    if (!isReady) return;
+    if (!sid) return;
+    if (!(mode === "tabs" && tab === "public")) return;
+
+    let cancelled = false;
+    sharedSyncCompleteRef.current = false;
+    setSharedSyncing(true);
+
+    Promise.resolve()
+      .then(async () => {
+        // Best-effort: refresh scenario list (players/owners) and profiles.
+        await syncScenarios?.({ force: true });
+        await syncProfilesForScenario?.(sid);
+      })
+      .catch(() => {
+        // ignore: still allow UI to proceed
+      })
+      .finally(() => {
+        if (cancelled) return;
+        sharedSyncCompleteRef.current = true;
+        setSharedSyncing(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isReady, sid, mode, tab, syncScenarios, syncProfilesForScenario]);
 
   // state for multi select
   const [multi, setMulti] = React.useState<boolean>(false);
@@ -74,10 +116,24 @@ export default function SelectProfileModal() {
     profileId: null,
   }));
 
-  const closeAdopt = () => setAdopt({ open: false, profileId: null });
+  const adoptConfirmRef = React.useRef(false);
+  const [adoptBusy, setAdoptBusy] = React.useState(false);
+
+  const transferConfirmRef = React.useRef(false);
+  const [transferBusy, setTransferBusy] = React.useState(false);
+
+  const closeAdopt = () => {
+    adoptConfirmRef.current = false;
+    setAdoptBusy(false);
+    setAdopt({ open: false, profileId: null });
+  };
 
   const closeTransfer = () => setTransfer({ open: false });
-  const closeConfirmTransfer = () => setConfirmTransfer({ open: false, toUserId: null });
+  const closeConfirmTransfer = () => {
+    transferConfirmRef.current = false;
+    setTransferBusy(false);
+    setConfirmTransfer({ open: false, toUserId: null });
+  };
 
   const scenario = React.useMemo(() => {
     if (!isReady) return null;
@@ -91,9 +147,29 @@ export default function SelectProfileModal() {
 
     const uid = String(userId ?? "");
 
-    return players
+        return players
       .filter((pid) => pid && pid !== uid)
-      .map((pid) => usersMap[String(pid)] ?? { id: pid, username: pid, avatarUrl: "" });
+      .map((pid) => {
+        const uid2 = String(pid);
+        const user = usersMap[uid2];
+        if (user) return { ...user, avatarUrl: user.avatarUrl ?? undefined } as any;
+        try {
+          const profiles = (db as any)?.profiles ?? {};
+          for (const p of Object.values(profiles)) {
+            if (String((p as any).ownerUserId ?? "") !== uid2) continue;
+            if (String((p as any).scenarioId ?? "") !== sid) continue;
+            return {
+              id: uid2,
+              username: undefined,
+              avatarUrl: String((p as any).avatarUrl ?? "") || undefined,
+            } as any;
+          }
+        } catch {
+          // ignore
+        }
+
+        return { id: uid2, username: undefined, avatarUrl: undefined } as any;
+      });
   }, [scenario, usersMap, userId]);
 
   const profileLimitMode: ProfileLimitMode = React.useMemo(() => {
@@ -202,7 +278,8 @@ const allProfiles = React.useMemo<Profile[]>(() => {
   // ---- RENDERING ----
 
   const Row = ({ item }: { item: Profile }) => {
-    const selectEnabled = mode !== "all";
+    const isAllMode = mode === "all";
+    const selectEnabled = !isAllMode;
     const active = String(item.id) === String(current);
 
     const id = String(item.id);
@@ -211,7 +288,8 @@ const allProfiles = React.useMemo<Profile[]>(() => {
     const checked = selectedIds.has(id);
 
     const isSharedFromOther = !!item.isPublic && String(item.ownerUserId) !== String(userId);
-    const owner = usersMap[String(item.ownerUserId)] ?? null;
+    const ownerId = String(item.ownerUserId ?? "");
+    const owner = ownerId ? (usersMap[ownerId] ?? null) : null;
 
     const canEditThis = canEditProfile({
       profile: item,
@@ -221,16 +299,56 @@ const allProfiles = React.useMemo<Profile[]>(() => {
 
     return (
       <Pressable
-        disabled={!selectEnabled}
         onPress={async () => {
+          if (isAllMode) {
+            // In "All profiles" mode, rows act as links to the profile page.
+            const profileId = String(item.id);
+            if (!sid || !profileId) return;
+
+            // Close this modal first, then navigate.
+            try {
+              if (router.canGoBack?.()) router.back();
+            } catch {
+              // ignore
+            }
+
+            setTimeout(() => {
+              try {
+                router.push({
+                  pathname: "/(scenario)/[scenarioId]/(tabs)/home/profile/[profileId]",
+                  params: { scenarioId: sid, profileId },
+                } as any);
+              } catch {
+                // ignore
+              }
+            }, 60);
+
+            return;
+          }
+
           if (!selectEnabled) return;
           if (showCheckbox) {
             toggleOne(id);
             return;
           }
 
-          // shared profile from someone else => adopt flow (confirm modal)
+          // shared profile from someone else
           if (isSharedFromOther) {
+            if (sharedSyncing || !sharedSyncCompleteRef.current) {
+              Alert.alert("Loading…", "Refreshing scenario players. Try again in a moment.");
+              return;
+            }
+
+            // If the owner is still in the scenario, just select the profile (no adopt)
+            const ownerId = String(item.ownerUserId ?? "");
+            const scenarioPlayerIds = Array.isArray((scenario as any)?.playerIds)
+              ? (scenario as any).playerIds.map(String)
+              : [];
+            if (ownerId && scenarioPlayerIds.includes(ownerId)) {
+              await finishSelection(String(item.id));
+              return;
+            }
+            // Otherwise, allow adoption
             setAdopt({ open: true, profileId: id });
             return;
           }
@@ -240,8 +358,7 @@ const allProfiles = React.useMemo<Profile[]>(() => {
         style={({ pressed }) => [
           styles.row,
           {
-            backgroundColor: pressed && selectEnabled ? colors.pressed : colors.background,
-            opacity: selectEnabled ? 1 : 0.88,
+            backgroundColor: pressed ? colors.pressed : colors.background,
           },
         ]}
       >
@@ -308,16 +425,24 @@ const allProfiles = React.useMemo<Profile[]>(() => {
         </View>
 
         <View style={styles.right}>
-          {owner?.avatarUrl ? (
-            <Image source={{ uri: owner.avatarUrl }} style={styles.ownerAvatar} />
-          ) : (
-            <View style={[styles.ownerAvatar, { backgroundColor: colors.border }]} />
-          )}
-
-          <ThemedText numberOfLines={1} style={{ fontSize: 12, color: colors.textSecondary }}>
-            {owner?.username ?? "unknown"}
-          </ThemedText>
-
+          {owner ? (
+            <>
+              {owner.avatarUrl ? (
+                <Image source={{ uri: owner.avatarUrl ?? undefined }} style={styles.ownerAvatar} />
+              ) : (
+                <View style={[styles.ownerAvatar, { backgroundColor: colors.border }]} />
+              )}
+                <ThemedText numberOfLines={1} style={{ fontSize: 12, color: colors.textSecondary }}>
+                  {(() => {
+                    const uname = owner.username ?? "";
+                    if (!uname || looksLikeUuid(uname)) {
+                      return item.displayName ? String(item.displayName) : "Unknown";
+                    }
+                    return uname;
+                  })()}
+                </ThemedText>
+            </>
+          ) : null}
           {selectEnabled && active ? (
             <ThemedText style={{ color: colors.tint, fontWeight: "800", marginLeft: 6 }}>✓</ThemedText>
           ) : null}
@@ -337,13 +462,30 @@ const allProfiles = React.useMemo<Profile[]>(() => {
       const uid = String(userId ?? "");
       if (!uid) return;
 
-      const res = await adoptPublicProfile?.({ scenarioId: sid, profileId: pid, userId: uid });
-      if (!res || !res.ok) {
-        return;
-      }
+      if (adoptConfirmRef.current) return;
+      adoptConfirmRef.current = true;
+      setAdoptBusy(true);
 
-      closeAdopt();
-      await finishSelection(pid);
+      try {
+        const res = await adoptPublicProfile?.({ scenarioId: sid, profileId: pid, userId: uid });
+        if (!res) {
+          Alert.alert("Adopt failed", "Adopt API is unavailable.");
+          return;
+        }
+
+        if (!res.ok) {
+          Alert.alert("Adopt failed", res.error ?? "Could not adopt profile.");
+          return;
+        }
+
+        closeAdopt();
+        await finishSelection(pid);
+      } catch (e: any) {
+        Alert.alert("Adopt failed", formatErrorMessage(e, "Could not adopt profile."));
+      } finally {
+        adoptConfirmRef.current = false;
+        setAdoptBusy(false);
+      }
     };
 
     return (
@@ -380,12 +522,19 @@ const allProfiles = React.useMemo<Profile[]>(() => {
 
               <Pressable
                 onPress={onConfirm}
+                disabled={adoptBusy}
                 style={({ pressed }) => [
                   styles.confirmBtn,
-                  { borderColor: colors.border, backgroundColor: pressed ? colors.pressed : "transparent" },
+                  {
+                    borderColor: colors.border,
+                    backgroundColor: pressed ? colors.pressed : "transparent",
+                    opacity: adoptBusy ? 0.55 : 1,
+                  },
                 ]}
               >
-                <ThemedText style={{ color: colors.tint, fontWeight: "900" }}>Adopt</ThemedText>
+                <ThemedText style={{ color: colors.tint, fontWeight: "900" }}>
+                  {adoptBusy ? "Adopting…" : "Adopt"}
+                </ThemedText>
               </Pressable>
             </View>
           </Pressable>
@@ -565,7 +714,15 @@ const allProfiles = React.useMemo<Profile[]>(() => {
                 keyExtractor={(u: any) => String(u.id)}
                 contentContainerStyle={{ paddingHorizontal: 8, paddingBottom: 8 }}
                 renderItem={({ item }: any) => {
-                  const label = item?.username ? `@${String(item.username)}` : String(item.id);
+                  const uid3 = String(item?.id ?? "");
+                  const userRow = (db as any)?.users?.[uid3];
+                  const unameRow = userRow?.username ? String(userRow.username) : "";
+                  const unameItem = item?.username ? String(item.username) : "";
+                  const label = unameRow && !looksLikeUuid(unameRow)
+                    ? `@${unameRow}`
+                    : unameItem && !looksLikeUuid(unameItem)
+                      ? `@${unameItem}`
+                      : "Unknown";
 
                   return (
                     <Pressable
@@ -575,9 +732,11 @@ const allProfiles = React.useMemo<Profile[]>(() => {
                         { backgroundColor: pressed ? colors.pressed : "transparent", borderColor: colors.border },
                       ]}
                     >
-                      {item?.avatarUrl ? (
+                      {(
+                        (db as any)?.users?.[String(item?.id ?? "")]?.avatarUrl || item?.avatarUrl
+                      ) ? (
                         <Image
-                          source={{ uri: String(item.avatarUrl ?? "") }}
+                          source={{ uri: String(((db as any)?.users?.[String(item?.id ?? "")]?.avatarUrl) ?? item?.avatarUrl ?? "") }}
                           style={[styles.transferAvatar, { borderColor: colors.border }]}
                         />
                       ) : (
@@ -617,7 +776,7 @@ const allProfiles = React.useMemo<Profile[]>(() => {
 
     const toId = String(confirmTransfer.toUserId ?? "");
     const target = usersMap[toId];
-    const label = target?.username ? `@${String(target.username)}` : toId;
+    const label = target?.username ? `@${String(target.username)}` : "Unknown";
 
     const onConfirm = async () => {
       if (!toId) return;
@@ -625,6 +784,10 @@ const allProfiles = React.useMemo<Profile[]>(() => {
         Alert.alert("Nothing selected", "Select at least one profile.");
         return;
       }
+
+      if (transferConfirmRef.current) return;
+      transferConfirmRef.current = true;
+      setTransferBusy(true);
 
       try {
         const transferredIds = Array.from(selectedIds).map(String);
@@ -685,7 +848,10 @@ const allProfiles = React.useMemo<Profile[]>(() => {
 
         Alert.alert("Done", "Profiles transferred.");
       } catch (e: any) {
-        Alert.alert("Transfer failed", e?.message ?? "Could not transfer profiles.");
+        Alert.alert("Transfer failed", formatErrorMessage(e, "Could not transfer profiles."));
+      } finally {
+        transferConfirmRef.current = false;
+        setTransferBusy(false);
       }
     };
 
@@ -727,12 +893,19 @@ const allProfiles = React.useMemo<Profile[]>(() => {
 
               <Pressable
                 onPress={onConfirm}
+                disabled={transferBusy}
                 style={({ pressed }) => [
                   styles.confirmBtn,
-                  { borderColor: "#ff3b30", backgroundColor: pressed ? "rgba(255,59,48,0.12)" : "transparent" },
+                  {
+                    borderColor: "#ff3b30",
+                    backgroundColor: pressed ? "rgba(255,59,48,0.12)" : "transparent",
+                    opacity: transferBusy ? 0.55 : 1,
+                  },
                 ]}
               >
-                <ThemedText style={{ color: "#ff3b30", fontWeight: "900" }}>Transfer</ThemedText>
+                <ThemedText style={{ color: "#ff3b30", fontWeight: "900" }}>
+                  {transferBusy ? "Transferring…" : "Transfer"}
+                </ThemedText>
               </Pressable>
             </View>
           </Pressable>

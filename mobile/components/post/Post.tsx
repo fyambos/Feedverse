@@ -32,10 +32,13 @@ type Props = {
   scenarioId: string;
   profile: Profile;
   item: DbPost;
+  refreshTick?: number;
   variant?: PostVariant;
   replyingTo?: string;
   showActions?: boolean;
   showThreadLine?: boolean;
+
+  highlighted?: boolean;
 
   showMenu?: boolean;
   isInteractive?: boolean;
@@ -79,10 +82,13 @@ export function Post({
   scenarioId,
   profile,
   item,
+  refreshTick,
   variant = "feed",
   replyingTo,
   showActions = true,
   showThreadLine = false,
+
+  highlighted = false,
 
   showMenu = true,
   isInteractive = true,
@@ -99,6 +105,22 @@ export function Post({
 }: Props) {
   const scheme = useColorScheme() ?? "light";
   const colors = Colors[scheme];
+
+  const hexToRgba = (hex: string, alpha: number) => {
+    const h = String(hex ?? "").trim();
+    const m = /^#?([0-9A-Fa-f]{6})$/.exec(h);
+    if (!m) return null;
+    const n = parseInt(m[1], 16);
+    const r = (n >> 16) & 255;
+    const g = (n >> 8) & 255;
+    const b = n & 255;
+    const a = Math.max(0, Math.min(1, Number(alpha)));
+    return `rgba(${r},${g},${b},${a})`;
+  };
+
+  const highlightBg = highlighted
+    ? hexToRgba(colors.tint, scheme === "dark" ? 0.18 : 0.12) ?? colors.pressed
+    : undefined;
 
   const { showTimestamps } = useUserSettings();
   const showTimestampsPref = showTimestamps;
@@ -128,6 +150,8 @@ export function Post({
       ? appData.getScenarioById(sid)
       : appData.scenarios?.[sid] ?? appData.scenarioById?.[sid] ?? null;
 
+  const isCampaignMode = String((scenario as any)?.mode ?? "story") === "campaign";
+
   // Only the scenario owner or listed GMs can use GM tools
   const isGmUser = Boolean(
     currentUserId &&
@@ -138,9 +162,9 @@ export function Post({
 
   const gmProfileId = sid ? getSelectedProfileId(sid) : null;
 
-  const isCampaign = isCampaignPostType(postType);
-  // GM tools should only be available to actual GMs, not all users viewing campaign posts
-  const canUseGmMenu = Boolean(isCampaign && isGmUser);
+  const isCampaignPost = isCampaignMode && isCampaignPostType(postType);
+  // GM tools should only be available to actual GMs in campaign mode.
+  const canUseGmMenu = Boolean(isCampaignMode && isGmUser);
 
   const replyCount = item.replyCount ?? 0;
   const repostCount = item.repostCount ?? 0;
@@ -195,12 +219,14 @@ export function Post({
   // ===== DETAIL =====
   if (isDetail) {
     return (
-      <View style={styles.wrap}>
+      <View style={[styles.wrap, highlightBg ? { backgroundColor: highlightBg, borderRadius: 14 } : null]}>
         <PostHeader
           variant="detail"
           colors={colors}
+          scenarioId={sid}
           profile={profile}
           createdAtIso={item.createdAt}
+          refreshTick={refreshTick}
           onOpenProfile={() => openProfile()}
           onOpenMenu={handleOpenMenu}
           showMenu={showMenu}
@@ -303,7 +329,7 @@ export function Post({
   const replyingToHandle = replyingTo ? replyingTo : "";
 
   return (
-    <View style={styles.wrapReply}>
+    <View style={[styles.wrapReply, highlightBg ? { backgroundColor: highlightBg, borderRadius: 14 } : null]}>
       {repostedByLabel ? (
         <View style={styles.repostBanner}>
           <AntDesign name="retweet" size={14} color={colors.tint} />
@@ -320,7 +346,7 @@ export function Post({
           </Pressable>
 
           {/* post type under avatar (campaign only, hide "rp") */}
-          {isCampaign && postType && postType !== "rp" ? (
+          {isCampaignPost && postType && postType !== "rp" ? (
             <View style={styles.avatarBadge}>
               <PostTypeBadge colors={colors as any} type={postType} compact />
             </View>
@@ -331,8 +357,10 @@ export function Post({
           <PostHeader
             variant={isReply ? "reply" : "feed"}
             colors={colors}
+            scenarioId={sid}
             profile={profile}
             createdAtIso={item.createdAt}
+            refreshTick={refreshTick}
             isReply={isReply}
             replyingToHandle={replyingToHandle}
             onOpenProfile={() => openProfile()}

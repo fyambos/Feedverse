@@ -6,6 +6,12 @@ export type UserSettings = {
    */
   showTimestamps?: boolean;
   darkMode?: "light" | "dark" | "system";
+
+  /**
+   * Hidden/feature-flag style customization. Expected format: "#RRGGBB".
+   * (No UI yet; can be set directly in the backend DB.)
+   */
+  customTheme?: string;
 };
 
 export type User = {
@@ -208,6 +214,12 @@ export type Conversation = {
   createdAt: string;
   updatedAt?: string;
   lastMessageAt?: string;
+
+  // Server-provided preview fields (so inbox can show latest snippet even if
+  // message history for the conversation hasn't been synced locally).
+  lastMessageText?: string;
+  lastMessageKind?: string;
+  lastMessageSenderProfileId?: string;
 };
 
 export type Message = {
@@ -216,6 +228,8 @@ export type Message = {
   conversationId: string;
   senderProfileId: string;
   text: string;
+  kind?: string;
+  imageUrls?: string[];
   createdAt: string;
   updatedAt?: string;
   editedAt?: string;
@@ -247,4 +261,6 @@ export type DbV5 = {
   conversations?: Record<string, Conversation>; // key = conversation.id
   /** DM messages */
   messages?: Record<string, Message>; // key = message.id
+  /** User-selected conversation by scenario **/
+  selectedConversationByScenario?: Record<string, string>; // key = scenarioId, value = conversationId
 };

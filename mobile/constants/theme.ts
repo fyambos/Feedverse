@@ -6,19 +6,42 @@
 
 import { Platform } from 'react-native';
 
-const tintColor = '#1D9BF0';
+export const DEFAULT_TINT_COLOR = '#7c96ec'; // '#1D9BF0';
+
+function normalizeHexColor(input: unknown): string | null {
+  if (typeof input !== 'string') return null;
+  const raw = input.trim();
+  if (!raw) return null;
+
+  const hex = raw.startsWith('#') ? raw : `#${raw}`;
+  if (!/^#[0-9A-Fa-f]{6}$/.test(hex)) return null;
+  return hex.toLowerCase();
+}
+
+/**
+ * Overrides the app accent/tint color at runtime.
+ * Intended for hidden/feature-flag style settings (e.g. paywalled customization).
+ */
+export function setCustomTintColor(customTheme: unknown) {
+  const next = normalizeHexColor(customTheme) ?? DEFAULT_TINT_COLOR;
+  Colors.light.tint = next;
+  Colors.dark.tint = next;
+  Colors.light.tabIconSelected = next;
+  Colors.dark.tabIconSelected = next;
+}
 
 export const Colors = {
   light: {
     text: '#0F1419',
     background: '#FFFFFF',
-    tint: tintColor,
+    tint: DEFAULT_TINT_COLOR,
     icon: '#536471',
     tabIconDefault: '#536471',
-    tabIconSelected: tintColor,
+    tabIconSelected: DEFAULT_TINT_COLOR,
 
     surface: '#FFFFFF',
     card: '#FFFFFF',
+    message: '#E5E5EA',
     border: '#d4d7d8',
 
     textSecondary: '#536471',
@@ -31,13 +54,14 @@ export const Colors = {
   dark: {
     text: '#E7E9EA',
     background: '#000000',
-    tint: tintColor,
+    tint: DEFAULT_TINT_COLOR,
     icon: '#71767B',
     tabIconDefault: '#71767B',
-    tabIconSelected: tintColor,
+    tabIconSelected: DEFAULT_TINT_COLOR,
 
     surface: '#121214',
     card: '#121214',
+    message: '#2F3336',
     border: '#2F3336',
 
     textSecondary: '#71767B',

@@ -1,7 +1,18 @@
+// mobile/app/(scenario)/[scenarioId]/(tabs)/messages/[conversationId].tsx
+
+import {
+  setActiveConversation,
+  subscribeToMessageEvents,
+  subscribeToTypingEvents,
+  useAppData,
+} from "@/context/appData";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Animated,
+  Alert,
+  ActivityIndicator,
   FlatList,
+  InteractionManager,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -14,18 +25,142 @@ import { router, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
 import DraggableFlatList, { type RenderItemParams } from "react-native-draggable-flatlist";
+import { useFocusEffect } from "@react-navigation/native";
 
 import { ThemedText } from "@/components/themed-text";
+import TypingIndicator from "@/components/ui/TypingIndicator";
 import { ThemedView } from "@/components/themed-view";
 import { Colors } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
-import { useAppData } from "@/context/appData";
 import type { Conversation, Message, Profile } from "@/data/db/schema";
 import { AuthorAvatarPicker } from "@/components/postComposer/AuthorAvatarPicker";
 import { Avatar } from "@/components/ui/Avatar";
 import { SwipeableRow } from "@/components/ui/SwipeableRow";
+import { pickAndPersistManyImages } from "@/components/ui/ImagePicker";
+import { MediaGrid } from "@/components/media/MediaGrid";
+import { Lightbox } from "@/components/media/LightBox";
+import { formatErrorMessage } from "@/lib/format";
+
+const SEND_BTN_SCALE_DOWN = 0.92;
+const SEND_BTN_SCALE_DOWN_MS = 60;
+
+function parsePgTextArrayLiteral(input: string): string[] {
+  const s = String(input ?? "").trim();
+  if (!s.startsWith("{") || !s.endsWith("}")) return [];
+  const body = s.slice(1, -1);
+  if (!body) return [];
+
+  const out: string[] = [];
+  let cur = "";
+  let inQuotes = false;
+  let escape = false;
+
+  for (let i = 0; i < body.length; i++) {
+    const ch = body[i];
+
+    if (escape) {
+      cur += ch;
+      escape = false;
+      continue;
+    }
+    if (ch === "\\") {
+      escape = true;
+      continue;
+    }
+    if (ch === '"') {
+      inQuotes = !inQuotes;
+      continue;
+    }
+    if (ch === "," && !inQuotes) {
+      const v = cur.trim();
+      if (v && v.toUpperCase() !== "NULL") out.push(v);
+      cur = "";
+      continue;
+    }
+    cur += ch;
+  }
+
+  const last = cur.trim();
+  if (last && last.toUpperCase() !== "NULL") out.push(last);
+  return out.map((x) => String(x)).filter(Boolean);
+}
+
+function coerceStringArray(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map(String).filter(Boolean);
+  if (value == null) return [];
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+
+    // JSON array?
+    if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (Array.isArray(parsed)) return parsed.map(String).filter(Boolean);
+      } catch {
+        // ignore
+      }
+    }
+
+    // Postgres array literal?
+    if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+      return parsePgTextArrayLiteral(trimmed);
+    }
+  }
+  return [];
+}
+
+type MessageRowRenderer = (
+  item: Message,
+  opts?: {
+    onLongPress?: () => void;
+    active?: boolean;
+    drag?: () => void;
+  }
+) => React.ReactElement | null;
+
+function sameStringArray(a: unknown, b: unknown) {
+  const aa = coerceStringArray(a);
+  const bb = coerceStringArray(b);
+  if (aa.length !== bb.length) return false;
+  for (let i = 0; i < aa.length; i++) if (aa[i] !== bb[i]) return false;
+  return true;
+}
+
+const MemoMessageRow = React.memo(
+  function MemoMessageRow(props: {
+    item: Message;
+    renderRow: MessageRowRenderer;
+    active?: boolean;
+    drag?: () => void;
+  }) {
+    return props.renderRow(props.item, { active: props.active, drag: props.drag });
+  },
+  (prev, next) => {
+    if (prev.active !== next.active) return false;
+    if (prev.drag !== next.drag) return false;
+
+    const a: any = prev.item;
+    const b: any = next.item;
+    if (a === b) return true;
+    if (String(a?.id ?? "") !== String(b?.id ?? "")) return false;
+
+    // Only re-render if content-ish fields changed.
+    if (String(a?.updatedAt ?? "") !== String(b?.updatedAt ?? "")) return false;
+    if (String(a?.editedAt ?? "") !== String(b?.editedAt ?? "")) return false;
+    if (String(a?.text ?? "") !== String(b?.text ?? "")) return false;
+    if (String(a?.kind ?? "") !== String(b?.kind ?? "")) return false;
+    if (String(a?.clientStatus ?? "") !== String(b?.clientStatus ?? "")) return false;
+    if (!sameStringArray(a?.imageUrls ?? a?.image_urls, b?.imageUrls ?? b?.image_urls)) return false;
+
+    return true;
+  }
+);
+
+
 
 export default function ConversationThreadScreen() {
+
+
   const scheme = useColorScheme() ?? "light";
   const colors = Colors[scheme];
   const { scenarioId, conversationId } = useLocalSearchParams<{ scenarioId: string; conversationId: string }>();
@@ -46,6 +181,30 @@ export default function ConversationThreadScreen() {
     deleteMessage,
     reorderMessagesInConversation,
   } = app;
+
+  // Track which conversation is currently active (non-reactive; avoids update loops)
+  useFocusEffect(
+    useCallback(() => {
+      setActiveConversation(sid, cid);
+      return () => setActiveConversation(sid, null);
+    }, [sid, cid])
+  );
+
+  // Live message subscription: append new messages for this conversation
+  useEffect(() => {
+    if (!sid || !cid) return;
+    // Handler for new messages
+    const handler = (msg: any) => {
+      if (String(msg.scenarioId) === sid && String(msg.conversationId) === cid) {
+        // Force a state update by syncing messages for this conversation
+        app?.syncMessagesForConversation?.({ scenarioId: sid, conversationId: cid, limit: 200 });
+      }
+    };
+    const unsubscribe = subscribeToMessageEvents(handler);
+    return () => {
+      unsubscribe();
+    };
+  }, [sid, cid, app]);
 
   const selectedProfileId: string | null = useMemo(
     () => (sid ? (getSelectedProfileId?.(sid) ?? null) : null),
@@ -100,18 +259,49 @@ export default function ConversationThreadScreen() {
   }, [canEditGroup, sid, cid]);
 
   const [text, setText] = useState<string>("");
+  const [imageUris, setImageUris] = useState<string[]>([]);
   const [sendAsId, setSendAsId] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [publicOpen, setPublicOpen] = useState(false);
 
+  const sendingRef = useRef(false);
+  const [sending, setSending] = useState(false);
+
+  const deleteMessageRef = useRef(false);
+
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [lightboxUrls, setLightboxUrls] = useState<string[]>([]);
+  const [lightboxIndex, setLightboxIndex] = useState<number>(0);
+
   const [reorderMode, setReorderMode] = useState(false);
   const [reorderDraft, setReorderDraft] = useState<Message[] | null>(null);
+
+  // Show a full-white loading screen briefly when opening a conversation
+  const [openLoading, setOpenLoading] = useState<boolean>(true);
+
+  // Pagination (client-side incremental load from local messages map)
+  const PAGE_SIZE = 15;
+  const [visibleCount, setVisibleCount] = useState<number>(PAGE_SIZE);
+  const loadingOlderRef = useRef(false);
 
   const [editOpen, setEditOpen] = useState(false);
   const [editMessageId, setEditMessageId] = useState<string | null>(null);
   const [editText, setEditText] = useState<string>("");
   const [editSenderId, setEditSenderId] = useState<string | null>(null);
   const [editPublicOpen, setEditPublicOpen] = useState(false);
+
+  const [newMsgCount, setNewMsgCount] = useState<number>(0);
+  const [showNewMessages, setShowNewMessages] = useState<boolean>(false);
+
+  // Typing indicator state & timers
+  const [typingProfileIds, setTypingProfileIds] = useState<string[]>([]);
+  const typingTimersRef = useRef<Record<string, ReturnType<typeof setTimeout> | null>>({});
+  const typingSendTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const typingIsActiveRef = useRef(false);
+
+
+  // In feedverse-dev (local/AsyncStorage mode), "mark as read" is handled locally
+  // by updating message records via AppData. No backend call here.
 
   // default sender = selected profile ("you"/receiver)
   useEffect(() => {
@@ -129,9 +319,29 @@ export default function ConversationThreadScreen() {
   }, [isOneToOne, otherProfileId, selectedProfileId]);
 
   const messagesMap: Record<string, Message> = useMemo(() => ((db as any)?.messages ?? {}) as any, [db]);
+  const messageIds: string[] | null = useMemo(() => {
+    const ids = (conversation as any)?.messageIds;
+    if (!Array.isArray(ids)) return null;
+    const out = ids.map(String).map((s: string) => s.trim()).filter(Boolean);
+    return out.length > 0 ? out : null;
+  }, [conversation]);
+
   const messages: Message[] = useMemo(() => {
     if (!isReady) return [];
     if (!sid || !cid) return [];
+
+    // Fast path: use per-conversation id index (avoids scanning all messages).
+    if (messageIds && messageIds.length > 0) {
+      const out: Message[] = [];
+      for (const mid of messageIds) {
+        const m = messagesMap[mid];
+        if (!m) continue;
+        if (String((m as any).scenarioId) !== sid) continue;
+        if (String((m as any).conversationId) !== cid) continue;
+        out.push(m);
+      }
+      return out;
+    }
 
     const out: Message[] = [];
     for (const m of Object.values(messagesMap)) {
@@ -146,21 +356,329 @@ export default function ConversationThreadScreen() {
       return String((a as any).id ?? "").localeCompare(String((b as any).id ?? ""));
     });
     return out;
-  }, [isReady, sid, cid, messagesMap]);
+  }, [isReady, sid, cid, messagesMap, messageIds]);
+
+  // Messages currently visible in UI (last `visibleCount` messages)
+  const visibleMessages = useMemo(() => {
+    if (!messages || messages.length === 0) return [] as Message[];
+    const start = Math.max(0, messages.length - visibleCount);
+    return messages.slice(start);
+  }, [messages, visibleCount]);
 
   const listRef = useRef<FlatList<Message> | null>(null);
+  const dragListRef = useRef<any>(null);
 
-  const scrollToBottom = useCallback(() => {
-    if (!listRef.current) return;
-    if (messages.length === 0) return;
-    // with non-inverted list, bottom = last index
-    listRef.current.scrollToIndex({ index: Math.max(0, messages.length - 1), animated: true });
-  }, [messages.length]);
+  // --- scrolling helpers (non-inverted list) ---
+  const didInitialScrollRef = useRef(false);
+  const didListLayoutRef = useRef(false);
+  const isNearBottomRef = useRef(true);
+  const prevMsgCountRef = useRef(0);
+
+  // iMessage-style: only auto-scroll when we're *extremely* close to the bottom.
+  const AUTO_SCROLL_NEAR_BOTTOM_PX = 12;
+
+  // Small debounced scroll-to-end to avoid landing in the middle while items/images finish layout.
+  const scrollDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const scrollToBottom = useCallback((animated: boolean) => {
+    if (scrollDebounceRef.current) clearTimeout(scrollDebounceRef.current);
+
+    // Wait for layout + interactions, then scroll.
+    // Use a slightly longer debounce for animated scrolls and schedule a follow-up
+    // fallback scroll to make sure very long lists actually reach the end.
+    const delay = animated ? 120 : 20;
+    scrollDebounceRef.current = setTimeout(() => {
+      requestAnimationFrame(() => {
+        InteractionManager.runAfterInteractions(() => {
+          try {
+            listRef.current?.scrollToEnd({ animated });
+          } catch {}
+          // Follow-up: sometimes the first scroll lands short due to late layout/images.
+          // Schedule one more non-animated jump shortly after to ensure exact bottom.
+          setTimeout(() => {
+            try {
+              listRef.current?.scrollToEnd({ animated: false });
+            } catch {}
+          }, 160);
+        });
+      });
+    }, delay);
+  }, []);
+
+  const handleListLayout = useCallback(() => {
+    didListLayoutRef.current = true;
+
+    // When we first get a real layout, ensure we are at the bottom.
+    if (!reorderMode && !didInitialScrollRef.current && messages.length > 0) {
+      didInitialScrollRef.current = true;
+      scrollToBottom(false);
+    }
+  }, [reorderMode, messages.length, scrollToBottom]);
+
+  const handleContentSizeChange = useCallback(() => {
+    if (reorderMode) return;
+
+    // If we don't have the list layout yet, don't try to scroll; we'll do it in onLayout.
+    if (!didListLayoutRef.current) return;
+
+    // First time we have content: jump to bottom without animation.
+    if (!didInitialScrollRef.current && messages.length > 0) {
+      didInitialScrollRef.current = true;
+      scrollToBottom(false);
+      return;
+    }
+
+    // Keep pinned only if user is already near bottom.
+    if (isNearBottomRef.current) {
+      scrollToBottom(true);
+    }
+  }, [reorderMode, messages.length, scrollToBottom]);
+
+  // Load older messages (increase visibleCount) and preserve scroll position
+  const loadOlderMessages = useCallback(() => {
+    if (loadingOlderRef.current) return;
+    if (visibleMessages.length >= messages.length) return;
+    loadingOlderRef.current = true;
+
+    const firstVisibleId = visibleMessages[0]?.id;
+
+    setVisibleCount((v) => Math.min(messages.length, v + PAGE_SIZE));
+
+    // after DOM updates, scroll to keep the previous first visible item at top
+    setTimeout(() => {
+      try {
+        if (!firstVisibleId) return;
+        const all = messages;
+        const newStart = Math.max(0, all.length - (Math.min(messages.length, visibleCount + PAGE_SIZE)));
+        const idx = all.findIndex((m) => String(m.id) === String(firstVisibleId));
+        const newIndex = idx - newStart;
+        if (newIndex >= 0) {
+          listRef.current?.scrollToIndex({ index: newIndex, animated: false });
+        }
+      } catch {}
+      loadingOlderRef.current = false;
+    }, 80);
+  }, [messages, visibleMessages, visibleCount]);
+
+  const onScrollToIndexFailed = useCallback((_info: any) => {
+    // If items aren't measured yet, wait a tick then jump to end.
+    setTimeout(() => {
+      listRef.current?.scrollToEnd({ animated: false });
+    }, 50);
+  }, []);
+
+  const handleScroll = useCallback((e: any) => {
+    const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent;
+    const paddingToBottom = 220;
+    const distanceFromBottom = contentSize.height - (layoutMeasurement.height + contentOffset.y);
+
+    const nearBottom = distanceFromBottom <= paddingToBottom;
+
+    isNearBottomRef.current = nearBottom;
+
+    // if user comes back to bottom, clear floater
+    if (nearBottom) {
+      setShowNewMessages(false);
+      setNewMsgCount(0);
+    }
+    // autoload older messages when scrolling to the top
+    try {
+      const nearTopThreshold = 80;
+      const nearTop = contentOffset.y <= nearTopThreshold;
+      if (nearTop && !reorderMode && !loadingOlderRef.current && visibleMessages.length < messages.length) {
+        loadOlderMessages();
+      }
+    } catch {}
+  }, [reorderMode, visibleMessages.length, messages.length, loadOlderMessages]);
+
+  const syncOnceRef = useRef<string | null>(null);
 
   useEffect(() => {
-    // keep you near the latest
-    if (!reorderMode) scrollToBottom();
-  }, [messages.length, scrollToBottom, reorderMode]);
+    didInitialScrollRef.current = false;
+    didListLayoutRef.current = false;
+    prevMsgCountRef.current = 0;
+    isNearBottomRef.current = true;
+    // reset open-loading when conversation changes
+    setOpenLoading(true);
+    // Scroll to bottom immediately (before layout or sync)
+    setTimeout(() => {
+      try {
+        listRef.current?.scrollToEnd({ animated: false });
+      } catch {}
+    }, 0);
+    const t = setTimeout(() => setOpenLoading(false), 100);
+    return () => clearTimeout(t);
+  }, [sid, cid]);
+
+  useEffect(() => {
+    if (!isReady) return;
+    if (!sid || !cid) return;
+
+    const key = `${sid}|${cid}`;
+    if (syncOnceRef.current === key) return;
+    syncOnceRef.current = key;
+
+    (async () => {
+      try {
+        await app?.syncMessagesForConversation?.({ scenarioId: sid, conversationId: cid, limit: 200 });
+      } catch {
+        // ignore
+      }
+    })();
+  }, [isReady, sid, cid, app]);
+
+  // Subscribe to typing events for this conversation
+  useEffect(() => {
+    if (!sid || !cid) return () => {};
+    const handler = (ev: any) => {
+      try {
+        if (String(ev?.scenarioId ?? "") !== sid) return;
+        if (String(ev?.conversationId ?? "") !== cid) return;
+        const pid = String(ev?.profileId ?? "").trim();
+        if (!pid) return;
+        // ignore self
+        if (String(pid) === String(selectedProfileId ?? "")) return;
+
+        if (ev.typing) {
+          setTypingProfileIds((prev) => (prev.includes(pid) ? prev : [...prev, pid]));
+          if (typingTimersRef.current[pid]) {
+            clearTimeout(typingTimersRef.current[pid] as any);
+          }
+          typingTimersRef.current[pid] = setTimeout(() => {
+            setTypingProfileIds((prev) => prev.filter((x) => x !== pid));
+            typingTimersRef.current[pid] = null;
+          }, 4000);
+        } else {
+          setTypingProfileIds((prev) => prev.filter((x) => x !== pid));
+          if (typingTimersRef.current[pid]) {
+            clearTimeout(typingTimersRef.current[pid] as any);
+            typingTimersRef.current[pid] = null;
+          }
+        }
+      } catch {
+        // ignore
+      }
+    };
+
+    const unsub = subscribeToTypingEvents(handler);
+    return () => {
+      try { unsub(); } catch {}
+      for (const t of Object.values(typingTimersRef.current)) if (t) clearTimeout(t as any);
+      typingTimersRef.current = {};
+      setTypingProfileIds([]);
+    };
+  }, [sid, cid, selectedProfileId]);
+
+  // Composer typing handlers: send start when first typed, and send stop after idle.
+  const handleChangeText = useCallback(
+    (t: string) => {
+      setText(t);
+      try {
+        const pid = String(sendAsId ?? selectedProfileId ?? "").trim();
+        if (!sid || !cid || !pid) return;
+        if (!typingIsActiveRef.current) {
+          typingIsActiveRef.current = true;
+          try { app?.sendTyping?.({ scenarioId: sid, conversationId: cid, profileId: pid, typing: true }); } catch {}
+        }
+        if (typingSendTimeoutRef.current) clearTimeout(typingSendTimeoutRef.current as any);
+        typingSendTimeoutRef.current = setTimeout(() => {
+          typingIsActiveRef.current = false;
+          try { app?.sendTyping?.({ scenarioId: sid, conversationId: cid, profileId: pid, typing: false }); } catch {}
+          typingSendTimeoutRef.current = null;
+        }, 1500);
+      } catch {
+        // ignore
+      }
+    },
+    [sid, cid, sendAsId, selectedProfileId, app]
+  );
+
+  const handleInputBlur = useCallback(() => {
+    try {
+      const pid = String(sendAsId ?? selectedProfileId ?? "").trim();
+      if (!sid || !cid || !pid) return;
+      if (typingSendTimeoutRef.current) {
+        clearTimeout(typingSendTimeoutRef.current as any);
+        typingSendTimeoutRef.current = null;
+      }
+      if (typingIsActiveRef.current) {
+        typingIsActiveRef.current = false;
+        try { app?.sendTyping?.({ scenarioId: sid, conversationId: cid, profileId: pid, typing: false }); } catch {}
+      }
+    } catch {
+      // ignore
+    }
+  }, [sid, cid, sendAsId, selectedProfileId, app]);
+
+  // Keep messages "live" while this screen is focused.
+  // Uses existing backend sync (internally throttled) so it's lightweight.
+  useFocusEffect(
+    useCallback(() => {
+      if (!isReady) return () => void 0;
+      if (!sid || !cid) return () => void 0;
+
+      let cancelled = false;
+
+      const tick = async () => {
+        if (cancelled) return;
+        if (reorderMode) return;
+        try {
+          await app?.syncMessagesForConversation?.({ scenarioId: sid, conversationId: cid, limit: 200 });
+        } catch {
+          // ignore
+        }
+      };
+
+      // immediate sync on focus
+      void tick();
+
+      const id = setInterval(() => {
+        void tick();
+      }, 2500);
+
+      return () => {
+        cancelled = true;
+        clearInterval(id);
+      };
+    }, [isReady, sid, cid, app, reorderMode])
+  );
+
+  // Non-inverted FlatList: open at bottom and keep pinned when user is near bottom
+  useEffect(() => {
+    if (reorderMode) return;
+
+    const prev = prevMsgCountRef.current;
+    const next = messages.length;
+    prevMsgCountRef.current = next;
+
+    if (next <= prev) return;
+
+    const added = next - prev;
+
+    const selfIds = new Set<string>();
+    if (selectedProfileId) selfIds.add(String(selectedProfileId));
+    if (sendAsId) selfIds.add(String(sendAsId));
+
+    // Only count "new messages" if at least one of the newly-added items is NOT from self.
+    const newlyAdded = messages.slice(Math.max(0, next - added));
+    const addedFromOthers = newlyAdded.filter((m) => !selfIds.has(String((m as any)?.senderProfileId ?? ""))).length;
+    if (addedFromOthers <= 0) {
+      setShowNewMessages(false);
+      setNewMsgCount(0);
+      return;
+    }
+
+    // if user isn't near bottom, show floater
+    if (!isNearBottomRef.current) {
+      setShowNewMessages(true);
+      setNewMsgCount((c) => c + addedFromOthers);
+      return;
+    }
+
+    // if user is near bottom, no floater
+    setShowNewMessages(false);
+    setNewMsgCount(0);
+  }, [messages, reorderMode, selectedProfileId, sendAsId]);
 
   useEffect(() => {
     if (!reorderMode) {
@@ -169,6 +687,51 @@ export default function ConversationThreadScreen() {
     }
     setReorderDraft(messages);
   }, [reorderMode, messages]);
+
+  // When entering reorder mode, ensure the draggable list scrolls to bottom.
+  useEffect(() => {
+    if (!reorderMode) return;
+
+    let cancelled = false;
+
+    const tryScrollToBottom = async () => {
+        // wait for a frame and any pending interactions/layout
+        await new Promise((res) => requestAnimationFrame(() => res(undefined)));
+        await new Promise((res) => InteractionManager.runAfterInteractions(() => res(undefined)));
+
+      const maxTries = 4;
+      for (let i = 0; i < maxTries; i++) {
+        if (cancelled) return;
+
+        try {
+          if (dragListRef.current?.scrollToEnd) {
+            try { dragListRef.current.scrollToEnd({ animated: false }); } catch {}
+          }
+
+          if (dragListRef.current?.scrollToIndex) {
+            try {
+              const len = (dragListRef.current?.props?.data?.length ?? messages.length) - 1;
+              if (len >= 0) dragListRef.current.scrollToIndex({ index: len, animated: false });
+            } catch {}
+          }
+
+          if (dragListRef.current?.scrollToOffset) {
+            try { dragListRef.current.scrollToOffset({ offset: 9999999, animated: false }); } catch {}
+          }
+        } catch {}
+
+        // short pause for layout to settle before retrying
+        // eslint-disable-next-line no-await-in-loop
+        await new Promise((res) => setTimeout(res, 80));
+      }
+    };
+
+    void tryScrollToBottom();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [reorderMode, messages.length]);
 
   const oneToOneSide: "left" | "right" = useMemo(() => {
     // right = selected profile ("you"), left = other participant
@@ -179,6 +742,27 @@ export default function ConversationThreadScreen() {
   }, [isOneToOne, selectedProfileId, sendAsId]);
 
   const senderSlider = useRef(new Animated.Value(oneToOneSide === "right" ? 1 : 0)).current;
+  const sendBtnScale = useRef(new Animated.Value(1)).current;
+
+  const bumpSendBtn = useCallback(() => {
+    try {
+      sendBtnScale.stopAnimation();
+      sendBtnScale.setValue(1);
+      Animated.sequence([
+        Animated.timing(sendBtnScale, {
+          toValue: SEND_BTN_SCALE_DOWN,
+          duration: SEND_BTN_SCALE_DOWN_MS,
+          useNativeDriver: true,
+        }),
+        Animated.spring(sendBtnScale, {
+          toValue: 1,
+          friction: 4,
+          tension: 220,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    } catch {}
+  }, [sendBtnScale]);
 
   useEffect(() => {
     Animated.timing(senderSlider, {
@@ -205,18 +789,27 @@ export default function ConversationThreadScreen() {
     return ids;
   }, [candidates]);
 
+  const editAllowedIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const p of [...(candidates.owned ?? []), ...(candidates.public ?? [])]) {
+      const id = String((p as any).id ?? "").trim();
+      if (id) ids.add(id);
+    }
+    return ids;
+  }, [candidates.owned, candidates.public]);
+
   const eligibleEditSenders: Profile[] = useMemo(() => {
     const out: Profile[] = [];
     for (const pid of participantIds) {
       const id = String(pid ?? "").trim();
       if (!id) continue;
-      if (!sendAsAllowedIds.has(id)) continue;
+      if (!editAllowedIds.has(id)) continue;
       const p: Profile | null = getProfileById?.(id) ?? null;
       if (p) out.push(p);
     }
     out.sort((a, b) => String((a as any).displayName ?? "").localeCompare(String((b as any).displayName ?? "")));
     return out;
-  }, [participantIds, sendAsAllowedIds, getProfileById]);
+  }, [participantIds, editAllowedIds, getProfileById]);
 
   const eligibleEditSendersOwned: Profile[] = useMemo(() => {
     const ownedIds = new Set((candidates.owned ?? []).map((p) => String((p as any).id ?? "")).filter(Boolean));
@@ -234,14 +827,14 @@ export default function ConversationThreadScreen() {
       if (!mid) return;
 
       const senderId = String((m as any).senderProfileId ?? "");
-      if (!sendAsAllowedIds.has(senderId)) return;
+      if (!editAllowedIds.has(senderId)) return;
 
       setEditMessageId(mid);
       setEditText(String((m as any).text ?? ""));
       setEditSenderId(senderId);
       setEditOpen(true);
     },
-    [sendAsAllowedIds]
+    [editAllowedIds]
   );
 
   const closeEdit = useCallback(() => {
@@ -251,6 +844,26 @@ export default function ConversationThreadScreen() {
     setEditSenderId(null);
   }, []);
 
+  const runDeleteMessage = useCallback(
+    async (messageId: string, opts?: { after?: () => void }) => {
+      if (!sid) return;
+      const mid = String(messageId ?? "").trim();
+      if (!mid) return;
+      if (deleteMessageRef.current) return;
+      deleteMessageRef.current = true;
+
+      try {
+        await deleteMessage?.({ scenarioId: sid, messageId: mid });
+        opts?.after?.();
+      } catch (e: any) {
+        Alert.alert("Could not delete", formatErrorMessage(e, "Could not delete message"));
+      } finally {
+        deleteMessageRef.current = false;
+      }
+    },
+    [sid, deleteMessage]
+  );
+
   const onSaveEdit = useCallback(async () => {
     if (!sid) return;
     if (!editMessageId) return;
@@ -259,24 +872,38 @@ export default function ConversationThreadScreen() {
     const from = String(editSenderId ?? "").trim();
     if (!body) return;
     if (!from) return;
-    if (!sendAsAllowedIds.has(from)) return;
+    if (!editAllowedIds.has(from)) return;
 
-    await updateMessage?.({
-      scenarioId: sid,
-      messageId: String(editMessageId),
-      text: body,
-      senderProfileId: from,
-    });
-
-    closeEdit();
-  }, [sid, editMessageId, editText, editSenderId, sendAsAllowedIds, updateMessage, closeEdit]);
+    try {
+      await updateMessage?.({
+        scenarioId: sid,
+        messageId: String(editMessageId),
+        text: body,
+        senderProfileId: from,
+      });
+      closeEdit();
+    } catch (e: any) {
+      Alert.alert("Could not update", formatErrorMessage(e, "Could not update message"));
+    }
+  }, [sid, editMessageId, editText, editSenderId, editAllowedIds, updateMessage, closeEdit]);
 
   const onDeleteEdit = useCallback(async () => {
     if (!sid) return;
     if (!editMessageId) return;
-    await deleteMessage?.({ scenarioId: sid, messageId: String(editMessageId) });
-    closeEdit();
-  }, [sid, editMessageId, deleteMessage, closeEdit]);
+
+    const mid = String(editMessageId);
+
+    Alert.alert("Delete message?", "This will remove the message.", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: async () => {
+          await runDeleteMessage(mid, { after: closeEdit });
+        },
+      },
+    ]);
+  }, [sid, editMessageId, runDeleteMessage, closeEdit]);
 
   const canSwitchOneToOneSender = useMemo(() => {
     if (!isOneToOne) return false;
@@ -323,6 +950,12 @@ export default function ConversationThreadScreen() {
 
   const closePicker = useCallback(() => setPickerOpen(false), []);
 
+  const onPressNewMessages = useCallback(() => {
+    scrollToBottom(true);
+    setShowNewMessages(false);
+    setNewMsgCount(0);
+  }, [scrollToBottom]);
+
   const sendAsProfile: Profile | null = useMemo(() => {
     if (!sendAsId) return null;
     return getProfileById?.(String(sendAsId)) ?? null;
@@ -341,48 +974,209 @@ export default function ConversationThreadScreen() {
     [closePicker]
   );
 
-  const onSend = useCallback(async () => {
+  const onSend = useCallback(() => {
     if (!sid || !cid) return;
     if (!sendAsId) return;
 
     const body = String(text ?? "").trim();
-    if (!body) return;
+    const imgs = Array.isArray(imageUris) ? imageUris.map(String).filter(Boolean) : [];
+    if (!body && imgs.length === 0) return;
 
-    const res = await sendMessage?.({
-      scenarioId: sid,
-      conversationId: cid,
-      senderProfileId: String(sendAsId),
-      text: body,
+    if (sendingRef.current) return;
+    sendingRef.current = true;
+    setSending(true);
+
+    bumpSendBtn();
+    // Clear composer immediately so send feels instant.
+    setText("");
+    setImageUris([]);
+    try { scrollToBottom(true); } catch {}
+
+    const p = Promise.resolve(
+      sendMessage?.({
+        scenarioId: sid,
+        conversationId: cid,
+        senderProfileId: String(sendAsId),
+        text: body,
+        imageUris: imgs,
+      })
+    );
+
+    void p
+      .then(async (res: any) => {
+        // accept several success shapes: { ok: true }, { messageId }, { message }
+        const isSuccess = !!(res && (res.ok === true || (res as any).messageId || (res as any).message));
+
+        if (isSuccess) {
+          try {
+            const pid = String(sendAsId ?? selectedProfileId ?? "").trim();
+            if (sid && cid && pid) {
+              try { app?.sendTyping?.({ scenarioId: sid, conversationId: cid, profileId: pid, typing: false }); } catch {}
+
+              // Mark only the message just sent as read via backend, but only if it was sent successfully and is not forbidden
+              let sentMsgId = null;
+              if (res?.messageId) sentMsgId = res.messageId;
+              else if (res?.message?.id) sentMsgId = res.message.id;
+              if (sentMsgId) {
+                const sentMsg = app?.db?.messages?.[sentMsgId];
+                if (sentMsg && !sentMsg.read && !res.error) {
+                  try {
+                    await app?.updateMessage?.({
+                      scenarioId: sid,
+                      messageId: String(sentMsgId),
+                      text: sentMsg.text,
+                      read: true,
+                    });
+                  } catch {}
+                }
+              }
+
+              // Clear unread count for this conversation locally
+              if (app?.db?.conversations?.[cid]) {
+                try { app.db.conversations[cid].unreadCount = 0; } catch {}
+              }
+            }
+          } catch {}
+
+          return;
+        }
+
+        const msg = String((res as any)?.error ?? "Send failed");
+        Alert.alert("Could not send", msg);
+
+        // If user accidentally picked/toggled to an invalid sender, snap back to the selected profile.
+        if (selectedProfileId && String(sendAsId) !== String(selectedProfileId)) {
+          setSendAsId(String(selectedProfileId));
+        }
+      })
+      .catch((e) => {
+        Alert.alert("Could not send", formatErrorMessage(e, "Send failed"));
+      })
+      .finally(() => {
+        sendingRef.current = false;
+        setSending(false);
+      });
+  }, [sid, cid, sendAsId, text, imageUris, sendMessage, selectedProfileId, scrollToBottom, bumpSendBtn]);
+
+  const onPickImages = useCallback(async () => {
+    const remaining = Math.max(0, 4 - (imageUris?.length ?? 0));
+    if (remaining <= 0) return;
+    const uris = await pickAndPersistManyImages({ remaining, persistAs: "img" });
+    if (!uris || uris.length === 0) return;
+    setImageUris((prev) => {
+      const next = [...(prev ?? []), ...uris.map(String).filter(Boolean)];
+      return next.slice(0, 4);
     });
+  }, [imageUris]);
 
-    if (res?.ok) setText("");
-  }, [sid, cid, sendAsId, text, sendMessage]);
+  const retryFailedMessage = useCallback(
+    (m: Message) => {
+      if (!sid || !cid) return;
+      const mid = String((m as any)?.id ?? "").trim();
+      if (!mid) return;
 
-  const renderBubbleRow = (
-    item: Message,
-    opts?: {
-      onLongPress?: () => void;
-      active?: boolean;
-      drag?: () => void;
-    }
-  ) => {
+      const status = String((m as any)?.clientStatus ?? "").trim();
+      if (status && status !== "failed") return;
+
+      const senderProfileId = String((m as any)?.senderProfileId ?? "").trim();
+      const body = String((m as any)?.text ?? "").trim();
+      const imageUris = coerceStringArray((m as any)?.imageUrls ?? (m as any)?.image_urls);
+      const kind = String((m as any)?.kind ?? "text").trim();
+
+      // Reuse the same client message id so the UI doesn't duplicate bubbles.
+      const p = Promise.resolve(
+        sendMessage?.({
+          scenarioId: sid,
+          conversationId: cid,
+          senderProfileId: senderProfileId || String(sendAsId ?? selectedProfileId ?? ""),
+          text: body,
+          imageUris,
+          kind,
+          clientMessageId: mid,
+        } as any)
+      );
+
+      void p.catch(() => {
+        // sendMessage already marks the message failed + returns an error; screen can stay quiet.
+      });
+    },
+    [sid, cid, sendMessage, sendAsId, selectedProfileId]
+  );
+
+  const renderBubbleRow = useCallback(
+    (
+      item: Message,
+      opts?: {
+        onLongPress?: () => void;
+        active?: boolean;
+        drag?: () => void;
+      }
+    ) => {
     const senderId = String((item as any).senderProfileId ?? "");
     const isRight = senderId === String(selectedProfileId ?? "");
     const sender: Profile | null = senderId ? (getProfileById?.(senderId) ?? null) : null;
+    const imageUrls = coerceStringArray((item as any).imageUrls ?? (item as any).image_urls);
+    const kind = String((item as any).kind ?? "text").trim();
+    const hasText = Boolean(String((item as any).text ?? "").trim());
+    const hasImages = imageUrls.length > 0;
+    const forceColumnWidth = hasImages; // when images exist, keep a stable column width so images don't shrink to short text
 
-    const canSwipeEdit = !reorderMode && sendAsAllowedIds.has(senderId);
+    const clientStatus = String((item as any).clientStatus ?? "").trim();
+    const canRetry = clientStatus === "failed";
+
+    const canSwipeEdit = !reorderMode && editAllowedIds.has(senderId);
+
+    if (kind === "separator") {
+      const sepRow = (
+        <View style={{ alignItems: "center", paddingVertical: 8 }}>
+          <ThemedText style={{ color: colors.textSecondary, fontSize: 12 }}>
+            {String((item as any).text ?? "")}
+          </ThemedText>
+        </View>
+      );
+
+      return (
+        <SwipeableRow
+          enabled={canSwipeEdit}
+          colors={{ tint: colors.tint, pressed: colors.pressed }}
+          rightThreshold={40}
+          onEdit={() => openEdit(item)}
+          onDelete={async () => {
+            if (!sid) return;
+            const mid = String((item as any).id ?? "");
+            if (!mid) return;
+            Alert.alert("Delete message?", "This will remove the message.", [
+              { text: "Cancel", style: "cancel" },
+              {
+                text: "Delete",
+                style: "destructive",
+                onPress: async () => {
+                  await runDeleteMessage(mid);
+                },
+              },
+            ]);
+          }}
+        >
+          {sepRow}
+        </SwipeableRow>
+      );
+    }
 
     const showLeftAvatar = !isRight && !isOneToOne;
     const showSenderNameAbove = !isRight && !isOneToOne;
 
     const row = (
       <Pressable
+        onPress={() => {
+          if (!canRetry) return;
+          retryFailedMessage(item);
+        }}
         onLongPress={() => {
-          if (!reorderMode) {
-            setReorderMode(true);
-            return;
+          // Only begin dragging when already in reorder mode; don't enter reorder
+          // mode by long-pressing an individual message.
+          if (reorderMode) {
+            opts?.drag?.();
           }
-          opts?.drag?.();
         }}
         delayLongPress={180}
         style={({ pressed }) => [
@@ -391,35 +1185,59 @@ export default function ConversationThreadScreen() {
         ]}
       >
         <View style={[styles.bubbleRow, { justifyContent: isRight ? "flex-end" : "flex-start" }]}>
-        {showLeftAvatar ? <Avatar uri={sender?.avatarUrl ?? null} size={26} fallbackColor={colors.border} /> : null}
+          {showLeftAvatar ? <Avatar uri={sender?.avatarUrl ?? null} size={26} fallbackColor={colors.border} /> : null}
 
-        <View style={{ maxWidth: "78%" }}>
-          {showSenderNameAbove ? (
-            <ThemedText style={[styles.senderNameAbove, { color: colors.textSecondary }]} numberOfLines={1}>
-              {sender?.displayName ? String(sender.displayName) : "unknown"}
-            </ThemedText>
-          ) : null}
+          <View style={[{ maxWidth: "78%" }, forceColumnWidth ? { width: "78%" } : null]}>
+            {showSenderNameAbove ? (
+              <ThemedText style={[styles.senderNameAbove, { color: colors.textSecondary }]} numberOfLines={1}>
+                {sender?.displayName ? String(sender.displayName) : "unknown"}
+              </ThemedText>
+            ) : null}
 
-          <View
-            style={[
-              styles.bubble,
-              {
-                backgroundColor: isRight ? colors.tint : colors.card,
-                borderWidth: 0,
-              },
-            ]}
-          >
-            <ThemedText
-              style={[
-                styles.bubbleText,
-                { color: isRight ? (scheme === "dark" ? colors.text : colors.background) : colors.text },
-              ]}
-            >
-              {String((item as any).text ?? "")}
-            </ThemedText>
+            {hasText ? (
+              <View
+                style={[
+                  styles.bubble,
+                  {
+                    backgroundColor: isRight ? colors.tint : colors.message,
+                    borderWidth: 0,
+                    alignSelf: isRight ? "flex-end" : "flex-start", // keep text bubble hugging its content even when column is fixed width
+                  },
+                ]}
+              >
+                <ThemedText
+                  style={[
+                    styles.bubbleText,
+                    { color: isRight ? (scheme === "dark" ? colors.text : colors.background) : colors.text },
+                  ]}
+                >
+                  {String((item as any).text ?? "")}
+                </ThemedText>
+              </View>
+            ) : null}
+
+            {hasImages ? (
+              <View style={{ marginTop: 6 }}>
+                <MediaGrid
+                  urls={imageUrls}
+                  variant={"reply"}
+                  backgroundColor={colors.border}
+                  onOpen={(index) => {
+                    setLightboxUrls(imageUrls);
+                    setLightboxIndex(index);
+                    setLightboxOpen(true);
+                  }}
+                />
+              </View>
+            ) : null}
+
+            {clientStatus === "failed" ? (
+              <ThemedText style={{ marginTop: 6, fontSize: 12, color: scheme === "dark" ? "#FF7B7B" : "#D73A49" }}>
+                Failed to send • tap to retry
+              </ThemedText>
+            ) : null}
           </View>
         </View>
-      </View>
       </Pressable>
     );
 
@@ -433,17 +1251,75 @@ export default function ConversationThreadScreen() {
           if (!sid) return;
           const mid = String((item as any).id ?? "");
           if (!mid) return;
-          await deleteMessage?.({ scenarioId: sid, messageId: mid });
+          Alert.alert("Delete message?", "This will remove the message.", [
+            { text: "Cancel", style: "cancel" },
+            {
+              text: "Delete",
+              style: "destructive",
+              onPress: async () => {
+                await runDeleteMessage(mid);
+              },
+            },
+          ]);
         }}
       >
         {row}
       </SwipeableRow>
     );
-  };
+    },
+    [
+      colors,
+      editAllowedIds,
+      getProfileById,
+      isOneToOne,
+      openEdit,
+      reorderMode,
+      retryFailedMessage,
+      runDeleteMessage,
+      scheme,
+      selectedProfileId,
+      sid,
+    ]
+  );
 
-  const renderBubble = ({ item }: { item: Message }) => renderBubbleRow(item);
+  const composerAttachments =
+    imageUris.length > 0 ? (
+      <View style={{ paddingHorizontal: 12, paddingBottom: 6 }}>
+        <MediaGrid
+          urls={imageUris}
+          variant={"reply"}
+          backgroundColor={colors.border}
+          onOpen={(index) => {
+            setLightboxUrls(imageUris);
+            setLightboxIndex(index);
+            setLightboxOpen(true);
+          }}
+        />
+        <View style={{ flexDirection: "row", justifyContent: "flex-end", marginTop: 6 }}>
+          <Pressable
+            onPress={() => setImageUris([])}
+            hitSlop={10}
+            style={({ pressed }) => [pressed && { opacity: 0.75 }]}
+          >
+            <ThemedText style={{ color: colors.textSecondary, fontWeight: "900" }}>Clear images</ThemedText>
+          </Pressable>
+        </View>
+      </View>
+    ) : null;
 
-  const dataForList = reorderMode ? reorderDraft ?? messages : messages;
+  const renderBubble = useCallback(
+    ({ item }: { item: Message }) => <MemoMessageRow item={item} renderRow={renderBubbleRow} />,
+    [renderBubbleRow]
+  );
+
+  const renderDraggableBubble = useCallback(
+    ({ item, drag, isActive }: RenderItemParams<Message>) => (
+      <MemoMessageRow item={item} renderRow={renderBubbleRow} drag={drag} active={isActive} />
+    ),
+    [renderBubbleRow]
+  );
+
+  const dataForList = reorderMode ? reorderDraft ?? messages : visibleMessages;
 
   if (!isReady || !receiverProfile || !conversation) {
     return (
@@ -481,7 +1357,33 @@ export default function ConversationThreadScreen() {
             ]}
           >
             <View style={styles.headerCenterInner}>
-              <Avatar uri={headerAvatarUrl} size={38} fallbackColor={colors.border} />
+              <Pressable
+                onPress={() => {
+                  // 1:1: avatar should open the other participant's profile
+                  if (isOneToOne) {
+                    if (!sid || !otherProfileId) return;
+                    router.push({
+                      pathname: "/(scenario)/[scenarioId]/(tabs)/home/profile/[profileId]",
+                      params: { scenarioId: sid, profileId: String(otherProfileId) },
+                    } as any);
+                    return;
+                  }
+
+                  // Group chat: keep existing behavior (open editor)
+                  if (!canEditGroup) return;
+                  onPressHeader();
+                }}
+                onLongPress={() => {
+                  // Enter reorder mode when the avatar is long-pressed (GC or DM)
+                  setReorderMode(true);
+                }}
+                disabled={false}
+                hitSlop={12}
+                accessibilityRole="button"
+                accessibilityLabel={isOneToOne ? "Open profile" : "Reorder messages"}
+              >
+                <Avatar uri={headerAvatarUrl} size={38} fallbackColor={colors.border} />
+              </Pressable>
               <ThemedText style={[styles.headerTitle, { color: colors.text }]} numberOfLines={1}>
                 {title}
               </ThemedText>
@@ -509,14 +1411,34 @@ export default function ConversationThreadScreen() {
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         keyboardVerticalOffset={0}
       >
+        {!reorderMode && showNewMessages && newMsgCount > 0 ? (
+          <View pointerEvents="box-none" style={styles.floaterWrap}>
+            <Pressable
+              onPress={onPressNewMessages}
+              style={({ pressed }) => [
+                styles.floaterBtn,
+                { backgroundColor: colors.card, borderColor: colors.border },
+                pressed && { opacity: 0.85 },
+              ]}
+            >
+              <Ionicons name="arrow-down" size={16} color={colors.tint} />
+              <ThemedText style={{ color: colors.text, fontWeight: "900" }}>
+                New messages{newMsgCount > 1 ? ` (${newMsgCount})` : ""}
+              </ThemedText>
+            </Pressable>
+          </View>
+        ) : null}
         {reorderMode ? (
           <DraggableFlatList
+            ref={(r) => {
+              dragListRef.current = r;
+            }}
             data={dataForList}
             keyExtractor={(m) => String((m as any).id)}
             contentContainerStyle={{ padding: 14, paddingBottom: 10 }}
             activationDistance={12}
             dragItemOverflow
-            renderItem={({ item, drag, isActive }: RenderItemParams<Message>) => renderBubbleRow(item, { drag, active: isActive })}
+            renderItem={renderDraggableBubble}
             onDragEnd={({ data: next }) => {
               setReorderDraft(next);
               if (!sid || !cid) return;
@@ -532,14 +1454,32 @@ export default function ConversationThreadScreen() {
             data={dataForList}
             keyExtractor={(m) => String((m as any).id)}
             renderItem={renderBubble}
-            contentContainerStyle={{ padding: 14, paddingBottom: 10 }}
-            onScrollToIndexFailed={() => {
-              // ignore (small lists)
-            }}
+            contentContainerStyle={{ padding: 14, paddingBottom: 24, flexGrow: 1 }}
+            initialNumToRender={PAGE_SIZE}
+            maxToRenderPerBatch={PAGE_SIZE}
+            windowSize={7}
+            updateCellsBatchingPeriod={50}
+            removeClippedSubviews={Platform.OS === "android"}
+            scrollEventThrottle={16}
+            onScroll={handleScroll}
+            onLayout={handleListLayout}
+            onContentSizeChange={handleContentSizeChange}
+            onScrollToIndexFailed={onScrollToIndexFailed}
           />
         )}
 
         <SafeAreaView edges={["bottom"]} style={{ backgroundColor: colors.background }}>
+          {composerAttachments}
+          {/* Typing indicator */}
+          {typingProfileIds.length > 0 ? (
+            <TypingIndicator
+              names={typingProfileIds
+                .map((id) => (getProfileById?.(String(id)) as Profile | null)?.displayName ?? "")
+                .filter(Boolean)}
+              variant="thread"
+              color={colors.textSecondary}
+            />
+          ) : null}
           <View style={[styles.composer, { borderTopColor: colors.border, backgroundColor: colors.background }]}>
             {isOneToOne ? (
               <Pressable
@@ -579,31 +1519,119 @@ export default function ConversationThreadScreen() {
 
             <TextInput
               value={text}
-              onChangeText={setText}
+              onChangeText={handleChangeText}
+              onBlur={handleInputBlur}
               placeholder="message…"
               placeholderTextColor={colors.textSecondary}
               style={[styles.input, { color: colors.text, backgroundColor: colors.card }]}
               multiline
+              editable={sendAsAllowedIds.has(String(sendAsId))}
             />
 
             <Pressable
-              onPress={onSend}
-              disabled={!sendAsId || !String(text ?? "").trim()}
+              onPress={onPickImages}
+              hitSlop={10}
               style={({ pressed }) => [
-                styles.sendBtn,
-                {
-                  backgroundColor: colors.tint,
-                  opacity: !sendAsId || !String(text ?? "").trim() ? 0.4 : pressed ? 0.85 : 1,
-                },
+                styles.iconBtn,
+                { borderColor: colors.border, backgroundColor: colors.card },
+                pressed && { opacity: 0.8 },
               ]}
               accessibilityRole="button"
-              accessibilityLabel="Send"
+              accessibilityLabel="Add images"
+              disabled={!sendAsAllowedIds.has(String(sendAsId))}
             >
-              <Ionicons name="arrow-up" size={18} color={colors.background} />
+              <Ionicons name="image-outline" size={18} color={colors.text} />
             </Pressable>
+
+            <Animated.View style={{ transform: [{ scale: sendBtnScale }] }}>
+              <Pressable
+                onPress={onSend}
+                disabled={
+                  sending ||
+                  !sendAsId ||
+                  (!String(text ?? "").trim() && (imageUris?.length ?? 0) === 0) ||
+                  !sendAsAllowedIds.has(String(sendAsId))
+                }
+                style={({ pressed }) => [
+                  styles.sendBtn,
+                  {
+                    backgroundColor: colors.tint,
+                    opacity:
+                      sending ||
+                      !sendAsId ||
+                      (!String(text ?? "").trim() && (imageUris?.length ?? 0) === 0) ||
+                      !sendAsAllowedIds.has(String(sendAsId))
+                        ? 0.4
+                        : pressed
+                          ? 0.85
+                          : 1,
+                  },
+                ]}
+                onLongPress={async () => {
+                // long-press send: if there is text, send as a centered small 'separator' message
+                const body = String(text ?? "").trim();
+                if (!sendAsId || !sendAsAllowedIds.has(String(sendAsId))) return;
+                if (!body) {
+                  Alert.alert("Separator text required", "Type separator text then long-press send to create it.");
+                  return;
+                }
+
+                if (sendingRef.current) return;
+                sendingRef.current = true;
+                setSending(true);
+
+                bumpSendBtn();
+                // Clear message box immediately (keep attachments).
+                setText("");
+                try { scrollToBottom(true); } catch {}
+
+                let res: any;
+                try {
+                  res = await sendMessage?.({
+                    scenarioId: sid,
+                    conversationId: cid,
+                    senderProfileId: String(sendAsId),
+                    text: body,
+                    kind: "separator",
+                    imageUris: [],
+                  });
+                } catch (e) {
+                  Alert.alert("Could not send", formatErrorMessage(e, "Send failed"));
+                  return;
+                } finally {
+                  sendingRef.current = false;
+                  setSending(false);
+                }
+
+                const isSuccess = !!(res && (res.ok === true || (res as any).messageId || (res as any).message));
+                if (!isSuccess) {
+                  Alert.alert("Could not send", String((res as any)?.error ?? "Send failed"));
+                  return;
+                }
+
+              }}
+                accessibilityRole="button"
+                accessibilityLabel="Send"
+              >
+                {sending ? (
+                  <ActivityIndicator size="small" color={colors.background} />
+                ) : (
+                  <Ionicons name="arrow-up" size={18} color={colors.background} />
+                )}
+              </Pressable>
+            </Animated.View>
           </View>
         </SafeAreaView>
       </KeyboardAvoidingView>
+
+      <Lightbox
+        urls={lightboxUrls}
+        initialIndex={lightboxIndex}
+        visible={lightboxOpen}
+        onClose={() => setLightboxOpen(false)}
+      />
+
+      {/* Loading overlay removed as requested */}
 
       <Modal transparent visible={pickerOpen} animationType="fade" onRequestClose={closePicker}>
         <Pressable style={[styles.pickerBackdrop, { backgroundColor: colors.modalBackdrop }]} onPress={closePicker}>
@@ -612,9 +1640,7 @@ export default function ConversationThreadScreen() {
             onPress={(e) => e?.stopPropagation?.()}
           >
             <View style={styles.pickerHeader}>
-              <ThemedText style={{ color: colors.text, fontWeight: "900", fontSize: 16 }}>
-                send as
-              </ThemedText>
+              <ThemedText style={{ color: colors.text, fontWeight: "900", fontSize: 16 }}>send as</ThemedText>
               <Pressable onPress={closePicker} hitSlop={10} style={({ pressed }) => [pressed && { opacity: 0.7 }]}>
                 <Ionicons name="close" size={20} color={colors.textSecondary} />
               </Pressable>
@@ -911,6 +1937,14 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     fontSize: 15,
   },
+  iconBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 999,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: StyleSheet.hairlineWidth,
+  },
   sendBtn: {
     width: 42,
     height: 42,
@@ -971,4 +2005,21 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     borderWidth: StyleSheet.hairlineWidth,
   },
+  floaterWrap: {
+  position: "absolute",
+  left: 0,
+  right: 0,
+  bottom: 78, // sits above composer
+  alignItems: "center",
+  zIndex: 50,
+},
+floaterBtn: {
+  flexDirection: "row",
+  alignItems: "center",
+  gap: 8,
+  paddingHorizontal: 12,
+  paddingVertical: 10,
+  borderRadius: 999,
+  borderWidth: StyleSheet.hairlineWidth,
+},
 });

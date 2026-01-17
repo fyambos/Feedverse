@@ -3,6 +3,7 @@ import React, { useEffect, useMemo } from "react";
 import { Platform } from "react-native";
 import { Tabs, router, useLocalSearchParams, usePathname } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import { CommonActions, useNavigation } from "@react-navigation/native";
 
 import { HapticTab } from "@/components/haptic-tab";
 import { IconSymbol } from "@/components/ui/icon-symbol";
@@ -61,17 +62,17 @@ export default function TabLayout() {
   const pathname = usePathname();
   const params = useLocalSearchParams<{ scenarioId?: string }>();
 
+  const navigation = useNavigation<any>();
+  const lastSyncedScenarioIdRef = React.useRef<string>("");
+
   const gateRanRef = React.useRef<string | null>(null);
   const lastSidRef = React.useRef<string>("");
 
   const sid = useMemo(() => {
-    const fromParams =
-      typeof params?.scenarioId === "string" ? params.scenarioId.trim() : "";
-
-    if (fromParams) {
-      lastSidRef.current = fromParams;
-      return fromParams;
-    }
+    // IMPORTANT: Prefer the pathname-derived scenarioId.
+    // In some navigation flows (notably notification-driven pushes/replaces),
+    // `useLocalSearchParams()` can temporarily reflect a stale scenarioId from
+    // the previous scenario. The URL/pathname is the source of truth.
 
     if (pathname.startsWith("/modal")) {
       return lastSidRef.current;
@@ -81,6 +82,12 @@ export default function TabLayout() {
     if (fromPath) {
       lastSidRef.current = fromPath;
       return fromPath;
+    }
+
+    const fromParams = typeof params?.scenarioId === "string" ? params.scenarioId.trim() : "";
+    if (fromParams) {
+      lastSidRef.current = fromParams;
+      return fromParams;
     }
 
     return lastSidRef.current;
@@ -138,6 +145,50 @@ export default function TabLayout() {
       } as any);
     }
   }, [isReady, sid, seedKey, selectedProfileId, userId, db, pathname]);
+
+  // ---- SYNC: when a deep-link changes scenarioId, carry that across tabs ----
+  useEffect(() => {
+    if (!sid) return;
+    if (pathname.startsWith("/modal")) return;
+    if (!navigation?.getState || !navigation?.dispatch) return;
+
+    // First run: just record.
+    if (!lastSyncedScenarioIdRef.current) {
+      lastSyncedScenarioIdRef.current = sid;
+      return;
+    }
+
+    // Only act when the scenarioId actually changes.
+    if (lastSyncedScenarioIdRef.current === sid) return;
+
+    const rewriteScenarioParams = (state: any): any => {
+      if (!state || typeof state !== "object" || !Array.isArray(state.routes)) return state;
+
+      return {
+        ...state,
+        routes: state.routes.map((r: any) => {
+          const next: any = { ...r };
+          if (r?.params && typeof r.params === "object" && "scenarioId" in r.params) {
+            next.params = { ...r.params, scenarioId: sid };
+          }
+          if (r?.state) {
+            next.state = rewriteScenarioParams(r.state);
+          }
+          return next;
+        }),
+      };
+    };
+
+    try {
+      const current = navigation.getState();
+      const next = rewriteScenarioParams(current);
+      navigation.dispatch(CommonActions.reset(next));
+      lastSyncedScenarioIdRef.current = sid;
+    } catch {
+      // If a reset isn't possible in the current navigation context, fail soft.
+      lastSyncedScenarioIdRef.current = sid;
+    }
+  }, [navigation, pathname, sid]);
 
   return (
     <Tabs

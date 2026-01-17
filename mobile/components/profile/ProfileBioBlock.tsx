@@ -6,7 +6,7 @@ import { Fontisto, Ionicons } from "@expo/vector-icons";
 import { ThemedText } from "@/components/themed-text";
 import type { Profile } from "@/data/db/schema";
 import type { ProfileViewState } from "@/components/profile/profileTypes";
-import { formatJoined, normalizeUrl, displayUrl } from "@/lib/format";
+import { formatCount, formatJoined, normalizeUrl, displayUrl } from "@/lib/format";
 
 type ColorsLike = {
   text: string;
@@ -152,12 +152,12 @@ export function ProfileBioBlock({
       {showStats ? (
         <View style={styles.statsRow}>
           <ThemedText style={{ color: colors.text }}>
-            <ThemedText type="defaultSemiBold">{following}</ThemedText>{" "}
+            <ThemedText type="defaultSemiBold">{formatCount(following)}</ThemedText>{" "}
             <ThemedText style={{ color: colors.textSecondary }}>Following</ThemedText>
           </ThemedText>
 
           <ThemedText style={{ color: colors.text }}>
-            <ThemedText type="defaultSemiBold">{followers}</ThemedText>{" "}
+            <ThemedText type="defaultSemiBold">{formatCount(followers)}</ThemedText>{" "}
             <ThemedText style={{ color: colors.textSecondary }}>Followers</ThemedText>
           </ThemedText>
         </View>

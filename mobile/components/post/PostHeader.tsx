@@ -2,11 +2,13 @@ import React from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import Fontisto from "@expo/vector-icons/Fontisto";
+import { router } from "expo-router";
 
 import { Avatar } from "@/components/ui/Avatar";
 import { ThemedText } from "@/components/themed-text";
 import { formatRelativeTime } from "@/lib/format";
 import type { Profile } from "@/data/db/schema";
+import { useAppData } from "@/context/appData";
 
 type ColorsLike = {
   textSecondary: string;
@@ -19,8 +21,11 @@ type Props = {
   variant: "feed" | "detail" | "reply";
   colors: ColorsLike;
 
+  scenarioId?: string;
+
   profile: Profile;
   createdAtIso: string;
+  refreshTick?: number;
 
   isReply?: boolean;
   replyingToHandle?: string;
@@ -34,11 +39,21 @@ type Props = {
   showTimestamps?: boolean;
 };
 
+function clipText(input: unknown, maxChars: number) {
+  const s = String(input ?? "").trim();
+  if (!s) return "";
+  if (s.length <= maxChars) return s;
+  if (maxChars <= 1) return "…";
+  return `${s.slice(0, maxChars - 1)}…`;
+}
+
 export function PostHeader({
   variant,
   colors,
+  scenarioId,
   profile,
   createdAtIso,
+  refreshTick,
   isReply,
   replyingToHandle,
   onOpenProfile,
@@ -47,10 +62,16 @@ export function PostHeader({
   isInteractive = true,
   showTimestamps = true,
 }: Props) {
+  const app = useAppData() as any;
   const isDetail = variant === "detail";
   const showRelative = !isDetail;
 
+  const safeDisplayName = clipText((profile as any)?.displayName, 50);
+  const safeHandle = clipText((profile as any)?.handle, 20);
+
   const showLock = Boolean((profile as any)?.isPrivate);
+  const rel = React.useMemo(() => formatRelativeTime(createdAtIso), [createdAtIso, refreshTick]);
+  const wrapperKey = `${String(refreshTick ?? "")}::${createdAtIso}`;
 
   const LockIcon = showLock ? (
     <Fontisto
@@ -63,7 +84,7 @@ export function PostHeader({
 
   if (isDetail) {
     return (
-      <View style={styles.detailHeaderRow}>
+      <View key={wrapperKey} style={styles.detailHeaderRow}>
         <View style={styles.detailHeaderLeft}>
           <Pressable onPress={onOpenProfile} hitSlop={0} style={styles.avatarPress}>
             <Avatar uri={profile.avatarUrl} size={48} fallbackColor={colors.border} />
@@ -77,16 +98,21 @@ export function PostHeader({
                     type="defaultSemiBold"
                     style={[styles.name, styles.nameDetail]}
                     numberOfLines={1}
+                    ellipsizeMode="tail"
                   >
-                    {profile.displayName}
+                    {safeDisplayName}
                   </ThemedText>
                   {LockIcon}
                 </View>
               </Pressable>
 
               <Pressable onPress={onOpenProfile} hitSlop={0} style={styles.inlinePress}>
-                <ThemedText style={[styles.handleInline, { color: colors.textSecondary }]} numberOfLines={1}>
-                  @{profile.handle}
+                <ThemedText
+                  style={[styles.handleInline, { color: colors.textSecondary }]}
+                  numberOfLines={1}
+                  ellipsizeMode="tail"
+                >
+                  @{safeHandle}
                 </ThemedText>
               </Pressable>
             </View>
@@ -104,22 +130,26 @@ export function PostHeader({
 
   // feed / reply header
   return (
-    <View style={styles.headerRow}>
+    <View key={wrapperKey} style={styles.headerRow}>
       <View style={styles.headerBlockLeft}>
         <View style={styles.headerNameRow}>
           <Pressable onPress={onOpenProfile} hitSlop={0} style={styles.inlinePress}>
             <View style={styles.nameWithLock}>
               <ThemedText type="defaultSemiBold" style={styles.name} numberOfLines={1}>
-                {profile.displayName}
+                {safeDisplayName}
               </ThemedText>
               {LockIcon}
             </View>
           </Pressable>
 
           <Pressable onPress={onOpenProfile} hitSlop={0} style={styles.inlinePress}>
-            <ThemedText style={[styles.handleInline, { color: colors.textSecondary }]} numberOfLines={1}>
-              @{profile.handle}
-              {showRelative && showTimestamps ? ` · ${formatRelativeTime(createdAtIso)}` : ""}
+            <ThemedText
+              style={[styles.handleInline, { color: colors.textSecondary }]}
+              numberOfLines={1}
+              ellipsizeMode="tail"
+            >
+              @{safeHandle}
+              {showRelative && showTimestamps ? ` · ${rel}` : ""}
             </ThemedText>
           </Pressable>
         </View>
@@ -127,7 +157,33 @@ export function PostHeader({
         {!!isReply && !!replyingToHandle && (
           <View style={styles.replyingInline}>
             <ThemedText style={[styles.replyingText, { color: colors.textSecondary }]}>
-              replying to <ThemedText type="link">@{replyingToHandle}</ThemedText>
+              Replying to{" "}
+              <ThemedText
+                type="link"
+                onPress={() => {
+                  if (!isInteractive) return;
+                  const sid = String(scenarioId ?? "").trim();
+                  const handle = String(replyingToHandle ?? "").trim().replace(/^@+/, "");
+                  if (!sid || !handle) return;
+
+                  const p = app?.getProfileByHandle?.(sid, handle) ?? null;
+                  if (p?.id) {
+                    router.push({
+                      pathname: "/(scenario)/[scenarioId]/(tabs)/home/profile/[profileId]",
+                      params: { scenarioId: sid, profileId: String(p.id) },
+                    } as any);
+                    return;
+                  }
+
+                  router.push({
+                    pathname: "/(scenario)/[scenarioId]/(tabs)/home/user-not-found",
+                    params: { scenarioId: sid, handle },
+                  } as any);
+                }}
+                accessibilityRole={isInteractive ? "link" : undefined}
+              >
+                @{replyingToHandle}
+              </ThemedText>
             </ThemedText>
           </View>
         )}
@@ -145,7 +201,7 @@ export function PostHeader({
 const styles = StyleSheet.create({
   avatarPress: { alignSelf: "flex-start" },
 
-  name: { fontSize: 16, maxWidth: 160, lineHeight: 20 },
+  name: { fontSize: 16, flexShrink: 1, minWidth: 0, maxWidth: 200, lineHeight: 20 },
   nameDetail: { fontSize: 18 },
 
   nameWithLock: {
@@ -157,6 +213,7 @@ const styles = StyleSheet.create({
   handleInline: {
     fontSize: 15,
     opacity: 0.9,
+    minWidth: 0,
     flexShrink: 1,
     lineHeight: 20,
   },
@@ -174,9 +231,11 @@ const styles = StyleSheet.create({
     alignItems: "baseline",
     gap: 6,
     flexWrap: "nowrap",
+    flexShrink: 1,
+    minWidth: 0,
   },
   replyingInline: { marginTop: 0 },
-  replyingText: { fontSize: 13, lineHeight: 17 },
+  replyingText: { fontSize: 16, lineHeight: 17, paddingBottom: 6, paddingTop: 2},
 
   // detail
   detailHeaderRow: {
@@ -196,8 +255,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 8,
     flexWrap: "nowrap",
+    flexShrink: 1,
+    minWidth: 0,
   },
 
-  inlinePress: { alignSelf: "flex-start" },
+  inlinePress: { alignSelf: "flex-start", flexShrink: 1, minWidth: 0 },
   menuBtn: { padding: 6, borderRadius: 999, alignSelf: "flex-start" },
 });

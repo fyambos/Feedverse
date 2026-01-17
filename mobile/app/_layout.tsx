@@ -9,6 +9,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { AuthProvider, useAuth } from "@/context/auth";
 import { AppDataProvider } from "@/context/appData";
+import NotificationBanner from "@/components/ui/NotificationBanner";
 import { DialogProvider } from "@/context/dialog";
 import { NavDarkTheme, NavLightTheme } from "@/constants/navigation-theme";
 import { Colors } from "@/constants/theme";
@@ -59,8 +60,20 @@ function AppShell() {
 
   return (
     <AppThemeProvider mode={mode}>
-      <ThemedNavigation />
+      <ThemedAppShell />
     </AppThemeProvider>
+  );
+}
+
+function ThemedAppShell() {
+  const scheme = useColorScheme() ?? "light";
+  const colors = Colors[scheme];
+
+  return (
+    <GestureHandlerRootView style={{ flex: 1, backgroundColor: colors.background }}>
+      <ThemedNavigation />
+      <NotificationBanner />
+    </GestureHandlerRootView>
   );
 }
 
@@ -76,18 +89,13 @@ function ThemedNavigation() {
 }
 
 export default function RootLayout() {
-  const scheme = useColorScheme() ?? "light";
-  const colors = Colors[scheme];
-
   return (
     <DialogProvider>
-      <GestureHandlerRootView style={{ flex: 1, backgroundColor: colors.background }}>
-        <AuthProvider>
-          <AppDataProvider>
-            <AppShell />
-          </AppDataProvider>
-        </AuthProvider>
-      </GestureHandlerRootView>
+      <AuthProvider>
+        <AppDataProvider>
+          <AppShell />
+        </AppDataProvider>
+      </AuthProvider>
     </DialogProvider>
   );
 }

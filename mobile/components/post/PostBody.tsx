@@ -1,12 +1,14 @@
 // mobile/components/post/PostBody.tsx
 import React from "react";
-import { StyleSheet, View, Pressable, Image, Text, Linking } from "react-native";
+import { Dimensions, Image, Linking, Pressable, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 
 import { ThemedText } from "@/components/themed-text";
+import { DEFAULT_TINT_COLOR } from "@/constants/theme";
 import { MediaGrid } from "@/components/media/MediaGrid";
 import { Lightbox } from "@/components/media/LightBox";
+import { useAppData } from "@/context/appData";
 
 import type { Post as DbPost } from "@/data/db/schema";
 
@@ -38,6 +40,43 @@ type TextPart =
   | { type: "link"; value: string }
   | { type: "mention"; value: string }
   | { type: "hashtag"; value: string };
+
+function useRemoteImageAspectRatio(uri?: string): number | null {
+  const [ratio, setRatio] = React.useState<number | null>(null);
+
+  React.useEffect(() => {
+    const u = String(uri ?? "").trim();
+    if (!u) {
+      setRatio(null);
+      return;
+    }
+
+    let cancelled = false;
+    Image.getSize(
+      u,
+      (w, h) => {
+        if (cancelled) return;
+        const ww = Number(w);
+        const hh = Number(h);
+        if (!Number.isFinite(ww) || !Number.isFinite(hh) || hh <= 0) {
+          setRatio(null);
+          return;
+        }
+        setRatio(ww / hh);
+      },
+      () => {
+        if (cancelled) return;
+        setRatio(null);
+      }
+    );
+
+    return () => {
+      cancelled = true;
+    };
+  }, [uri]);
+
+  return ratio;
+}
 
 function parseText(text: string): TextPart[] {
   // order matters: mention/hashtag/link
@@ -75,6 +114,7 @@ export function PostBody({
   textStyle,
   addVideoIcon,
 }: Props) {
+  const app = useAppData() as any;
   const isDetail = variant === "detail";
 
   const mediaUrls = (item.imageUrls ?? [])
@@ -93,14 +133,33 @@ export function PostBody({
   };
 
   const singleUri = mediaUrls[0];
+  const detailAspectRatio = useRemoteImageAspectRatio(isDetail ? singleUri : undefined);
+  const contentWidth = Dimensions.get("window").width - 32; // Post detail has 16px padding on each side
+  const singleDetailHeight = React.useMemo(() => {
+    const ar = detailAspectRatio ?? 16 / 9;
+    const h = contentWidth / ar;
+    // Keep portrait images from becoming comically tall, but still show more than thumbnails.
+    return Math.max(220, Math.min(560, h));
+  }, [contentWidth, detailAspectRatio]);
 
-  const linkColor = colors.tint ?? "#1d9bf0";
+  const linkColor = colors.tint ?? DEFAULT_TINT_COLOR;
 
   const onPressMention = (raw: string) => {
-    const handle = raw.slice(1);
+    const handle = String(raw ?? "").trim().replace(/^@+/, "");
+    if (!sid || !handle) return;
+
+    const p = app?.getProfileByHandle?.(sid, handle) ?? null;
+    if (p?.id) {
+      router.push({
+        pathname: "/(scenario)/[scenarioId]/(tabs)/home/profile/[profileId]",
+        params: { scenarioId: sid, profileId: String(p.id) },
+      } as any);
+      return;
+    }
+
     router.push({
-      pathname: `/(scenario)/${encodeURIComponent(sid)}/(tabs)/search`,
-      params: { q: handle },
+      pathname: "/(scenario)/[scenarioId]/(tabs)/home/user-not-found",
+      params: { scenarioId: sid, handle },
     } as any);
   };
 
@@ -173,9 +232,17 @@ export function PostBody({
         <>
           <Pressable
             onPress={() => openLightbox(0)}
-            style={[styles.singleWrap, { backgroundColor: colors.border }]}
+            style={[
+              styles.singleWrap,
+              { backgroundColor: colors.border },
+              isDetail ? { height: singleDetailHeight } : styles.singleWrapFixed,
+            ]}
           >
-            <Image source={{ uri: singleUri }} style={styles.singleImage} />
+            <Image
+              source={{ uri: singleUri }}
+              style={styles.singleImage}
+              resizeMode={isDetail ? "contain" : "cover"}
+            />
 
             {showVideoOverlay ? (
               <View pointerEvents="none" style={styles.playOverlay}>
@@ -226,10 +293,12 @@ const styles = StyleSheet.create({
   singleWrap: {
     marginTop: 10,
     width: "100%",
-    aspectRatio: 16 / 9,
     borderRadius: 16,
     overflow: "hidden",
     position: "relative",
+  },
+  singleWrapFixed: {
+    aspectRatio: 16 / 9,
   },
   singleImage: {
     width: "100%",
