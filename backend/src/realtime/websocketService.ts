@@ -138,7 +138,23 @@ export function attachWebSocketServer(server: http.Server) {
       // Handle incoming client-sent events (e.g., typing)
       ws.on("message", (data: any) => {
         try {
-          const raw = typeof data === "string" ? JSON.parse(data) : data;
+          // In `ws`, incoming client messages are commonly Buffer/ArrayBuffer.
+          // Normalize to string before JSON parsing.
+          let text: string | null = null;
+          if (typeof data === "string") {
+            text = data;
+          } else if (Buffer.isBuffer(data)) {
+            text = data.toString("utf8");
+          } else if (data instanceof ArrayBuffer) {
+            text = Buffer.from(data).toString("utf8");
+          } else if (Array.isArray(data) && data.every((x) => Buffer.isBuffer(x))) {
+            text = Buffer.concat(data).toString("utf8");
+          } else {
+            // Unknown message type; ignore
+            return;
+          }
+
+          const raw = JSON.parse(text);
           const ev = String(raw?.event ?? "");
           const payload = raw?.payload ?? raw?.data ?? null;
           if (!ev || !payload) return;

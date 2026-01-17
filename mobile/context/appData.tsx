@@ -407,7 +407,9 @@ type TypingEventHandler = (ev: TypingEvent) => void;
 const typingEventHandlers = new Set<TypingEventHandler>();
 export function subscribeToTypingEvents(handler: TypingEventHandler) {
   typingEventHandlers.add(handler);
-  return () => typingEventHandlers.delete(handler);
+  return () => {
+    typingEventHandlers.delete(handler);
+  };
 }
 
 // Notification event emitter (fallback if native notifications not available)
@@ -1305,6 +1307,11 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
 
   // WebSocket connections for realtime.
   const wsConnectionsRef = React.useRef<Record<string, WebSocket | null>>({});
+
+  // Throttle WS bootstrap attempts from typing events.
+  const typingWsBootstrapRef = React.useRef<{ lastAttemptAtByScenario: Record<string, number> }>({
+    lastAttemptAtByScenario: {},
+  });
 
   const messagesSyncRef = React.useRef<{
     inFlightByConversation: Record<string, boolean>;
@@ -5974,7 +5981,25 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
           if (!sid) return;
           try {
             const ws = wsConnectionsRef.current[sid];
-            if (!ws) return;
+
+            // If WS is missing (or not open yet), trigger a sync to establish it.
+            // This is important in backend mode when a user deep-links directly into a
+            // conversation before the Messages tab has synced conversations.
+            const readyState = ws && (ws as any).readyState != null ? Number((ws as any).readyState) : null;
+            const isOpen = readyState === 1;
+
+            if (!ws || !isOpen) {
+              const nowMs = Date.now();
+              const lastAt = typingWsBootstrapRef.current.lastAttemptAtByScenario[sid] ?? 0;
+              if (nowMs - lastAt > 10_000) {
+                typingWsBootstrapRef.current.lastAttemptAtByScenario[sid] = nowMs;
+                try {
+                  void syncConversationsForScenarioImpl(sid).catch(() => {});
+                } catch {}
+              }
+              return;
+            }
+
             const payload: Record<string, unknown> = {
               scenarioId: sid,
               typing: Boolean(typing),
