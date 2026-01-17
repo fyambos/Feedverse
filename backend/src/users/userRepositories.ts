@@ -117,7 +117,7 @@ export class UserRepository {
   ): Promise<boolean> {
     let query =
       "SELECT EXISTS(SELECT 1 FROM users WHERE LOWER(username) = LOWER($1) AND is_deleted = false";
-    const params: any[] = [username];
+    const params: string[] = [username];
 
     if (excludeUserId) {
       query += " AND id != $2";
