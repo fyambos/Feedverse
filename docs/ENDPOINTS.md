@@ -11,6 +11,7 @@
 - [Authentification](#authentification)
 - [Endpoints utilisateurs](#endpoints-utilisateurs)
   - [Récupérer le profil utilisateur](#récupérer-le-profil-utilisateur)
+  - [Modifier le profil utilisateur](#modifier-le-profil-utilisateur)
   - [Récupérer les scénarios d'un utilisateur](#récupérer-les-scénarios-dun-utilisateur)
   - [Supprimer un compte utilisateur](#supprimer-un-compte-utilisateur)
 - [Endpoints scénarios](#endpoints-scénarios)
@@ -145,6 +146,322 @@ curl -X GET https://api.feedverse.com/v1/users/profile \
 ```
 
 ---
+
+## Documentation Postman
+
+### Configuration de la requête
+
+**Method:** `PATCH`  
+**URL:** `https://api.feedverse.com/v1/users/me`  
+**Headers:**
+
+```
+Authorization: Bearer YOUR_JWT_TOKEN
+Content-Type: multipart/form-data
+```
+
+### Body (form-data)
+
+| Key | Type | Value | Description |
+|-----|------|-------|-------------|
+| `username` | Text | `jiniret_updated` | Optionnel |
+| `settings` | Text | `{"showTimestamps": true, "darkMode": "dark"}` | Optionnel (JSON stringifié) |
+| `avatar` | File | `avatar.jpg` | Optionnel |
+
+### Exemples de requêtes
+
+**Exemple 1 : Modifier uniquement le username**
+
+```
+username: new_username
+```
+
+**Exemple 2 : Modifier uniquement les settings**
+
+```
+settings: {"showTimestamps": false, "darkMode": "light"}
+```
+
+**Exemple 3 : Modifier username et avatar**
+
+```
+username: jiniret_updated
+avatar: [Sélectionner un fichier]
+```
+
+**Exemple 4 : Modification complète**
+
+```
+username: hyunjin_official
+settings: {"showTimestamps": true, "darkMode": "system"}
+avatar: [Sélectionner un fichier]
+```
+
+### Réponse attendue (200 OK)
+
+```json
+{
+  "message": "Profil mis à jour avec succès",
+  "user": {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "username": "hyunjin_official",
+    "name": "Hyunjin",
+    "email": "hyunjin@example.com",
+    "avatar_url": "https://cdn.feedverse.com/users/550e8400_1737123456.jpg",
+    "settings": {
+      "showTimestamps": true,
+      "darkMode": "system"
+    },
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2026-01-17T14:22:00Z",
+    "deleted_at": null,
+    "is_deleted": false
+  }
+}
+```
+
+### Modifier le profil utilisateur
+
+**Endpoint :** `PATCH /users/me`
+
+**Description :** Met à jour les informations du profil de l'utilisateur authentifié. Permet la modification partielle du `username`, de l'`avatar` et des `settings` (préférences utilisateur). Tous les champs sont optionnels, seuls les champs fournis seront mis à jour.
+
+**Authentification :** Requise
+
+**Content-Type :** `multipart/form-data` (pour l'upload d'avatar)
+
+#### Paramètres du corps de requête
+
+| Paramètre | Type | Requis | Description |
+|-----------|------|--------|-------------|
+| `username` | string | Non | Nouveau nom d'utilisateur (3-30 caractères, lettres, chiffres et underscores uniquement) |
+| `avatar` | file | Non | Nouvelle image de profil (JPG, PNG, WEBP, max 5 Mo) |
+| `settings` | string | Non | Préférences utilisateur au format JSON stringifié |
+
+#### Structure du champ settings
+
+Le champ `settings` doit être un objet JSON stringifié contenant :
+
+```json
+{
+  "showTimestamps": boolean,
+  "darkMode": "light" | "dark" | "system"
+}
+```
+
+**Champs disponibles :**
+
+- **showTimestamps** : Affichage des timestamps dans l'interface (optionnel)
+- **darkMode** : Mode d'affichage de l'interface (optionnel)
+  - `"light"` : Mode clair
+  - `"dark"` : Mode sombre
+  - `"system"` : Suit les préférences système
+
+#### Validation des champs
+
+**username :**
+
+- Longueur : 3 à 30 caractères
+- Caractères autorisés : lettres (a-z, A-Z), chiffres (0-9), underscore (_)
+- Doit être unique globalement
+- Trim automatique des espaces
+
+**avatar :**
+
+- Formats acceptés : JPEG, PNG, WEBP
+- Taille maximale : 5 Mo
+- Stockage : Cloudflare R2
+- Génération automatique d'une URL publique
+
+**settings :**
+
+- Doit être un objet JSON valide
+- Fusion avec les paramètres existants (ne remplace pas complètement)
+- Validation du type pour `showTimestamps` (boolean)
+- Validation des valeurs pour `darkMode` (light/dark/system)
+
+#### Réponse de succès
+
+**Code :** `200 OK`
+
+**Structure :**
+
+```json
+{
+  "message": "string",
+  "user": {
+    "id": "uuid",
+    "username": "string",
+    "name": "string",
+    "email": "string",
+    "avatar_url": "string",
+    "settings": {
+      "showTimestamps": "boolean",
+      "darkMode": "string"
+    },
+    "created_at": "timestamp",
+    "updated_at": "timestamp",
+    "deleted_at": "timestamp | null",
+    "is_deleted": "boolean"
+  }
+}
+```
+
+#### Exemple de réponse
+
+```json
+{
+  "message": "Profil mis à jour avec succès",
+  "user": {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "username": "hyunjin_official",
+    "name": "Hyunjin",
+    "email": "hyunjin@example.com",
+    "avatar_url": "https://cdn.feedverse.com/users/550e8400_1737123456.jpg",
+    "settings": {
+      "showTimestamps": true,
+      "darkMode": "system"
+    },
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2026-01-17T14:22:00Z",
+    "deleted_at": null,
+    "is_deleted": false
+  }
+}
+```
+
+#### Exemple de code
+
+**JavaScript (Fetch API avec FormData) :**
+
+```javascript
+const formData = new FormData();
+formData.append('username', 'hyunjin_official');
+formData.append('settings', JSON.stringify({
+  showTimestamps: true,
+  darkMode: 'system'
+}));
+formData.append('avatar', avatarFile);
+
+const response = await fetch('https://api.feedverse.com/v1/users/me', {
+  method: 'PATCH',
+  headers: {
+    'Authorization': `Bearer ${token}`
+  },
+  body: formData
+});
+
+const { user } = await response.json();
+```
+
+**cURL :**
+
+```bash
+curl -X PATCH https://api.feedverse.com/v1/users/me \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -F "username=hyunjin_official" \
+  -F "settings={\"showTimestamps\":true,\"darkMode\":\"system\"}" \
+  -F "avatar=@/path/to/avatar.jpg"
+```
+
+#### Codes de statut
+
+| Code | Description |
+|------|-------------|
+| `200` | Succès - Profil mis à jour |
+| `400` | Requête invalide - Validation échouée |
+| `401` | Non autorisé - Token invalide ou expiré |
+| `409` | Conflit - Username déjà utilisé |
+| `500` | Erreur serveur interne |
+
+#### Erreurs possibles
+
+**400 Bad Request (validation username) :**
+
+```json
+{
+  "errors": [
+    {
+      "fields": "username",
+      "message": "Le nom d'utilisateur doit contenir au moins 3 caractères"
+    }
+  ]
+}
+```
+
+**400 Bad Request (validation settings) :**
+
+```json
+{
+  "errors": [
+    {
+      "fields": "settings.darkMode",
+      "message": "darkMode doit être 'light', 'dark' ou 'system'"
+    }
+  ]
+}
+```
+
+**400 Bad Request (JSON invalide) :**
+
+```json
+{
+  "errors": [
+    {
+      "fields": "settings",
+      "message": "Format JSON invalide pour les paramètres"
+    }
+  ]
+}
+```
+
+**409 Conflict :**
+
+```json
+{
+  "errors": [
+    {
+      "fields": "username",
+      "message": "Ce nom d'utilisateur est déjà utilisé"
+    }
+  ]
+}
+```
+
+#### Notes techniques
+
+- **Mise à jour partielle** : Seuls les champs fournis sont modifiés, les autres restent inchangés
+- **Fusion des settings** : Les nouveaux paramètres sont fusionnés avec les existants plutôt que de les remplacer complètement
+- **Upload d'avatar** : L'ancien avatar n'est pas supprimé automatiquement de Cloudflare R2
+- **Unicité du username** : La vérification exclut l'utilisateur actuel pour permettre de garder son propre username
+- **Insensibilité à la casse** : Le username est stocké tel quel mais la vérification d'unicité est insensible à la casse
+- **Timestamp** : Le champ `updated_at` est automatiquement mis à jour lors de toute modification
+
+#### Cas d'usage
+
+**Changer uniquement le username :**
+
+```bash
+curl -X PATCH https://api.feedverse.com/v1/users/me \
+  -H "Authorization: Bearer TOKEN" \
+  -F "username=new_username"
+```
+
+**Activer le mode sombre :**
+
+```bash
+curl -X PATCH https://api.feedverse.com/v1/users/me \
+  -H "Authorization: Bearer TOKEN" \
+  -F "settings={\"darkMode\":\"dark\"}"
+```
+
+**Modifier uniquement l'avatar :**
+
+```bash
+curl -X PATCH https://api.feedverse.com/v1/users/me \
+  -H "Authorization: Bearer TOKEN" \
+  -F "avatar=@avatar.jpg"
+```
 
 ### Récupérer les scénarios d'un utilisateur
 
@@ -302,6 +619,7 @@ curl -X GET https://api.feedverse.com/v1/users/scenarios \
 #### Comportement de la suppression
 
 **Données anonymisées :**
+
 - Email remplacé par `deleted_<id>@feedverse.deleted`
 - Username remplacé par `deleted_user_<8_premiers_caractères_uuid>`
 - Name remplacé par `Compte supprimé`
@@ -309,6 +627,7 @@ curl -X GET https://api.feedverse.com/v1/users/scenarios \
 - Settings réinitialisés (`{}`)
 
 **Données préservées :**
+
 - ID du compte (pour maintenir les relations)
 - Posts et profils créés (visibles avec "Compte supprimé")
 - Participations aux scénarios (historique narratif)
@@ -447,20 +766,24 @@ curl -X DELETE https://api.feedverse.com/v1/users/550e8400-e29b-41d4-a716-446655
 #### Validation des champs
 
 **name :**
+
 - Longueur : 1 à 100 caractères
 - Trim automatique des espaces
 
 **invite_code :**
+
 - Longueur : 4 à 20 caractères
 - Caractères autorisés : lettres, chiffres, underscore
 - Converti automatiquement en majuscules
 - Doit être unique globalement
 
 **mode :**
+
 - Valeurs acceptées : `story`, `campaign`
 - Par défaut : `story`
 
 **cover :**
+
 - Formats acceptés : JPEG, PNG, WEBP
 - Taille maximale : 5 Mo
 - Stockage : Amazon Web Services (AWS) S3 / Cloudflare R2
@@ -765,6 +1088,7 @@ curl -X GET https://api.feedverse.com/v1/scenarios/123e4567-e89b-12d3-a456-42661
 #### Comportement de la suppression
 
 **Données supprimées en cascade (via contraintes SQL) :**
+
 - Tous les profils du scénario (`profiles`)
 - Tous les posts du scénario (`posts`)
 - Tous les likes du scénario (`likes`)
