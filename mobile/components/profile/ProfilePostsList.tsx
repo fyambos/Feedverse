@@ -163,6 +163,7 @@ export function ProfilePostsList({
         const replyingTo = isReply ? getReplyingToHandle(getPostById, getProfileById, post) : "";
 
         const targetPostId = isReply ? findRootPostId(getPostById, post) : String(post.id);
+        const focusPostId = isReply ? String(post.id) : "";
 
         // swipe actions should only apply to real posts (not repost events)
         const canEditThisPost = !isRepostItem(feedItem)
@@ -205,6 +206,7 @@ export function ProfilePostsList({
                 params: {
                   scenarioId: sid,
                   postId: String(targetPostId),
+                  ...(focusPostId ? { focusPostId } : {}),
                   from: "/(scenario)/[scenarioId]/(tabs)/home/profile/[profileId]",
                   profileId: String(viewingProfileId),
                 },

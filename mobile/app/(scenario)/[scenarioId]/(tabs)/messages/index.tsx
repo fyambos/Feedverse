@@ -1,10 +1,9 @@
 // mobile/app/(scenario)/[scenarioId]/(tabs)/messages/index.tsx
+import { getActiveConversation, subscribeToMessageEvents, subscribeToTypingEvents } from "@/context/appData";
+
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  subscribeToMessageEvents,
-  subscribeToTypingEvents,
-  useAppData,
-} from "@/context/appData";
+import { useAuth } from "@/context/auth";
+import { apiFetch } from "@/lib/apiClient";
 
 import { Alert, FlatList, Modal, Pressable, StyleSheet, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -12,9 +11,11 @@ import { router, useLocalSearchParams, usePathname } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { ThemedText } from "@/components/themed-text";
+import TypingIndicator from "@/components/ui/TypingIndicator";
 import { ThemedView } from "@/components/themed-view";
 import { Colors } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
+import { useAppData } from "@/context/appData";
 import { Avatar } from "@/components/ui/Avatar";
 import { SwipeableRow } from "@/components/ui/SwipeableRow";
 import type { Conversation, Profile } from "@/data/db/schema";
@@ -71,7 +72,9 @@ export default function MessagesScreen() {
     return scenarioIdFromPathname(pathname);
   }, [scenarioId, pathname]);
 
+
   const app = useAppData() as any;
+  const auth = useAuth();
   const {
     isReady,
     db,
@@ -100,7 +103,13 @@ export default function MessagesScreen() {
     [sid, getSelectedProfileId]
   );
 
-  const openOnceRef = React.useRef<string | null>(null);
+  const openOnceRef = React.useRef<{ key: string; atMs: number } | null>(null);
+
+  // Keep unstable values out of deep-link effect dependencies.
+  const appRef = React.useRef<any>(null);
+  React.useEffect(() => {
+    appRef.current = app;
+  }, [app]);
 
   const syncOnceRef = React.useRef<string | null>(null);
 
@@ -243,31 +252,72 @@ export default function MessagesScreen() {
 
   // Fetch unread counts for selected profile
   const fetchUnreadCounts = useCallback(() => {
-    if (!isReady || !sid || !selectedProfileId) return;
+    // console.log("fetchUnreadCounts called", { isReady, sid, selectedProfileId });
+    if (!isReady || !sid || !selectedProfileId) {
+      // console.log("fetchUnreadCounts skipped", { isReady, sid, selectedProfileId });
+      return;
+    }
     let cancelled = false;
-
     (async () => {
       try {
-        // Local/AsyncStorage mode: compute unread counts from local DB/messages.
-        const map: Record<string, number> = {};
-        const msgs = (db as any)?.messages ?? {};
-        for (const _id of Object.keys(msgs)) {
-          const m = msgs[_id];
-          const convId = String(m.conversation_id ?? m.conversationId ?? m.convId ?? "");
-          if (!convId) continue;
-          const read = !!m.read || !!m.is_read || false;
-          if (!read) map[convId] = (map[convId] || 0) + 1;
+        const token = app?.auth?.token ?? auth?.token;
+        if (!token) {
+          const baseUrl = String(process.env.EXPO_PUBLIC_API_BASE_URL ?? "").trim();
+          if (baseUrl) {
+            try {
+              Alert.alert("Sign in required", "Please sign in to view unread counts.", [
+                { text: "Sign in", onPress: () => router.push("/(auth)/login") },
+                { text: "Cancel", style: "cancel" },
+              ]);
+            } catch {
+              // ignore
+            }
+          }
+          // console.log("fetchUnreadCounts: no token, falling back to local DB");
+          // fallback: compute unread counts from local DB/messages
+          const map: Record<string, number> = {};
+          const msgs = (db as any)?.messages ?? {};
+          for (const _id of Object.keys(msgs)) {
+            const m = msgs[_id];
+            const convId = String(m.conversation_id ?? m.conversationId ?? m.convId ?? "");
+            if (!convId) continue;
+            const read = !!m.read || !!m.is_read || false;
+            if (!read) map[convId] = (map[convId] || 0) + 1;
+          }
+          // Never show unread for the currently open conversation.
+          try {
+            const active = getActiveConversation(sid);
+            if (active) map[String(active)] = 0;
+          } catch {}
+          if (!cancelled) setUnreadCounts(map);
+          return;
         }
-        if (!cancelled) setUnreadCounts(map);
-      } catch {
-        // ignore
+        // console.log("fetchUnreadCounts: calling API", { sid, selectedProfileId });
+        const res = await apiFetch({
+          path: `/scenarios/${encodeURIComponent(sid)}/unread?profileId=${encodeURIComponent(selectedProfileId)}`,
+          token,
+        });
+        // console.log("unread API response", res);
+        if (res.ok && Array.isArray(res.json?.unread)) {
+          const map: Record<string, number> = {};
+          for (const row of res.json.unread) {
+            map[String(row.conversation_id)] = Number(row.unread_count) || 0;
+          }
+          // Never show unread for the currently open conversation.
+          try {
+            const active = getActiveConversation(sid);
+            if (active) map[String(active)] = 0;
+          } catch {}
+          if (!cancelled) setUnreadCounts(map);
+        } else {
+          // console.log("unread API returned no data or unexpected shape", { ok: res.ok, json: res.json });
+        }
+      } catch (e) {
+        // console.log("fetchUnreadCounts error", e);
       }
     })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [isReady, sid, selectedProfileId, db]);
+    // no return value
+  }, [isReady, sid, selectedProfileId, app?.auth?.token, db]);
   
   useEffect(() => {
     fetchUnreadCounts();
@@ -307,22 +357,28 @@ const markOptimisticallyRead = useCallback((conversationId: string) => {
       setUnreadCounts((prev) => ({ ...(prev ?? {}), [convId]: 0 }));
 
       try {
-        // Local mark: update message records to include `read: true`.
-        const msgs = (db as any)?.messages ?? {};
-        const ids: string[] = [];
-        for (const id of Object.keys(msgs)) {
-          const m = msgs[id];
-          const midConv = String(m.conversation_id ?? m.conversationId ?? m.convId ?? "");
-          if (midConv !== convId) continue;
-          ids.push(id);
-        }
-
-        // best-effort, don't block UI
-        for (const mid of ids.slice(0, 250)) {
-          try {
-            await app?.updateMessage?.({ scenarioId: sid, messageId: String(mid), read: true });
-          } catch {
-            // ignore
+        // Prefer server-side read tracking
+        const token = app?.auth?.token ?? auth?.token;
+        if (token) {
+          await apiFetch({
+            // server route expects POST /conversations/:conversationId/read
+            path: `/conversations/${encodeURIComponent(convId)}/read`,
+            token,
+            init: {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ profileId: String(selectedProfileId) }),
+            },
+          });
+        } else {
+          // Fallback: best-effort local mark (if your local message objects support it)
+          const msgs = (db as any)?.messages ?? {};
+          for (const id of Object.keys(msgs)) {
+            const m = msgs[id];
+            const midConv = String(m.conversation_id ?? m.conversationId ?? m.convId ?? "");
+            if (midConv !== convId) continue;
+            if (m.read != null) m.read = true;
+            if (m.is_read != null) m.is_read = true;
           }
         }
       } catch {
@@ -332,8 +388,13 @@ const markOptimisticallyRead = useCallback((conversationId: string) => {
         fetchUnreadCounts();
       }
     },
-    [isReady, sid, selectedProfileId, db, fetchUnreadCounts, markOptimisticallyRead, app]
+    [isReady, sid, selectedProfileId, app?.auth?.token, db, fetchUnreadCounts, markOptimisticallyRead]
   );
+
+  const markConversationReadRef = React.useRef<typeof markConversationRead>(() => Promise.resolve());
+  React.useEffect(() => {
+    markConversationReadRef.current = markConversationRead;
+  }, [markConversationRead]);
 
   
 
@@ -384,21 +445,36 @@ useEffect(() => {
     if (!sid) return;
     if (!selectedProfileId) return;
 
-    if (openOnceRef.current === cid) return;
-    openOnceRef.current = cid;
+    // Guard against duplicate navigations caused by repeated notification callbacks / remounts.
+    // Allow re-opening the same conversation later (don’t permanently block by id).
+    // Dedupe by destination only; selected profile can legitimately change
+    // and should not cause repeated opens.
+    const key = `${sid}|${cid}`;
+    const nowMs = Date.now();
+    const last = openOnceRef.current;
+    if (last && last.key === key && nowMs - last.atMs < 1500) return;
+    openOnceRef.current = { key, atMs: nowMs };
 
-    // clear the param so we don't re-open on re-render
-    router.setParams({ openConversationId: undefined } as any);
+    // Clear the param so we don't re-open on re-render.
+    // `setParams({ ...: undefined })` is not reliably removing params across
+    // platforms, so also `replace` the same route without the param.
+    try { router.setParams({ openConversationId: undefined } as any); } catch {}
+    try {
+      router.replace({
+        pathname: `/(scenario)/${encodeURIComponent(String(sid))}/messages`,
+        params: {},
+      } as any);
+    } catch {}
 
     (async () => {
       try {
         // Ensure we have the conversation + at least a page of messages before opening the thread.
         // This avoids getting stuck on the thread's loading state when launched from a notification.
-        try { await app?.syncConversationsForScenario?.(sid); } catch {}
-        try { await app?.syncMessagesForConversation?.({ scenarioId: sid, conversationId: cid, limit: 60 }); } catch {}
+        try { await appRef.current?.syncConversationsForScenario?.(sid); } catch {}
+        try { await appRef.current?.syncMessagesForConversation?.({ scenarioId: sid, conversationId: cid, limit: 60 }); } catch {}
       } catch {}
 
-      try { await markConversationRead(cid); } catch {}
+      try { await markConversationReadRef.current?.(cid); } catch {}
 
       try {
         router.push({
@@ -407,7 +483,7 @@ useEffect(() => {
         } as any);
       } catch {}
     })();
-  }, [openConversationId, isReady, sid, selectedProfileId, markConversationRead]);
+  }, [openConversationId, isReady, sid, selectedProfileId]);
 
   // Conversation list should not depend on scanning all messages.
   // Use cached conversations + server-provided preview fields.
@@ -763,7 +839,15 @@ useEffect(() => {
               } as any);
             };
 
-            const unread = unreadCounts[convId] > 0;
+            const activeConvId = (() => {
+              try {
+                return sid ? getActiveConversation(sid) : null;
+              } catch {
+                return null;
+              }
+            })();
+
+            const unread = String(activeConvId ?? "") === String(convId) ? false : (unreadCounts[convId] ?? 0) > 0;
             return (
               <SwipeableRow
                 enabled={canManageChatsAsSelected}

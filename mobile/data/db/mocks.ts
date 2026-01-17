@@ -1,9 +1,9 @@
 // mobile/data/db/mocks.ts
-import { makeLocalUuid } from "@/lib/ids";
+import { v4 as uuidv4 } from "uuid";
 
 // Generate a random UUID
 function generateId() {
-  return makeLocalUuid();
+  return uuidv4();
 }
 
 // --- SCENARIOS ---
