@@ -48,12 +48,12 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/splash-icon.png",
+          "image": "./assets/images/FeedverseIcon.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#ffffff",
+          "backgroundColor": "#7c96ec",
           "dark": {
-            "backgroundColor": "#000000"
+            "backgroundColor": "#7c96ec"
           }
         }
       ]
