@@ -3,6 +3,7 @@ import React, { useEffect, useMemo } from "react";
 import { Platform } from "react-native";
 import { Tabs, router, useLocalSearchParams, usePathname } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import { CommonActions, useNavigation } from "@react-navigation/native";
 
 import { HapticTab } from "@/components/haptic-tab";
 import { IconSymbol } from "@/components/ui/icon-symbol";
@@ -60,6 +61,9 @@ function scenarioIdFromPathname(pathname: string): string {
 export default function TabLayout() {
   const pathname = usePathname();
   const params = useLocalSearchParams<{ scenarioId?: string }>();
+
+  const navigation = useNavigation<any>();
+  const lastSyncedScenarioIdRef = React.useRef<string>("");
 
   const gateRanRef = React.useRef<string | null>(null);
   const lastSidRef = React.useRef<string>("");
@@ -142,6 +146,50 @@ export default function TabLayout() {
     }
   }, [isReady, sid, seedKey, selectedProfileId, userId, db, pathname]);
 
+  // ---- SYNC: when a deep-link changes scenarioId, carry that across tabs ----
+  useEffect(() => {
+    if (!sid) return;
+    if (pathname.startsWith("/modal")) return;
+    if (!navigation?.getState || !navigation?.dispatch) return;
+
+    // First run: just record.
+    if (!lastSyncedScenarioIdRef.current) {
+      lastSyncedScenarioIdRef.current = sid;
+      return;
+    }
+
+    // Only act when the scenarioId actually changes.
+    if (lastSyncedScenarioIdRef.current === sid) return;
+
+    const rewriteScenarioParams = (state: any): any => {
+      if (!state || typeof state !== "object" || !Array.isArray(state.routes)) return state;
+
+      return {
+        ...state,
+        routes: state.routes.map((r: any) => {
+          const next: any = { ...r };
+          if (r?.params && typeof r.params === "object" && "scenarioId" in r.params) {
+            next.params = { ...r.params, scenarioId: sid };
+          }
+          if (r?.state) {
+            next.state = rewriteScenarioParams(r.state);
+          }
+          return next;
+        }),
+      };
+    };
+
+    try {
+      const current = navigation.getState();
+      const next = rewriteScenarioParams(current);
+      navigation.dispatch(CommonActions.reset(next));
+      lastSyncedScenarioIdRef.current = sid;
+    } catch {
+      // If a reset isn't possible in the current navigation context, fail soft.
+      lastSyncedScenarioIdRef.current = sid;
+    }
+  }, [navigation, pathname, sid]);
+
   return (
     <Tabs
       screenOptions={{
@@ -155,12 +203,6 @@ export default function TabLayout() {
         name="home"
         options={{
           title: "",
-          href: sid
-            ? ({
-                pathname: "/(scenario)/[scenarioId]/(tabs)/home",
-                params: { scenarioId: sid },
-              } as any)
-            : undefined,
           tabBarIcon: ({ color }) => (
             <TabIcon iosName="house.fill" androidIonicon="home" color={color} />
           ),
@@ -171,12 +213,6 @@ export default function TabLayout() {
         name="search"
         options={{
           title: "",
-          href: sid
-            ? ({
-                pathname: "/(scenario)/[scenarioId]/(tabs)/search",
-                params: { scenarioId: sid },
-              } as any)
-            : undefined,
           tabBarIcon: ({ color }) => (
             <TabIcon iosName="magnifyingglass" androidIonicon="search" color={color} />
           ),
@@ -187,12 +223,6 @@ export default function TabLayout() {
         name="notifications"
         options={{
           title: "",
-          href: sid
-            ? ({
-                pathname: "/(scenario)/[scenarioId]/(tabs)/notifications",
-                params: { scenarioId: sid },
-              } as any)
-            : undefined,
           tabBarIcon: ({ color }) => (
             <TabIcon iosName="bell.fill" androidIonicon="notifications" color={color} />
           ),
@@ -203,12 +233,6 @@ export default function TabLayout() {
         name="messages"
         options={{
           title: "",
-          href: sid
-            ? ({
-                pathname: "/(scenario)/[scenarioId]/(tabs)/messages",
-                params: { scenarioId: sid },
-              } as any)
-            : undefined,
           tabBarIcon: ({ color }) => (
             <TabIcon iosName="envelope.fill" androidIonicon="mail" color={color} />
           ),

@@ -1414,6 +1414,17 @@ export default function ConversationThreadScreen() {
             <View style={styles.headerCenterInner}>
               <Pressable
                 onPress={() => {
+                  // 1:1: avatar should open the other participant's profile
+                  if (isOneToOne) {
+                    if (!sid || !otherProfileId) return;
+                    router.push({
+                      pathname: "/(scenario)/[scenarioId]/(tabs)/home/profile/[profileId]",
+                      params: { scenarioId: sid, profileId: String(otherProfileId) },
+                    } as any);
+                    return;
+                  }
+
+                  // Group chat: keep existing behavior (open editor)
                   if (!canEditGroup) return;
                   onPressHeader();
                 }}
@@ -1421,10 +1432,10 @@ export default function ConversationThreadScreen() {
                   // Enter reorder mode when the avatar is long-pressed (GC or DM)
                   setReorderMode(true);
                 }}
-                disabled={!canEditGroup}
+                disabled={false}
                 hitSlop={12}
                 accessibilityRole="button"
-                accessibilityLabel="Reorder messages"
+                accessibilityLabel={isOneToOne ? "Open profile" : "Reorder messages"}
               >
                 <Avatar uri={headerAvatarUrl} size={38} fallbackColor={colors.border} />
               </Pressable>
