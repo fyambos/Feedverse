@@ -695,7 +695,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
           const { Platform } = require("react-native");
           if (Platform?.OS === "android" && typeof Notifications.setNotificationChannelAsync === "function") {
             const importance = Notifications.AndroidImportance?.MAX ?? 5;
-            await Notifications.setNotificationChannelAsync("default", {
+            const channel = await Notifications.setNotificationChannelAsync("default", {
               name: "default",
               importance,
             });
@@ -740,10 +740,21 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
 
         // Request permissions (best-effort)
         try {
-          const perms = await (Notifications.getPermissionsAsync?.() ?? Notifications.requestPermissionsAsync?.());
-          const status = perms?.status ?? (perms?.granted ? "granted" : undefined);
-          if (status !== "granted") {
-            try { await Notifications.requestPermissionsAsync?.(); } catch {}
+          const before = await (Notifications.getPermissionsAsync?.() ?? Notifications.requestPermissionsAsync?.());
+          const beforeStatus = before?.status ?? (before?.granted ? "granted" : undefined);
+          if (beforeStatus !== "granted") {
+            try {
+              await Notifications.requestPermissionsAsync?.();
+            } catch (e: any) {
+              // ignore
+            }
+          }
+        } catch {}
+
+        // Best-effort: obtain device push token (APNS/FCM) to ensure credentials are wired.
+        try {
+          if (typeof Notifications.getDevicePushTokenAsync === "function") {
+            await Notifications.getDevicePushTokenAsync();
           }
         } catch {}
 
@@ -768,8 +779,19 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
             }
 
             if (expoPushToken) {
-              const platform = String(Constants?.platform?.ios ? "ios" : Constants?.platform?.android ? "android" : "");
-              await apiFetch({
+              let platform = "";
+              try {
+                // Prefer react-native Platform.OS; expo-constants platform fields can be missing
+                // in some environments (e.g. newer Expo Go).
+                // eslint-disable-next-line @typescript-eslint/no-var-requires
+                const { Platform } = require("react-native");
+                platform = String(Platform?.OS ?? "");
+              } catch {
+                platform = "";
+              }
+              let regRes: any = null;
+              try {
+                regRes = await apiFetch({
                 path: "/users/push-token",
                 token,
                 init: {
@@ -777,6 +799,10 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                   body: JSON.stringify({ expoPushToken, platform: platform || undefined }),
                 },
               });
+              } catch (e: any) {
+                // ignore
+              }
+              void regRes;
             }
           }
         } catch {
@@ -1056,10 +1082,12 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
               }
             } catch {}
           });
+        } catch {}
 
-          // optional: received listener (foreground)
+        // Register received handler: fires while app is foregrounded.
+        try {
           notificationReceivedListenerRef.current = Notifications.addNotificationReceivedListener((notif: any) => {
-            // we could update badge or local state here
+            void notif;
           });
         } catch {}
       } catch (e) {
