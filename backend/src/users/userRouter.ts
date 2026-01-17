@@ -5,6 +5,7 @@ import {
   GetUserProfileController,
   GetUserScenariosController,
   DeleteUserController,
+  UpdateUserController,
 } from "./userControllers";
 import { authMiddleware } from "../auth/authMiddleware";
 import { ROUTES_USERS } from "../config/constants";
@@ -16,5 +17,6 @@ userRouter.get(
   GetUserScenariosController,
 );
 userRouter.delete(ROUTES_USERS.BY_ID, authMiddleware, DeleteUserController);
+userRouter.patch(ROUTES_USERS.ME, authMiddleware, UpdateUserController);
 
 export default userRouter;

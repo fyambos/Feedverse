@@ -1,7 +1,13 @@
 import { UserRepository } from "./userRepositories";
-import { GetUserScenariosResponse } from "./userModels";
+import {
+  GetUserScenariosResponse,
+  UpdateUserData,
+  UpdateUserRequest,
+  UpdateUserResponse,
+} from "./userModels";
 import { ValidationError } from "../utils/models";
-import { USER_MESSAGES } from "../config/constants";
+import { USER_MESSAGES, VALIDATION } from "../config/constants";
+import { validateUsername, validateSettings } from "./userValidations";
 
 const userRepository = new UserRepository();
 
@@ -63,4 +69,85 @@ export const DeleteUserService = async (
   }
 
   return { success: true };
+};
+
+export const UpdateUserService = async (
+  userId: string,
+  input: UpdateUserRequest,
+  avatarFile?: Express.Multer.File,
+): Promise<{
+  user?: UpdateUserResponse;
+  errors?: ValidationError[];
+}> => {
+  const { username, settings } = input;
+  const errors: ValidationError[] = [];
+
+  if (username !== undefined) {
+    const usernameError = validateUsername(username);
+    if (usernameError) {
+      errors.push(usernameError);
+    } else {
+      const usernameExists = await userRepository.usernameExists(
+        username.trim(),
+        userId,
+      );
+      if (usernameExists) {
+        errors.push({
+          fields: "username",
+          message: VALIDATION.USERNAME_ALREADY_EXISTS,
+        });
+      }
+    }
+  }
+
+  if (settings !== undefined) {
+    const settingsError = validateSettings(settings);
+    if (settingsError) {
+      errors.push(settingsError);
+    }
+  }
+
+  if (errors.length > 0) {
+    return { errors };
+  }
+
+  const currentUser = await userRepository.findById(userId);
+  if (!currentUser) {
+    return {
+      errors: [
+        {
+          fields: "user",
+          message: USER_MESSAGES.NOT_FOUND,
+        },
+      ],
+    };
+  }
+
+  const updateData: UpdateUserData = {
+    updated_at: new Date(),
+  };
+
+  if (username !== undefined) {
+    updateData.username = username.trim();
+  }
+
+  if (settings !== undefined) {
+    updateData.settings = {
+      ...currentUser.settings,
+      ...settings,
+    };
+  }
+
+  const updatedUser = await userRepository.update(
+    userId,
+    updateData,
+    avatarFile,
+  );
+
+  const user: UpdateUserResponse = {
+    message: USER_MESSAGES.UPDATE_SUCCESS,
+    user: updatedUser,
+  };
+
+  return { user };
 };

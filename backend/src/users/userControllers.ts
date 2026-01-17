@@ -1,12 +1,18 @@
 import { Request, Response } from "express";
-import { User } from "./userModels";
+import { User, UserSettings } from "./userModels";
 import {
+  AUTH,
   ERROR_MESSAGES,
   HTTP_METHODS,
   HTTP_STATUS,
   USER_MESSAGES,
 } from "../config/constants";
-import { DeleteUserService, GetUserScenariosService } from "./userServices";
+import {
+  DeleteUserService,
+  GetUserScenariosService,
+  UpdateUserService,
+} from "./userServices";
+import { upload } from "../config/multer";
 
 export const GetUserProfileController = async (req: Request, res: Response) => {
   if (req.method !== HTTP_METHODS.GET) {
@@ -94,3 +100,69 @@ export const DeleteUserController = async (req: Request, res: Response) => {
       .json({ error: ERROR_MESSAGES.INTERNAL_SERVER_ERROR });
   }
 };
+
+export const UpdateUserController = [
+  upload.single("avatar"),
+  async (req: Request, res: Response) => {
+    if (req.method !== HTTP_METHODS.PATCH) {
+      return res
+        .status(HTTP_STATUS.BAD_REQUEST)
+        .send(ERROR_MESSAGES.METHOD_NOT_ALLOWED);
+    }
+
+    try {
+      const { username, settings } = req.body;
+      const avatarFile = req.file;
+      const userId: string = req.user.id;
+
+      if (!userId) {
+        return res.status(HTTP_STATUS.UNAUTHORIZED).json({
+          error: AUTH.INVALID_TOKEN,
+        });
+      }
+
+      let parsedSettings: UserSettings;
+      if (settings) {
+        try {
+          parsedSettings =
+            typeof settings === "string" ? JSON.parse(settings) : settings;
+        } catch (error: unknown) {
+          console.error(error);
+          return res.status(HTTP_STATUS.BAD_REQUEST).json({
+            errors: [
+              {
+                fields: "settings",
+                message: "Format JSON invalide pour les paramètres",
+              },
+            ],
+          });
+        }
+      }
+
+      const result = await UpdateUserService(
+        userId,
+        {
+          username,
+          settings: parsedSettings,
+        },
+        avatarFile,
+      );
+
+      if (result.errors) {
+        return res.status(HTTP_STATUS.BAD_REQUEST).json({
+          errors: result.errors,
+        });
+      }
+
+      res.status(HTTP_STATUS.OK).json({
+        message: USER_MESSAGES.UPDATE_SUCCESS,
+        user: result.user?.user,
+      });
+    } catch (error: unknown) {
+      console.error("Erreur lors de la mise à jour du profil:", error);
+      res
+        .status(HTTP_STATUS.INTERNAL_SERVER_ERROR)
+        .json({ error: ERROR_MESSAGES.INTERNAL_SERVER_ERROR });
+    }
+  },
+];

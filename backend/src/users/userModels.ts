@@ -1,5 +1,10 @@
 import { ScenarioMode } from "../scenarios/scenarioModels";
 
+export interface UserSettings {
+  showTimestamps?: boolean;
+  darkMode?: "light" | "dark" | "system";
+}
+
 export interface User {
   id: string;
   username: string;
@@ -7,7 +12,7 @@ export interface User {
   email: string;
   password_hash: string;
   avatar_url: string;
-  settings: object;
+  settings: UserSettings;
   created_at: Date;
   updated_at: Date;
   deleted_at: Date | null;
@@ -35,4 +40,21 @@ export interface UserScenario {
 export interface GetUserScenariosResponse {
   scenarios: UserScenario[];
   count: number;
+}
+
+export interface UpdateUserData {
+  username?: string;
+  avatar_url?: string;
+  settings?: UserSettings;
+  updated_at: Date;
+}
+
+export interface UpdateUserRequest {
+  username?: string;
+  settings?: UserSettings;
+}
+
+export interface UpdateUserResponse {
+  message: string;
+  user: User;
 }

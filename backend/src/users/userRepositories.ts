@@ -2,7 +2,7 @@ import { CreateUserData } from "../auth/authModels";
 import { r2Service } from "../config/cloudflare/r2Service";
 import { APP_CONFIG } from "../config/constants";
 import { pool } from "../config/database";
-import { User, UserScenario } from "./userModels";
+import { UpdateUserData, User, UserScenario, UserSettings } from "./userModels";
 
 export class UserRepository {
   async findById(id: string): Promise<User | null> {
@@ -109,5 +109,74 @@ export class UserRepository {
     `;
     const result = await pool.query(query, [userId, new Date()]);
     return result.rowCount !== null && result.rowCount > 0;
+  }
+
+  async usernameExists(
+    username: string,
+    excludeUserId?: string,
+  ): Promise<boolean> {
+    let query =
+      "SELECT EXISTS(SELECT 1 FROM users WHERE LOWER(username) = LOWER($1) AND is_deleted = false";
+    const params: any[] = [username];
+
+    if (excludeUserId) {
+      query += " AND id != $2";
+      params.push(excludeUserId);
+    }
+
+    query += ")";
+
+    const result = await pool.query(query, params);
+    return result.rows[0].exists;
+  }
+
+  async update(
+    userId: string,
+    updateData: UpdateUserData,
+    avatarFile?: Express.Multer.File,
+  ): Promise<User> {
+    let finalAvatarUrl = updateData.avatar_url;
+
+    if (avatarFile) {
+      finalAvatarUrl = await r2Service.uploadAvatar(avatarFile, userId);
+    }
+
+    const fieldsToUpdate: string[] = [];
+    const values: (string | Date | UserSettings)[] = [];
+    let paramIndex = 1;
+
+    if (updateData.username !== undefined) {
+      fieldsToUpdate.push(`username = $${paramIndex}`);
+      values.push(updateData.username);
+      paramIndex++;
+    }
+
+    if (finalAvatarUrl !== undefined) {
+      fieldsToUpdate.push(`avatar_url = $${paramIndex}`);
+      values.push(finalAvatarUrl);
+      paramIndex++;
+    }
+
+    if (updateData.settings !== undefined) {
+      fieldsToUpdate.push(`settings = $${paramIndex}`);
+      values.push(JSON.stringify(updateData.settings));
+      paramIndex++;
+    }
+
+    fieldsToUpdate.push(`updated_at = $${paramIndex}`);
+    values.push(updateData.updated_at);
+    paramIndex++;
+
+    values.push(userId);
+
+    const query = `
+      UPDATE users
+      SET ${fieldsToUpdate.join(", ")}
+      WHERE id = $${paramIndex} AND is_deleted = false
+      RETURNING *
+    `;
+
+    const result = await pool.query(query, values);
+    return result.rows[0];
   }
 }

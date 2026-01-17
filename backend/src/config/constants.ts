@@ -146,8 +146,13 @@ export const VALIDATION = {
   BUSINESS_ID_REQUIRED: "L'identifiant de l'établissement est requis",
   ENTRY_ID_REQUIRED: "L'identifiant de l'entrée est requis",
   NAME_REQUIRED: "Le nom est requis",
-
-  // Format invalide
+  USERNAME_MIN_LENGTH:
+    "Le nom d'utilisateur doit contenir au moins 3 caractères",
+  USERNAME_MAX_LENGTH:
+    "Le nom d'utilisateur ne peut pas dépasser 30 caractères",
+  USERNAME_INVALID_FORMAT:
+    "Le nom d'utilisateur ne peut contenir que des lettres, chiffres et underscores",
+  USERNAME_ALREADY_EXISTS: "Ce nom d'utilisateur est déjà utilisé",
   INVALID_PHONE_FORMAT:
     "Le format du numéro de téléphone est invalide (format français attendu: +33 ou 0)",
   INVALID_EMAIL_FORMAT: "Le format de l'adresse email est invalide",
@@ -155,7 +160,6 @@ export const VALIDATION = {
   PASSWORD_TOO_WEAK:
     "Le mot de passe doit contenir au moins 8 caractères, une majuscule et un chiffre",
   INVALID_PASSWORD: "Le mot de passe est incorrect",
-  // Autres
   MIN_LENGTH: "La longueur minimale requise n'est pas atteinte",
   MAX_LENGTH: "La longueur maximale a été dépassée",
 } as const;
@@ -201,6 +205,7 @@ export const ROUTES_USERS = {
   BASE: "/users",
   BY_ID: "/:id",
   PROFILE: "/profile",
+  ME: "/me",
   SETTINGS: "/settings",
   SCENARIOS: "/scenarios",
 } as const;
