@@ -13,6 +13,7 @@ import {
   ActivityIndicator,
   FlatList,
   InteractionManager,
+  Keyboard,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -374,7 +375,7 @@ export default function ConversationThreadScreen() {
   const isNearBottomRef = useRef(true);
   const prevMsgCountRef = useRef(0);
 
-  // iMessage-style: only auto-scroll when we're *extremely* close to the bottom.
+  // only auto-scroll when we're *extremely* close to the bottom.
   const AUTO_SCROLL_NEAR_BOTTOM_PX = 12;
 
   // Small debounced scroll-to-end to avoid landing in the middle while items/images finish layout.
@@ -404,6 +405,40 @@ export default function ConversationThreadScreen() {
       });
     }, delay);
   }, []);
+
+  // When the keyboard opens, keep the list pinned to the bottom if the user
+  // was already at/near the bottom (normal chat-app behavior).
+  useEffect(() => {
+    const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+
+    const onShow = () => {
+      if (reorderMode) return;
+      if (!isNearBottomRef.current) return;
+      setTimeout(() => {
+        try {
+          scrollToBottom(false);
+        } catch {}
+      }, 0);
+    };
+
+    const onHide = () => {
+      if (reorderMode) return;
+      if (!isNearBottomRef.current) return;
+      setTimeout(() => {
+        try {
+          scrollToBottom(false);
+        } catch {}
+      }, 0);
+    };
+
+    const subShow = Keyboard.addListener(showEvent as any, onShow);
+    const subHide = Keyboard.addListener(hideEvent as any, onHide);
+    return () => {
+      try { subShow?.remove?.(); } catch {}
+      try { subHide?.remove?.(); } catch {}
+    };
+  }, [reorderMode, scrollToBottom]);
 
   const handleListLayout = useCallback(() => {
     didListLayoutRef.current = true;

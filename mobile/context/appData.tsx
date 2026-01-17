@@ -21,6 +21,7 @@ import { useAuth } from "@/context/auth";
 import { buildScenarioExportBundleV1 } from "@/lib/importExport/exportScenarioBundle";
 import { saveAndShareScenarioExport } from "@/lib/importExport/exportScenario";
 import { makeLocalUuid } from "@/lib/ids";
+import BootSplash from "@/components/ui/BootSplash";
 
 type AppDataState = {
   isReady: boolean;
@@ -2554,7 +2555,8 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     };
   }, [db, currentUserId, auth.isReady]);
 
-  return <Ctx.Provider value={{ ...state, ...api }}>{children}</Ctx.Provider>;
+  const showBootSplash = !state.isReady || !auth.isReady;
+  return <Ctx.Provider value={{ ...state, ...api }}>{showBootSplash ? <BootSplash /> : children}</Ctx.Provider>;
 }
 
 export function useAppData() {

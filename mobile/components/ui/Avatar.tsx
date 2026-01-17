@@ -1,6 +1,7 @@
 //mobile/components/ui/Avatar.tsx 
 import React from "react";
-import { Image, View, StyleSheet } from "react-native";
+import { View, StyleSheet } from "react-native";
+import { SmartImage } from "./SmartImage";
 
 export function Avatar({
   uri,
@@ -19,7 +20,15 @@ export function Avatar({
     return <View style={[styles.fallback, base, { backgroundColor: fallbackColor }, style]} />;
   }
 
-  return <Image source={{ uri }} style={[base, style]} />;
+  return (
+    <SmartImage
+      uri={uri}
+      style={[base, style]}
+      backgroundColor={fallbackColor}
+      contentFit="cover"
+      debugTag="Avatar"
+    />
+  );
 }
 
 const styles = StyleSheet.create({

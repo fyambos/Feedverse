@@ -1,13 +1,13 @@
 // mobile/components/media/MediaGrid.tsx
 import React from "react";
 import {
-  Image,
   Pressable,
   StyleSheet,
   View,
   type StyleProp,
   type ViewStyle,
 } from "react-native";
+import { SmartImage } from "../ui/SmartImage";
 
 export type MediaVariant = "feed" | "detail" | "reply";
 
@@ -28,10 +28,12 @@ type CellProps = {
 function Cell({ uri, idx, style, onOpen, backgroundColor }: CellProps) {
   return (
     <Pressable onPress={() => onOpen(idx)} style={style} hitSlop={2}>
-      <Image
-        source={{ uri }}
+      <SmartImage
+        uri={uri}
         style={[styles.mediaCell, { backgroundColor }]}
-        resizeMode="cover"
+        backgroundColor={backgroundColor}
+        contentFit="cover"
+        debugTag="MediaGrid.Cell"
       />
     </Pressable>
   );
@@ -60,10 +62,12 @@ export function MediaGrid({
   if (u.length === 1) {
     return (
       <Pressable onPress={() => onOpen(0)} hitSlop={2}>
-        <Image
-          source={{ uri: u[0] }}
+        <SmartImage
+          uri={u[0]}
           style={[styles.mediaSingle, { height: h, backgroundColor }]}
-          resizeMode="cover"
+          backgroundColor={backgroundColor}
+          contentFit="cover"
+          debugTag="MediaGrid.Single"
         />
       </Pressable>
     );
