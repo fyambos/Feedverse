@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   FlatList,
   InteractionManager,
+  Keyboard,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -447,6 +448,41 @@ export default function ConversationThreadScreen() {
       });
     }, delay);
   }, []);
+
+  // When the keyboard opens, keep the list pinned to the bottom if the user
+  // was already at/near the bottom (normal chat-app behavior).
+  useEffect(() => {
+    const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+
+    const onShow = () => {
+      if (reorderMode) return;
+      if (!isNearBottomRef.current) return;
+      // Wait a tick for layout to resize then scroll.
+      setTimeout(() => {
+        try {
+          scrollToBottom(false);
+        } catch {}
+      }, 0);
+    };
+
+    const onHide = () => {
+      if (reorderMode) return;
+      if (!isNearBottomRef.current) return;
+      setTimeout(() => {
+        try {
+          scrollToBottom(false);
+        } catch {}
+      }, 0);
+    };
+
+    const subShow = Keyboard.addListener(showEvent as any, onShow);
+    const subHide = Keyboard.addListener(hideEvent as any, onHide);
+    return () => {
+      try { subShow?.remove?.(); } catch {}
+      try { subHide?.remove?.(); } catch {}
+    };
+  }, [reorderMode, scrollToBottom]);
 
   const handleListLayout = useCallback(() => {
     didListLayoutRef.current = true;
@@ -1234,7 +1270,7 @@ export default function ConversationThreadScreen() {
     const groupStart = isGroupChat && isLeft && !isSameSenderAsPrev;
     const groupEnd = isGroupChat && isLeft && !isSameSenderAsNext;
 
-    // iMessage-like grouping:
+    // grouping:
     // - name above first message of a run
     // - avatar next to last message of a run
     // - reserve avatar gutter for all left messages so bubbles align
