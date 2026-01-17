@@ -1,8 +1,8 @@
-# Documentation API Feedverse
+# Détails endpoints Feedverse
 
-**Version :** 1.0.0  
-**Mise à jour :** 15 janvier 2026  
-**Base URL :** `https://api.feedverse.com/v1`
+**Version :** 1.0.0
+
+**Mise à jour le :** 17 janvier 2026
 
 ---
 
@@ -146,79 +146,6 @@ curl -X GET https://api.feedverse.com/v1/users/profile \
 ```
 
 ---
-
-## Documentation Postman
-
-### Configuration de la requête
-
-**Method:** `PATCH`  
-**URL:** `https://api.feedverse.com/v1/users/me`  
-**Headers:**
-
-```
-Authorization: Bearer YOUR_JWT_TOKEN
-Content-Type: multipart/form-data
-```
-
-### Body (form-data)
-
-| Key | Type | Value | Description |
-|-----|------|-------|-------------|
-| `username` | Text | `jiniret_updated` | Optionnel |
-| `settings` | Text | `{"showTimestamps": true, "darkMode": "dark"}` | Optionnel (JSON stringifié) |
-| `avatar` | File | `avatar.jpg` | Optionnel |
-
-### Exemples de requêtes
-
-**Exemple 1 : Modifier uniquement le username**
-
-```
-username: new_username
-```
-
-**Exemple 2 : Modifier uniquement les settings**
-
-```
-settings: {"showTimestamps": false, "darkMode": "light"}
-```
-
-**Exemple 3 : Modifier username et avatar**
-
-```
-username: jiniret_updated
-avatar: [Sélectionner un fichier]
-```
-
-**Exemple 4 : Modification complète**
-
-```
-username: hyunjin_official
-settings: {"showTimestamps": true, "darkMode": "system"}
-avatar: [Sélectionner un fichier]
-```
-
-### Réponse attendue (200 OK)
-
-```json
-{
-  "message": "Profil mis à jour avec succès",
-  "user": {
-    "id": "550e8400-e29b-41d4-a716-446655440000",
-    "username": "hyunjin_official",
-    "name": "Hyunjin",
-    "email": "hyunjin@example.com",
-    "avatar_url": "https://cdn.feedverse.com/users/550e8400_1737123456.jpg",
-    "settings": {
-      "showTimestamps": true,
-      "darkMode": "system"
-    },
-    "created_at": "2024-01-15T10:30:00Z",
-    "updated_at": "2026-01-17T14:22:00Z",
-    "deleted_at": null,
-    "is_deleted": false
-  }
-}
-```
 
 ### Modifier le profil utilisateur
 
@@ -463,6 +390,9 @@ curl -X PATCH https://api.feedverse.com/v1/users/me \
   -F "avatar=@avatar.jpg"
 ```
 
+
+---
+
 ### Récupérer les scénarios d'un utilisateur
 
 **Endpoint :** `GET /users/scenarios`
@@ -619,7 +549,6 @@ curl -X GET https://api.feedverse.com/v1/users/scenarios \
 #### Comportement de la suppression
 
 **Données anonymisées :**
-
 - Email remplacé par `deleted_<id>@feedverse.deleted`
 - Username remplacé par `deleted_user_<8_premiers_caractères_uuid>`
 - Name remplacé par `Compte supprimé`
@@ -627,7 +556,6 @@ curl -X GET https://api.feedverse.com/v1/users/scenarios \
 - Settings réinitialisés (`{}`)
 
 **Données préservées :**
-
 - ID du compte (pour maintenir les relations)
 - Posts et profils créés (visibles avec "Compte supprimé")
 - Participations aux scénarios (historique narratif)
@@ -766,24 +694,20 @@ curl -X DELETE https://api.feedverse.com/v1/users/550e8400-e29b-41d4-a716-446655
 #### Validation des champs
 
 **name :**
-
 - Longueur : 1 à 100 caractères
 - Trim automatique des espaces
 
 **invite_code :**
-
 - Longueur : 4 à 20 caractères
 - Caractères autorisés : lettres, chiffres, underscore
 - Converti automatiquement en majuscules
 - Doit être unique globalement
 
 **mode :**
-
 - Valeurs acceptées : `story`, `campaign`
 - Par défaut : `story`
 
 **cover :**
-
 - Formats acceptés : JPEG, PNG, WEBP
 - Taille maximale : 5 Mo
 - Stockage : Amazon Web Services (AWS) S3 / Cloudflare R2
@@ -1088,7 +1012,6 @@ curl -X GET https://api.feedverse.com/v1/scenarios/123e4567-e89b-12d3-a456-42661
 #### Comportement de la suppression
 
 **Données supprimées en cascade (via contraintes SQL) :**
-
 - Tous les profils du scénario (`profiles`)
 - Tous les posts du scénario (`posts`)
 - Tous les likes du scénario (`likes`)
@@ -1315,5 +1238,3 @@ Retournées lorsque l'utilisateur n'a pas les permissions nécessaires.
   ]
 }
 ```
-
-####
