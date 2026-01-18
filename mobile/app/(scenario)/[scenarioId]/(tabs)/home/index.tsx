@@ -233,6 +233,14 @@ export default function HomeScreen() {
     setInitialLoading(false);
   }, [isReady, listPostsPage, sid]);
 
+  // Background sync updates AppData often, which changes function identities.
+  // Keep a ref to the latest loader so our "reset feed" effect only runs when
+  // scenarioId/isReady changes (not on every sync tick).
+  const loadFirstPageRef = useRef(loadFirstPage);
+  useEffect(() => {
+    loadFirstPageRef.current = loadFirstPage;
+  }, [loadFirstPage]);
+
   const onRefresh = useCallback(() => {
     if (!isReady) return;
     if (loadingLock.current) return;
@@ -264,9 +272,13 @@ export default function HomeScreen() {
 
     try {
       const page = listPostsPage({ scenarioId: sid, limit: PAGE_SIZE, cursor });
-      setItems((prev) => [...prev, ...page.items]);
+      setItems((prev) => {
+        const seen = new Set(prev.map((it: any) => String((it as any)?.id ?? "")));
+        const nextItems = page.items.filter((it: any) => !seen.has(String((it as any)?.id ?? "")));
+        return [...prev, ...nextItems];
+      });
       setCursor(page.nextCursor);
-      setHasMore(!!page.nextCursor);
+      setHasMore(Boolean(page.nextCursor && page.nextCursor !== cursor));
     } finally {
       setLoadingMore(false);
       loadingLock.current = false;
@@ -279,8 +291,8 @@ export default function HomeScreen() {
     setHasMore(true);
     setInitialLoading(true);
 
-    if (isReady) loadFirstPage();
-  }, [sid, isReady, loadFirstPage]);
+    if (isReady) loadFirstPageRef.current();
+  }, [sid, isReady]);
 
   useEffect(() => {
     // If we navigate to a different scenarioId (e.g. after import), reset scroll.
