@@ -57,6 +57,8 @@ export default function ScenarioListScreen() {
     exportScenarioToFile,
   } = useAppData() as any;
 
+  const scrollToTopOnNextFocusRef = useRef(false);
+
   const io = useMemo(
   () =>
     createScenarioIO({
@@ -67,6 +69,9 @@ export default function ScenarioListScreen() {
       importScenarioFromFile,
       exportScenarioToFile,
       onImportedNavigate: (scenarioId) => {
+        // After an import we navigate into the new scenario; when we later
+        // come back to the scenario list, jump to top so the new scenario is visible.
+        scrollToTopOnNextFocusRef.current = true;
         router.push({
           pathname: "/(scenario)/[scenarioId]/(tabs)/home",
           params: { scenarioId },
@@ -204,7 +209,7 @@ export default function ScenarioListScreen() {
 
   const listRef = useRef<FlatList<any> | null>(null);
 
-  // When returning to this screen (e.g. after import), jump to top.
+  // Keep scroll position on normal returns; only jump to top after a successful import.
   useFocusEffect(
     useCallback(() => {
       if (isBackendMode) {
@@ -214,9 +219,13 @@ export default function ScenarioListScreen() {
           // ignore
         }
       }
-      requestAnimationFrame(() => {
-        listRef.current?.scrollToOffset({ offset: 0, animated: false });
-      });
+
+      if (scrollToTopOnNextFocusRef.current) {
+        scrollToTopOnNextFocusRef.current = false;
+        requestAnimationFrame(() => {
+          listRef.current?.scrollToOffset({ offset: 0, animated: false });
+        });
+      }
       return () => void 0;
     }, [isBackendMode, syncScenarios])
   );
