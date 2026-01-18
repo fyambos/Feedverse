@@ -468,6 +468,25 @@ function makePostCursor(p: Post): PostCursor {
   return `${String((p as any).insertedAt ?? "")}|${String(p.id)}`;
 }
 
+function parsePostCursor(cursor: PostCursor): { insertedAt: string; id: string } | null {
+  const raw = String(cursor ?? "").trim();
+  if (!raw) return null;
+  const parts = raw.split("|");
+  if (parts.length < 2) return null;
+  const insertedAt = String(parts[0] ?? "").trim();
+  const id = String(parts[1] ?? "").trim();
+  if (!insertedAt || !id) return null;
+  return { insertedAt, id };
+}
+
+function sortDescByInsertedAtThenId(a: Post, b: Post) {
+  const ta = String((a as any).insertedAt ?? (a as any).createdAt ?? "");
+  const tb = String((b as any).insertedAt ?? (b as any).createdAt ?? "");
+  const c = tb.localeCompare(ta);
+  if (c !== 0) return c;
+  return String((b as any).id).localeCompare(String((a as any).id));
+}
+
 function sortDescByCreatedAtThenId(a: Post, b: Post) {
   const c = String(b.createdAt).localeCompare(String(a.createdAt));
   if (c !== 0) return c;
@@ -2744,12 +2763,30 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         if (!includeReplies) items = items.filter((p) => !p.parentPostId);
         if (filter) items = items.filter(filter);
 
-        items.sort(sortDescByCreatedAtThenId);
+        items.sort(sortDescByInsertedAtThenId);
 
         let startIndex = 0;
         if (cursor) {
           const idx = items.findIndex((p) => makePostCursor(p) === cursor);
-          startIndex = idx >= 0 ? idx + 1 : 0;
+          if (idx >= 0) {
+            startIndex = idx + 1;
+          } else {
+            // If the cursor post is not present (e.g. data set changed), fall back to
+            // an ordering-based lookup instead of restarting from the top.
+            const cur = parsePostCursor(cursor);
+            if (!cur) {
+              startIndex = items.length;
+            } else {
+              const idx2 = items.findIndex((p) => {
+                const t = String((p as any).insertedAt ?? (p as any).createdAt ?? "");
+                const c = t.localeCompare(cur.insertedAt);
+                if (c < 0) return true; // older
+                if (c > 0) return false;
+                return String(p.id).localeCompare(cur.id) < 0;
+              });
+              startIndex = idx2 >= 0 ? idx2 : items.length;
+            }
+          }
         }
 
         const page = items.slice(startIndex, startIndex + limit);
