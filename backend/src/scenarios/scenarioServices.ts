@@ -4,6 +4,9 @@ import {
   CreateScenarioRequest,
   CreateScenarioResponse,
   Scenario,
+  UpdateScenarioData,
+  UpdateScenarioRequest,
+  UpdateScenarioResponse,
 } from "./scenarioModels";
 import {
   validateScenarioName,
@@ -128,6 +131,119 @@ export const GetScenarioByIdService = async (
   PLUS TARD :
   Vérifier si l'utilisateur a accès au scénario (membre du scénario ou scénario public).
   */
+  return { scenario };
+};
+
+export const UpdateScenarioService = async (
+  scenarioId: string,
+  userId: string,
+  input: UpdateScenarioRequest,
+  coverFile?: Express.Multer.File,
+): Promise<{
+  scenario?: UpdateScenarioResponse;
+  errors?: ValidationError[];
+}> => {
+  const { name, description, invite_code } = input;
+  const errors: ValidationError[] = [];
+
+  const uuidRegex =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+  if (!uuidRegex.test(scenarioId)) {
+    return {
+      errors: [
+        {
+          fields: "id",
+          message: "Format d'identifiant invalide",
+        },
+      ],
+    };
+  }
+
+  const existingScenario = await scenarioRepository.findById(scenarioId);
+
+  if (!existingScenario) {
+    return {
+      errors: [
+        {
+          fields: "id",
+          message: SCENARIO_MESSAGES.NOT_FOUND,
+        },
+      ],
+    };
+  }
+
+  if (existingScenario.owner_user_id !== userId) {
+    return {
+      errors: [
+        {
+          fields: "authorization",
+          message: "Seul le propriétaire peut modifier ce scénario",
+        },
+      ],
+    };
+  }
+
+  if (name !== undefined) {
+    const nameError = validateScenarioName(name);
+    if (nameError) errors.push(nameError);
+  }
+
+  if (description !== undefined) {
+    const descriptionError = validateScenarioDescription(description);
+    if (descriptionError) errors.push(descriptionError);
+  }
+
+  if (invite_code !== undefined) {
+    const inviteCodeError = validateInviteCode(invite_code);
+    if (inviteCodeError) {
+      errors.push(inviteCodeError);
+    } else {
+      const inviteCodeExists = await scenarioRepository.inviteCodeExists(
+        invite_code.toUpperCase(),
+      );
+
+      if (
+        inviteCodeExists &&
+        invite_code.toUpperCase() !== existingScenario.invite_code
+      ) {
+        errors.push({
+          fields: SCENARIO_MESSAGES.INVITE_CODE,
+          message: SCENARIO_MESSAGES.INVITE_CODE_ALREADY_EXISTS,
+        });
+      }
+    }
+  }
+
+  if (errors.length > 0) {
+    return { errors };
+  }
+
+  const updateData: Partial<UpdateScenarioData> = {};
+
+  if (name !== undefined) {
+    updateData.name = name.trim();
+  }
+
+  if (description !== undefined) {
+    updateData.description = description.trim() || null;
+  }
+
+  if (invite_code !== undefined) {
+    updateData.invite_code = invite_code.toUpperCase();
+  }
+
+  const updatedScenario = await scenarioRepository.update(
+    scenarioId,
+    updateData,
+    coverFile,
+  );
+
+  const scenario: UpdateScenarioResponse = {
+    message: SCENARIO_MESSAGES.UPDATE_SUCCESS,
+    scenario: updatedScenario,
+  };
+
   return { scenario };
 };
 

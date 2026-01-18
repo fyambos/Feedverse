@@ -59,17 +59,63 @@ export class ScenarioRepository {
     return result.rows[0];
   }
 
-  async update(ScenarioData: UpdateScenarioData): Promise<void> {
-    const query =
-      "UPDATE scenarios SET name = $1, description = $2, mode = $3, cover = $4, updated_at = $5 WHERE id = $6";
-    await pool.query(query, [
-      ScenarioData.id,
-      ScenarioData.name,
-      ScenarioData.description,
-      ScenarioData.mode,
-      ScenarioData.cover,
-      ScenarioData.updated_at,
-    ]);
+  async update(
+    scenarioId: string,
+    updateData: Partial<UpdateScenarioData>,
+    coverFile?: Express.Multer.File,
+  ): Promise<Scenario> {
+    let finalCoverUrl = updateData.cover;
+
+    if (coverFile) {
+      finalCoverUrl = await r2Service.uploadScenarioCover(
+        coverFile,
+        scenarioId,
+      );
+    }
+
+    const fieldsToUpdate: string[] = [];
+    const values: (string | Date)[] = [];
+    let paramIndex = 1;
+
+    if (updateData.name !== undefined) {
+      fieldsToUpdate.push(`name = $${paramIndex}`);
+      values.push(updateData.name);
+      paramIndex++;
+    }
+
+    if (updateData.description !== undefined) {
+      fieldsToUpdate.push(`description = $${paramIndex}`);
+      values.push(updateData.description);
+      paramIndex++;
+    }
+
+    if (updateData.invite_code !== undefined) {
+      fieldsToUpdate.push(`invite_code = $${paramIndex}`);
+      values.push(updateData.invite_code);
+      paramIndex++;
+    }
+
+    if (finalCoverUrl !== undefined) {
+      fieldsToUpdate.push(`cover = $${paramIndex}`);
+      values.push(finalCoverUrl);
+      paramIndex++;
+    }
+
+    fieldsToUpdate.push(`updated_at = $${paramIndex}`);
+    values.push(new Date());
+    paramIndex++;
+
+    values.push(scenarioId);
+
+    const query = `
+      UPDATE scenarios
+      SET ${fieldsToUpdate.join(", ")}
+      WHERE id = $${paramIndex}
+      RETURNING *
+    `;
+
+    const result = await pool.query(query, values);
+    return result.rows[0];
   }
 
   async updateCover(ScenarioId: string, cover: string): Promise<void> {

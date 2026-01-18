@@ -4,6 +4,7 @@ const scenarioRouter = Router();
 import {
   CreateScenarioController,
   GetScenarioByIdController,
+  UpdateScenarioController,
   DeleteScenarioController,
 } from "./scenarioControllers";
 import { ROUTES_SCENARIOS } from "../config/constants";
@@ -23,6 +24,11 @@ scenarioRouter.delete(
   ROUTES_SCENARIOS.BY_ID,
   authMiddleware,
   DeleteScenarioController,
+);
+scenarioRouter.patch(
+  ROUTES_SCENARIOS.BY_ID,
+  authMiddleware,
+  UpdateScenarioController,
 );
 
 export default scenarioRouter;

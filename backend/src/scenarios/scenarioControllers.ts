@@ -10,6 +10,7 @@ import {
   CreateScenarioService,
   DeleteScenarioService,
   GetScenarioByIdService,
+  UpdateScenarioService,
 } from "./scenarioServices";
 import { upload } from "../config/multer";
 
@@ -105,6 +106,61 @@ export const GetScenarioByIdController = async (
       .json({ error: ERROR_MESSAGES.INTERNAL_SERVER_ERROR });
   }
 };
+
+export const UpdateScenarioController = [
+  upload.single("cover"),
+  async (req: Request, res: Response) => {
+    if (req.method !== HTTP_METHODS.PATCH) {
+      return res
+        .status(HTTP_STATUS.BAD_REQUEST)
+        .send(ERROR_MESSAGES.METHOD_NOT_ALLOWED);
+    }
+
+    try {
+      const { id } = req.params;
+      const { name, description, invite_code } = req.body;
+      const coverFile = req.file;
+      const userId: string = req.user.id;
+
+      if (!userId) {
+        return res.status(HTTP_STATUS.UNAUTHORIZED).json({
+          error: AUTH.INVALID_TOKEN,
+        });
+      }
+
+      const result = await UpdateScenarioService(
+        id,
+        userId,
+        {
+          name,
+          description,
+          invite_code,
+        },
+        coverFile,
+      );
+
+      if (result.errors) {
+        const isForbidden = result.errors.some(
+          (err) => err.fields === "authorization",
+        );
+
+        return res
+          .status(isForbidden ? HTTP_STATUS.FORBIDDEN : HTTP_STATUS.BAD_REQUEST)
+          .json({ errors: result.errors });
+      }
+
+      res.status(HTTP_STATUS.OK).json({
+        message: SCENARIO_MESSAGES.UPDATE_SUCCESS,
+        scenario: result.scenario?.scenario,
+      });
+    } catch (error: unknown) {
+      console.error("Erreur lors de la mise à jour du scénario:", error);
+      res
+        .status(HTTP_STATUS.INTERNAL_SERVER_ERROR)
+        .json({ error: ERROR_MESSAGES.INTERNAL_SERVER_ERROR });
+    }
+  },
+];
 
 export const DeleteScenarioController = async (req: Request, res: Response) => {
   if (req.method !== HTTP_METHODS.DELETE) {

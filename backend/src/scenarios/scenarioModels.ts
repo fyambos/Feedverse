@@ -56,3 +56,14 @@ export interface UpdateScenarioData {
   created_at: Date;
   updated_at: Date | null;
 }
+
+export interface UpdateScenarioRequest {
+  name?: string;
+  description?: string;
+  invite_code?: string;
+}
+
+export interface UpdateScenarioResponse {
+  message: string;
+  scenario: Scenario;
+}
