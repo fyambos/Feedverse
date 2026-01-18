@@ -118,6 +118,14 @@ export default function ScenarioListScreen() {
     setConfirm({ open: false, scenarioId: null, toUserId: null });
   };
 
+  const cancelConfirm = () => {
+    const sid = String(confirm.scenarioId ?? "").trim();
+    closeConfirm();
+    if (sid) {
+      setTransfer({ open: true, scenarioId: sid });
+    }
+  };
+
   const onLogout = async () => {
     await signOut();
     router.replace("/(auth)/login");
@@ -597,7 +605,11 @@ export default function ScenarioListScreen() {
 
                   return (
                     <Pressable
-                      onPress={() => setConfirm({ open: true, scenarioId: sid, toUserId: String(item.id) })}
+                      onPress={() => {
+                        // Avoid stacking two Modals (Android can keep the older one on top)
+                        setTransfer({ open: false, scenarioId: sid });
+                        setConfirm({ open: true, scenarioId: sid, toUserId: String(item.id) });
+                      }}
                       style={({ pressed }) => [
                         styles.transferRow,
                         { backgroundColor: pressed ? colors.pressed : "transparent", borderColor: colors.border },
@@ -672,8 +684,8 @@ export default function ScenarioListScreen() {
     };
 
     return (
-      <Modal transparent visible={confirm.open} animationType="fade" onRequestClose={closeConfirm}>
-        <Pressable style={[styles.menuBackdrop, { backgroundColor: colors.modalBackdrop }]} onPress={closeConfirm}>
+      <Modal transparent visible={confirm.open} animationType="fade" onRequestClose={cancelConfirm}>
+        <Pressable style={[styles.menuBackdrop, { backgroundColor: colors.modalBackdrop }]} onPress={cancelConfirm}>
           <Pressable
             style={[styles.confirmCard, { backgroundColor: colors.background, borderColor: colors.border }]}
             onPress={(e) => e?.stopPropagation?.()}
@@ -697,7 +709,7 @@ export default function ScenarioListScreen() {
 
             <View style={{ flexDirection: "row", gap: 10, marginTop: 16 }}>
               <Pressable
-                onPress={closeConfirm}
+                onPress={cancelConfirm}
                 style={({ pressed }) => [
                   styles.confirmBtn,
                   { borderColor: colors.border, backgroundColor: pressed ? colors.pressed : colors.card },
