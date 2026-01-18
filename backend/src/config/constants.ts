@@ -104,6 +104,7 @@ export const SCENARIO_MESSAGES = {
   CREATION_SUCCESS: "Scénario créé avec succès",
   UPDATE_SUCCESS: "Scénario mis à jour avec succès",
   DELETION_SUCCESS: "Scénario supprimé avec succès",
+  PLAYERS_FETCH_SUCCESS: "Liste des participants récupérée avec succès",
   NAME: "name",
   INVITE_CODE: "invite_code",
   MODE: "mode",
@@ -224,6 +225,7 @@ export const ROUTES_SCENARIOS = {
   BASE: "/scenarios",
   BY_ID: "/:id",
   CREATE: "/create",
+  PLAYERS: "/players",
 } as const;
 
 // ============================================================================

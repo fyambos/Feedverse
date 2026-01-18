@@ -6,6 +6,7 @@ import {
   GetScenarioByIdController,
   UpdateScenarioController,
   DeleteScenarioController,
+  GetScenarioPlayersController,
 } from "./scenarioControllers";
 import { ROUTES_SCENARIOS } from "../config/constants";
 import { authMiddleware } from "../auth/authMiddleware";
@@ -29,6 +30,11 @@ scenarioRouter.patch(
   ROUTES_SCENARIOS.BY_ID,
   authMiddleware,
   UpdateScenarioController,
+);
+scenarioRouter.get(
+  ROUTES_SCENARIOS.BY_ID + ROUTES_SCENARIOS.PLAYERS,
+  authMiddleware,
+  GetScenarioPlayersController,
 );
 
 export default scenarioRouter;

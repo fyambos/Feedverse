@@ -1,5 +1,6 @@
 import {
   CreateScenarioData,
+  ScenarioPlayer,
   UpdateScenarioData,
 } from "../scenarios/scenarioModels";
 import { r2Service } from "../config/cloudflare/r2Service";
@@ -144,5 +145,23 @@ export class ScenarioRepository {
       ON CONFLICT (scenario_id, user_id) DO NOTHING
     `;
     await pool.query(query, [scenarioId, userId]);
+  }
+
+  async findPlayersByScenarioId(scenarioId: string): Promise<ScenarioPlayer[]> {
+    const query = `
+      SELECT
+        u.id,
+        u.username,
+        u.name,
+        u.avatar_url,
+        (s.owner_user_id = u.id) as is_owner
+      FROM users u
+      INNER JOIN scenario_players sp ON u.id = sp.user_id
+      INNER JOIN scenarios s ON sp.scenario_id = s.id
+      WHERE sp.scenario_id = $1 AND u.is_deleted = false
+      ORDER BY is_owner DESC, u.username ASC
+    `;
+    const result = await pool.query(query, [scenarioId]);
+    return result.rows;
   }
 }

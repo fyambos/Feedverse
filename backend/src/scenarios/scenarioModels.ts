@@ -67,3 +67,16 @@ export interface UpdateScenarioResponse {
   message: string;
   scenario: Scenario;
 }
+
+export interface ScenarioPlayer {
+  id: string;
+  username: string;
+  name: string;
+  avatar_url: string;
+  is_owner: boolean;
+}
+
+export interface GetScenarioPlayersResponse {
+  players: ScenarioPlayer[];
+  count: number;
+}

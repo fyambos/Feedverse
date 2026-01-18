@@ -3,6 +3,7 @@ import { ValidationError } from "../utils/models";
 import {
   CreateScenarioRequest,
   CreateScenarioResponse,
+  GetScenarioPlayersResponse,
   Scenario,
   UpdateScenarioData,
   UpdateScenarioRequest,
@@ -307,4 +308,50 @@ export const DeleteScenarioService = async (
   }
 
   return { success: true };
+};
+
+export const GetScenarioPlayersService = async (
+  scenarioId: string,
+  userId: string,
+): Promise<{
+  players?: GetScenarioPlayersResponse;
+  errors?: ValidationError[];
+}> => {
+  const uuidRegex =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+  if (!uuidRegex.test(scenarioId)) {
+    return {
+      errors: [
+        {
+          fields: "id",
+          message: "Format d'identifiant invalide",
+        },
+      ],
+    };
+  }
+
+  const scenarioExists = await scenarioRepository.IdExists(scenarioId);
+
+  if (!scenarioExists) {
+    console.error("ID utilisateur non trouvé : ", userId);
+    return {
+      errors: [
+        {
+          fields: "id",
+          message: SCENARIO_MESSAGES.NOT_FOUND,
+        },
+      ],
+    };
+  }
+
+  const playersList =
+    await scenarioRepository.findPlayersByScenarioId(scenarioId);
+
+  return {
+    players: {
+      players: playersList,
+      count: playersList.length,
+    },
+  };
 };
