@@ -61,7 +61,8 @@ export default function HomeScreen() {
   const scheme = useColorScheme() ?? "light";
   const colors = Colors[scheme];
 
-  const { userId } = useAuth();
+  const auth = useAuth();
+  const { userId } = auth;
   const app = useAppData() as any;
 
   const {
@@ -198,9 +199,102 @@ export default function HomeScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [refreshTick, setRefreshTick] = useState<number>(() => Date.now());
 
+  const backendMode = useMemo(() => {
+    const token = String((auth as any)?.token ?? "").trim();
+    const baseUrl = String(process.env.EXPO_PUBLIC_API_BASE_URL ?? "").trim();
+    return Boolean(token && baseUrl);
+  }, [auth]);
+
   const loadingLock = useRef(false);
   const listRef = useRef<FlatList<any> | null>(null);
   const deletePostRef = useRef(false);
+  const initialRetryRef = useRef<{ interval: any; timeout: any } | null>(null);
+
+  const SkeletonFeed = useMemo(() => {
+    const block = (w: number | string, h: number, r = 10, extra?: any) => (
+      <View
+        style={[
+          {
+            width: w,
+            height: h,
+            borderRadius: r,
+            backgroundColor: colors.border,
+            opacity: 0.5,
+          },
+          extra,
+        ]}
+      />
+    );
+
+    const dot = (size: number, extra?: any) => (
+      <View
+        style={[
+          {
+            width: size,
+            height: size,
+            borderRadius: size / 2,
+            backgroundColor: colors.border,
+            opacity: 0.5,
+          },
+          extra,
+        ]}
+      />
+    );
+
+    const Row = ({ i }: { i: number }) => {
+      const showMedia = i % 3 === 1;
+
+      return (
+        <View key={`sk_${i}`}>
+          <View style={{ paddingHorizontal: 16, paddingVertical: 12 }}>
+            <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 12 }}>
+              <View style={{ width: 44, alignItems: "center" }}>
+                {dot(44)}
+              </View>
+
+              <View style={{ flex: 1 }}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                  {block("40%", 14, 8)}
+                  {block("30%", 14, 8)}
+                </View>
+
+                {block("92%", 12, 8, { marginTop: 10 })}
+                {block("80%", 12, 8, { marginTop: 8 })}
+                {block("62%", 12, 8, { marginTop: 8 })}
+
+                {showMedia ? block("92%", 170, 16, { marginTop: 12 }) : null}
+
+                <View style={{ flexDirection: "row", marginTop: 12, gap: 28 }}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                    {dot(18)}
+                    {block(18, 10, 6)}
+                  </View>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                    {dot(18)}
+                    {block(18, 10, 6)}
+                  </View>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                    {dot(18)}
+                    {block(18, 10, 6)}
+                  </View>
+                </View>
+              </View>
+            </View>
+          </View>
+
+          <View style={[styles.separator, { backgroundColor: colors.border }]} />
+        </View>
+      );
+    };
+
+    return (
+      <View style={{ paddingTop: 4 }}>
+        {Array.from({ length: 6 }).map((_, i) => (
+          <Row key={`skrow_${i}`} i={i} />
+        ))}
+      </View>
+    );
+  }, [colors.border]);
 
   const avatarScale = useRef(new Animated.Value(1)).current;
   const logoScale = useRef(new Animated.Value(1)).current;
@@ -225,13 +319,20 @@ export default function HomeScreen() {
 
   const loadFirstPage = useCallback(() => {
     if (!isReady) return;
+    if (!sid) return;
+    if (backendMode && !auth.isReady) return;
 
     const page = listPostsPage({ scenarioId: sid, limit: PAGE_SIZE, cursor: null });
     setItems(page.items);
     setCursor(page.nextCursor);
     setHasMore(!!page.nextCursor);
-    setInitialLoading(false);
-  }, [isReady, listPostsPage, sid]);
+
+    // In backend mode, the first render can happen before the async sync fills
+    // the DB. Keep the spinner until we either get items or we give up.
+    if (!backendMode || page.items.length > 0) {
+      setInitialLoading(false);
+    }
+  }, [auth.isReady, backendMode, isReady, listPostsPage, sid]);
 
   // Background sync updates AppData often, which changes function identities.
   // Keep a ref to the latest loader so our "reset feed" effect only runs when
@@ -283,16 +384,98 @@ export default function HomeScreen() {
       setLoadingMore(false);
       loadingLock.current = false;
     }
-  }, [isReady, refreshing, hasMore, listPostsPage, sid, cursor]);
+  }, [cursor, hasMore, isReady, listPostsPage, refreshing, sid]);
 
+  // NOTE: db.posts is mutated in-place during sync, so memoizing on `db` can
+  // get stuck and never notice new posts. Compute per-render instead.
+  const hasAnyRootPostInDbForScenario = (() => {
+    if (!db || !sid) return false;
+    const posts = ((db as any)?.posts ?? {}) as Record<string, any>;
+    for (const p of Object.values(posts)) {
+      if (String((p as any)?.scenarioId ?? "") !== sid) continue;
+      if ((p as any)?.parentPostId) continue;
+      return true;
+    }
+    return false;
+  })();
+
+  // Reset list only when scenario changes.
   useEffect(() => {
     setItems([]);
     setCursor(null);
     setHasMore(true);
     setInitialLoading(true);
+    initialRetryRef.current = null;
+  }, [sid]);
 
-    if (isReady) loadFirstPageRef.current();
-  }, [sid, isReady]);
+  // Trigger initial load when ready (and when auth becomes ready in backend mode)
+  // without clearing items again.
+  useEffect(() => {
+    if (!isReady) return;
+    if (!sid) return;
+    if (backendMode && !auth.isReady) return;
+    loadFirstPageRef.current();
+  }, [isReady, sid, backendMode, auth.isReady]);
+
+  // Backend mode: poll briefly so posts appear without re-entering, but ALWAYS
+  // stop loading quickly so we never get stuck on skeleton forever.
+  useEffect(() => {
+    if (!backendMode) return;
+    if (!isReady) return;
+    if (!auth.isReady) return;
+    if (!sid) return;
+    if (!initialLoading) return;
+    if (items.length > 0) return;
+
+    if (!initialRetryRef.current) initialRetryRef.current = { interval: null, timeout: null };
+    const state = initialRetryRef.current;
+
+    if (state.interval || state.timeout) return;
+
+    const maxAttempts = 6; // 6 * 500ms = 3s
+    let attempts = 0;
+
+    state.interval = setInterval(() => {
+      attempts += 1;
+      loadFirstPageRef.current();
+
+      if (attempts >= maxAttempts) {
+        try {
+          if (state.interval) clearInterval(state.interval);
+        } catch {}
+        state.interval = null;
+      }
+    }, 500);
+
+    // Hard cutoff for the skeleton (fast). Empty scenarios should show empty state.
+    state.timeout = setTimeout(() => {
+      state.timeout = null;
+      try {
+        if (state.interval) clearInterval(state.interval);
+      } catch {}
+      state.interval = null;
+      setInitialLoading(false);
+    }, 2000);
+
+    return () => {
+      try {
+        if (state.interval) clearInterval(state.interval);
+        if (state.timeout) clearTimeout(state.timeout);
+      } catch {}
+      state.interval = null;
+      state.timeout = null;
+    };
+  }, [backendMode, isReady, auth.isReady, sid, items.length, initialLoading]);
+
+  // If the screen loaded before posts finished syncing, we can end up with an
+  // empty feed until you leave/re-enter. When posts arrive, reload once.
+  useEffect(() => {
+    if (!isReady) return;
+    if (!sid) return;
+    if (items.length > 0) return;
+    if (!hasAnyRootPostInDbForScenario) return;
+    loadFirstPageRef.current();
+  }, [hasAnyRootPostInDbForScenario, isReady, sid, items.length]);
 
   useEffect(() => {
     // If we navigate to a different scenarioId (e.g. after import), reset scroll.
@@ -525,13 +708,12 @@ export default function HomeScreen() {
           );
         }}
         ListEmptyComponent={() => {
-          if (!isReady || initialLoading) {
-            return (
-              <View style={{ padding: 16 }}>
-                <ActivityIndicator />
-              </View>
-            );
-          }
+          const shouldShowSkeleton =
+            !isReady ||
+            initialLoading ||
+            (backendMode && auth.isReady && items.length === 0 && hasAnyRootPostInDbForScenario);
+
+          if (shouldShowSkeleton) return SkeletonFeed;
 
           return (
             <View style={{ padding: 16 }}>
