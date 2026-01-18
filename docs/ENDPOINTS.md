@@ -2,7 +2,9 @@
 
 **Version :** 1.0.0
 
-**Mise à jour le :** 17 janvier 2026
+**Mise à jour le :** 18 janvier 2026
+
+**Par :** [**Steven YAMBOS**](https://github.com/StevenYAMBOS)
 
 ---
 
@@ -17,7 +19,9 @@
 - [Endpoints scénarios](#endpoints-scénarios)
   - [Créer un scénario](#créer-un-scénario)
   - [Récupérer un scénario](#récupérer-un-scénario)
+  - [Modifier un scénario](#modifier-un-scénario)
   - [Supprimer un scénario](#supprimer-un-scénario)
+  - [Récupérer les participants d'un scénario](#récupérer-les-participants-dun-scénario)
 - [Codes de statut HTTP](#codes-de-statut-http)
 - [Gestion des erreurs](#gestion-des-erreurs)
 
@@ -390,7 +394,6 @@ curl -X PATCH https://api.feedverse.com/v1/users/me \
   -F "avatar=@avatar.jpg"
 ```
 
-
 ---
 
 ### Récupérer les scénarios d'un utilisateur
@@ -549,6 +552,7 @@ curl -X GET https://api.feedverse.com/v1/users/scenarios \
 #### Comportement de la suppression
 
 **Données anonymisées :**
+
 - Email remplacé par `deleted_<id>@feedverse.deleted`
 - Username remplacé par `deleted_user_<8_premiers_caractères_uuid>`
 - Name remplacé par `Compte supprimé`
@@ -556,6 +560,7 @@ curl -X GET https://api.feedverse.com/v1/users/scenarios \
 - Settings réinitialisés (`{}`)
 
 **Données préservées :**
+
 - ID du compte (pour maintenir les relations)
 - Posts et profils créés (visibles avec "Compte supprimé")
 - Participations aux scénarios (historique narratif)
@@ -694,20 +699,24 @@ curl -X DELETE https://api.feedverse.com/v1/users/550e8400-e29b-41d4-a716-446655
 #### Validation des champs
 
 **name :**
+
 - Longueur : 1 à 100 caractères
 - Trim automatique des espaces
 
 **invite_code :**
+
 - Longueur : 4 à 20 caractères
 - Caractères autorisés : lettres, chiffres, underscore
 - Converti automatiquement en majuscules
 - Doit être unique globalement
 
 **mode :**
+
 - Valeurs acceptées : `story`, `campaign`
 - Par défaut : `story`
 
 **cover :**
+
 - Formats acceptés : JPEG, PNG, WEBP
 - Taille maximale : 5 Mo
 - Stockage : Amazon Web Services (AWS) S3 / Cloudflare R2
@@ -1012,6 +1021,7 @@ curl -X GET https://api.feedverse.com/v1/scenarios/123e4567-e89b-12d3-a456-42661
 #### Comportement de la suppression
 
 **Données supprimées en cascade (via contraintes SQL) :**
+
 - Tous les profils du scénario (`profiles`)
 - Tous les posts du scénario (`posts`)
 - Tous les likes du scénario (`likes`)
@@ -1127,6 +1137,434 @@ curl -X DELETE https://api.feedverse.com/v1/scenarios/123e4567-e89b-12d3-a456-42
 - **Suppression en cascade** : Les contraintes SQL `ON DELETE CASCADE` gèrent automatiquement la suppression de toutes les données liées
 - **Permissions** : Seul le propriétaire (`owner_user_id`) peut supprimer le scénario
 - **Alternative** : Pour conserver l'historique, envisagez un transfert de propriété (`PATCH /scenarios/:id/owner`) avant suppression
+
+---
+
+### Modifier un scénario
+
+**Endpoint :** `PATCH /scenarios/:id`
+
+**Description :** Met à jour les informations d'un scénario existant. Permet la modification partielle du nom, de la description, du code d'invitation et de l'image de couverture. Seul le propriétaire du scénario peut effectuer ces modifications.
+
+**Authentification :** Requise
+
+**Content-Type :** `multipart/form-data` (pour l'upload de la couverture)
+
+#### Paramètres de route
+
+| Paramètre | Type | Description |
+|-----------|------|-------------|
+| `id` | UUID | Identifiant unique du scénario à modifier |
+
+#### Paramètres du corps de requête
+
+| Paramètre | Type | Requis | Description |
+|-----------|------|--------|-------------|
+| `name` | string | Non | Nouveau nom du scénario (3-100 caractères) |
+| `description` | string | Non | Nouvelle description (max 500 caractères) |
+| `invite_code` | string | Non | Nouveau code d'invitation (6-20 caractères, alphanumérique) |
+| `cover` | file | Non | Nouvelle image de couverture (JPG, PNG, WEBP, max 5 Mo) |
+
+#### Validation des champs
+
+**name :**
+
+- Longueur : 3 à 100 caractères
+- Trim automatique des espaces
+
+**description :**
+
+- Longueur maximale : 500 caractères
+- Peut être vide (null)
+- Trim automatique des espaces
+
+**invite_code :**
+
+- Longueur : 6 à 20 caractères
+- Caractères autorisés : lettres majuscules et chiffres uniquement
+- Converti automatiquement en majuscules
+- Doit être unique globalement (sauf pour le code actuel du scénario)
+
+**cover :**
+
+- Formats acceptés : JPEG, PNG, WEBP
+- Taille maximale : 5 Mo
+- Stockage : Cloudflare R2
+
+#### Autorisations
+
+- Seul le propriétaire du scénario (`owner_user_id`) peut le modifier
+- Vérification automatique via le JWT de l'utilisateur connecté
+
+#### Réponse de succès
+
+**Code :** `200 OK`
+
+**Structure :**
+
+```json
+{
+  "message": "string",
+  "scenario": {
+    "id": "uuid",
+    "name": "string",
+    "cover": "string",
+    "invite_code": "string",
+    "owner_user_id": "uuid",
+    "description": "string | null",
+    "mode": "story | campaign",
+    "gm_user_ids": ["uuid"],
+    "settings": {},
+    "created_at": "timestamp",
+    "updated_at": "timestamp"
+  }
+}
+```
+
+#### Exemple de réponse
+
+```json
+{
+  "message": "Scénario mis à jour avec succès",
+  "scenario": {
+    "id": "123e4567-e89b-12d3-a456-426614174000",
+    "name": "K-Pop Universe - Season 2",
+    "cover": "https://cdn.feedverse.com/scenarios/123e4567/cover_1737123456.jpg",
+    "invite_code": "KPOP2025",
+    "owner_user_id": "550e8400-e29b-41d4-a716-446655440000",
+    "description": "Un univers narratif K-Pop - Nouvelle saison",
+    "mode": "story",
+    "gm_user_ids": [],
+    "settings": {
+      "profileLimitMode": "per_owner",
+      "pinnedPostIds": []
+    },
+    "created_at": "2024-01-15T10:00:00Z",
+    "updated_at": "2026-01-17T16:45:00Z"
+  }
+}
+```
+
+#### Exemple de code
+
+**JavaScript (Fetch API avec FormData) :**
+
+```javascript
+const scenarioId = '123e4567-e89b-12d3-a456-426614174000';
+const formData = new FormData();
+formData.append('name', 'K-Pop Universe - Season 2');
+formData.append('description', 'Un univers narratif K-Pop - Nouvelle saison');
+formData.append('invite_code', 'KPOP2025');
+formData.append('cover', coverFile);
+
+const response = await fetch(`https://api.feedverse.com/v1/scenarios/${scenarioId}`, {
+  method: 'PATCH',
+  headers: {
+    'Authorization': `Bearer ${token}`
+  },
+  body: formData
+});
+
+const { scenario } = await response.json();
+```
+
+**cURL :**
+
+```bash
+curl -X PATCH https://api.feedverse.com/v1/scenarios/123e4567-e89b-12d3-a456-426614174000 \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -F "name=K-Pop Universe - Season 2" \
+  -F "description=Un univers narratif K-Pop - Nouvelle saison" \
+  -F "invite_code=KPOP2025" \
+  -F "cover=@/path/to/new-cover.jpg"
+```
+
+#### Codes de statut
+
+| Code | Description |
+|------|-------------|
+| `200` | Succès - Scénario mis à jour |
+| `400` | Requête invalide - Validation échouée ou format UUID incorrect |
+| `401` | Non autorisé - Token invalide ou expiré |
+| `403` | Interdit - L'utilisateur n'est pas le propriétaire |
+| `404` | Non trouvé - Scénario inexistant |
+| `409` | Conflit - Code d'invitation déjà utilisé |
+| `500` | Erreur serveur interne |
+
+#### Erreurs possibles
+
+**400 Bad Request (validation) :**
+
+```json
+{
+  "errors": [
+    {
+      "fields": "name",
+      "message": "Le nom du scénario doit contenir entre 3 et 100 caractères"
+    }
+  ]
+}
+```
+
+**400 Bad Request (UUID invalide) :**
+
+```json
+{
+  "errors": [
+    {
+      "fields": "id",
+      "message": "Format d'identifiant invalide"
+    }
+  ]
+}
+```
+
+**403 Forbidden :**
+
+```json
+{
+  "errors": [
+    {
+      "fields": "authorization",
+      "message": "Seul le propriétaire peut modifier ce scénario"
+    }
+  ]
+}
+```
+
+**404 Not Found :**
+
+```json
+{
+  "errors": [
+    {
+      "fields": "id",
+      "message": "Scénario introuvable"
+    }
+  ]
+}
+```
+
+**409 Conflict :**
+
+```json
+{
+  "errors": [
+    {
+      "fields": "invite_code",
+      "message": "Ce code d'invitation est déjà utilisé"
+    }
+  ]
+}
+```
+
+#### Notes techniques
+
+- **Mise à jour partielle** : Seuls les champs fournis sont modifiés, les autres restent inchangés
+- **Validation du code d'invitation** : Le code actuel du scénario est exclu de la vérification d'unicité
+- **Upload de couverture** : L'ancienne image n'est pas supprimée automatiquement de Cloudflare R2
+- **Timestamp** : Le champ `updated_at` est automatiquement mis à jour
+- **Permissions strictes** : Même les administrateurs ne peuvent pas modifier un scénario dont ils ne sont pas propriétaires
+
+#### Cas d'usage
+
+**Changer uniquement le nom :**
+
+```bash
+curl -X PATCH https://api.feedverse.com/v1/scenarios/123e4567 \
+  -H "Authorization: Bearer TOKEN" \
+  -F "name=Nouveau nom"
+```
+
+**Modifier le code d'invitation :**
+
+```bash
+curl -X PATCH https://api.feedverse.com/v1/scenarios/123e4567 \
+  -H "Authorization: Bearer TOKEN" \
+  -F "invite_code=NEWCODE2025"
+```
+
+**Mettre à jour la couverture uniquement :**
+
+```bash
+curl -X PATCH https://api.feedverse.com/v1/scenarios/123e4567 \
+  -H "Authorization: Bearer TOKEN" \
+  -F "cover=@new-cover.jpg"
+```
+
+---
+
+### Récupérer les participants d'un scénario
+
+**Endpoint :** `GET /scenarios/:id/players`
+
+**Description :** Récupère la liste complète des utilisateurs participant à un scénario. Retourne les informations de base de chaque participant, incluant le statut de propriétaire. Les résultats sont triés avec le propriétaire en premier, suivi des autres participants par ordre alphabétique.
+
+**Authentification :** Requise
+
+#### Paramètres de route
+
+| Paramètre | Type | Description |
+|-----------|------|-------------|
+| `id` | UUID | Identifiant unique du scénario |
+
+#### Validation
+
+- L'identifiant doit être au format UUID v4
+- Le scénario doit exister dans la base de données
+- L'utilisateur doit être authentifié (pas besoin d'être participant pour l'instant)
+
+#### Réponse de succès
+
+**Code :** `200 OK`
+
+**Structure :**
+
+```json
+{
+  "message": "string",
+  "players": [
+    {
+      "id": "uuid",
+      "username": "string",
+      "name": "string",
+      "avatar_url": "string",
+      "is_owner": "boolean"
+    }
+  ],
+  "count": "number"
+}
+```
+
+#### Champs de la réponse
+
+- **message** : Message de confirmation de succès
+- **players** : Tableau des participants du scénario
+  - **id** : Identifiant unique de l'utilisateur
+  - **username** : Nom d'utilisateur
+  - **name** : Nom d'affichage
+  - **avatar_url** : URL de l'avatar de l'utilisateur
+  - **is_owner** : Indique si l'utilisateur est le propriétaire du scénario
+- **count** : Nombre total de participants
+
+#### Exemple de réponse
+
+```json
+{
+  "message": "Liste des participants récupérée avec succès",
+  "players": [
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440000",
+      "username": "hyunjin_official",
+      "name": "Hyunjin",
+      "avatar_url": "https://cdn.feedverse.com/users/550e8400.jpg",
+      "is_owner": true
+    },
+    {
+      "id": "660e8400-e29b-41d4-a716-446655440111",
+      "username": "felix_sunshine",
+      "name": "Felix",
+      "avatar_url": "https://cdn.feedverse.com/users/660e8400.jpg",
+      "is_owner": false
+    },
+    {
+      "id": "770e8400-e29b-41d4-a716-446655440222",
+      "username": "seungmin_vocals",
+      "name": "Seungmin",
+      "avatar_url": "https://cdn.feedverse.com/users/770e8400.jpg",
+      "is_owner": false
+    }
+  ],
+  "count": 3
+}
+```
+
+#### Exemple de code
+
+**JavaScript (Fetch API) :**
+
+```javascript
+const scenarioId = '123e4567-e89b-12d3-a456-426614174000';
+
+const response = await fetch(`https://api.feedverse.com/v1/scenarios/${scenarioId}/players`, {
+  method: 'GET',
+  headers: {
+    'Authorization': `Bearer ${token}`,
+    'Content-Type': 'application/json'
+  }
+});
+
+const { players, count } = await response.json();
+console.log(`Ce scénario a ${count} participant(s)`);
+```
+
+**cURL :**
+
+```bash
+curl -X GET https://api.feedverse.com/v1/scenarios/123e4567-e89b-12d3-a456-426614174000/players \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json"
+```
+
+#### Codes de statut
+
+| Code | Description |
+|------|-------------|
+| `200` | Succès - Liste récupérée |
+| `400` | Requête invalide - Format UUID incorrect |
+| `401` | Non autorisé - Token invalide ou expiré |
+| `404` | Non trouvé - Scénario inexistant |
+| `500` | Erreur serveur interne |
+
+#### Erreurs possibles
+
+**400 Bad Request :**
+
+```json
+{
+  "errors": [
+    {
+      "fields": "id",
+      "message": "Format d'identifiant invalide"
+    }
+  ]
+}
+```
+
+**404 Not Found :**
+
+```json
+{
+  "errors": [
+    {
+      "fields": "id",
+      "message": "Scénario introuvable"
+    }
+  ]
+}
+```
+
+#### Notes techniques
+
+- **Tri intelligent** : Le propriétaire apparaît toujours en premier, suivi des participants triés alphabétiquement par username
+- **Exclusion des comptes supprimés** : Les utilisateurs avec `is_deleted = true` ne sont pas inclus dans les résultats
+- **Performance** : Utilise une jointure triple optimisée entre `users`, `scenario_players` et `scenarios`
+- **Champ calculé** : `is_owner` est calculé dynamiquement via une comparaison SQL
+- **Permissions futures** : La vérification d'appartenance au scénario pourra être ajoutée ultérieurement
+
+#### Cas d'usage
+
+**Afficher la liste des membres :**
+
+- Visualiser tous les participants d'un scénario
+- Identifier le propriétaire du scénario
+- Afficher les avatars et noms dans une interface utilisateur
+
+**Gestion de scénario :**
+
+- Vérifier qui a accès au scénario
+- Préparer l'interface pour inviter de nouveaux participants
+- Afficher le nombre total de participants
 
 ---
 
