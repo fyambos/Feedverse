@@ -209,6 +209,7 @@ export const ROUTES_USERS = {
   ME: "/me",
   SETTINGS: "/settings",
   SCENARIOS: "/scenarios",
+  USER_ID: "/:userId",
 } as const;
 
 export const ASSETS = {

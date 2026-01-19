@@ -9,6 +9,7 @@ import {
 } from "../config/constants";
 import {
   DeleteUserService,
+  GetUserScenariosByUserIdService,
   GetUserScenariosService,
   UpdateUserService,
 } from "./userServices";
@@ -166,3 +167,47 @@ export const UpdateUserController = [
     }
   },
 ];
+
+export const GetUserScenariosByUserIdController = async (
+  req: Request,
+  res: Response,
+) => {
+  if (req.method !== HTTP_METHODS.GET) {
+    return res
+      .status(HTTP_STATUS.BAD_REQUEST)
+      .send(ERROR_MESSAGES.METHOD_NOT_ALLOWED);
+  }
+
+  try {
+    const { userId } = req.params;
+    const authenticatedUserId: string = req.user.id;
+
+    if (!authenticatedUserId) {
+      return res.status(HTTP_STATUS.UNAUTHORIZED).json({
+        error: AUTH.INVALID_TOKEN,
+      });
+    }
+
+    const result = await GetUserScenariosByUserIdService(
+      userId,
+      authenticatedUserId,
+    );
+
+    if (result.errors) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({
+        errors: result.errors,
+      });
+    }
+
+    res.status(HTTP_STATUS.OK).json({
+      message: USER_MESSAGES.SCENARIOS_FETCH_SUCCESS,
+      scenarios: result.scenarios?.scenarios,
+      count: result.scenarios?.count,
+    });
+  } catch (error: unknown) {
+    console.error("Erreur lors de la récupération des scénarios:", error);
+    res
+      .status(HTTP_STATUS.INTERNAL_SERVER_ERROR)
+      .json({ error: ERROR_MESSAGES.INTERNAL_SERVER_ERROR });
+  }
+};

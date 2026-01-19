@@ -151,3 +151,48 @@ export const UpdateUserService = async (
 
   return { user };
 };
+
+export const GetUserScenariosByUserIdService = async (
+  requestedUserId: string,
+  authenticatedUserId: string,
+): Promise<{
+  scenarios?: GetUserScenariosResponse;
+  errors?: ValidationError[];
+}> => {
+  const uuidRegex =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+  if (!uuidRegex.test(requestedUserId)) {
+    return {
+      errors: [
+        {
+          fields: "userId",
+          message: "Format d'identifiant invalide",
+        },
+      ],
+    };
+  }
+
+  const userExists = await userRepository.findById(requestedUserId);
+
+  if (!userExists) {
+    console.error("ID utilisateur non trouvé : ", authenticatedUserId);
+    return {
+      errors: [
+        {
+          fields: "userId",
+          message: USER_MESSAGES.NOT_FOUND,
+        },
+      ],
+    };
+  }
+
+  const scenarios = await userRepository.findUserScenarios(requestedUserId);
+
+  return {
+    scenarios: {
+      scenarios,
+      count: scenarios.length,
+    },
+  };
+};
