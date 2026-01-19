@@ -620,11 +620,21 @@ export default function HomeScreen() {
               style={({ pressed }) => [{ opacity: pressed ? 0.75 : 1 }]}
             >
               <Animated.View style={{ transform: [{ scale: logoScale }] }}>
-                <Image
-                  source={require("@/assets/images/FeedverseIcon.png")}
-                  style={{ width: 32, height: 32 }}
-                  resizeMode="contain"
-                />
+                <View
+                  style={{
+                    width: 32,
+                    height: 32,
+                    borderRadius: 16,
+                    overflow: "hidden",
+                    backgroundColor: colors.border,
+                  }}
+                >
+                  <Image
+                    source={require("@/assets/images/FeedverseIcon.png")}
+                    style={{ width: 32, height: 32, borderRadius: 16 }}
+                    resizeMode="cover"
+                  />
+                </View>
               </Animated.View>
             </Pressable>
           </View>
