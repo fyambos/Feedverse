@@ -38,9 +38,9 @@ export function clampCountFromText(text: string, min = 0, max = MAX_COUNT) {
 
 export function makeEngagementPreset(preset: "few" | "mid" | "lot") {
   let likes = 0;
-  if (preset === "few") likes = randInt(0, 80);
-  if (preset === "mid") likes = randInt(120, 6_000);
-  if (preset === "lot") likes = randInt(30_000, 2_000_000);
+  if (preset === "few") likes = randInt(0, 500);
+  if (preset === "mid") likes = randInt(500, 10_000);
+  if (preset === "lot") likes = randInt(10_000, 2_000_000);
 
   const reposts = clampInt(
     randInt(Math.floor(likes * 0.03), Math.max(0, Math.floor(likes * 0.22))),

@@ -170,7 +170,7 @@ export default function CreateProfileModal() {
 
     // handle must be unique per scenario (exclude self when editing)
     const conflict = listProfilesForScenario(sid).find(
-      (p) => String(p.id) !== String(existing?.id ?? "") && normalizeHandle(p.handle) === safeHandle
+      (p: { id: any; handle: string; }) => String(p.id) !== String(existing?.id ?? "") && normalizeHandle(p.handle) === safeHandle
     );
 
     if (conflict) {
