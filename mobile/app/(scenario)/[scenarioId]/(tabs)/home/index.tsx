@@ -11,7 +11,8 @@ import { useColorScheme } from "@/hooks/use-color-scheme";
 import { Post as PostCard } from "@/components/post/Post";
 import { CreatePostFab } from "@/components/post/CreatePostFab";
 import { useAuth } from "@/context/auth";
-import { useAppData } from "@/context/appData";
+import { consumeScenarioFeedRefreshNeeded, useAppData } from "@/context/appData";
+import { useFocusEffect } from "@react-navigation/native";
 import { SwipeableRow } from "@/components/ui/SwipeableRow";
 import { canEditPost } from "@/lib/permission";
 import { Avatar } from "@/components/ui/Avatar";
@@ -362,6 +363,18 @@ export default function HomeScreen() {
     }
   }, [isReady, loadFirstPage]);
 
+  // If user just posted, refresh when returning to this screen.
+  useFocusEffect(
+    useCallback(() => {
+      if (!isReady) return;
+      if (!sid) return;
+      if (backendMode && !auth.isReady) return;
+      if (!consumeScenarioFeedRefreshNeeded(sid)) return;
+
+      onRefresh();
+    }, [auth.isReady, backendMode, isReady, onRefresh, sid]),
+  );
+
   const loadMore = useCallback(() => {
     if (!isReady) return;
     if (refreshing) return;
@@ -540,7 +553,10 @@ export default function HomeScreen() {
               deletePostRef.current = true;
               try {
                 await deletePost(postId);
-                loadFirstPage();
+                // Remove immediately from current list (avoids waiting for AppData rerender),
+                // then re-sync the first page.
+                setItems((prev) => prev.filter((p: any) => String(p?.id ?? "") !== String(postId)));
+                setTimeout(() => loadFirstPageRef.current(), 0);
               } catch (e: any) {
                 Alert.alert("Could not delete", formatErrorMessage(e, "Could not delete post"));
               } finally {

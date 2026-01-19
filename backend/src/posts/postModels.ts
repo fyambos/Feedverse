@@ -2,6 +2,7 @@ export type PostRow = {
   id: string;
   scenario_id: string;
   author_profile_id: string;
+  author_user_id: string | null;
   text: string;
   image_urls: string[] | null;
   reply_count: number;
@@ -22,6 +23,7 @@ export type PostApi = {
   id: string;
   scenarioId: string;
   authorProfileId: string;
+  authorUserId?: string;
   text: string;
   imageUrls: string[];
   replyCount: number;
@@ -50,10 +52,13 @@ function toIso(v: unknown): string {
 }
 
 export function mapPostRowToApi(row: PostRow): PostApi {
+  const authorUserIdRaw = (row as any).author_user_id;
+  const authorUserId = authorUserIdRaw != null ? String(authorUserIdRaw) : undefined;
   return {
     id: String(row.id),
     scenarioId: String(row.scenario_id),
     authorProfileId: String(row.author_profile_id),
+    authorUserId,
     text: String(row.text ?? ""),
     imageUrls: Array.isArray(row.image_urls) ? row.image_urls.map(String) : [],
     replyCount: Number(row.reply_count ?? 0),

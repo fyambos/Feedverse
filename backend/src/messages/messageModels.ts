@@ -4,6 +4,7 @@ export type MessageRow = {
   scenario_id: string;
   conversation_id: string;
   sender_profile_id: string;
+  sender_user_id: string | null;
   text: string;
   kind: string;
   image_urls?: string[] | null;
@@ -17,6 +18,7 @@ export type MessageApi = {
   scenarioId: string;
   conversationId: string;
   senderProfileId: string;
+  senderUserId?: string;
   text: string;
   kind: string;
   imageUrls?: string[];
@@ -98,11 +100,14 @@ function coerceStringArray(value: unknown): string[] | undefined {
 
 export function mapMessageRowToApi(row: MessageRow): MessageApi {
   const imageUrls = coerceStringArray((row as any).image_urls);
+  const senderUserIdRaw = (row as any).sender_user_id;
+  const senderUserId = senderUserIdRaw != null ? String(senderUserIdRaw) : undefined;
   return {
     id: String(row.id),
     scenarioId: String(row.scenario_id),
     conversationId: String(row.conversation_id),
     senderProfileId: String(row.sender_profile_id),
+    senderUserId,
     text: String(row.text ?? ""),
     kind: String((row as any).kind ?? "text"),
     imageUrls,

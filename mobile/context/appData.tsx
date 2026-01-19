@@ -108,6 +108,23 @@ export function getActiveConversation(scenarioId: string): string | null {
   return activeConversationByScenario[sid] ?? null;
 }
 
+// One-shot "refresh home feed" flag by scenario.
+const feedRefreshNeededByScenario: Record<string, boolean> = {};
+
+export function markScenarioFeedRefreshNeeded(scenarioId: string) {
+  const sid = String(scenarioId ?? "").trim();
+  if (!sid) return;
+  feedRefreshNeededByScenario[sid] = true;
+}
+
+export function consumeScenarioFeedRefreshNeeded(scenarioId: string): boolean {
+  const sid = String(scenarioId ?? "").trim();
+  if (!sid) return false;
+  const needed = Boolean(feedRefreshNeededByScenario[sid]);
+  if (needed) feedRefreshNeededByScenario[sid] = false;
+  return needed;
+}
+
 type AppDataState = {
   isReady: boolean;
   db: DbV5 | null;
@@ -1882,6 +1899,14 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                           scenarioId: String(m.scenarioId ?? m.scenario_id ?? sid),
                           conversationId: String(m.conversationId ?? m.conversation_id ?? ""),
                           senderProfileId: String(m.senderProfileId ?? m.sender_profile_id ?? ""),
+                          senderUserId:
+                            m?.senderUserId != null
+                              ? String(m.senderUserId)
+                              : m?.sender_user_id != null
+                                ? String(m.sender_user_id)
+                                : payload?.senderUserId != null
+                                  ? String((payload as any).senderUserId)
+                                  : undefined,
                           text: String(m.text ?? ""),
                           imageUrls: Array.isArray(m.imageUrls) ? m.imageUrls.map(String).filter(Boolean) : Array.isArray(m.image_urls) ? m.image_urls.map(String).filter(Boolean) : [],
                           createdAt,
@@ -2046,7 +2071,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                           if (convId && String(m.senderProfileId ?? "") !== String(selectedProfileId ?? "")) {
                             const senderPid = String(m.senderProfileId ?? "");
                             const senderProfile = profiles?.[senderPid] as any;
-                            const sendingUserId = String((payload as any)?.senderUserId ?? "").trim();
+                            const sendingUserId = String((payload as any)?.senderUserId ?? m?.senderUserId ?? m?.sender_user_id ?? "").trim();
 
                             // If the sender profile is owned by the current user, skip notification
                             if (String(senderProfile?.ownerUserId ?? "") === String(currentUserId ?? "")) {
@@ -2262,6 +2287,12 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
               scenarioId: String(raw?.scenarioId ?? raw?.scenario_id ?? sid),
               conversationId: String(raw?.conversationId ?? raw?.conversation_id ?? cid),
               senderProfileId: String(raw?.senderProfileId ?? raw?.sender_profile_id ?? ""),
+              senderUserId:
+                raw?.senderUserId != null
+                  ? String(raw.senderUserId)
+                  : raw?.sender_user_id != null
+                    ? String(raw.sender_user_id)
+                    : (existing as any)?.senderUserId,
               kind: String(raw?.kind ?? raw?.kind ?? "text"),
               text: String(raw?.text ?? ""),
               imageUrls: Array.isArray(raw?.imageUrls)
@@ -2414,6 +2445,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
               id,
               scenarioId: String(raw?.scenarioId ?? raw?.scenario_id ?? existing?.scenarioId ?? sid),
               authorProfileId: String(raw?.authorProfileId ?? raw?.author_profile_id ?? existing?.authorProfileId ?? ""),
+              authorUserId: String(raw?.authorUserId ?? raw?.author_user_id ?? existing?.authorUserId ?? "").trim() || undefined,
               text: String(raw?.text ?? existing?.text ?? ""),
               imageUrls: Array.isArray(raw?.imageUrls ?? raw?.image_urls)
                 ? (raw?.imageUrls ?? raw?.image_urls).map(String)
@@ -2581,6 +2613,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
               id: String(post?.id ?? poid),
               scenarioId: String(post?.scenarioId ?? post?.scenario_id ?? sid),
               authorProfileId: String(post?.authorProfileId ?? post?.author_profile_id ?? existing?.authorProfileId ?? ""),
+              authorUserId: String(post?.authorUserId ?? post?.author_user_id ?? existing?.authorUserId ?? "").trim() || undefined,
               text: String(post?.text ?? existing?.text ?? ""),
               imageUrls: Array.isArray(post?.imageUrls ?? post?.image_urls)
                 ? (post?.imageUrls ?? post?.image_urls).map(String)
@@ -3353,6 +3386,14 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                   : `Save failed (HTTP ${res.status})`;
             throw new Error(msg);
           } else {
+            // In backend mode, feed queries intentionally filter to posts we've "seen" from the server.
+            // Some deployments may return 2xx without an embedded `post` payload; in that case we still
+            // want the optimistic/local post to appear immediately.
+            if (sid && id) {
+              const seen = (serverSeenPostsRef.current.byScenario[sid] ??= {});
+              seen[id] = true;
+            }
+
             let raw = (res.json as any)?.post;
             if (raw) {
               const postId = String(raw?.id ?? id);
@@ -3402,6 +3443,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                   id: postId,
                   scenarioId: String(raw?.scenarioId ?? (p as any)?.scenarioId ?? sid),
                   authorProfileId: String(raw?.authorProfileId ?? (p as any)?.authorProfileId ?? ""),
+                  authorUserId: String(raw?.authorUserId ?? raw?.author_user_id ?? (p as any)?.authorUserId ?? existing?.authorUserId ?? "").trim() || undefined,
                   text: String(raw?.text ?? (p as any)?.text ?? ""),
                   imageUrls: Array.isArray(raw?.imageUrls)
                     ? raw.imageUrls.map(String)
@@ -3458,6 +3500,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
 
       deletePost: async (postId) => {
         const id = String(postId);
+        let removedScenarioId = "";
 
         const token = String(auth.token ?? "").trim();
         const baseUrl = String(process.env.EXPO_PUBLIC_API_BASE_URL ?? "").trim();
@@ -3476,6 +3519,8 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         const next = await updateDb((prev) => {
           if (!prev.posts[id]) return prev;
 
+          removedScenarioId = String((prev.posts as any)?.[id]?.scenarioId ?? "");
+
           const posts = { ...prev.posts };
           delete posts[id];
 
@@ -3491,7 +3536,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
 
           // also remove from pinned list for its scenario (if present)
           const scenarios = { ...prev.scenarios };
-          const removedPostScenarioId = String((prev.posts as any)?.[id]?.scenarioId ?? "");
+          const removedPostScenarioId = removedScenarioId;
 
           if (removedPostScenarioId && scenarios[removedPostScenarioId]) {
             const s = scenarios[removedPostScenarioId];
@@ -3514,6 +3559,10 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         });
 
         setState({ isReady: true, db: next as any });
+
+        // If the user deleted from another screen (e.g. post detail), ensure the home feed refreshes
+        // when they navigate back.
+        if (removedScenarioId) markScenarioFeedRefreshNeeded(removedScenarioId);
       },
 
       // --- likes (table-backed) ---
@@ -3706,6 +3755,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                 id: String(post?.id ?? pid),
                 scenarioId: String(post?.scenarioId ?? post?.scenario_id ?? sid),
                 authorProfileId: String(post?.authorProfileId ?? post?.author_profile_id ?? existing?.authorProfileId ?? ""),
+                authorUserId: String(post?.authorUserId ?? post?.author_user_id ?? existing?.authorUserId ?? "").trim() || undefined,
                 text: String(post?.text ?? existing?.text ?? ""),
                 imageUrls: Array.isArray(post?.imageUrls ?? post?.image_urls)
                   ? (post?.imageUrls ?? post?.image_urls).map(String)
@@ -5195,6 +5245,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
             id: postId,
             scenarioId: sid,
             authorProfileId: gmId,
+            authorUserId: String(currentUserId ?? "").trim() || undefined,
             text: summaryText,
             createdAt: now,
             insertedAt: now,
@@ -5339,6 +5390,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
               id: finalPostId,
               scenarioId: String(rawPost?.scenarioId ?? rawPost?.scenario_id ?? sid),
               authorProfileId: String(rawPost?.authorProfileId ?? rawPost?.author_profile_id ?? gmId),
+              authorUserId: String(rawPost?.authorUserId ?? rawPost?.author_user_id ?? currentUserId ?? "").trim() || undefined,
               text: String(rawPost?.text ?? postText ?? ""),
               createdAt: createdAtIso,
               insertedAt: insertedAtIso,
@@ -5381,6 +5433,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
             id: postId,
             scenarioId: sid,
             authorProfileId: gmId,
+            authorUserId: String(currentUserId ?? "").trim() || undefined,
             text: String(postText ?? ""),
             createdAt: now,
             insertedAt: now,
@@ -5959,6 +6012,12 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
               scenarioId: sid,
               conversationId: cid,
               senderProfileId: from,
+              senderUserId:
+                m?.senderUserId != null
+                  ? String(m.senderUserId)
+                  : m?.sender_user_id != null
+                    ? String(m.sender_user_id)
+                    : String(currentUserId ?? "").trim() || undefined,
               text: String(m?.text ?? body),
               kind: String(m?.kind ?? m?.kind ?? kindVal ?? "text"),
               imageUrls: imageUrlsForDb,

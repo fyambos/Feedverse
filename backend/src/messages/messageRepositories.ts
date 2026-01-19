@@ -203,6 +203,7 @@ export async function listMessages(args: {
         scenario_id,
         conversation_id,
         sender_profile_id,
+        sender_user_id,
         text,
         kind,
         image_urls,
@@ -290,16 +291,18 @@ export async function sendMessage(args: {
         scenario_id,
         conversation_id,
         sender_profile_id,
+        sender_user_id,
         text,
         kind,
         created_at
       )
-      VALUES ($1, $2, $3, $4, $5, NOW() AT TIME ZONE 'UTC')
+      VALUES ($1, $2, $3, $4, $5, $6, NOW() AT TIME ZONE 'UTC')
       RETURNING
         id,
         scenario_id,
         conversation_id,
         sender_profile_id,
+        sender_user_id,
         text,
         kind,
         image_urls,
@@ -307,7 +310,7 @@ export async function sendMessage(args: {
         updated_at,
         edited_at
     `,
-      [sid, cid, senderProfileId, text, kind],
+      [sid, cid, senderProfileId, uid, text, kind],
     );
 
     const row = res.rows[0];
@@ -496,16 +499,18 @@ export async function sendMessageWithImages(args: {
         scenario_id,
         conversation_id,
         sender_profile_id,
+        sender_user_id,
         text,
         kind,
         created_at
       )
-      VALUES ($1, $2, $3, $4, $5, NOW() AT TIME ZONE 'UTC')
+      VALUES ($1, $2, $3, $4, $5, $6, NOW() AT TIME ZONE 'UTC')
       RETURNING
         id,
         scenario_id,
         conversation_id,
         sender_profile_id,
+        sender_user_id,
         text,
         kind,
         image_urls,
@@ -513,7 +518,7 @@ export async function sendMessageWithImages(args: {
         updated_at,
         edited_at
     `,
-      [sid, cid, senderProfileId, text.trim() ? text : "", String(args.kind ?? "text")],
+      [sid, cid, senderProfileId, uid, text.trim() ? text : "", String(args.kind ?? "text")],
     );
 
     const row0 = created.rows[0];
@@ -538,6 +543,7 @@ export async function sendMessageWithImages(args: {
         scenario_id,
         conversation_id,
         sender_profile_id,
+        sender_user_id,
         text,
         kind,
         image_urls,
@@ -764,6 +770,7 @@ export async function updateMessage(args: {
         scenario_id,
         conversation_id,
         sender_profile_id,
+        sender_user_id,
         text,
         kind,
         image_urls,
