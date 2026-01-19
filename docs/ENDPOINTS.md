@@ -2,7 +2,7 @@
 
 **Version :** 1.0.0
 
-**Mise à jour le :** 18 janvier 2026
+**Mise à jour le :** 19 janvier 2026
 
 **Par :** [**Steven YAMBOS**](https://github.com/StevenYAMBOS)
 
@@ -16,12 +16,14 @@
   - [Modifier le profil utilisateur](#modifier-le-profil-utilisateur)
   - [Récupérer les scénarios d'un utilisateur](#récupérer-les-scénarios-dun-utilisateur)
   - [Supprimer un compte utilisateur](#supprimer-un-compte-utilisateur)
+  - [Récupérer les scénarios d'un utilisateur spécifique](#récupérer-les-scénarios-dun-utilisateur-spécifique)
 - [Endpoints scénarios](#endpoints-scénarios)
   - [Créer un scénario](#créer-un-scénario)
   - [Récupérer un scénario](#récupérer-un-scénario)
   - [Modifier un scénario](#modifier-un-scénario)
   - [Supprimer un scénario](#supprimer-un-scénario)
   - [Récupérer les participants d'un scénario](#récupérer-les-participants-dun-scénario)
+  - [Transférer la propriété d'un scénario](#transférer-la-propriété-dun-scénario)
 - [Codes de statut HTTP](#codes-de-statut-http)
 - [Gestion des erreurs](#gestion-des-erreurs)
 
@@ -671,6 +673,186 @@ curl -X DELETE https://api.feedverse.com/v1/users/550e8400-e29b-41d4-a716-446655
 - **Impact minimal** : Les autres utilisateurs conservent l'accès aux conversations et contenus partagés
 - **Restauration** : Impossible sans intervention manuelle de l'administrateur
 - **Connexion** : Le token JWT devient invalide après suppression
+
+---
+
+### Récupérer les scénarios d'un utilisateur spécifique
+
+**Endpoint :** `GET /users/:userId/scenarios`
+
+**Description :** Récupère la liste complète des scénarios auxquels un utilisateur spécifique participe. Inclut les scénarios créés par l'utilisateur et ceux où il a été invité. Cette route permet de consulter les scénarios d'un autre utilisateur que soi-même.
+
+**Authentification :** Requise
+
+#### Paramètres de route
+
+| Paramètre | Type | Description |
+|-----------|------|-------------|
+| `userId` | UUID | Identifiant unique de l'utilisateur dont on veut récupérer les scénarios |
+
+#### Validation
+
+- L'identifiant doit être au format UUID v4
+- L'utilisateur demandé doit exister dans la base de données
+- L'utilisateur demandeur doit être authentifié
+
+#### Réponse de succès
+
+**Code :** `200 OK`
+
+**Structure :**
+
+```json
+{
+  "message": "string",
+  "scenarios": [
+    {
+      "id": "uuid",
+      "name": "string",
+      "cover": "string",
+      "invite_code": "string",
+      "owner_user_id": "uuid",
+      "description": "string | null",
+      "mode": "story | campaign",
+      "is_owner": "boolean",
+      "created_at": "timestamp",
+      "updated_at": "timestamp | null"
+    }
+  ],
+  "count": "number"
+}
+```
+
+#### Champs de la réponse
+
+- **message** : Message de confirmation de succès
+- **scenarios** : Tableau des scénarios de l'utilisateur
+  - **id** : Identifiant unique du scénario (UUID v4)
+  - **name** : Nom du scénario
+  - **cover** : URL de l'image de couverture
+  - **invite_code** : Code d'invitation unique (en majuscules)
+  - **owner_user_id** : Identifiant du propriétaire du scénario
+  - **description** : Description optionnelle du scénario
+  - **mode** : Mode du scénario (`story` pour narration libre, `campaign` pour jeu de rôle)
+  - **is_owner** : Indique si l'utilisateur demandé est le propriétaire
+  - **created_at** : Date de création du scénario
+  - **updated_at** : Date de dernière modification
+- **count** : Nombre total de scénarios retournés
+
+#### Exemple de réponse
+
+```json
+{
+  "message": "Scénarios récupérés avec succès",
+  "scenarios": [
+    {
+      "id": "123e4567-e89b-12d3-a456-426614174000",
+      "name": "K-Pop Universe",
+      "cover": "https://cdn.feedverse.com/covers/kpop-universe.jpg",
+      "invite_code": "KPOP2024",
+      "owner_user_id": "550e8400-e29b-41d4-a716-446655440000",
+      "description": "Un univers narratif centré sur le monde de la K-Pop",
+      "mode": "story",
+      "is_owner": true,
+      "created_at": "2024-01-15T10:00:00Z",
+      "updated_at": "2024-06-20T15:30:00Z"
+    },
+    {
+      "id": "987f6543-e21c-43d2-b654-321987654321",
+      "name": "Fantasy Campaign",
+      "cover": "https://cdn.feedverse.com/covers/fantasy-campaign.jpg",
+      "invite_code": "FANTASY",
+      "owner_user_id": "999e8400-e29b-41d4-a716-446655440999",
+      "description": null,
+      "mode": "campaign",
+      "is_owner": false,
+      "created_at": "2024-03-10T14:22:00Z",
+      "updated_at": null
+    }
+  ],
+  "count": 2
+}
+```
+
+#### Exemple de code
+
+**JavaScript (Fetch API) :**
+
+```javascript
+const userId = '550e8400-e29b-41d4-a716-446655440000';
+
+const response = await fetch(`https://api.feedverse.com/v1/users/${userId}/scenarios`, {
+  method: 'GET',
+  headers: {
+    'Authorization': `Bearer ${token}`,
+    'Content-Type': 'application/json'
+  }
+});
+
+const { scenarios, count } = await response.json();
+console.log(`Cet utilisateur participe à ${count} scénario(s)`);
+```
+
+**cURL :**
+
+```bash
+curl -X GET https://api.feedverse.com/v1/users/550e8400-e29b-41d4-a716-446655440000/scenarios \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json"
+```
+
+#### Codes de statut
+
+| Code | Description |
+|------|-------------|
+| `200` | Succès - Liste récupérée |
+| `400` | Requête invalide - Format UUID incorrect |
+| `401` | Non autorisé - Token invalide ou expiré |
+| `404` | Non trouvé - Utilisateur inexistant |
+| `500` | Erreur serveur interne |
+
+#### Erreurs possibles
+
+**400 Bad Request :**
+
+```json
+{
+  "errors": [
+    {
+      "fields": "userId",
+      "message": "Format d'identifiant invalide"
+    }
+  ]
+}
+```
+
+**404 Not Found :**
+
+```json
+{
+  "errors": [
+    {
+      "fields": "userId",
+      "message": "Utilisateur introuvable"
+    }
+  ]
+}
+```
+
+#### Notes techniques
+
+- Les scénarios sont triés par date de création décroissante (plus récents en premier)
+- La requête utilise une jointure SQL entre `scenarios` et `scenario_players`
+- Le champ `is_owner` est calculé dynamiquement pour l'utilisateur demandé
+- Contrairement à `GET /users/me/scenarios`, cette route nécessite la validation de l'UUID fourni
+
+#### Différence avec `/users/me/scenarios`
+
+| Critère | `/users/:userId/scenarios` | `/users/me/scenarios` |
+|---------|---------------------------|----------------------|
+| **Utilisateur ciblé** | Spécifié dans l'URL | Utilisateur connecté |
+| **Validation UUID** | Requise | Non (extrait du JWT) |
+| **Cas d'usage** | Voir les scénarios d'un autre utilisateur | Voir ses propres scénarios |
 
 ---
 
@@ -1568,6 +1750,288 @@ curl -X GET https://api.feedverse.com/v1/scenarios/123e4567-e89b-12d3-a456-42661
 
 ---
 
+### Transférer la propriété d'un scénario
+
+**Endpoint :** `POST /scenarios/:id/transfer`
+
+**Description :** Transfère la propriété d'un scénario à un autre utilisateur existant. Cette opération est irréversible et modifie le propriétaire officiel du scénario. Le nouveau propriétaire devient automatiquement participant s'il ne l'était pas déjà. En mode campaign, les rôles de Maître du Jeu sont également mis à jour.
+
+**Authentification :** Requise
+
+**Content-Type :** `application/json`
+
+#### Paramètres de route
+
+| Paramètre | Type | Description |
+|-----------|------|-------------|
+| `id` | UUID | Identifiant unique du scénario dont on veut transférer la propriété |
+
+#### Paramètres du corps de requête
+
+| Paramètre | Type | Requis | Description |
+|-----------|------|--------|-------------|
+| `newOwnerUserId` | UUID | Oui | Identifiant de l'utilisateur qui deviendra le nouveau propriétaire |
+
+#### Validation des champs
+
+**id (paramètre de route) :**
+
+- Format : UUID v4
+- Le scénario doit exister
+- L'utilisateur connecté doit être l'actuel propriétaire
+
+**newOwnerUserId :**
+
+- Format : UUID v4
+- L'utilisateur doit exister et ne pas être supprimé
+- Ne peut pas être le propriétaire actuel (pas de transfert à soi-même)
+
+#### Autorisations
+
+- Seul le propriétaire actuel du scénario (`owner_user_id`) peut transférer la propriété
+- L'opération est atomique via transaction SQL
+
+#### Comportement du transfert
+
+**Modifications automatiques :**
+
+1. **Mise à jour du propriétaire** : Le champ `owner_user_id` est modifié
+2. **Ajout aux participants** : Si le nouveau propriétaire n'est pas dans `scenario_players`, il est ajouté automatiquement
+3. **Gestion des rôles GM (mode campaign uniquement)** :
+   - L'ancien propriétaire est retiré de `gm_user_ids`
+   - Le nouveau propriétaire est ajouté à `gm_user_ids`
+4. **Timestamp** : Le champ `updated_at` est mis à jour
+
+**Transaction SQL** : Toutes ces opérations sont effectuées dans une transaction unique pour garantir la cohérence des données.
+
+#### Réponse de succès
+
+**Code :** `200 OK`
+
+**Structure :**
+
+```json
+{
+  "message": "string",
+  "scenario": {
+    "id": "uuid",
+    "name": "string",
+    "cover": "string",
+    "invite_code": "string",
+    "owner_user_id": "uuid",
+    "description": "string | null",
+    "mode": "story | campaign",
+    "gm_user_ids": ["uuid"],
+    "settings": {},
+    "created_at": "timestamp",
+    "updated_at": "timestamp"
+  }
+}
+```
+
+#### Exemple de réponse
+
+```json
+{
+  "message": "Propriété du scénario transférée avec succès",
+  "scenario": {
+    "id": "123e4567-e89b-12d3-a456-426614174000",
+    "name": "K-Pop Universe",
+    "cover": "https://cdn.feedverse.com/covers/kpop-universe.jpg",
+    "invite_code": "KPOP2024",
+    "owner_user_id": "660e8400-e29b-41d4-a716-446655440111",
+    "description": "Un univers narratif K-Pop",
+    "mode": "campaign",
+    "gm_user_ids": ["660e8400-e29b-41d4-a716-446655440111"],
+    "settings": {
+      "profileLimitMode": "per_owner",
+      "pinnedPostIds": []
+    },
+    "created_at": "2024-01-15T10:00:00Z",
+    "updated_at": "2026-01-17T18:30:00Z"
+  }
+}
+```
+
+#### Exemple de code
+
+**JavaScript (Fetch API) :**
+
+```javascript
+const scenarioId = '123e4567-e89b-12d3-a456-426614174000';
+const newOwnerId = '660e8400-e29b-41d4-a716-446655440111';
+
+const response = await fetch(`https://api.feedverse.com/v1/scenarios/${scenarioId}/transfer`, {
+  method: 'POST',
+  headers: {
+    'Authorization': `Bearer ${token}`,
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({
+    newOwnerUserId: newOwnerId
+  })
+});
+
+const { scenario } = await response.json();
+console.log(`Nouveau propriétaire : ${scenario.owner_user_id}`);
+```
+
+**cURL :**
+
+```bash
+curl -X POST https://api.feedverse.com/v1/scenarios/123e4567-e89b-12d3-a456-426614174000/transfer \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "newOwnerUserId": "660e8400-e29b-41d4-a716-446655440111"
+  }'
+```
+
+#### Codes de statut
+
+| Code | Description |
+|------|-------------|
+| `200` | Succès - Propriété transférée |
+| `400` | Requête invalide - Validation échouée ou format UUID incorrect |
+| `401` | Non autorisé - Token invalide ou expiré |
+| `403` | Interdit - L'utilisateur n'est pas le propriétaire actuel |
+| `404` | Non trouvé - Scénario ou nouveau propriétaire inexistant |
+| `500` | Erreur serveur interne |
+
+#### Erreurs possibles
+
+**400 Bad Request (UUID scénario invalide) :**
+
+```json
+{
+  "errors": [
+    {
+      "fields": "id",
+      "message": "Format d'identifiant de scénario invalide"
+    }
+  ]
+}
+```
+
+**400 Bad Request (UUID nouveau propriétaire invalide) :**
+
+```json
+{
+  "errors": [
+    {
+      "fields": "newOwnerUserId",
+      "message": "Format d'identifiant du nouveau propriétaire invalide"
+    }
+  ]
+}
+```
+
+**400 Bad Request (transfert à soi-même) :**
+
+```json
+{
+  "errors": [
+    {
+      "fields": "newOwnerUserId",
+      "message": "Vous êtes déjà propriétaire de ce scénario"
+    }
+  ]
+}
+```
+
+**400 Bad Request (champ manquant) :**
+
+```json
+{
+  "errors": [
+    {
+      "fields": "newOwnerUserId",
+      "message": "L'identifiant du nouveau propriétaire est requis"
+    }
+  ]
+}
+```
+
+**403 Forbidden :**
+
+```json
+{
+  "errors": [
+    {
+      "fields": "authorization",
+      "message": "Seul le propriétaire peut transférer la propriété"
+    }
+  ]
+}
+```
+
+**404 Not Found (scénario) :**
+
+```json
+{
+  "errors": [
+    {
+      "fields": "id",
+      "message": "Scénario introuvable"
+    }
+  ]
+}
+```
+
+**404 Not Found (nouveau propriétaire) :**
+
+```json
+{
+  "errors": [
+    {
+      "fields": "newOwnerUserId",
+      "message": "Le nouvel utilisateur propriétaire est introuvable"
+    }
+  ]
+}
+```
+
+#### Notes importantes
+
+- **Irréversibilité** : L'opération ne peut pas être annulée automatiquement. Le nouveau propriétaire devra refaire un transfert pour rendre la propriété.
+- **Transaction atomique** : Utilise une transaction SQL avec `BEGIN`/`COMMIT`/`ROLLBACK` pour garantir la cohérence.
+- **Ajout automatique aux participants** : Si le nouveau propriétaire n'était pas participant, il est ajouté à `scenario_players`.
+- **Mode campaign** : En mode campaign, le tableau `gm_user_ids` est automatiquement mis à jour pour retirer l'ancien owner et ajouter le nouveau.
+- **Permissions strictes** : Même les administrateurs ne peuvent pas transférer un scénario s'ils n'en sont pas propriétaires.
+- **Vérification d'existence** : Le nouveau propriétaire doit exister et ne pas être supprimé (`is_deleted = false`).
+
+#### Recommandations d'usage
+
+**Avant le transfert** :
+
+1. Confirmer l'identité du nouveau propriétaire
+2. Informer le nouveau propriétaire de ses nouvelles responsabilités
+3. S'assurer que le nouveau propriétaire est actif dans le scénario
+
+**Après le transfert** :
+
+1. Vérifier que les permissions ont bien été mises à jour
+2. Informer tous les participants du changement de propriété
+3. Mettre à jour les interfaces utilisateur pour refléter le nouveau propriétaire
+
+**Cas d'usage courants** :
+
+- Passation de pouvoir lors du départ d'un créateur
+- Transfert à un co-créateur plus actif
+- Changement de responsable pour un scénario de groupe
+
+#### Considérations futures
+
+Pour des fonctionnalités avancées, envisager :
+
+- Système de co-propriétaires multiples
+- Historique des transferts de propriété (table d'audit)
+- Notifications automatiques au nouveau propriétaire
+- Période de confirmation avant transfert effectif
+- Restriction temporelle (cooldown entre transferts)
+
+---
+
 ## Codes de statut HTTP
 
 ### Codes de succès
@@ -1676,3 +2140,5 @@ Retournées lorsque l'utilisateur n'a pas les permissions nécessaires.
   ]
 }
 ```
+
+#####################################################################################################################
