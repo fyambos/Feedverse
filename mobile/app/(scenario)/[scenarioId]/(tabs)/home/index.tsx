@@ -363,16 +363,24 @@ export default function HomeScreen() {
     }
   }, [isReady, loadFirstPage]);
 
-  // If user just posted, refresh when returning to this screen.
+  // Ensure the feed loads on first focus (some sync paths can populate
+  // the DB after the initial render). Also refresh when a post/delete flagged it.
   useFocusEffect(
     useCallback(() => {
       if (!isReady) return;
       if (!sid) return;
       if (backendMode && !auth.isReady) return;
-      if (!consumeScenarioFeedRefreshNeeded(sid)) return;
 
-      onRefresh();
-    }, [auth.isReady, backendMode, isReady, onRefresh, sid]),
+      // If we have no items yet, trigger a load so we don't wait until you
+      // leave/re-enter the tab.
+      if (items.length === 0) {
+        loadFirstPageRef.current();
+      }
+
+      if (consumeScenarioFeedRefreshNeeded(sid)) {
+        onRefresh();
+      }
+    }, [auth.isReady, backendMode, isReady, onRefresh, sid, items.length]),
   );
 
   const loadMore = useCallback(() => {
