@@ -10,6 +10,7 @@ import {
 import { LoginUserService, RegisterUserService } from "./authServices";
 import { upload } from "../config/multer";
 import type { RegisterResponse } from "./authModels";
+import { hashTokenSha256Hex, touchUserSession } from "../sessions/sessionRepositories";
 
 function signAuthToken(payload: unknown) {
   const expiresIn = String(AUTH.EXPIRATION_TIME ?? "").trim();
@@ -60,6 +61,19 @@ export const RegisterController = [
 
       const token = signAuthToken({ user: createdUser });
 
+      // Best-effort: record a new session.
+      try {
+        const tokenHash = hashTokenSha256Hex(token);
+        await touchUserSession({
+          userId: String(createdUser.id),
+          tokenHash,
+          userAgent: req.get?.("User-Agent") ?? null,
+          ip: req.headers?.["x-forwarded-for"] ?? req.ip,
+        });
+      } catch {
+        // ignore
+      }
+
       res.status(HTTP_STATUS.CREATED).json({
         message: USER_MESSAGES.CREATION_SUCCESS,
         token,
@@ -98,6 +112,22 @@ export const LoginController = async (req: Request, res: Response) => {
     }
 
     const signed = signAuthToken({ user: result?.user });
+
+    // Best-effort: record a new session.
+    try {
+      const uid = String((result?.user as any)?.id ?? "").trim();
+      if (uid) {
+        const tokenHash = hashTokenSha256Hex(signed);
+        await touchUserSession({
+          userId: uid,
+          tokenHash,
+          userAgent: req.get?.("User-Agent") ?? null,
+          ip: req.headers?.["x-forwarded-for"] ?? req.ip,
+        });
+      }
+    } catch {
+      // ignore
+    }
 
     res.status(HTTP_STATUS.OK).json({
       message: USER_MESSAGES.LOGIN_SUCCESS,

@@ -5,6 +5,7 @@ import { GetUserProfileController, UpdateUserAvatarController, GetUsersByIdsCont
 import { authMiddleware } from "../auth/authMiddleware";
 import { ROUTES_USERS } from "../config/constants";
 import { upload } from "../config/multer";
+import { ListSessionsController, LogoutOtherSessionsController } from "../sessions/sessionControllers";
 
 userRouter.get(ROUTES_USERS.PROFILE, authMiddleware, GetUserProfileController);
 
@@ -19,5 +20,11 @@ userRouter.patch("/username", authMiddleware, UpdateUsernameController);
 
 // POST /push-token - register Expo push token for remote notifications
 userRouter.post("/push-token", authMiddleware, UpsertUserPushTokenController);
+
+// GET /users/sessions - list active sessions (current + other)
+userRouter.get("/sessions", authMiddleware, ListSessionsController);
+
+// POST /users/sessions/logout-others - revoke all other active sessions
+userRouter.post("/sessions/logout-others", authMiddleware, LogoutOtherSessionsController);
 
 export default userRouter;

@@ -1,6 +1,11 @@
 import { authMiddleware } from '../authMiddleware';
 import { AUTH, HTTP_STATUS } from '../../config/constants';
 
+jest.mock('../../sessions/sessionRepositories', () => ({
+  hashTokenSha256Hex: jest.fn(() => 'hash'),
+  touchUserSession: jest.fn(async () => null),
+}));
+
 jest.mock('jsonwebtoken', () => ({
   verify: jest.fn(),
 }));
@@ -22,7 +27,9 @@ describe('authMiddleware', () => {
   });
 
   it('returns 403 on invalid token', async () => {
-    (jwt.verify as jest.Mock).mockImplementation((_t: any, _s: any, cb: any) => cb(new Error('bad')));
+    (jwt.verify as jest.Mock).mockImplementation(() => {
+      throw new Error('bad');
+    });
     const req: any = { header: jest.fn().mockReturnValue(`${AUTH.BEARER_PREFIX}badtoken`) };
     const res: any = { status: jest.fn().mockReturnThis(), send: jest.fn() };
     const next = jest.fn();
@@ -34,7 +41,7 @@ describe('authMiddleware', () => {
   });
 
   it('calls next when token valid and contains user', async () => {
-    (jwt.verify as jest.Mock).mockImplementation((_t: any, _s: any, cb: any) => cb(null, { user: { id: 'u1' } }));
+    (jwt.verify as jest.Mock).mockImplementation(() => ({ user: { id: 'u1' } }));
     const req: any = { header: jest.fn().mockReturnValue(`${AUTH.BEARER_PREFIX}good`) };
     const res: any = { status: jest.fn().mockReturnThis(), send: jest.fn() };
     const next = jest.fn();
