@@ -5,6 +5,8 @@ import {
   CreateScenarioResponse,
   GetScenarioPlayersResponse,
   Scenario,
+  TransferScenarioOwnershipRequest,
+  TransferScenarioOwnershipResponse,
   UpdateScenarioData,
   UpdateScenarioRequest,
   UpdateScenarioResponse,
@@ -17,8 +19,10 @@ import {
 } from "./scenarioValidators";
 import { APP_CONFIG, SCENARIO_MESSAGES } from "../config/constants";
 import { ScenarioRepository } from "./scenarioRepositories";
+import { UserRepository } from "../users/userRepositories";
 
 const scenarioRepository = new ScenarioRepository();
+const userRepository = new UserRepository();
 
 export const CreateScenarioService = async (
   input: CreateScenarioRequest,
@@ -354,4 +358,115 @@ export const GetScenarioPlayersService = async (
       count: playersList.length,
     },
   };
+};
+
+export const TransferScenarioOwnershipService = async (
+  scenarioId: string,
+  currentUserId: string,
+  input: TransferScenarioOwnershipRequest,
+): Promise<{
+  scenario?: TransferScenarioOwnershipResponse;
+  errors?: ValidationError[];
+}> => {
+  const { newOwnerUserId } = input;
+  const errors: ValidationError[] = [];
+
+  const uuidRegex =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+  if (!uuidRegex.test(scenarioId)) {
+    console.error(errors);
+    return {
+      errors: [
+        {
+          fields: "id",
+          message: "Format d'identifiant de scénario invalide",
+        },
+      ],
+    };
+  }
+
+  if (!newOwnerUserId || newOwnerUserId.trim().length === 0) {
+    return {
+      errors: [
+        {
+          fields: SCENARIO_MESSAGES.NEW_OWNER_USER_ID,
+          message: "L'identifiant du nouveau propriétaire est requis",
+        },
+      ],
+    };
+  }
+
+  if (!uuidRegex.test(newOwnerUserId)) {
+    return {
+      errors: [
+        {
+          fields: SCENARIO_MESSAGES.NEW_OWNER_USER_ID,
+          message: "Format d'identifiant du nouveau propriétaire invalide",
+        },
+      ],
+    };
+  }
+
+  const existingScenario = await scenarioRepository.findById(scenarioId);
+
+  if (!existingScenario) {
+    return {
+      errors: [
+        {
+          fields: "id",
+          message: SCENARIO_MESSAGES.NOT_FOUND,
+        },
+      ],
+    };
+  }
+
+  if (existingScenario.owner_user_id !== currentUserId) {
+    return {
+      errors: [
+        {
+          fields: "authorization",
+          message: SCENARIO_MESSAGES.UNAUTHORIZED,
+        },
+      ],
+    };
+  }
+
+  if (newOwnerUserId === currentUserId) {
+    return {
+      errors: [
+        {
+          fields: SCENARIO_MESSAGES.NEW_OWNER_USER_ID,
+          message: SCENARIO_MESSAGES.CANNOT_TRANSFER_TO_SELF,
+        },
+      ],
+    };
+  }
+
+  const newOwnerExists = await userRepository.findById(newOwnerUserId);
+
+  if (!newOwnerExists) {
+    return {
+      errors: [
+        {
+          fields: SCENARIO_MESSAGES.NEW_OWNER_USER_ID,
+          message: SCENARIO_MESSAGES.NEW_OWNER_NOT_FOUND,
+        },
+      ],
+    };
+  }
+
+  const transferredScenario = await scenarioRepository.transferOwnership(
+    scenarioId,
+    newOwnerUserId,
+    existingScenario.mode,
+    currentUserId,
+  );
+
+  const scenario: TransferScenarioOwnershipResponse = {
+    message: SCENARIO_MESSAGES.TRANSFER_SUCCESS,
+    scenario: transferredScenario,
+  };
+
+  return { scenario };
 };

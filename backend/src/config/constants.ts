@@ -104,17 +104,21 @@ export const SCENARIO_MESSAGES = {
   CREATION_SUCCESS: "Scénario créé avec succès",
   UPDATE_SUCCESS: "Scénario mis à jour avec succès",
   DELETION_SUCCESS: "Scénario supprimé avec succès",
+  TRANSFER_SUCCESS: "Propriété du scénario transférée avec succès",
   PLAYERS_FETCH_SUCCESS: "Liste des participants récupérée avec succès",
   NAME: "name",
   INVITE_CODE: "invite_code",
   MODE: "mode",
   DESCRIPTION: "description",
+  NEW_OWNER_USER_ID: "newOwnerUserId",
   INVITE_CODE_ALREADY_EXISTS: "Ce code d'invitation est déjà utilisé",
   ALREADY_EXISTS: "Un scénario similaire existe déjà",
-  SCENARIO_UPDATED: "Votre Scénario a été mis à jour",
-  DOES_NOT_EXISTS: "Le cénario n'existe pas",
+  SCENARIO_UPDATED: "Votre scénario a été mis à jour",
+  DOES_NOT_EXISTS: "Le scénario n'existe pas",
   FAILED_FETCH: "Impossible de récupérer les informations du scénario",
   UNAUTHORIZED: "Votre email Google n'est pas vérifié",
+  NEW_OWNER_NOT_FOUND: "Le nouvel utilisateur propriétaire est introuvable",
+  CANNOT_TRANSFER_TO_SELF: "Vous êtes déjà propriétaire de ce scénario",
 } as const;
 
 export const SCENARIO_VALIDATION_RULES = {
@@ -227,6 +231,7 @@ export const ROUTES_SCENARIOS = {
   BY_ID: "/:id",
   CREATE: "/create",
   PLAYERS: "/players",
+  TRANSFER: "/transfer",
 } as const;
 
 // ============================================================================

@@ -1,5 +1,6 @@
 import {
   CreateScenarioData,
+  ScenarioMode,
   ScenarioPlayer,
   UpdateScenarioData,
 } from "../scenarios/scenarioModels";
@@ -163,5 +164,62 @@ export class ScenarioRepository {
     `;
     const result = await pool.query(query, [scenarioId]);
     return result.rows;
+  }
+
+  async transferOwnership(
+    scenarioId: string,
+    newOwnerId: string,
+    scenarioMode: ScenarioMode,
+    currentOwnerId: string,
+  ): Promise<Scenario> {
+    const client = await pool.connect();
+
+    try {
+      await client.query("BEGIN");
+
+      const isNewOwnerParticipant = await client.query(
+        "SELECT EXISTS(SELECT 1 FROM scenario_players WHERE scenario_id = $1 AND user_id = $2)",
+        [scenarioId, newOwnerId],
+      );
+
+      if (!isNewOwnerParticipant.rows[0].exists) {
+        await client.query(
+          "INSERT INTO scenario_players (scenario_id, user_id) VALUES ($1, $2)",
+          [scenarioId, newOwnerId],
+        );
+      }
+
+      let updateQuery = `
+        UPDATE scenarios
+        SET owner_user_id = $1, updated_at = $2
+      `;
+
+      const newDate = APP_CONFIG.NOW;
+      const queryParams: string[] = [newOwnerId, newDate.toDateString()];
+      let paramIndex = 3;
+
+      if (scenarioMode === "campaign") {
+        updateQuery += `, gm_user_ids = array_append(
+          array_remove(gm_user_ids, $${paramIndex}),
+          $${paramIndex + 1}
+        )`;
+        queryParams.push(currentOwnerId, newOwnerId);
+        paramIndex += 2;
+      }
+
+      updateQuery += ` WHERE id = $${paramIndex} RETURNING *`;
+      queryParams.push(scenarioId);
+
+      const result = await client.query(updateQuery, queryParams);
+
+      await client.query("COMMIT");
+
+      return result.rows[0];
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 }

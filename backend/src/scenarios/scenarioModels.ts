@@ -80,3 +80,12 @@ export interface GetScenarioPlayersResponse {
   players: ScenarioPlayer[];
   count: number;
 }
+
+export interface TransferScenarioOwnershipRequest {
+  newOwnerUserId: string;
+}
+
+export interface TransferScenarioOwnershipResponse {
+  message: string;
+  scenario: Scenario;
+}
