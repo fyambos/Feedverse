@@ -23,6 +23,23 @@ import { saveAndShareScenarioExport } from "@/lib/importExport/exportScenario";
 import { makeLocalUuid } from "@/lib/ids";
 import BootSplash from "@/components/ui/BootSplash";
 
+// One-shot "refresh home feed" flag by scenario.
+const feedRefreshNeededByScenario: Record<string, boolean> = {};
+
+export function markScenarioFeedRefreshNeeded(scenarioId: string) {
+  const sid = String(scenarioId ?? "").trim();
+  if (!sid) return;
+  feedRefreshNeededByScenario[sid] = true;
+}
+
+export function consumeScenarioFeedRefreshNeeded(scenarioId: string): boolean {
+  const sid = String(scenarioId ?? "").trim();
+  if (!sid) return false;
+  const needed = Boolean(feedRefreshNeededByScenario[sid]);
+  if (needed) feedRefreshNeededByScenario[sid] = false;
+  return needed;
+}
+
 type AppDataState = {
   isReady: boolean;
   db: DbV5 | null;
@@ -994,8 +1011,11 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
 
       deletePost: async (postId) => {
         const id = String(postId);
+        let removedScenarioId = "";
         const next = await updateDb((prev) => {
           if (!prev.posts[id]) return prev;
+
+          removedScenarioId = String((prev.posts as any)?.[id]?.scenarioId ?? "");
 
           const posts = { ...prev.posts };
           delete posts[id];
@@ -1012,7 +1032,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
 
           // also remove from pinned list for its scenario (if present)
           const scenarios = { ...prev.scenarios };
-          const removedPostScenarioId = String((prev.posts as any)?.[id]?.scenarioId ?? "");
+          const removedPostScenarioId = removedScenarioId;
 
           if (removedPostScenarioId && scenarios[removedPostScenarioId]) {
             const s = scenarios[removedPostScenarioId];
@@ -1035,6 +1055,8 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         });
 
         setState({ isReady: true, db: next as any });
+
+        if (removedScenarioId) markScenarioFeedRefreshNeeded(removedScenarioId);
       },
 
       // --- likes (table-backed) ---
@@ -1960,6 +1982,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
             id: postId,
             scenarioId: sid,
             authorProfileId: gmId,
+            authorUserId: String(currentUserId ?? "").trim() || undefined,
             text: summaryText,
             createdAt: now,
             insertedAt: now,
@@ -2015,6 +2038,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
             id: postId,
             scenarioId: sid,
             authorProfileId: gmId,
+            authorUserId: String(currentUserId ?? "").trim() || undefined,
             text: String(postText ?? ""),
             createdAt: now,
             insertedAt: now,
