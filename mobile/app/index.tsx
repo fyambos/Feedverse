@@ -57,6 +57,8 @@ export default function ScenarioListScreen() {
     exportScenarioToFile,
   } = useAppData() as any;
 
+  const scrollToTopOnNextFocusRef = useRef(false);
+
   const io = useMemo(
   () =>
     createScenarioIO({
@@ -67,6 +69,9 @@ export default function ScenarioListScreen() {
       importScenarioFromFile,
       exportScenarioToFile,
       onImportedNavigate: (scenarioId) => {
+        // After an import we navigate into the new scenario; when we later
+        // come back to the scenario list, jump to top so the new scenario is visible.
+        scrollToTopOnNextFocusRef.current = true;
         router.push({
           pathname: "/(scenario)/[scenarioId]/(tabs)/home",
           params: { scenarioId },
@@ -116,6 +121,14 @@ export default function ScenarioListScreen() {
     transferConfirmRef.current = false;
     setTransferConfirmBusy(false);
     setConfirm({ open: false, scenarioId: null, toUserId: null });
+  };
+
+  const cancelConfirm = () => {
+    const sid = String(confirm.scenarioId ?? "").trim();
+    closeConfirm();
+    if (sid) {
+      setTransfer({ open: true, scenarioId: sid });
+    }
   };
 
   const onLogout = async () => {
@@ -196,7 +209,7 @@ export default function ScenarioListScreen() {
 
   const listRef = useRef<FlatList<any> | null>(null);
 
-  // When returning to this screen (e.g. after import), jump to top.
+  // Keep scroll position on normal returns; only jump to top after a successful import.
   useFocusEffect(
     useCallback(() => {
       if (isBackendMode) {
@@ -206,9 +219,13 @@ export default function ScenarioListScreen() {
           // ignore
         }
       }
-      requestAnimationFrame(() => {
-        listRef.current?.scrollToOffset({ offset: 0, animated: false });
-      });
+
+      if (scrollToTopOnNextFocusRef.current) {
+        scrollToTopOnNextFocusRef.current = false;
+        requestAnimationFrame(() => {
+          listRef.current?.scrollToOffset({ offset: 0, animated: false });
+        });
+      }
       return () => void 0;
     }, [isBackendMode, syncScenarios])
   );
@@ -597,7 +614,11 @@ export default function ScenarioListScreen() {
 
                   return (
                     <Pressable
-                      onPress={() => setConfirm({ open: true, scenarioId: sid, toUserId: String(item.id) })}
+                      onPress={() => {
+                        // Avoid stacking two Modals (Android can keep the older one on top)
+                        setTransfer({ open: false, scenarioId: sid });
+                        setConfirm({ open: true, scenarioId: sid, toUserId: String(item.id) });
+                      }}
                       style={({ pressed }) => [
                         styles.transferRow,
                         { backgroundColor: pressed ? colors.pressed : "transparent", borderColor: colors.border },
@@ -672,8 +693,8 @@ export default function ScenarioListScreen() {
     };
 
     return (
-      <Modal transparent visible={confirm.open} animationType="fade" onRequestClose={closeConfirm}>
-        <Pressable style={[styles.menuBackdrop, { backgroundColor: colors.modalBackdrop }]} onPress={closeConfirm}>
+      <Modal transparent visible={confirm.open} animationType="fade" onRequestClose={cancelConfirm}>
+        <Pressable style={[styles.menuBackdrop, { backgroundColor: colors.modalBackdrop }]} onPress={cancelConfirm}>
           <Pressable
             style={[styles.confirmCard, { backgroundColor: colors.background, borderColor: colors.border }]}
             onPress={(e) => e?.stopPropagation?.()}
@@ -697,7 +718,7 @@ export default function ScenarioListScreen() {
 
             <View style={{ flexDirection: "row", gap: 10, marginTop: 16 }}>
               <Pressable
-                onPress={closeConfirm}
+                onPress={cancelConfirm}
                 style={({ pressed }) => [
                   styles.confirmBtn,
                   { borderColor: colors.border, backgroundColor: pressed ? colors.pressed : colors.card },

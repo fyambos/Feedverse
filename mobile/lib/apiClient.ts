@@ -25,7 +25,11 @@ function isInvalidTokenResponse(status: number, text: string, json: any): boolea
   const jErr = typeof json?.error === "string" ? String(json.error).toLowerCase() : "";
   const jMsg = typeof json?.message === "string" ? String(json.message).toLowerCase() : "";
 
-  const needles = ["token de connexion invalide", "invalide ou expiré", "invalid token", "jwt"];
+  const needles = [
+    "token de connexion invalide",
+    "invalid token",
+    "jwt",
+  ];
 
   return needles.some((n) => t.includes(n) || jErr.includes(n) || jMsg.includes(n));
 }

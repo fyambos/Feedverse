@@ -3,8 +3,8 @@ import { Animated, Easing, StyleSheet, useColorScheme, View } from "react-native
 import { ThemedText } from "@/components/themed-text";
 
 // props: names array, variant: 'thread'|'list'
-// - thread: iMessage-style bubble with animated dots
-// - list: iMessage-style "Typing…" subtitle (no names)
+// - thread: bubble with animated dots
+// - list: "Typing…" subtitle (no names)
 export function TypingIndicator({
   names,
   variant = "thread",

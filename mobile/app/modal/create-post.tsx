@@ -5,7 +5,7 @@ import { router, useLocalSearchParams } from "expo-router";
 import { useFocusEffect } from "@react-navigation/native";
 
 import type { Post, CharacterSheet } from "@/data/db/schema";
-import { useAppData } from "@/context/appData";
+import { markScenarioFeedRefreshNeeded, useAppData } from "@/context/appData";
 import { useAuth } from "@/context/auth";
 import { Alert } from "@/context/dialog";
 
@@ -675,6 +675,7 @@ export default function CreatePostModal() {
         };
 
         await upsertPost(base as any);
+        markScenarioFeedRefreshNeeded(sid);
         router.back();
         return;
       }
@@ -708,6 +709,7 @@ export default function CreatePostModal() {
         await upsertPost(base as any);
         await setSelectedProfileId(sid, safeAuthorId);
         if (fxPromise) await fxPromise;
+        markScenarioFeedRefreshNeeded(sid);
         router.back();
         return;
       }
@@ -750,6 +752,7 @@ export default function CreatePostModal() {
 
       await setSelectedProfileId(sid, safeAuthorId);
       if (fxPromise) await fxPromise;
+      markScenarioFeedRefreshNeeded(sid);
       router.back();
     } catch (e) {
       Alert.alert(

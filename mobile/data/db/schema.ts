@@ -91,6 +91,7 @@ export type Post = {
   id: string;
   scenarioId: string;
   authorProfileId: string;
+  authorUserId?: string;
   text: string;
   createdAt: string;
   imageUrls?: string[];
@@ -227,6 +228,7 @@ export type Message = {
   scenarioId: string;
   conversationId: string;
   senderProfileId: string;
+  senderUserId?: string;
   text: string;
   kind?: string;
   imageUrls?: string[];
