@@ -30,6 +30,8 @@ function isInvalidTokenResponse(status: number, text: string, json: any): boolea
   const needles = [
     "token de connexion invalide",
     "invalide ou expiré",
+    "invalid or expired authentication token",
+    "invalid or expired",
     "invalid token",
     "jwt",
   ];

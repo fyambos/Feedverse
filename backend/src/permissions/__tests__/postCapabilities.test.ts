@@ -82,9 +82,10 @@ function makeClient(cfg: MockClientCfg) {
         postCounter += 1;
         const id = `post-${postCounter}`;
         const author = String(params?.[2] ?? cfg.actorProfileId);
-        const text = String(params?.[3] ?? "hello");
-        const imageUrls = Array.isArray(params?.[4]) ? params?.[4] : [];
-        const parent = params?.[8] ? String(params?.[8]) : null;
+        const authorUserId = params?.[3] != null ? String(params?.[3]) : null;
+        const text = String(params?.[4] ?? "hello");
+        const imageUrls = Array.isArray(params?.[5]) ? params?.[5] : [];
+        const parent = params?.[9] ? String(params?.[9]) : null;
 
         return {
           rows: [
@@ -92,6 +93,7 @@ function makeClient(cfg: MockClientCfg) {
               id,
               scenario_id: cfg.scenarioId,
               author_profile_id: author,
+              author_user_id: authorUserId,
               text,
               image_urls: imageUrls,
               reply_count: 0,
@@ -135,6 +137,7 @@ function makeClient(cfg: MockClientCfg) {
               id: cfg.actorProfileId + "-post",
               scenario_id: cfg.scenarioId,
               author_profile_id: cfg.actorProfileId,
+              author_user_id: cfg.userId,
               text: "edited",
               image_urls: [],
               reply_count: 0,

@@ -341,13 +341,15 @@ export default function ProfileScreen() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
   const loadingLock = useRef(false);
+  const loadFirstPageRef = useRef<null | (() => void)>(null);
+  const profileIdForFeed = profile ? String(profile.id) : null;
 
   const loadFirstPage = useCallback(() => {
-    if (!isReady || !profile) return;
+    if (!isReady || !profileIdForFeed) return;
 
     const page = listProfileFeedPage({
       scenarioId: sid,
-      profileId: String(profile.id),
+      profileId: profileIdForFeed,
       tab: activeTab,
       limit: PAGE_SIZE,
       cursor: null,
@@ -357,10 +359,10 @@ export default function ProfileScreen() {
     setCursor(page.nextCursor);
     setHasMore(!!page.nextCursor);
     setInitialLoading(false);
-  }, [isReady, profile, listProfileFeedPage, sid, activeTab, pid, selectedProfileId]);
+  }, [isReady, profileIdForFeed, listProfileFeedPage, sid, activeTab]);
 
   const loadMore = useCallback(() => {
-    if (!isReady || !profile) return;
+    if (!isReady || !profileIdForFeed) return;
     if (!hasMore) return;
     if (loadingLock.current) return;
 
@@ -370,20 +372,29 @@ export default function ProfileScreen() {
     try {
       const page = listProfileFeedPage({
         scenarioId: sid,
-        profileId: String(profile.id),
+        profileId: profileIdForFeed,
         tab: activeTab,
         limit: PAGE_SIZE,
         cursor,
       });
 
-      setItems((prev) => [...prev, ...page.items.map((it: any) => it.post)]);
+      const nextPosts = page.items.map((it: any) => it.post);
+      setItems((prev) => {
+        const seen = new Set(prev.map((p: any) => String(p?.id)));
+        const deduped = nextPosts.filter((p: any) => !seen.has(String(p?.id)));
+        return [...prev, ...deduped];
+      });
       setCursor(page.nextCursor);
-      setHasMore(!!page.nextCursor);
+      setHasMore(!!page.nextCursor && page.nextCursor !== cursor);
     } finally {
       setLoadingMore(false);
       loadingLock.current = false;
     }
-  }, [isReady, profile, hasMore, listProfileFeedPage, sid, cursor, activeTab]);
+  }, [isReady, profileIdForFeed, hasMore, listProfileFeedPage, sid, cursor, activeTab]);
+
+  useEffect(() => {
+    loadFirstPageRef.current = loadFirstPage;
+  }, [loadFirstPage]);
 
   useEffect(() => {
     setItems([]);
@@ -391,8 +402,8 @@ export default function ProfileScreen() {
     setHasMore(true);
     setInitialLoading(true);
 
-    if (isReady && profile) loadFirstPage();
-  }, [isReady, profile, sid, activeTab, loadFirstPage]);
+    if (isReady && profileIdForFeed) loadFirstPageRef.current?.();
+  }, [isReady, profileIdForFeed, sid, activeTab]);
 
   const onDeletePost = useCallback(
     async (postId: string) => {

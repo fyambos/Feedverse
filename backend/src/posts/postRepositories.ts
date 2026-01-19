@@ -91,6 +91,7 @@ export async function listPostsForScenario(args: {
         id,
         scenario_id,
         author_profile_id,
+        author_user_id,
         text,
         image_urls,
         reply_count,
@@ -156,6 +157,7 @@ export async function listPostsPageForScenario(args: {
         id,
         scenario_id,
         author_profile_id,
+        author_user_id,
         text,
         image_urls,
         reply_count,
@@ -270,9 +272,11 @@ export async function createPostForScenario(args: {
     // This keeps mobile UI stable: it generates ids client-side and calls upsertPost() for create/edit.
     let hadExistingId = false;
     if (requestedId) {
-      const existing = await client.query<
-        { scenario_id: string; author_profile_id: string; parent_post_id: string | null }
-      >(
+      const existing = await client.query<{
+        scenario_id: string;
+        author_profile_id: string;
+        parent_post_id: string | null;
+      }>(
         "SELECT scenario_id, author_profile_id, parent_post_id FROM posts WHERE id = $1 LIMIT 1",
         [requestedId],
       );
@@ -280,17 +284,14 @@ export async function createPostForScenario(args: {
       const row0 = existing.rows[0];
       if (row0) {
         hadExistingId = true;
+
+        // Safety: don't allow overwriting a post from another scenario.
         if (String(row0.scenario_id) !== sid) {
           await client.query("ROLLBACK");
-          return { error: "id already exists in another scenario", status: 409 };
+          return { error: "Post id belongs to a different scenario", status: 400 };
         }
 
-        const canEdit = await userCanActAsAuthor(
-          client,
-          String(row0.scenario_id),
-          uid,
-          String(row0.author_profile_id),
-        );
+        const canEdit = await userCanActAsAuthor(client, String(row0.scenario_id), uid, String(row0.author_profile_id));
         if (!canEdit) {
           await client.query("ROLLBACK");
           return null;
@@ -320,6 +321,7 @@ export async function createPostForScenario(args: {
         id,
         scenario_id,
         author_profile_id,
+        author_user_id,
         text,
         image_urls,
         reply_count,
@@ -339,8 +341,8 @@ export async function createPostForScenario(args: {
         $2,
         $3,
         $4,
-        $5::text[],
-        $6,
+        $5,
+        $6::text[],
         $7,
         $8,
         $9,
@@ -348,9 +350,10 @@ export async function createPostForScenario(args: {
         $11,
         $12,
         $13,
-        $14::jsonb,
-        $15,
+        $14,
+        $15::jsonb,
         $16,
+        $17,
         NOW() AT TIME ZONE 'UTC'
       )
       ON CONFLICT (id) DO UPDATE
@@ -373,6 +376,7 @@ export async function createPostForScenario(args: {
         id,
         scenario_id,
         author_profile_id,
+        author_user_id,
         text,
         image_urls,
         reply_count,
@@ -392,6 +396,7 @@ export async function createPostForScenario(args: {
         requestedId || `po_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
         sid,
         authorProfileId,
+        uid,
         text,
         imageUrls,
         replyCount,
@@ -807,6 +812,7 @@ export async function updatePost(args: {
         id,
         scenario_id,
         author_profile_id,
+        author_user_id,
         text,
         image_urls,
         reply_count,
@@ -902,6 +908,7 @@ export async function uploadPostImages(args: {
           id,
           scenario_id,
           author_profile_id,
+          author_user_id,
           text,
           image_urls,
           reply_count,

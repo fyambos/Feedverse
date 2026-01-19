@@ -243,6 +243,23 @@ export default function UserSettingsScreen() {
                 </Pressable>
               </RowCard>
 
+              {/* SESSIONS */}
+              <RowCard
+                label="Security"
+                colors={colors}
+                right={<Ionicons name="chevron-forward" size={18} color={colors.icon} />}
+              >
+                <Pressable
+                  onPress={() => router.push({ pathname: "/(scenario)/settings/sessions" } as any)}
+                  hitSlop={8}
+                >
+                  <ThemedText style={{ color: colors.text }}>Sessions</ThemedText>
+                  <ThemedText style={{ color: colors.textSecondary, marginTop: 4 }}>
+                    Devices where you’re logged in
+                  </ThemedText>
+                </Pressable>
+              </RowCard>
+
               <ThemedText style={styles.footer}>
                 These settings apply to your user account, not individual profiles.
               </ThemedText>

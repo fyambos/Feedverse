@@ -110,6 +110,7 @@ function makeClient(cfg: MockClientCfg) {
               id: params?.[0] ?? "post-1",
               scenario_id: cfg.scenarioId,
               author_profile_id: cfg.actorProfileId,
+              author_user_id: cfg.userId,
               text: "hi",
               image_urls: [],
               reply_count: 0,

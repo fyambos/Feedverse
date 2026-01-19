@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   FlatList,
   InteractionManager,
+  Keyboard,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -268,6 +269,7 @@ export default function ConversationThreadScreen() {
   const PAGE_SIZE = 15;
   const [visibleCount, setVisibleCount] = useState<number>(PAGE_SIZE);
   const loadingOlderRef = useRef(false);
+  const [maintainMinIndex, setMaintainMinIndex] = useState(0);
 
   const [editOpen, setEditOpen] = useState(false);
   const [editMessageId, setEditMessageId] = useState<string | null>(null);
@@ -448,6 +450,41 @@ export default function ConversationThreadScreen() {
     }, delay);
   }, []);
 
+  // When the keyboard opens, keep the list pinned to the bottom if the user
+  // was already at/near the bottom (normal chat-app behavior).
+  useEffect(() => {
+    const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+
+    const onShow = () => {
+      if (reorderMode) return;
+      if (!isNearBottomRef.current) return;
+      // Wait a tick for layout to resize then scroll.
+      setTimeout(() => {
+        try {
+          scrollToBottom(false);
+        } catch {}
+      }, 0);
+    };
+
+    const onHide = () => {
+      if (reorderMode) return;
+      if (!isNearBottomRef.current) return;
+      setTimeout(() => {
+        try {
+          scrollToBottom(false);
+        } catch {}
+      }, 0);
+    };
+
+    const subShow = Keyboard.addListener(showEvent as any, onShow);
+    const subHide = Keyboard.addListener(hideEvent as any, onHide);
+    return () => {
+      try { subShow?.remove?.(); } catch {}
+      try { subHide?.remove?.(); } catch {}
+    };
+  }, [reorderMode, scrollToBottom]);
+
   const handleListLayout = useCallback(() => {
     didListLayoutRef.current = true;
 
@@ -458,7 +495,7 @@ export default function ConversationThreadScreen() {
     }
   }, [reorderMode, messages.length, scrollToBottom]);
 
-  const handleContentSizeChange = useCallback(() => {
+  const handleContentSizeChange = useCallback((_w: number, _h: number) => {
     if (reorderMode) return;
 
     // If we don't have the list layout yet, don't try to scroll; we'll do it in onLayout.
@@ -483,31 +520,24 @@ export default function ConversationThreadScreen() {
     if (visibleMessages.length >= messages.length) return;
     loadingOlderRef.current = true;
 
-    const firstVisibleId = visibleMessages[0]?.id;
+    // When prepending items, maintainVisibleContentPosition anchors the first visible
+    // item with index >= minIndexForVisible. Set it to the number of newly-added items
+    // so we anchor on an existing (previously-visible) message, not the new page.
+    const nextCount = Math.min(messages.length, visibleCount + PAGE_SIZE);
+    const added = Math.max(0, nextCount - visibleCount);
+    setMaintainMinIndex(added);
 
-    setVisibleCount((v) => Math.min(messages.length, v + PAGE_SIZE));
+    setVisibleCount(nextCount);
 
-    // after DOM updates, scroll to keep the previous first visible item at top
+    // Release lock + reset anchor after layout settles.
     setTimeout(() => {
-      try {
-        if (!firstVisibleId) return;
-        const all = messages;
-        const newStart = Math.max(0, all.length - (Math.min(messages.length, visibleCount + PAGE_SIZE)));
-        const idx = all.findIndex((m) => String(m.id) === String(firstVisibleId));
-        const newIndex = idx - newStart;
-        if (newIndex >= 0) {
-          listRef.current?.scrollToIndex({ index: newIndex, animated: false });
-        }
-      } catch {}
       loadingOlderRef.current = false;
-    }, 80);
-  }, [messages, visibleMessages, visibleCount]);
+      setMaintainMinIndex(0);
+    }, 140);
+  }, [messages.length, visibleMessages.length, visibleCount]);
 
-  const onScrollToIndexFailed = useCallback((_info: any) => {
-    // If items aren't measured yet, wait a tick then jump to end.
-    setTimeout(() => {
-      listRef.current?.scrollToEnd({ animated: false });
-    }, 50);
+  const onScrollToIndexFailed = useCallback(() => {
+    // Avoid jumping to bottom; we no longer rely on scrollToIndex for paging.
   }, []);
 
   const handleScroll = useCallback((e: any) => {
@@ -523,14 +553,26 @@ export default function ConversationThreadScreen() {
       setShowNewMessages(false);
       setNewMsgCount(0);
     }
-    // autoload older messages when scrolling to the top
+    // Track if user is near the very top; we will page only after scroll ends.
     try {
-      const nearTopThreshold = 80;
-      const nearTop = contentOffset.y <= nearTopThreshold;
-      if (nearTop && !reorderMode && !loadingOlderRef.current && visibleMessages.length < messages.length) {
-        loadOlderMessages();
-      }
+      const nearTopThreshold = 12;
+      isNearTopRef.current = contentOffset.y <= nearTopThreshold;
     } catch {}
+  }, []);
+
+  const isNearTopRef = useRef(false);
+  const loadOlderCooldownRef = useRef<{ lastAtMs: number }>({ lastAtMs: 0 });
+  const maybeLoadOlderAfterScroll = useCallback(() => {
+    if (reorderMode) return;
+    if (!isNearTopRef.current) return;
+    if (loadingOlderRef.current) return;
+    if (visibleMessages.length >= messages.length) return;
+
+    const now = Date.now();
+    if (now - loadOlderCooldownRef.current.lastAtMs < 350) return;
+    loadOlderCooldownRef.current.lastAtMs = now;
+
+    loadOlderMessages();
   }, [reorderMode, visibleMessages.length, messages.length, loadOlderMessages]);
 
   const syncOnceRef = useRef<string | null>(null);
@@ -1234,7 +1276,7 @@ export default function ConversationThreadScreen() {
     const groupStart = isGroupChat && isLeft && !isSameSenderAsPrev;
     const groupEnd = isGroupChat && isLeft && !isSameSenderAsNext;
 
-    // iMessage-like grouping:
+    // grouping:
     // - name above first message of a run
     // - avatar next to last message of a run
     // - reserve avatar gutter for all left messages so bubbles align
@@ -1543,8 +1585,11 @@ export default function ConversationThreadScreen() {
             renderItem={renderBubble}
             contentContainerStyle={{ padding: 14, paddingBottom: 24, flexGrow: 1 }}
             ListFooterComponent={typingFooter}
+            maintainVisibleContentPosition={{ minIndexForVisible: maintainMinIndex }}
             scrollEventThrottle={16}
             onScroll={handleScroll}
+            onScrollEndDrag={maybeLoadOlderAfterScroll}
+            onMomentumScrollEnd={maybeLoadOlderAfterScroll}
             onLayout={handleListLayout}
             onContentSizeChange={handleContentSizeChange}
             onScrollToIndexFailed={onScrollToIndexFailed}
