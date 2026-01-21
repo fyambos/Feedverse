@@ -1038,7 +1038,7 @@ Exceptions importantes dans la base actuelle :
 3. **Timestamps timezone** : Tous les timestamps incluent la timezone pour une gestion internationale
 4. **IDs** : la plupart des tables utilisent des UUID, mais certaines utilisent des IDs texte (ex: `posts.id`, `reposts.*`). Les traiter comme opaques côté app
 
-## Évolutions futures recommandées
+## Évolutions futures
 
 ### Fonctionnalités additionnelles
 

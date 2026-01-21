@@ -3,6 +3,7 @@ import {
   Image,
   KeyboardAvoidingView,
   Platform,
+  ScrollView,
   StyleSheet,
   View,
 } from 'react-native';
@@ -29,15 +30,17 @@ export function AuthScreen({
   return (
     <ThemedView style={[styles.screen, { backgroundColor: colors.background }]}>
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.kav}
       >
-        <View
-          style={[
-            styles.centerWrap,
+        <ScrollView
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={[
+            styles.content,
             {
-              paddingTop: (styles.centerWrap.paddingTop as number) + (insets.top || 0),
-              paddingBottom: (styles.centerWrap.paddingBottom as number) + (insets.bottom || 0),
+              paddingTop: (styles.content.paddingTop as number) + (insets.top || 0),
+              paddingBottom:
+                (styles.content.paddingBottom as number) + (insets.bottom || 0),
             },
           ]}
         >
@@ -54,20 +57,18 @@ export function AuthScreen({
           </ThemedText>
 
           {children}
-        </View>
 
-        <View
-          style={[
-            styles.bottomBar,
-            {
-              borderTopColor: colors.border,
-              paddingBottom: 14 + (insets.bottom || 0),
-              paddingTop: 14,
-            },
-          ]}
-        >
-          {bottom}
-        </View>
+          <View
+            style={[
+              styles.footer,
+              {
+                borderTopColor: colors.border,
+              },
+            ]}
+          >
+            {bottom}
+          </View>
+        </ScrollView>
       </KeyboardAvoidingView>
     </ThemedView>
   );
@@ -77,11 +78,11 @@ const styles = StyleSheet.create({
   screen: { flex: 1 },
   kav: { flex: 1 },
 
-  centerWrap: {
-    flex: 1,
+  content: {
+    flexGrow: 1,
     paddingHorizontal: 20,
     paddingTop: 18,
-    paddingBottom: 0,
+    paddingBottom: 18,
     justifyContent: 'flex-start',
   },
 
@@ -93,6 +94,8 @@ const styles = StyleSheet.create({
   logoImage: {
     width: 56,
     height: 56,
+    borderRadius: 28,
+    overflow: 'hidden',
   },
 
   title: {
@@ -103,9 +106,12 @@ const styles = StyleSheet.create({
     marginBottom: 18,
   },
 
-  bottomBar: {
+  footer: {
+    marginTop: 18,
+    paddingTop: 14,
+    paddingBottom: 14,
+    borderTopWidth: StyleSheet.hairlineWidth,
     flexDirection: 'row',
     justifyContent: 'center',
-    borderTopWidth: StyleSheet.hairlineWidth,
   },
 });
