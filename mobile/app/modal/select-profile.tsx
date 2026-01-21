@@ -1,8 +1,8 @@
 // mobile/app/modal/select-profile.tsx
 import React from "react";
-import { FlatList, Image, Pressable, StyleSheet, View, Modal } from "react-native";
+import { FlatList, Image, Pressable, StyleSheet, View, Modal, Platform } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 
 import { ThemedText } from "@/components/themed-text";
@@ -38,6 +38,11 @@ export default function SelectProfileModal() {
 
   const scheme = useColorScheme() ?? "light";
   const colors = Colors[scheme];
+
+  const insets = useSafeAreaInsets();
+  const androidNavPad = Platform.OS === "android" ? 24 : 0;
+  const bottomBarPadBottom = Math.max(insets.bottom, 12 + androidNavPad);
+  const modalPadBottom = Math.max(insets.bottom, androidNavPad);
 
   const sid = String(scenarioId ?? "");
   const { userId } = useAuth();
@@ -490,7 +495,7 @@ const allProfiles = React.useMemo<Profile[]>(() => {
 
     return (
       <Modal transparent visible={adopt.open} animationType="fade" onRequestClose={closeAdopt}>
-        <Pressable style={styles.menuBackdrop} onPress={closeAdopt}>
+        <Pressable style={[styles.menuBackdrop, { paddingBottom: modalPadBottom }]} onPress={closeAdopt}>
           <Pressable
             style={[styles.confirmCard, { backgroundColor: colors.background, borderColor: colors.border }]}
             onPress={(e) => e?.stopPropagation?.()}
@@ -580,11 +585,17 @@ const allProfiles = React.useMemo<Profile[]>(() => {
             },
           ]}
         >
-          <View style={[styles.profileAvatar, styles.createAvatar, { borderColor: colors.border }]}>
-            <Ionicons name="add" size={22} color={colors.tint} />
+          <View
+            style={[
+              styles.profileAvatar,
+              styles.createAvatar,
+              { borderColor: colors.border, backgroundColor: "transparent" },
+            ]}
+          >
+            <Ionicons name="add" size={22} color={disabled ? colors.textSecondary : colors.tint} />
           </View>
 
-          <View style={{ flex: 1 }}>
+          <View style={{ flex: 1, marginLeft: 4 }}>
             <ThemedText type="defaultSemiBold" style={{ color: colors.tint }}>
               Create a new profile
             </ThemedText>
@@ -691,7 +702,7 @@ const allProfiles = React.useMemo<Profile[]>(() => {
 
     return (
       <Modal transparent visible={transfer.open} animationType="fade" onRequestClose={closeTransfer}>
-        <Pressable style={styles.menuBackdrop} onPress={closeTransfer}>
+        <Pressable style={[styles.menuBackdrop, { paddingBottom: modalPadBottom }]} onPress={closeTransfer}>
           <Pressable
             style={[styles.menuSheet, { backgroundColor: colors.background, borderColor: colors.border }]}
             onPress={(e) => e?.stopPropagation?.()}
@@ -857,7 +868,7 @@ const allProfiles = React.useMemo<Profile[]>(() => {
 
     return (
       <Modal transparent visible={confirmTransfer.open} animationType="fade" onRequestClose={closeConfirmTransfer}>
-        <Pressable style={styles.menuBackdrop} onPress={closeConfirmTransfer}>
+        <Pressable style={[styles.menuBackdrop, { paddingBottom: modalPadBottom }]} onPress={closeConfirmTransfer}>
           <Pressable
             style={[styles.confirmCard, { backgroundColor: colors.background, borderColor: colors.border }]}
             onPress={(e) => e?.stopPropagation?.()}
@@ -915,7 +926,7 @@ const allProfiles = React.useMemo<Profile[]>(() => {
   };
 
   return (
-    <SafeAreaView edges={["top"]} style={[styles.screen, { backgroundColor: colors.background }]}>
+    <SafeAreaView edges={["top", "bottom"]} style={[styles.screen, { backgroundColor: colors.background }]}>
       <View style={[styles.header, { borderBottomColor: colors.border }]}>
         <ThemedText type="defaultSemiBold" style={{ fontSize: 18 }}>
           {mode === "all" ? "All profiles" : "Choose profile"}
@@ -972,7 +983,16 @@ const allProfiles = React.useMemo<Profile[]>(() => {
 
       <AdoptProfileConfirmSheet />
       {mode === "tabs" && tab === "mine" && multi ? (
-        <View style={[styles.bottomBar, { borderTopColor: colors.border, backgroundColor: colors.background }]}>
+        <View
+          style={[
+            styles.bottomBar,
+            {
+              borderTopColor: colors.border,
+              backgroundColor: colors.background,
+              paddingBottom: bottomBarPadBottom,
+            },
+          ]}
+        >
           <View style={{ flex: 1 }}>
             <ThemedText style={{ color: colors.textSecondary }}>
               Selected: {selectedIds.size}
@@ -1063,6 +1083,23 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
 
+  createCard: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 16,
+    padding: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+
+  createIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
   left: { flexDirection: "row", alignItems: "center", gap: 12, flex: 1, minWidth: 0 },
 
   nameRow: { flexDirection: "row", alignItems: "center", gap: 8 },
@@ -1076,10 +1113,9 @@ const styles = StyleSheet.create({
   ownerAvatar: { width: 22, height: 22, borderRadius: 999 },
 
   createAvatar: {
-    backgroundColor: "transparent",
-    borderWidth: 1,
     alignItems: "center",
     justifyContent: "center",
+    borderWidth: 1,
   },
 
   handleRow: { flexDirection: "row", alignItems: "center", flexWrap: "wrap" },
@@ -1098,7 +1134,7 @@ const styles = StyleSheet.create({
   bottomBar: {
     borderTopWidth: StyleSheet.hairlineWidth,
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingTop: 12,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
