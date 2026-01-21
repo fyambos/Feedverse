@@ -63,11 +63,8 @@ export default function ScenarioListScreen() {
   () =>
     createScenarioIO({
       isReady,
-      userId,
-      db,
       previewImportScenarioFromFile,
       importScenarioFromFile,
-      exportScenarioToFile,
       onImportedNavigate: (scenarioId) => {
         // After an import we navigate into the new scenario; when we later
         // come back to the scenario list, jump to top so the new scenario is visible.
@@ -78,7 +75,7 @@ export default function ScenarioListScreen() {
         } as any);
       },
     }),
-  [isReady, userId, db, previewImportScenarioFromFile, importScenarioFromFile, exportScenarioToFile]
+  [isReady, previewImportScenarioFromFile, importScenarioFromFile]
 );
 
   const [menu, setMenu] = useState<ScenarioMenuState>({
@@ -165,11 +162,22 @@ export default function ScenarioListScreen() {
     const all = listScenarios?.() ?? [];
     const uid = String(userId ?? "").trim();
 
+    const nowMs = Date.now();
+
+    const isFreshLocal = (s: any) => {
+      const id = String(s?.id ?? "");
+      if (!isLocalScenarioId(id)) return false;
+      const createdAtMs = new Date(s?.createdAt ?? 0).getTime();
+      if (!Number.isFinite(createdAtMs)) return false;
+      return nowMs - createdAtMs < 5 * 60_000; // 5 minutes
+    };
+
     const sortNewestFirst = (a: any, b: any) => {
       // In backend mode, surface server scenarios before local-only ones.
       if (isBackendMode) {
-        const aLocal = isLocalScenarioId(String(a?.id ?? ""));
-        const bLocal = isLocalScenarioId(String(b?.id ?? ""));
+        // Treat freshly imported local scenarios as "server-like" so they don't get buried at the bottom.
+        const aLocal = isLocalScenarioId(String(a?.id ?? "")) && !isFreshLocal(a);
+        const bLocal = isLocalScenarioId(String(b?.id ?? "")) && !isFreshLocal(b);
         if (aLocal !== bLocal) return aLocal ? 1 : -1;
       }
 
@@ -241,9 +249,9 @@ export default function ScenarioListScreen() {
       return;
     }
 
-    // In backend mode, always go through profile selection.
-    // This triggers a backend sync and avoids treating “not yet synced” as “no profiles exist”.
-    if (isBackendMode) {
+    // In backend mode, go through profile selection for SERVER scenarios.
+    // For local scenarios (e.g. imported ones with sc_* ids), use local logic so imported profiles show up.
+    if (isBackendMode && !isLocalScenarioId(sid)) {
       router.push({
         pathname: "/modal/select-profile",
         params: {
@@ -463,13 +471,17 @@ export default function ScenarioListScreen() {
   };
 
 
-  const openExportChoice = () => {
+  const openExportModal = () => {
     const sid = String(menu.scenarioId ?? "").trim();
     if (!sid) return;
 
-    io.openExportChoice(sid, {
-      onBeforeOpen: () => closeScenarioMenu(),
-    });
+    closeScenarioMenu();
+    setTimeout(() => {
+      router.push({
+        pathname: "/modal/export-scenario",
+        params: { scenarioId: sid },
+      } as any);
+    }, 0);
   };
 
   const ScenarioMenuSheet = () => (
@@ -509,7 +521,7 @@ export default function ScenarioListScreen() {
 
           {/* Export */}
           <Pressable
-            onPress={openExportChoice}
+            onPress={openExportModal}
             style={({ pressed }) => [
               styles.menuItem,
               { backgroundColor: pressed ? colors.pressed : "transparent" },

@@ -103,11 +103,8 @@ export default function HomeScreen() {
   const io = useMemo(() => {
     return createScenarioIO({
       isReady,
-      userId,
-      db,
       previewImportScenarioFromFile,
       importScenarioFromFile,
-      exportScenarioToFile,
       onImportedNavigate: (newScenarioId: string) => {
         router.replace({
           pathname: "/(scenario)/[scenarioId]/(tabs)/home",
@@ -115,12 +112,15 @@ export default function HomeScreen() {
         } as any);
       },
     });
-  }, [isReady, userId, db, previewImportScenarioFromFile, importScenarioFromFile, exportScenarioToFile]);
+  }, [isReady, previewImportScenarioFromFile, importScenarioFromFile]);
 
   const exportThisScenario = useCallback(() => {
     if (!sid) return;
-    io.openExportChoice?.(sid);
-  }, [io, sid]);
+    router.push({
+      pathname: "/modal/export-scenario",
+      params: { scenarioId: sid },
+    } as any);
+  }, [sid]);
 
   const openScenarioMenu = useCallback(() => {
     const profileId = selectedProfile?.id ? String(selectedProfile.id) : null;

@@ -227,9 +227,6 @@ type AppDataApi = {
     scenarioId: string;
     includeProfiles: boolean;
     includePosts: boolean;
-    includeReposts: boolean;
-    includeSheets: boolean;
-    profileIds?: string[]; // if undefined => export all scenario profiles
   }) => Promise<
     | { ok: true; uri: string; filename: string; counts: { profiles: number; posts: number; reposts: number; sheets: number } }
     | { ok: false; error: string }
@@ -2108,17 +2105,15 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         };
       },
 
-      exportScenarioToFile: async ({ scenarioId, includeProfiles, includePosts, includeReposts, includeSheets, profileIds }) => {
+      exportScenarioToFile: async ({ scenarioId, includeProfiles, includePosts }) => {
         try {
           if (!db) return { ok: false, error: "DB not ready" };
 
           const scope = {
             includeProfiles,
             includePosts,
-            includeReposts,
-            includeSheets,
-            exportAllProfiles: !profileIds || profileIds.length === 0,
-            selectedProfileIds: profileIds ?? [],
+            includeReposts: false,
+            includeSheets: false,
           };
 
           const bundle = buildScenarioExportBundleV1(db, scenarioId, scope);
