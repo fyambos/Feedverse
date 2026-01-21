@@ -689,7 +689,7 @@ useEffect(() => {
 
           <View style={{ paddingHorizontal: 16, paddingTop: 10, paddingBottom: 6 }}>
             <ThemedText style={[styles.modalSubtitle, { color: colors.textSecondary }]}>
-              pick participants (optional). create with none to DM yourself.
+              Pick participants.
             </ThemedText>
           </View>
 
