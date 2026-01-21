@@ -8,27 +8,25 @@ export function buildScenarioExportBundleV1(db: DbV5, scenarioId: string, scope:
   const scenario = db.scenarios[sid] as Scenario | undefined;
   if (!scenario) throw new Error("Scenario not found");
 
-  // profile selection
-  const allProfiles = Object.values(db.profiles).filter((p) => String(p.scenarioId) === sid);
-  const selectedIds =
-    scope.exportAllProfiles
-      ? new Set(allProfiles.map((p) => String(p.id)))
-      : new Set((scope.selectedProfileIds ?? []).map(String));
-
-  const profiles: Profile[] =
-    scope.includeProfiles
-      ? allProfiles.filter((p) => selectedIds.has(String(p.id)))
-      : [];
-
-  const profileIdSet = new Set(profiles.map((p) => String(p.id)));
-
-  // posts: include only posts whose authorProfileId is exported
   const allScenarioPosts = Object.values(db.posts).filter((p) => String(p.scenarioId) === sid);
+  const posts: Post[] = scope.includePosts ? allScenarioPosts : [];
 
-  const posts: Post[] =
-    scope.includePosts && scope.includeProfiles
-      ? allScenarioPosts.filter((p) => profileIdSet.has(String((p as any).authorProfileId)))
+  // If exporting posts without exporting *all* profiles, we still need the author profiles
+  // so validation/import doesn't end up with dangling authorProfileId references.
+  const requiredProfileIds = new Set<string>();
+  for (const p of posts) {
+    requiredProfileIds.add(String((p as any).authorProfileId ?? ""));
+  }
+
+  const allProfiles = Object.values(db.profiles).filter((p) => String(p.scenarioId) === sid);
+  const profiles: Profile[] = scope.includeProfiles
+    ? allProfiles
+    : scope.includePosts
+      ? allProfiles.filter((p) => requiredProfileIds.has(String(p.id)))
       : [];
+
+  const includeProfilesSection = scope.includeProfiles || (scope.includePosts && profiles.length > 0);
+  const profileIdSet = new Set(profiles.map((p) => String(p.id)));
 
   const postIdSet = new Set(posts.map((p) => String(p.id)));
 
@@ -51,9 +49,12 @@ export function buildScenarioExportBundleV1(db: DbV5, scenarioId: string, scope:
 
   const reposts: Repost[] =
     scope.includeReposts && scope.includePosts && scope.includeProfiles
-      ? allReposts.filter((r) => String((r as any).scenarioId) === sid
-          && profileIdSet.has(String((r as any).profileId))
-          && postIdSet.has(String((r as any).postId)))
+      ? allReposts.filter(
+          (r) =>
+            String((r as any).scenarioId) === sid &&
+            profileIdSet.has(String((r as any).profileId)) &&
+            postIdSet.has(String((r as any).postId))
+        )
       : [];
 
   // likes: only those with profile+post included
@@ -83,8 +84,8 @@ export function buildScenarioExportBundleV1(db: DbV5, scenarioId: string, scope:
     version: 1,
     exportedAt: new Date().toISOString(),
     scenario,
-    ...(scope.includeProfiles ? { profiles } : {}),
-    ...(scope.includePosts && scope.includeProfiles ? { posts: cleanedPosts } : {}),
+    ...(includeProfilesSection ? { profiles } : {}),
+    ...(scope.includePosts ? { posts: cleanedPosts } : {}),
     ...(scope.includeReposts && scope.includePosts && scope.includeProfiles ? { reposts } : {}),
     ...(scope.includePosts && scope.includeProfiles ? { likes } : {}),
     ...(scope.includeSheets && scope.includeProfiles ? { sheets } : {}),

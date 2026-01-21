@@ -8,7 +8,4 @@ export type ScenarioExportScope = {
   includePosts: boolean;
   includeReposts: boolean;
   includeSheets: boolean;
-
-  exportAllProfiles: boolean;      // if true => ignore selectedProfileIds
-  selectedProfileIds: string[];    // only used if exportAllProfiles=false
 };

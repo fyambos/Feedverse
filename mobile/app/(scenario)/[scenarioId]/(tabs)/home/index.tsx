@@ -16,7 +16,6 @@ import { useFocusEffect } from "@react-navigation/native";
 import { SwipeableRow } from "@/components/ui/SwipeableRow";
 import { canEditPost } from "@/lib/permission";
 import { Avatar } from "@/components/ui/Avatar";
-import { createScenarioIO } from "@/lib/scenarioIO";
 import { Alert } from "@/context/dialog";
 import { formatErrorMessage } from "@/lib/format";
 
@@ -82,8 +81,6 @@ export default function HomeScreen() {
 
     getSelectedProfileId,
 
-    previewImportScenarioFromFile,
-    importScenarioFromFile,
     exportScenarioToFile,
   } = app;
 
@@ -100,27 +97,13 @@ export default function HomeScreen() {
     return pid ? getProfileById?.(pid) ?? null : null;
   }, [getProfileById, selectedProfileId]);
 
-  const io = useMemo(() => {
-    return createScenarioIO({
-      isReady,
-      userId,
-      db,
-      previewImportScenarioFromFile,
-      importScenarioFromFile,
-      exportScenarioToFile,
-      onImportedNavigate: (newScenarioId: string) => {
-        router.replace({
-          pathname: "/(scenario)/[scenarioId]/(tabs)/home",
-          params: { scenarioId: newScenarioId },
-        } as any);
-      },
-    });
-  }, [isReady, userId, db, previewImportScenarioFromFile, importScenarioFromFile, exportScenarioToFile]);
-
   const exportThisScenario = useCallback(() => {
     if (!sid) return;
-    io.openExportChoice?.(sid);
-  }, [io, sid]);
+    router.push({
+      pathname: "/modal/export-scenario",
+      params: { scenarioId: sid },
+    } as any);
+  }, [sid]);
 
   const openScenarioMenu = useCallback(() => {
     const profileId = selectedProfile?.id ? String(selectedProfile.id) : null;

@@ -41,7 +41,7 @@ Add to `app.json` (example snippet inside `expo`):
 ```json
 {
   "expo": {
-    "name": "Feedverse Mobile",
+    "name": "Feedverse",
     "slug": "feedverse",
     "platforms": ["ios","android"],
     "ios": {
