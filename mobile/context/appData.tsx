@@ -13,6 +13,7 @@ import type {
   Like,
   Conversation,
   Message,
+  ProfilePin,
 } from "@/data/db/schema";
 import { readDb, updateDb, writeDb, subscribeDbChanges } from "@/data/db/storage";
 import { seedDbIfNeeded } from "@/data/db/seed";
@@ -281,6 +282,14 @@ type AppDataApi = {
   togglePinPost: (scenarioId: string, postId: string, nextPinned: boolean) => Promise<void>;
   listPinnedPostsForScenario: (scenarioId: string) => Post[];
   reorderPinnedPostsForScenario: (scenarioId: string, orderedPostIds: string[]) => Promise<void>;
+
+  // profile pins (one pinned post per profile)
+  getPinnedPostIdForProfile: (profileId: string) => string | null;
+  setPinnedPostForProfile: (args: {
+    scenarioId: string;
+    profileId: string;
+    postId: string | null;
+  }) => Promise<{ ok: true } | { ok: false; error: string }>; 
 
   // sheets
   getCharacterSheetByProfileId: (profileId: string) => CharacterSheet | null;
@@ -612,6 +621,26 @@ function getPinnedIdsFromScenario(db: DbV5, scenarioId: string): string[] {
   const s = db.scenarios?.[sid];
   const arr = ((s as any)?.settings?.pinnedPostIds ?? []) as any;
   return Array.isArray(arr) ? arr.map(String).filter(Boolean) : [];
+}
+
+function getPinnedPostIdForProfileFromDb(db: DbV5, profileId: string): string | null {
+  const pid = String(profileId ?? "").trim();
+  if (!pid) return null;
+
+  const pins = ((db as any).profilePins ?? null) as Record<string, any> | null;
+  if (!pins || typeof pins !== "object") return null;
+
+  const raw = pins[pid];
+  if (!raw) return null;
+
+  // tolerate legacy/string-only values
+  if (typeof raw === "string") {
+    const v = raw.trim();
+    return v ? v : null;
+  }
+
+  const postId = String((raw as any)?.postId ?? (raw as any)?.post_id ?? "").trim();
+  return postId ? postId : null;
 }
 
 function uniq(arr: string[]) {
@@ -1562,7 +1591,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       profilesSyncRef.current.lastSyncAtByScenario[sid] = nowMs;
 
       try {
-        const [profilesRes, sheetsRes] = await Promise.all([
+        const [profilesRes, sheetsRes, pinsRes] = await Promise.all([
           apiFetch({
             path: `/scenarios/${encodeURIComponent(sid)}/profiles`,
             token,
@@ -1571,17 +1600,23 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
             path: `/scenarios/${encodeURIComponent(sid)}/character-sheets`,
             token,
           }),
+          apiFetch({
+            path: `/scenarios/${encodeURIComponent(sid)}/profile-pins`,
+            token,
+          }),
         ]);
 
         if (!profilesRes.ok || !Array.isArray(profilesRes.json)) return;
         const rows = profilesRes.json as any[];
         const sheetRows = sheetsRes.ok && Array.isArray(sheetsRes.json) ? (sheetsRes.json as any[]) : [];
+        const pinRows = pinsRes.ok && Array.isArray(pinsRes.json) ? (pinsRes.json as any[]) : [];
         const now = new Date().toISOString();
 
         const nextDb = await updateDb((prev) => {
           const profiles = { ...(prev.profiles ?? {}) } as any;
           const users = { ...((prev as any).users ?? {}) } as any;
           const sheets = { ...((prev as any).sheets ?? {}) } as Record<string, CharacterSheet>;
+          const profilePins = { ...((prev as any).profilePins ?? {}) } as Record<string, ProfilePin>;
 
           const seen = new Set<string>();
 
@@ -1663,6 +1698,37 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
             } catch {
               // ignore owner upsert failures
             }
+          }
+
+          // replace pins for this scenario (best-effort)
+          try {
+            for (const [k, v] of Object.entries(profilePins)) {
+              if (String((v as any)?.scenarioId ?? (v as any)?.scenario_id ?? "") === sid) {
+                delete profilePins[k];
+              }
+            }
+          } catch {}
+
+          for (const raw of pinRows) {
+            const profileId = String(raw?.profileId ?? raw?.profile_id ?? "").trim();
+            const postId = String(raw?.postId ?? raw?.post_id ?? "").trim();
+            if (!profileId || !postId) continue;
+
+            profilePins[profileId] = {
+              profileId,
+              scenarioId: String(raw?.scenarioId ?? raw?.scenario_id ?? sid),
+              postId,
+              createdAt: raw?.createdAt
+                ? new Date(raw.createdAt).toISOString()
+                : raw?.created_at
+                  ? new Date(raw.created_at).toISOString()
+                  : now,
+              updatedAt: raw?.updatedAt
+                ? new Date(raw.updatedAt).toISOString()
+                : raw?.updated_at
+                  ? new Date(raw.updated_at).toISOString()
+                  : now,
+            } as any;
           }
 
           // Remove profiles for this scenario that are no longer on server.
@@ -2025,10 +2091,13 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
 
                         return { ...(prev as any), conversations, messages } as any;
                       }).catch(() => {});
+
                       // Notify message event subscribers
-                        for (const handler of messageEventHandlers) {
-                          try { handler(m); } catch {}
-                        }
+                      for (const handler of messageEventHandlers) {
+                        try {
+                          handler(m);
+                        } catch {}
+                      }
 
                         // Present a local notification when appropriate:
                         // In backend mode we rely on remote pushes (Expo push) and MUST NOT
@@ -2043,9 +2112,9 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                             return;
                           }
 
-                          // IMPORTANT: use a fresh DB snapshot here (not `state.db`), because
-                          // `state` can be stale across platforms/timings and cause iOS/Android
-                          // to disagree about whether a conversation is currently being viewed.
+                            // IMPORTANT: use a fresh DB snapshot here (not `state.db`), because
+                            // `state` can be stale across platforms/timings and cause iOS/Android
+                            // to disagree about whether a conversation is currently being viewed.
                           const dbNow = await readDb();
 
                           const conv = (dbNow as any)?.conversations?.[convId] ?? null;
@@ -4016,6 +4085,119 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         });
 
         setState({ isReady: true, db: nextDb as any });
+      },
+
+      // --- profile pins (one pinned post per profile)
+      getPinnedPostIdForProfile: (profileId: string) => {
+        if (!db) return null;
+        return getPinnedPostIdForProfileFromDb(db, profileId);
+      },
+
+      setPinnedPostForProfile: async ({ scenarioId, profileId, postId }) => {
+        const sid = String(scenarioId ?? "").trim();
+        const pid = String(profileId ?? "").trim();
+        const nextPostId = postId == null ? null : String(postId).trim();
+        if (!sid) return { ok: false, error: "scenarioId is required" };
+        if (!pid) return { ok: false, error: "profileId is required" };
+
+        const currentUserId = String((auth as any)?.userId ?? (auth as any)?.currentUser?.id ?? "").trim();
+        if (!currentUserId) return { ok: false, error: "Not signed in" };
+
+        const prof = db?.profiles?.[pid] ?? null;
+        if (!prof) return { ok: false, error: "Profile not found" };
+        if (String((prof as any).scenarioId ?? "") !== sid) return { ok: false, error: "Profile not in scenario" };
+
+        const ownerUserId = String((prof as any).ownerUserId ?? "").trim();
+        const isPublic = Boolean((prof as any).isPublic);
+        const canPinAsProfile = ownerUserId === currentUserId || isPublic;
+        if (!canPinAsProfile) return { ok: false, error: "Not allowed" };
+
+        if (nextPostId) {
+          const post = db?.posts?.[nextPostId] ?? null;
+          if (!post) return { ok: false, error: "Post not found" };
+          if (String((post as any).scenarioId ?? "") !== sid) return { ok: false, error: "Post not in scenario" };
+        }
+
+        const token = String(auth.token ?? "").trim();
+        const baseUrl = String(process.env.EXPO_PUBLIC_API_BASE_URL ?? "").trim();
+        const backendEnabled = Boolean(token && baseUrl && isUuidLike(sid) && isUuidLike(pid));
+
+        if (backendEnabled) {
+          const res = await apiFetch({
+            path: `/profiles/${encodeURIComponent(pid)}/pinned-post`,
+            token,
+            init: {
+              method: "PUT",
+              body: JSON.stringify({ postId: nextPostId }),
+            },
+          });
+
+          if (!res.ok) {
+            const msg =
+              typeof (res.json as any)?.error === "string"
+                ? String((res.json as any).error)
+                : typeof res.text === "string" && res.text.trim().length
+                  ? res.text
+                  : `Failed (HTTP ${res.status})`;
+            return { ok: false, error: msg };
+          }
+
+          const pin = (res.json as any)?.pin ?? null;
+          const pinned = Boolean((res.json as any)?.pinned);
+          const now = new Date().toISOString();
+
+          const nextDb = await updateDb((prev) => {
+            const profilePins = { ...((prev as any).profilePins ?? {}) } as Record<string, ProfilePin>;
+
+            if (!pinned || !nextPostId) {
+              delete profilePins[pid];
+            } else {
+              profilePins[pid] = {
+                profileId: pid,
+                scenarioId: String(pin?.scenarioId ?? pin?.scenario_id ?? sid),
+                postId: String(pin?.postId ?? pin?.post_id ?? nextPostId),
+                createdAt: pin?.createdAt
+                  ? new Date(pin.createdAt).toISOString()
+                  : pin?.created_at
+                    ? new Date(pin.created_at).toISOString()
+                    : now,
+                updatedAt: pin?.updatedAt
+                  ? new Date(pin.updatedAt).toISOString()
+                  : pin?.updated_at
+                    ? new Date(pin.updated_at).toISOString()
+                    : now,
+              } as any;
+            }
+
+            return { ...prev, profilePins };
+          });
+
+          setState({ isReady: true, db: nextDb as any });
+          return { ok: true };
+        }
+
+        // Local-only fallback
+        const now = new Date().toISOString();
+        const nextDb = await updateDb((prev) => {
+          const profilePins = { ...((prev as any).profilePins ?? {}) } as Record<string, ProfilePin>;
+
+          if (!nextPostId) {
+            delete profilePins[pid];
+          } else {
+            profilePins[pid] = {
+              profileId: pid,
+              scenarioId: sid,
+              postId: nextPostId,
+              createdAt: (profilePins[pid] as any)?.createdAt ?? now,
+              updatedAt: now,
+            } as any;
+          }
+
+          return { ...prev, profilePins };
+        });
+
+        setState({ isReady: true, db: nextDb as any });
+        return { ok: true };
       },
 
       // --- scenarios

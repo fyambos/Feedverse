@@ -22,6 +22,7 @@ import {
 import { ListScenarioRepostsController } from "../reposts/repostControllers";
 import { ListScenarioLikesController } from "../likes/likeControllers";
 import { ListScenarioCharacterSheetsController } from "../characterSheets/characterSheetControllers";
+import { ListScenarioProfilePinsController } from "../profilePins/profilePinControllers";
 
 const scenarioRouter = Router();
 
@@ -36,6 +37,7 @@ scenarioRouter.post("/:id/posts", authMiddleware, CreateScenarioPostController);
 scenarioRouter.get("/:id/reposts", authMiddleware, ListScenarioRepostsController);
 scenarioRouter.get("/:id/likes", authMiddleware, ListScenarioLikesController);
 scenarioRouter.get("/:id/character-sheets", authMiddleware, ListScenarioCharacterSheetsController);
+scenarioRouter.get("/:id/profile-pins", authMiddleware, ListScenarioProfilePinsController);
 scenarioRouter.patch("/:id", authMiddleware, UpdateScenarioController);
 scenarioRouter.delete("/:id", authMiddleware, DeleteScenarioController);
 scenarioRouter.post("/:id/leave", authMiddleware, LeaveScenarioController);
