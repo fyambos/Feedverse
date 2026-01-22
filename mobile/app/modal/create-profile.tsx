@@ -34,9 +34,9 @@ import {
   normalizeLink,
   normalizeLocation,
   trimTo,
-} from "@/lib/profileForm";
+} from "@/lib/profile/profileForm";
 
-import { MAX_TOTAL_PROFILES_PER_SCENARIO } from "@/lib/rules";
+import { MAX_TOTAL_PROFILES_PER_SCENARIO } from "@/lib/scenario/rules";
 
 /* -------------------------------------------------------------------------- */
 
@@ -170,7 +170,7 @@ export default function CreateProfileModal() {
 
     // handle must be unique per scenario (exclude self when editing)
     const conflict = listProfilesForScenario(sid).find(
-      (p) => String(p.id) !== String(existing?.id ?? "") && normalizeHandle(p.handle) === safeHandle
+      (p: { id: any; handle: string; }) => String(p.id) !== String(existing?.id ?? "") && normalizeHandle(p.handle) === safeHandle
     );
 
     if (conflict) {

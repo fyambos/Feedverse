@@ -16,10 +16,9 @@ import { useAuth } from "@/context/auth";
 import { useAppData } from "@/context/appData";
 import { TagPill } from "@/components/ui/TagPill";
 
-import { createScenarioIO } from "@/lib/scenarioIO";
 import { Alert } from "@/context/dialog";
-import { formatErrorMessage } from "@/lib/format";
-import { MAX_TOTAL_PLAYERS_PER_SCENARIO } from "@/lib/rules";
+import { formatErrorMessage } from "@/lib/utils/format";
+import { MAX_TOTAL_PLAYERS_PER_SCENARIO } from "@/lib/scenario/rules";
 
 const MAX_PLAYERS = MAX_TOTAL_PLAYERS_PER_SCENARIO;
 
@@ -51,35 +50,20 @@ export default function ScenarioListScreen() {
     leaveScenario: leaveScenarioApi,
     deleteScenario: deleteScenarioApi,
 
-    //import/export APIs
-    previewImportScenarioFromFile,
-    importScenarioFromFile,
+    // import/export APIs
     exportScenarioToFile,
   } = useAppData() as any;
 
   const scrollToTopOnNextFocusRef = useRef(false);
 
-  const io = useMemo(
-  () =>
-    createScenarioIO({
-      isReady,
-      userId,
-      db,
-      previewImportScenarioFromFile,
-      importScenarioFromFile,
-      exportScenarioToFile,
-      onImportedNavigate: (scenarioId) => {
-        // After an import we navigate into the new scenario; when we later
-        // come back to the scenario list, jump to top so the new scenario is visible.
-        scrollToTopOnNextFocusRef.current = true;
-        router.push({
-          pathname: "/(scenario)/[scenarioId]/(tabs)/home",
-          params: { scenarioId },
-        } as any);
-      },
-    }),
-  [isReady, userId, db, previewImportScenarioFromFile, importScenarioFromFile, exportScenarioToFile]
-);
+  const openImport = useCallback(() => {
+    if (!isReady) {
+      Alert.alert("Not ready", "Please wait for the app to finish loading.");
+      return;
+    }
+
+    router.push({ pathname: "/modal/import-scenario" } as any);
+  }, [isReady]);
 
   const [menu, setMenu] = useState<ScenarioMenuState>({
     open: false,
@@ -165,11 +149,22 @@ export default function ScenarioListScreen() {
     const all = listScenarios?.() ?? [];
     const uid = String(userId ?? "").trim();
 
+    const nowMs = Date.now();
+
+    const isFreshLocal = (s: any) => {
+      const id = String(s?.id ?? "");
+      if (!isLocalScenarioId(id)) return false;
+      const createdAtMs = new Date(s?.createdAt ?? 0).getTime();
+      if (!Number.isFinite(createdAtMs)) return false;
+      return nowMs - createdAtMs < 5 * 60_000; // 5 minutes
+    };
+
     const sortNewestFirst = (a: any, b: any) => {
       // In backend mode, surface server scenarios before local-only ones.
       if (isBackendMode) {
-        const aLocal = isLocalScenarioId(String(a?.id ?? ""));
-        const bLocal = isLocalScenarioId(String(b?.id ?? ""));
+        // Treat freshly imported local scenarios as "server-like" so they don't get buried at the bottom.
+        const aLocal = isLocalScenarioId(String(a?.id ?? "")) && !isFreshLocal(a);
+        const bLocal = isLocalScenarioId(String(b?.id ?? "")) && !isFreshLocal(b);
         if (aLocal !== bLocal) return aLocal ? 1 : -1;
       }
 
@@ -241,9 +236,9 @@ export default function ScenarioListScreen() {
       return;
     }
 
-    // In backend mode, always go through profile selection.
-    // This triggers a backend sync and avoids treating “not yet synced” as “no profiles exist”.
-    if (isBackendMode) {
+    // In backend mode, go through profile selection for SERVER scenarios.
+    // For local scenarios (e.g. imported ones with sc_* ids), use local logic so imported profiles show up.
+    if (isBackendMode && !isLocalScenarioId(sid)) {
       router.push({
         pathname: "/modal/select-profile",
         params: {
@@ -463,13 +458,17 @@ export default function ScenarioListScreen() {
   };
 
 
-  const openExportChoice = () => {
+  const openExportModal = () => {
     const sid = String(menu.scenarioId ?? "").trim();
     if (!sid) return;
 
-    io.openExportChoice(sid, {
-      onBeforeOpen: () => closeScenarioMenu(),
-    });
+    closeScenarioMenu();
+    setTimeout(() => {
+      router.push({
+        pathname: "/modal/export-scenario",
+        params: { scenarioId: sid },
+      } as any);
+    }, 0);
   };
 
   const ScenarioMenuSheet = () => (
@@ -509,7 +508,7 @@ export default function ScenarioListScreen() {
 
           {/* Export */}
           <Pressable
-            onPress={openExportChoice}
+            onPress={openExportModal}
             style={({ pressed }) => [
               styles.menuItem,
               { backgroundColor: pressed ? colors.pressed : "transparent" },
@@ -774,7 +773,7 @@ export default function ScenarioListScreen() {
           <View style={[styles.topBarSide, styles.topBarActions]}>
             {/* Import */}
             <Pressable
-              onPress={io.runImportFlow}
+              onPress={openImport}
               hitSlop={10}
               style={({ pressed }) => [styles.headerIconBtn, pressed && { opacity: 0.6 }]}
               accessibilityRole="button"

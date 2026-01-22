@@ -580,6 +580,27 @@ export class ScenarioRepository {
         [sid, uid],
       );
 
+      // Leaving should also detach any owned profiles in this scenario so:
+      // - the user stops receiving scenario-based notifications (mentions/replies/messages)
+      // - the profiles can be re-adopted later (if not adopted by someone else and not deleted)
+      // NOTE: owner_user_id is nullable (public/unowned profiles).
+      try {
+        await client.query(
+          `
+            UPDATE profiles
+            SET owner_user_id = NULL,
+                is_public = true,
+                is_private = false,
+                updated_at = NOW() AT TIME ZONE 'UTC'
+            WHERE scenario_id = $1
+              AND owner_user_id = $2
+          `,
+          [sid, uid],
+        );
+      } catch {
+        // best-effort; do not block leaving if profile detachment fails
+      }
+
       await client.query("COMMIT");
       return { deleted: false };
     } catch (e) {

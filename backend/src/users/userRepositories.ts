@@ -119,4 +119,23 @@ export class UserRepository {
     const res = await pool.query(q, [ids]);
     return res.rows || [];
   }
+
+  async deleteExpoPushToken(args: { userId: string; expoPushToken: string }): Promise<number> {
+    const userId = String(args.userId ?? "").trim();
+    const token = String(args.expoPushToken ?? "").trim();
+    if (!userId || !token) return 0;
+
+    const q = `DELETE FROM user_push_tokens WHERE user_id = $1 AND expo_push_token = $2`;
+    const res = await pool.query(q, [userId, token]);
+    return Number(res.rowCount ?? 0);
+  }
+
+  async deleteAllExpoPushTokensForUser(args: { userId: string }): Promise<number> {
+    const userId = String(args.userId ?? "").trim();
+    if (!userId) return 0;
+
+    const q = `DELETE FROM user_push_tokens WHERE user_id = $1`;
+    const res = await pool.query(q, [userId]);
+    return Number(res.rowCount ?? 0);
+  }
 }

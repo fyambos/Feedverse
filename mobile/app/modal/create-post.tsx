@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router, useLocalSearchParams } from "expo-router";
-import { useFocusEffect } from "@react-navigation/native";
+import { useFocusEffect, useNavigation } from "@react-navigation/native";
 
 import type { Post, CharacterSheet } from "@/data/db/schema";
 import { markScenarioFeedRefreshNeeded, useAppData } from "@/context/appData";
@@ -15,8 +15,9 @@ import { useColorScheme } from "@/hooks/use-color-scheme";
 
 import { pickAndPersistManyImages } from "@/components/ui/ImagePicker";
 import { takeAndPersistPhoto } from "@/lib/media/takePicture";
-import { makeId } from "@/lib/format";
-import { formatErrorMessage } from "@/lib/format";
+import { makeId } from "@/lib/utils/format";
+import { formatErrorMessage } from "@/lib/utils/format";
+import { clearDraft, loadDraft, makeDraftKey, saveDraft } from "@/lib/drafts";
 
 import {
   clampCountFromText,
@@ -51,6 +52,7 @@ type Params = {
   postId?: string;
   parentPostId?: string;
   quotedPostId?: string;
+  draftKey?: string;
 };
 
 function isTruthyText(s: string) {
@@ -118,7 +120,8 @@ function consumeInventory(inventory: SheetListItem[], selectedIds: string[]) {
 }
 
 export default function CreatePostModal() {
-  const { scenarioId, postId, parentPostId, quotedPostId } = useLocalSearchParams<Params>();
+  const { scenarioId, postId, parentPostId, quotedPostId, draftKey: draftKeyParam } = useLocalSearchParams<Params>();
+  const navigation = useNavigation();
 
   const scheme = useColorScheme() ?? "light";
   const colors = Colors[scheme];
@@ -444,6 +447,237 @@ export default function CreatePostModal() {
   const [quoteId, setQuoteId] = useState<string | undefined>(undefined);
   const [insertedAt, setInsertedAt] = useState<string>(""); // preserve in edit
 
+  type PostDraftV1 = {
+    version: 1;
+    scenarioId: string;
+    authorProfileId: string | null;
+    parentPostId?: string | null;
+    quotedPostId?: string | null;
+    threadTexts: string[];
+    imageUrls: string[];
+    videoThumbUri: string | null;
+    addVideoIcon: boolean;
+    postType?: PostType;
+    meta?: any;
+    savedAt: string;
+  };
+
+  function newDraftId() {
+    return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  }
+
+  const autosaveDraftKey = useMemo(() => {
+    if (!sid || isEdit) return null;
+    const replyParent = parentPostId ? String(parentPostId) : "";
+    const q = quotedPostId ? String(quotedPostId) : "";
+    return makeDraftKey("post", {
+      scenarioId: sid,
+      parentPostId: replyParent,
+      quotedPostId: q,
+      autosave: "1",
+    });
+  }, [sid, isEdit, parentPostId, quotedPostId]);
+
+  const activeDraftKey = useMemo(() => {
+    if (isEdit) return null;
+    const explicit = String(draftKeyParam ?? "").trim();
+    return explicit || autosaveDraftKey;
+  }, [isEdit, draftKeyParam, autosaveDraftKey]);
+
+  const hasDraftContent = useMemo(() => {
+    if (isEdit) return false;
+    const hasText = Array.isArray(threadTexts) && threadTexts.some((t) => String(t ?? "").trim().length > 0);
+    const hasImages = Array.isArray(imageUrls) && imageUrls.length > 0;
+    const hasVideo = Boolean(String(videoThumbUri ?? "").trim());
+    return hasText || hasImages || hasVideo;
+  }, [isEdit, threadTexts, imageUrls, videoThumbUri]);
+
+  const draftPausedRef = React.useRef(false);
+  const bypassDiscardConfirmRef = React.useRef(false);
+  const draftSaveTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const didRestoreDraftRef = React.useRef(false);
+
+  const flushDraftNow = useCallback(async () => {
+    if (!activeDraftKey) return;
+    if (isEdit) return;
+
+    // Save as a new, unique draft so it doesn't auto-open next time.
+    const savedKey = makeDraftKey("post", {
+      scenarioId: sid,
+      draftId: newDraftId(),
+      parentPostId: parentId ? String(parentId) : "",
+      quotedPostId: quoteId ? String(quoteId) : "",
+    });
+
+    draftPausedRef.current = true;
+
+    const payload: PostDraftV1 = {
+      version: 1,
+      scenarioId: sid,
+      authorProfileId: authorProfileId ? String(authorProfileId) : null,
+      parentPostId: parentId ? String(parentId) : null,
+      quotedPostId: quoteId ? String(quoteId) : null,
+      threadTexts: Array.isArray(threadTexts) ? threadTexts.map(String) : [""],
+      imageUrls: Array.isArray(imageUrls) ? imageUrls.map(String).filter(Boolean) : [],
+      videoThumbUri: videoThumbUri ? String(videoThumbUri) : null,
+      addVideoIcon: Boolean(addVideoIcon),
+      postType: isCampaign ? ((postType as any) || "rp") : undefined,
+      meta: isCampaign ? meta : undefined,
+      savedAt: new Date().toISOString(),
+    };
+
+    await saveDraft(savedKey, payload);
+
+    // Clear autosave so reopening the composer is blank.
+    if (autosaveDraftKey) {
+      try {
+        await clearDraft(autosaveDraftKey);
+      } catch {
+        // ignore
+      }
+    }
+  }, [activeDraftKey, isEdit, sid, authorProfileId, parentId, quoteId, threadTexts, imageUrls, videoThumbUri, addVideoIcon, isCampaign, postType, meta, autosaveDraftKey]);
+
+  // Restore draft on open (create-only)
+  useEffect(() => {
+    if (!activeDraftKey) return;
+    if (!isReady) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const d = await loadDraft<PostDraftV1>(activeDraftKey);
+        if (!d || cancelled) return;
+        if (d.version !== 1) return;
+
+        // Only restore on create. For edits, the post hydration should win.
+        if (isEdit) return;
+
+        const nextTexts = Array.isArray(d.threadTexts) && d.threadTexts.length ? d.threadTexts.map(String) : [""];
+        setThreadTexts(nextTexts);
+        setImageUrls(Array.isArray(d.imageUrls) ? d.imageUrls.map(String).filter(Boolean) : []);
+        setVideoThumbUri(d.videoThumbUri ? String(d.videoThumbUri) : null);
+        setAddVideoIcon(Boolean(d.addVideoIcon));
+
+        didRestoreDraftRef.current = true;
+
+        if (typeof d.authorProfileId === "string" && d.authorProfileId.trim()) {
+          setAuthorProfileId(String(d.authorProfileId));
+        }
+
+        if (isCampaign && d.postType) setPostType(d.postType);
+        if (isCampaign && d.meta !== undefined) setMeta(d.meta);
+      } catch {
+        // ignore
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeDraftKey, isReady, isEdit, isCampaign]);
+
+  // Autosave draft while composing (create-only)
+  useEffect(() => {
+    if (!activeDraftKey) return;
+    if (!isReady) return;
+    if (isEdit) return;
+    if (draftPausedRef.current) return;
+
+    if (draftSaveTimerRef.current) clearTimeout(draftSaveTimerRef.current);
+
+    draftSaveTimerRef.current = setTimeout(() => {
+      draftSaveTimerRef.current = null;
+
+      if (!hasDraftContent) {
+        // Only clear autosave drafts automatically.
+        if (autosaveDraftKey && activeDraftKey === autosaveDraftKey) {
+          void clearDraft(autosaveDraftKey);
+        }
+        return;
+      }
+
+      const payload: PostDraftV1 = {
+        version: 1,
+        scenarioId: sid,
+        authorProfileId: authorProfileId ? String(authorProfileId) : null,
+        parentPostId: parentId ? String(parentId) : null,
+        quotedPostId: quoteId ? String(quoteId) : null,
+        threadTexts: Array.isArray(threadTexts) ? threadTexts.map(String) : [""],
+        imageUrls: Array.isArray(imageUrls) ? imageUrls.map(String).filter(Boolean) : [],
+        videoThumbUri: videoThumbUri ? String(videoThumbUri) : null,
+        addVideoIcon: Boolean(addVideoIcon),
+        postType: isCampaign ? ((postType as any) || "rp") : undefined,
+        meta: isCampaign ? meta : undefined,
+        savedAt: new Date().toISOString(),
+      };
+
+      void saveDraft(activeDraftKey, payload);
+    }, 650);
+
+    return () => {
+      if (draftSaveTimerRef.current) {
+        clearTimeout(draftSaveTimerRef.current);
+        draftSaveTimerRef.current = null;
+      }
+    };
+  }, [activeDraftKey, autosaveDraftKey, isReady, isEdit, hasDraftContent, sid, authorProfileId, parentId, quoteId, threadTexts, imageUrls, videoThumbUri, addVideoIcon, isCampaign, postType, meta]);
+
+  // Confirm discard when leaving composer with a draft
+  useEffect(() => {
+    const nav: any = navigation as any;
+    if (!nav?.addListener) return;
+
+    const unsub = nav.addListener("beforeRemove", (e: any) => {
+      if (bypassDiscardConfirmRef.current) return;
+      if (!activeDraftKey) return;
+      if (isEdit) return;
+      if (!hasDraftContent) return;
+
+      e.preventDefault();
+
+      Alert.alert("Discard draft?", "You have an unfinished post.", [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Save draft",
+          onPress: () => {
+            bypassDiscardConfirmRef.current = true;
+            void flushDraftNow().finally(() => {
+              try {
+                nav.dispatch(e.data.action);
+              } catch {
+                try {
+                  router.back();
+                } catch {}
+              }
+            });
+          },
+        },
+        {
+          text: "Discard",
+          style: "destructive",
+          onPress: () => {
+            bypassDiscardConfirmRef.current = true;
+            // Discard should clear autosave (and the opened draft if we explicitly opened one).
+            const toClear = [activeDraftKey, autosaveDraftKey].filter(Boolean) as string[];
+            const unique = Array.from(new Set(toClear));
+            void Promise.all(unique.map((k) => clearDraft(k))).finally(() => {
+              try {
+                nav.dispatch(e.data.action);
+              } catch {
+                try {
+                  router.back();
+                } catch {}
+              }
+            });
+          },
+        },
+      ]);
+    });
+
+    return unsub;
+  }, [navigation, activeDraftKey, autosaveDraftKey, isEdit, hasDraftContent, flushDraftNow]);
+
   const quotedPost = useMemo(() => {
     if (!quoteId) return null;
     return getPostById(String(quoteId));
@@ -467,9 +701,11 @@ export default function CreatePostModal() {
       setParentId(replyParent);
       setQuoteId(q);
 
-      // campaign defaults
-      setPostType("rp");
-      setMeta(undefined);
+      // campaign defaults (only if no draft restored)
+      if (!didRestoreDraftRef.current) {
+        setPostType("rp");
+        setMeta(undefined);
+      }
 
       setHydrated(true);
       return;
@@ -540,11 +776,15 @@ export default function CreatePostModal() {
       if (!isReady) return;
       if (isEdit) return;
 
+      // If we restored a draft, don't stomp the user's draft state.
+      if (didRestoreDraftRef.current) return;
+      if (hasDraftContent) return;
+
       // reset to defaults on create modal open
       setPostType("rp");
       setMeta(undefined);
       forceLogForUsedItemsRef.current = false;
-    }, [isReady, isEdit])
+    }, [isReady, isEdit, hasDraftContent])
   );
 
   // author selection callback after coming back from select-profile
@@ -710,6 +950,18 @@ export default function CreatePostModal() {
         await setSelectedProfileId(sid, safeAuthorId);
         if (fxPromise) await fxPromise;
         markScenarioFeedRefreshNeeded(sid);
+
+        // success: clear autosave and/or opened draft, then allow leaving
+        {
+          const toClear = [activeDraftKey, autosaveDraftKey].filter(Boolean) as string[];
+          const unique = Array.from(new Set(toClear));
+          if (unique.length) {
+            bypassDiscardConfirmRef.current = true;
+            try {
+              await Promise.all(unique.map((k) => clearDraft(k)));
+            } catch {}
+          }
+        }
         router.back();
         return;
       }
@@ -753,6 +1005,18 @@ export default function CreatePostModal() {
       await setSelectedProfileId(sid, safeAuthorId);
       if (fxPromise) await fxPromise;
       markScenarioFeedRefreshNeeded(sid);
+
+      // success: clear autosave and/or opened draft, then allow leaving
+      {
+        const toClear = [activeDraftKey, autosaveDraftKey].filter(Boolean) as string[];
+        const unique = Array.from(new Set(toClear));
+        if (unique.length) {
+          bypassDiscardConfirmRef.current = true;
+          try {
+            await Promise.all(unique.map((k) => clearDraft(k)));
+          } catch {}
+        }
+      }
       router.back();
     } catch (e) {
       Alert.alert(
@@ -785,6 +1049,8 @@ export default function CreatePostModal() {
     isCampaign,
     postType,
     meta,
+    activeDraftKey,
+    autosaveDraftKey,
   ]);
 
   const canUseItems = !isEdit && !!authorProfileId && !!sheet && inventory.length > 0;
@@ -812,6 +1078,8 @@ export default function CreatePostModal() {
             colors={colors}
             isEdit={isEdit}
             canPost={canPost}
+            showDrafts={!isEdit}
+            onPressDrafts={() => router.push({ pathname: "/modal/drafts", params: { kind: "post" } } as any)}
             onCancel={() => router.back()}
             onSubmit={onPost}
           />

@@ -6,7 +6,7 @@ import { router } from "expo-router";
 
 import { Avatar } from "@/components/ui/Avatar";
 import { ThemedText } from "@/components/themed-text";
-import { formatRelativeTime } from "@/lib/format";
+import { formatRelativeTime } from "@/lib/utils/format";
 import type { Profile } from "@/data/db/schema";
 import { useAppData } from "@/context/appData";
 

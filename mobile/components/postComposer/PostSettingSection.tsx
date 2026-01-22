@@ -5,7 +5,7 @@ import { Ionicons } from "@expo/vector-icons";
 
 import { ThemedText } from "@/components/themed-text";
 import { RowCard } from "@/components/ui/RowCard";
-import { formatCount } from "@/lib/format";
+import { formatCount } from "@/lib/utils/format";
 
 import { MAX_COUNT_DIGITS } from "@/lib/postComposer/counts";
 

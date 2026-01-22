@@ -22,7 +22,7 @@ import { router, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
 import DraggableFlatList, { type RenderItemParams } from "react-native-draggable-flatlist";
-import { useFocusEffect } from "@react-navigation/native";
+import { useFocusEffect, useNavigation } from "@react-navigation/native";
 
 import { ThemedText } from "@/components/themed-text";
 import { presentNotification } from "@/context/appData";
@@ -36,11 +36,12 @@ import type { Conversation, Message, Profile } from "@/data/db/schema";
 import { AuthorAvatarPicker } from "@/components/postComposer/AuthorAvatarPicker";
 import { Avatar } from "@/components/ui/Avatar";
 import { SwipeableRow } from "@/components/ui/SwipeableRow";
-import { apiFetch } from "@/lib/apiClient";
+import { apiFetch } from "@/lib/api/apiClient";
 import { pickAndPersistManyImages } from "@/components/ui/ImagePicker";
 import { MediaGrid } from "@/components/media/MediaGrid";
 import { Lightbox } from "@/components/media/LightBox";
-import { formatErrorMessage } from "@/lib/format";
+import { formatErrorMessage } from "@/lib/utils/format";
+import { clearDraft, loadDraft, makeDraftKey, saveDraft } from "@/lib/drafts";
 
 const SEND_BTN_SCALE_DOWN = 0.92;
 const SEND_BTN_SCALE_DOWN_MS = 60;
@@ -114,10 +115,16 @@ function coerceStringArray(value: unknown): string[] {
 
 export default function ConversationThreadScreen() {
 
+  const navigation = useNavigation();
+
 
   const scheme = useColorScheme() ?? "light";
   const colors = Colors[scheme];
-  const { scenarioId, conversationId } = useLocalSearchParams<{ scenarioId: string; conversationId: string }>();
+  const { scenarioId, conversationId, draftKey: draftKeyParam } = useLocalSearchParams<{
+    scenarioId: string;
+    conversationId: string;
+    draftKey?: string;
+  }>();
 
   const sid = String(scenarioId ?? "");
   const cid = String(conversationId ?? "");
@@ -258,6 +265,199 @@ export default function ConversationThreadScreen() {
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxUrls, setLightboxUrls] = useState<string[]>([]);
   const [lightboxIndex, setLightboxIndex] = useState<number>(0);
+
+  type MessageDraftV1 = {
+    version: 1;
+    scenarioId: string;
+    conversationId: string;
+    text: string;
+    imageUris: string[];
+    sendAsId: string | null;
+    savedAt: string;
+  };
+
+  const newDraftId = useCallback(() => {
+    return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  }, []);
+
+  const autosaveDraftKey = useMemo(() => {
+    if (!sid || !cid) return null;
+    return makeDraftKey("message", { scenarioId: sid, conversationId: cid, autosave: "1" });
+  }, [sid, cid]);
+
+  const activeDraftKey = useMemo(() => {
+    const explicit = String(draftKeyParam ?? "").trim();
+    return explicit || autosaveDraftKey;
+  }, [draftKeyParam, autosaveDraftKey]);
+
+  const hasDraftContent = useMemo(() => {
+    const hasText = String(text ?? "").trim().length > 0;
+    const hasImgs = Array.isArray(imageUris) && imageUris.length > 0;
+    return hasText || hasImgs;
+  }, [text, imageUris]);
+
+  const draftPausedRef = useRef(false);
+  const bypassDiscardConfirmRef = useRef(false);
+  const restoredForKeyRef = useRef<string | null>(null);
+  const draftSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const flushDraftNow = useCallback(async () => {
+    if (!activeDraftKey) return;
+
+    // Save as a new, unique draft so it doesn't auto-open next time.
+    const savedKey = makeDraftKey("message", { scenarioId: sid, conversationId: cid, draftId: newDraftId() });
+
+    draftPausedRef.current = true;
+
+    const payload: MessageDraftV1 = {
+      version: 1,
+      scenarioId: sid,
+      conversationId: cid,
+      text: String(text ?? ""),
+      imageUris: Array.isArray(imageUris) ? imageUris.map(String).filter(Boolean) : [],
+      sendAsId: sendAsId ? String(sendAsId) : null,
+      savedAt: new Date().toISOString(),
+    };
+
+    await saveDraft(savedKey, payload);
+
+    // Clear autosave so reopening the thread doesn't restore.
+    if (autosaveDraftKey) {
+      try {
+        await clearDraft(autosaveDraftKey);
+      } catch {
+        // ignore
+      }
+    }
+  }, [activeDraftKey, autosaveDraftKey, sid, cid, text, imageUris, sendAsId, newDraftId]);
+
+  // Restore draft when opening the conversation
+  useEffect(() => {
+    if (!isReady) return;
+    if (!activeDraftKey) return;
+    if (restoredForKeyRef.current === activeDraftKey) return;
+    restoredForKeyRef.current = activeDraftKey;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const d = await loadDraft<MessageDraftV1>(activeDraftKey);
+        if (!d || cancelled) return;
+        if (d.version !== 1) return;
+
+        // Only restore into an empty composer (avoid stomping user input)
+        if (String(text ?? "").trim().length > 0) return;
+        if (Array.isArray(imageUris) && imageUris.length > 0) return;
+
+        setText(String(d.text ?? ""));
+        setImageUris(Array.isArray(d.imageUris) ? d.imageUris.map(String).filter(Boolean) : []);
+        if (typeof d.sendAsId === "string" && d.sendAsId.trim()) {
+          setSendAsId(String(d.sendAsId));
+        }
+      } catch {
+        // ignore
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isReady, activeDraftKey, text, imageUris]);
+
+  // Autosave draft while typing
+  useEffect(() => {
+    if (!isReady) return;
+    if (!activeDraftKey) return;
+    if (draftPausedRef.current) return;
+
+    if (draftSaveTimerRef.current) clearTimeout(draftSaveTimerRef.current);
+
+    draftSaveTimerRef.current = setTimeout(() => {
+      draftSaveTimerRef.current = null;
+
+      if (!hasDraftContent) {
+        // Only clear autosave drafts automatically.
+        if (autosaveDraftKey && activeDraftKey === autosaveDraftKey) {
+          void clearDraft(autosaveDraftKey);
+        }
+        return;
+      }
+
+      const payload: MessageDraftV1 = {
+        version: 1,
+        scenarioId: sid,
+        conversationId: cid,
+        text: String(text ?? ""),
+        imageUris: Array.isArray(imageUris) ? imageUris.map(String).filter(Boolean) : [],
+        sendAsId: sendAsId ? String(sendAsId) : null,
+        savedAt: new Date().toISOString(),
+      };
+
+      void saveDraft(activeDraftKey, payload);
+    }, 550);
+
+    return () => {
+      if (draftSaveTimerRef.current) {
+        clearTimeout(draftSaveTimerRef.current);
+        draftSaveTimerRef.current = null;
+      }
+    };
+  }, [isReady, activeDraftKey, autosaveDraftKey, hasDraftContent, sid, cid, text, imageUris, sendAsId]);
+
+  // Confirm discard when leaving with a draft
+  useEffect(() => {
+    const nav: any = navigation as any;
+    if (!nav?.addListener) return;
+
+    const unsub = nav.addListener("beforeRemove", (e: any) => {
+      if (bypassDiscardConfirmRef.current) return;
+      if (!activeDraftKey) return;
+      if (!hasDraftContent) return;
+
+      e.preventDefault();
+
+      Alert.alert("Discard draft?", "You have an unfinished message.", [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Save draft",
+          onPress: () => {
+            bypassDiscardConfirmRef.current = true;
+
+            void flushDraftNow().finally(() => {
+              try {
+                nav.dispatch(e.data.action);
+              } catch {
+                try {
+                  router.back();
+                } catch {}
+              }
+            });
+          },
+        },
+        {
+          text: "Discard",
+          style: "destructive",
+          onPress: () => {
+            bypassDiscardConfirmRef.current = true;
+            // Discard should clear autosave (and the opened draft if we explicitly opened one).
+            const toClear = [activeDraftKey, autosaveDraftKey].filter(Boolean) as string[];
+            const unique = Array.from(new Set(toClear));
+            void Promise.all(unique.map((k) => clearDraft(k))).finally(() => {
+              try {
+                nav.dispatch(e.data.action);
+              } catch {
+                try {
+                  router.back();
+                } catch {}
+              }
+            });
+          },
+        },
+      ]);
+    });
+
+    return unsub;
+  }, [navigation, activeDraftKey, autosaveDraftKey, hasDraftContent, flushDraftNow]);
 
   const [reorderMode, setReorderMode] = useState(false);
   const [reorderDraft, setReorderDraft] = useState<Message[] | null>(null);
@@ -1080,6 +1280,21 @@ export default function ConversationThreadScreen() {
     const imgs = Array.isArray(imageUris) ? imageUris.map(String).filter(Boolean) : [];
     if (!body && imgs.length === 0) return;
 
+    // Keep the draft stable during send (composer clears immediately).
+    if (activeDraftKey) {
+      draftPausedRef.current = true;
+      const payload: MessageDraftV1 = {
+        version: 1,
+        scenarioId: sid,
+        conversationId: cid,
+        text: body,
+        imageUris: imgs,
+        sendAsId: String(sendAsId),
+        savedAt: new Date().toISOString(),
+      };
+      void saveDraft(activeDraftKey, payload).catch(() => {});
+    }
+
     if (sendingRef.current) return;
     sendingRef.current = true;
     setSending(true);
@@ -1106,6 +1321,15 @@ export default function ConversationThreadScreen() {
         const isSuccess = !!(res && (res.ok === true || (res as any).messageId || (res as any).message));
 
         if (isSuccess) {
+          const toClear = [activeDraftKey, autosaveDraftKey].filter(Boolean) as string[];
+          const unique = Array.from(new Set(toClear));
+          await Promise.all(
+            unique.map(async (k) => {
+              try {
+                await clearDraft(k);
+              } catch {}
+            })
+          );
           try {
             const pid = String(sendAsId ?? selectedProfileId ?? "").trim();
             if (sid && cid && pid) {
@@ -1142,6 +1366,16 @@ export default function ConversationThreadScreen() {
         const msg = String((res as any)?.error ?? "Send failed");
         Alert.alert("Could not send", msg);
 
+        // Restore the draft if we cleared the composer and send failed.
+        if (activeDraftKey) {
+          try {
+            if (String(text ?? "").trim().length === 0 && (imageUris?.length ?? 0) === 0) {
+              setText(body);
+              setImageUris(imgs);
+            }
+          } catch {}
+        }
+
         // If user accidentally picked/toggled to an invalid sender, snap back to the selected profile.
         if (selectedProfileId && String(sendAsId) !== String(selectedProfileId)) {
           setSendAsId(String(selectedProfileId));
@@ -1149,12 +1383,23 @@ export default function ConversationThreadScreen() {
       })
       .catch((e) => {
         Alert.alert("Could not send", formatErrorMessage(e, "Send failed"));
+
+        // Restore the draft on exception too.
+        if (activeDraftKey) {
+          try {
+            if (String(text ?? "").trim().length === 0 && (imageUris?.length ?? 0) === 0) {
+              setText(body);
+              setImageUris(imgs);
+            }
+          } catch {}
+        }
       })
       .finally(() => {
         sendingRef.current = false;
         setSending(false);
+        draftPausedRef.current = false;
       });
-  }, [sid, cid, sendAsId, text, imageUris, sendMessage, selectedProfileId, scrollToBottom, bumpSendBtn]);
+  }, [sid, cid, sendAsId, text, imageUris, sendMessage, selectedProfileId, scrollToBottom, bumpSendBtn, activeDraftKey, autosaveDraftKey]);
 
   const onPickImages = useCallback(async () => {
     const remaining = Math.max(0, 4 - (imageUris?.length ?? 0));

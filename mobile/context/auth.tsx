@@ -13,7 +13,7 @@ import * as bcrypt from "bcryptjs";
 import type { User, UserSettings } from "@/data/db/schema";
 import { readDb, updateDb } from "@/data/db/storage"; 
 import { seedDbIfNeeded } from "@/data/db/seed";
-import { apiFetch, setAuthInvalidationHandler } from "@/lib/apiClient";
+import { apiFetch, setAuthInvalidationHandler } from "@/lib/api/apiClient";
 import { Alert } from "@/context/dialog";
 import { setCustomTintColor } from "@/constants/theme";
 import {
@@ -57,6 +57,8 @@ const AuthContext = createContext<AuthState | null>(null);
 const KEY = "feedverse.auth.userId";
 const TOKEN_KEY = "feedverse.auth.token";
 const DEV_USER_ID = "u14";
+
+const EXPO_PUSH_TOKEN_STORAGE_KEY = "feedverse.push.expoPushToken";
 
 const BCRYPT_ROUNDS = 10;
 
@@ -631,6 +633,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   const signOut = useCallback(async () => {
+    // Best-effort: revoke this device's remote push token on the server.
+    // If this fails (offline, etc), we still proceed with local sign-out.
+    try {
+      const t = String(token ?? "").trim();
+      if (t) {
+        const expoPushToken = String((await AsyncStorage.getItem(EXPO_PUSH_TOKEN_STORAGE_KEY)) ?? "").trim();
+        if (expoPushToken) {
+          try {
+            await apiFetch({
+              path: "/users/push-token",
+              token: t,
+              init: {
+                method: "DELETE",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ expoPushToken }),
+              },
+            });
+          } catch {
+            // ignore
+          }
+        }
+      }
+    } catch {
+      // ignore
+    }
+
     setUserId(null);
     setToken(null);
     setCurrentUser(null);
@@ -638,7 +666,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await AsyncStorage.removeItem(KEY);
     await AsyncStorage.removeItem(TOKEN_KEY);
     authInvalidatedRef.current = false;
-  }, []);
+  }, [token]);
 
   // Global handler: on any 401/403 from authenticated apiFetch, force sign-out.
   useEffect(() => {

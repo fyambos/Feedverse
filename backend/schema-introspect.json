@@ -1,0 +1,2309 @@
+{
+  "generatedAt": "2026-01-20T11:31:22.003Z",
+  "tables": [
+    "app_meta",
+    "auth_identities",
+    "character_sheets",
+    "conversation_participants",
+    "conversations",
+    "global_tags",
+    "likes",
+    "message_reads",
+    "messages",
+    "posts",
+    "profiles",
+    "reposts",
+    "scenario_players",
+    "scenario_tags",
+    "scenarios",
+    "selected_profile_by_user_scenario",
+    "user_push_tokens",
+    "user_sessions",
+    "users"
+  ],
+  "columns": [
+    {
+      "table_name": "app_meta",
+      "ordinal_position": 1,
+      "column_name": "key",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "app_meta",
+      "ordinal_position": 2,
+      "column_name": "value",
+      "data_type": "jsonb",
+      "udt_name": "jsonb",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "app_meta",
+      "ordinal_position": 3,
+      "column_name": "updated_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz",
+      "is_nullable": "NO",
+      "column_default": "now()"
+    },
+    {
+      "table_name": "auth_identities",
+      "ordinal_position": 1,
+      "column_name": "id",
+      "data_type": "uuid",
+      "udt_name": "uuid",
+      "is_nullable": "NO",
+      "column_default": "gen_random_uuid()"
+    },
+    {
+      "table_name": "auth_identities",
+      "ordinal_position": 2,
+      "column_name": "user_id",
+      "data_type": "uuid",
+      "udt_name": "uuid",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "auth_identities",
+      "ordinal_position": 3,
+      "column_name": "provider",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "auth_identities",
+      "ordinal_position": 4,
+      "column_name": "provider_user_id",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "auth_identities",
+      "ordinal_position": 5,
+      "column_name": "email",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "auth_identities",
+      "ordinal_position": 6,
+      "column_name": "display_name",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "auth_identities",
+      "ordinal_position": 7,
+      "column_name": "avatar_url",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "auth_identities",
+      "ordinal_position": 8,
+      "column_name": "created_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz",
+      "is_nullable": "NO",
+      "column_default": "now()"
+    },
+    {
+      "table_name": "auth_identities",
+      "ordinal_position": 9,
+      "column_name": "updated_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "character_sheets",
+      "ordinal_position": 1,
+      "column_name": "profile_id",
+      "data_type": "uuid",
+      "udt_name": "uuid",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "character_sheets",
+      "ordinal_position": 2,
+      "column_name": "name",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "character_sheets",
+      "ordinal_position": 3,
+      "column_name": "race",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "character_sheets",
+      "ordinal_position": 4,
+      "column_name": "class",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "character_sheets",
+      "ordinal_position": 5,
+      "column_name": "level",
+      "data_type": "integer",
+      "udt_name": "int4",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "character_sheets",
+      "ordinal_position": 6,
+      "column_name": "alignment",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "character_sheets",
+      "ordinal_position": 7,
+      "column_name": "background",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "character_sheets",
+      "ordinal_position": 8,
+      "column_name": "strength",
+      "data_type": "integer",
+      "udt_name": "int4",
+      "is_nullable": "NO",
+      "column_default": "10"
+    },
+    {
+      "table_name": "character_sheets",
+      "ordinal_position": 9,
+      "column_name": "dexterity",
+      "data_type": "integer",
+      "udt_name": "int4",
+      "is_nullable": "NO",
+      "column_default": "10"
+    },
+    {
+      "table_name": "character_sheets",
+      "ordinal_position": 10,
+      "column_name": "constitution",
+      "data_type": "integer",
+      "udt_name": "int4",
+      "is_nullable": "NO",
+      "column_default": "10"
+    },
+    {
+      "table_name": "character_sheets",
+      "ordinal_position": 11,
+      "column_name": "intelligence",
+      "data_type": "integer",
+      "udt_name": "int4",
+      "is_nullable": "NO",
+      "column_default": "10"
+    },
+    {
+      "table_name": "character_sheets",
+      "ordinal_position": 12,
+      "column_name": "wisdom",
+      "data_type": "integer",
+      "udt_name": "int4",
+      "is_nullable": "NO",
+      "column_default": "10"
+    },
+    {
+      "table_name": "character_sheets",
+      "ordinal_position": 13,
+      "column_name": "charisma",
+      "data_type": "integer",
+      "udt_name": "int4",
+      "is_nullable": "NO",
+      "column_default": "10"
+    },
+    {
+      "table_name": "character_sheets",
+      "ordinal_position": 14,
+      "column_name": "hp_current",
+      "data_type": "integer",
+      "udt_name": "int4",
+      "is_nullable": "NO",
+      "column_default": "10"
+    },
+    {
+      "table_name": "character_sheets",
+      "ordinal_position": 15,
+      "column_name": "hp_max",
+      "data_type": "integer",
+      "udt_name": "int4",
+      "is_nullable": "NO",
+      "column_default": "10"
+    },
+    {
+      "table_name": "character_sheets",
+      "ordinal_position": 16,
+      "column_name": "hp_temp",
+      "data_type": "integer",
+      "udt_name": "int4",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "character_sheets",
+      "ordinal_position": 17,
+      "column_name": "status",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "character_sheets",
+      "ordinal_position": 18,
+      "column_name": "inventory",
+      "data_type": "jsonb",
+      "udt_name": "jsonb",
+      "is_nullable": "NO",
+      "column_default": "'[]'::jsonb"
+    },
+    {
+      "table_name": "character_sheets",
+      "ordinal_position": 19,
+      "column_name": "equipment",
+      "data_type": "jsonb",
+      "udt_name": "jsonb",
+      "is_nullable": "NO",
+      "column_default": "'[]'::jsonb"
+    },
+    {
+      "table_name": "character_sheets",
+      "ordinal_position": 20,
+      "column_name": "spells",
+      "data_type": "jsonb",
+      "udt_name": "jsonb",
+      "is_nullable": "NO",
+      "column_default": "'[]'::jsonb"
+    },
+    {
+      "table_name": "character_sheets",
+      "ordinal_position": 21,
+      "column_name": "abilities",
+      "data_type": "jsonb",
+      "udt_name": "jsonb",
+      "is_nullable": "NO",
+      "column_default": "'[]'::jsonb"
+    },
+    {
+      "table_name": "character_sheets",
+      "ordinal_position": 22,
+      "column_name": "public_notes",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "character_sheets",
+      "ordinal_position": 23,
+      "column_name": "private_notes",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "character_sheets",
+      "ordinal_position": 24,
+      "column_name": "created_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz",
+      "is_nullable": "NO",
+      "column_default": "now()"
+    },
+    {
+      "table_name": "character_sheets",
+      "ordinal_position": 25,
+      "column_name": "updated_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "conversation_participants",
+      "ordinal_position": 1,
+      "column_name": "conversation_id",
+      "data_type": "uuid",
+      "udt_name": "uuid",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "conversation_participants",
+      "ordinal_position": 2,
+      "column_name": "profile_id",
+      "data_type": "uuid",
+      "udt_name": "uuid",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "conversation_participants",
+      "ordinal_position": 3,
+      "column_name": "added_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz",
+      "is_nullable": "NO",
+      "column_default": "now()"
+    },
+    {
+      "table_name": "conversations",
+      "ordinal_position": 1,
+      "column_name": "id",
+      "data_type": "uuid",
+      "udt_name": "uuid",
+      "is_nullable": "NO",
+      "column_default": "gen_random_uuid()"
+    },
+    {
+      "table_name": "conversations",
+      "ordinal_position": 2,
+      "column_name": "scenario_id",
+      "data_type": "uuid",
+      "udt_name": "uuid",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "conversations",
+      "ordinal_position": 3,
+      "column_name": "title",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "conversations",
+      "ordinal_position": 4,
+      "column_name": "avatar_url",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "conversations",
+      "ordinal_position": 5,
+      "column_name": "created_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz",
+      "is_nullable": "NO",
+      "column_default": "now()"
+    },
+    {
+      "table_name": "conversations",
+      "ordinal_position": 6,
+      "column_name": "updated_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "conversations",
+      "ordinal_position": 7,
+      "column_name": "last_message_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "global_tags",
+      "ordinal_position": 1,
+      "column_name": "key",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "global_tags",
+      "ordinal_position": 2,
+      "column_name": "name",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "global_tags",
+      "ordinal_position": 3,
+      "column_name": "color",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "global_tags",
+      "ordinal_position": 4,
+      "column_name": "created_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz",
+      "is_nullable": "NO",
+      "column_default": "now()"
+    },
+    {
+      "table_name": "global_tags",
+      "ordinal_position": 5,
+      "column_name": "updated_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "likes",
+      "ordinal_position": 1,
+      "column_name": "scenario_id",
+      "data_type": "uuid",
+      "udt_name": "uuid",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "likes",
+      "ordinal_position": 2,
+      "column_name": "profile_id",
+      "data_type": "uuid",
+      "udt_name": "uuid",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "likes",
+      "ordinal_position": 3,
+      "column_name": "post_id",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "likes",
+      "ordinal_position": 4,
+      "column_name": "created_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz",
+      "is_nullable": "NO",
+      "column_default": "now()"
+    },
+    {
+      "table_name": "likes",
+      "ordinal_position": 5,
+      "column_name": "id",
+      "data_type": "uuid",
+      "udt_name": "uuid",
+      "is_nullable": "NO",
+      "column_default": "gen_random_uuid()"
+    },
+    {
+      "table_name": "message_reads",
+      "ordinal_position": 1,
+      "column_name": "id",
+      "data_type": "uuid",
+      "udt_name": "uuid",
+      "is_nullable": "NO",
+      "column_default": "gen_random_uuid()"
+    },
+    {
+      "table_name": "message_reads",
+      "ordinal_position": 2,
+      "column_name": "message_id",
+      "data_type": "uuid",
+      "udt_name": "uuid",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "message_reads",
+      "ordinal_position": 3,
+      "column_name": "profile_id",
+      "data_type": "uuid",
+      "udt_name": "uuid",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "message_reads",
+      "ordinal_position": 4,
+      "column_name": "read_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz",
+      "is_nullable": "NO",
+      "column_default": "now()"
+    },
+    {
+      "table_name": "messages",
+      "ordinal_position": 1,
+      "column_name": "id",
+      "data_type": "uuid",
+      "udt_name": "uuid",
+      "is_nullable": "NO",
+      "column_default": "gen_random_uuid()"
+    },
+    {
+      "table_name": "messages",
+      "ordinal_position": 2,
+      "column_name": "scenario_id",
+      "data_type": "uuid",
+      "udt_name": "uuid",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "messages",
+      "ordinal_position": 3,
+      "column_name": "conversation_id",
+      "data_type": "uuid",
+      "udt_name": "uuid",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "messages",
+      "ordinal_position": 4,
+      "column_name": "sender_profile_id",
+      "data_type": "uuid",
+      "udt_name": "uuid",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "messages",
+      "ordinal_position": 5,
+      "column_name": "text",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "messages",
+      "ordinal_position": 6,
+      "column_name": "created_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz",
+      "is_nullable": "NO",
+      "column_default": "now()"
+    },
+    {
+      "table_name": "messages",
+      "ordinal_position": 7,
+      "column_name": "updated_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "messages",
+      "ordinal_position": 8,
+      "column_name": "edited_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "messages",
+      "ordinal_position": 9,
+      "column_name": "image_urls",
+      "data_type": "ARRAY",
+      "udt_name": "_text",
+      "is_nullable": "NO",
+      "column_default": "'{}'::text[]"
+    },
+    {
+      "table_name": "messages",
+      "ordinal_position": 10,
+      "column_name": "kind",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "NO",
+      "column_default": "'text'::text"
+    },
+    {
+      "table_name": "messages",
+      "ordinal_position": 11,
+      "column_name": "sender_user_id",
+      "data_type": "uuid",
+      "udt_name": "uuid",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "posts",
+      "ordinal_position": 1,
+      "column_name": "id",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "NO",
+      "column_default": "gen_random_uuid()"
+    },
+    {
+      "table_name": "posts",
+      "ordinal_position": 2,
+      "column_name": "scenario_id",
+      "data_type": "uuid",
+      "udt_name": "uuid",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "posts",
+      "ordinal_position": 3,
+      "column_name": "author_profile_id",
+      "data_type": "uuid",
+      "udt_name": "uuid",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "posts",
+      "ordinal_position": 4,
+      "column_name": "text",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "posts",
+      "ordinal_position": 5,
+      "column_name": "image_urls",
+      "data_type": "ARRAY",
+      "udt_name": "_text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "posts",
+      "ordinal_position": 6,
+      "column_name": "reply_count",
+      "data_type": "integer",
+      "udt_name": "int4",
+      "is_nullable": "NO",
+      "column_default": "0"
+    },
+    {
+      "table_name": "posts",
+      "ordinal_position": 7,
+      "column_name": "repost_count",
+      "data_type": "integer",
+      "udt_name": "int4",
+      "is_nullable": "NO",
+      "column_default": "0"
+    },
+    {
+      "table_name": "posts",
+      "ordinal_position": 8,
+      "column_name": "like_count",
+      "data_type": "integer",
+      "udt_name": "int4",
+      "is_nullable": "NO",
+      "column_default": "0"
+    },
+    {
+      "table_name": "posts",
+      "ordinal_position": 9,
+      "column_name": "parent_post_id",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "posts",
+      "ordinal_position": 10,
+      "column_name": "quoted_post_id",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "posts",
+      "ordinal_position": 11,
+      "column_name": "created_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz",
+      "is_nullable": "NO",
+      "column_default": "now()"
+    },
+    {
+      "table_name": "posts",
+      "ordinal_position": 12,
+      "column_name": "updated_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "posts",
+      "ordinal_position": 13,
+      "column_name": "inserted_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz",
+      "is_nullable": "NO",
+      "column_default": "now()"
+    },
+    {
+      "table_name": "posts",
+      "ordinal_position": 14,
+      "column_name": "post_type",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "NO",
+      "column_default": "'rp'::text"
+    },
+    {
+      "table_name": "posts",
+      "ordinal_position": 15,
+      "column_name": "meta",
+      "data_type": "jsonb",
+      "udt_name": "jsonb",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "posts",
+      "ordinal_position": 16,
+      "column_name": "is_pinned",
+      "data_type": "boolean",
+      "udt_name": "bool",
+      "is_nullable": "NO",
+      "column_default": "false"
+    },
+    {
+      "table_name": "posts",
+      "ordinal_position": 17,
+      "column_name": "pin_order",
+      "data_type": "integer",
+      "udt_name": "int4",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "posts",
+      "ordinal_position": 18,
+      "column_name": "author_user_id",
+      "data_type": "uuid",
+      "udt_name": "uuid",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "profiles",
+      "ordinal_position": 1,
+      "column_name": "id",
+      "data_type": "uuid",
+      "udt_name": "uuid",
+      "is_nullable": "NO",
+      "column_default": "gen_random_uuid()"
+    },
+    {
+      "table_name": "profiles",
+      "ordinal_position": 2,
+      "column_name": "scenario_id",
+      "data_type": "uuid",
+      "udt_name": "uuid",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "profiles",
+      "ordinal_position": 3,
+      "column_name": "owner_user_id",
+      "data_type": "uuid",
+      "udt_name": "uuid",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "profiles",
+      "ordinal_position": 4,
+      "column_name": "display_name",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "profiles",
+      "ordinal_position": 5,
+      "column_name": "handle",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "profiles",
+      "ordinal_position": 6,
+      "column_name": "avatar_url",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "profiles",
+      "ordinal_position": 7,
+      "column_name": "header_url",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "profiles",
+      "ordinal_position": 8,
+      "column_name": "bio",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "profiles",
+      "ordinal_position": 9,
+      "column_name": "is_public",
+      "data_type": "boolean",
+      "udt_name": "bool",
+      "is_nullable": "NO",
+      "column_default": "false"
+    },
+    {
+      "table_name": "profiles",
+      "ordinal_position": 10,
+      "column_name": "is_private",
+      "data_type": "boolean",
+      "udt_name": "bool",
+      "is_nullable": "NO",
+      "column_default": "false"
+    },
+    {
+      "table_name": "profiles",
+      "ordinal_position": 11,
+      "column_name": "joined_date",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "profiles",
+      "ordinal_position": 12,
+      "column_name": "location",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "profiles",
+      "ordinal_position": 13,
+      "column_name": "link",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "profiles",
+      "ordinal_position": 14,
+      "column_name": "follower_count",
+      "data_type": "integer",
+      "udt_name": "int4",
+      "is_nullable": "NO",
+      "column_default": "0"
+    },
+    {
+      "table_name": "profiles",
+      "ordinal_position": 15,
+      "column_name": "following_count",
+      "data_type": "integer",
+      "udt_name": "int4",
+      "is_nullable": "NO",
+      "column_default": "0"
+    },
+    {
+      "table_name": "profiles",
+      "ordinal_position": 16,
+      "column_name": "created_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz",
+      "is_nullable": "NO",
+      "column_default": "now()"
+    },
+    {
+      "table_name": "profiles",
+      "ordinal_position": 17,
+      "column_name": "updated_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "reposts",
+      "ordinal_position": 1,
+      "column_name": "id",
+      "data_type": "character varying",
+      "udt_name": "varchar",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "reposts",
+      "ordinal_position": 2,
+      "column_name": "scenario_id",
+      "data_type": "character varying",
+      "udt_name": "varchar",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "reposts",
+      "ordinal_position": 3,
+      "column_name": "profile_id",
+      "data_type": "character varying",
+      "udt_name": "varchar",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "reposts",
+      "ordinal_position": 4,
+      "column_name": "post_id",
+      "data_type": "character varying",
+      "udt_name": "varchar",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "reposts",
+      "ordinal_position": 5,
+      "column_name": "created_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "scenario_players",
+      "ordinal_position": 1,
+      "column_name": "scenario_id",
+      "data_type": "uuid",
+      "udt_name": "uuid",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "scenario_players",
+      "ordinal_position": 2,
+      "column_name": "user_id",
+      "data_type": "uuid",
+      "udt_name": "uuid",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "scenario_tags",
+      "ordinal_position": 1,
+      "column_name": "scenario_id",
+      "data_type": "uuid",
+      "udt_name": "uuid",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "scenario_tags",
+      "ordinal_position": 2,
+      "column_name": "tag_key",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "scenario_tags",
+      "ordinal_position": 3,
+      "column_name": "created_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz",
+      "is_nullable": "NO",
+      "column_default": "now()"
+    },
+    {
+      "table_name": "scenarios",
+      "ordinal_position": 1,
+      "column_name": "id",
+      "data_type": "uuid",
+      "udt_name": "uuid",
+      "is_nullable": "NO",
+      "column_default": "gen_random_uuid()"
+    },
+    {
+      "table_name": "scenarios",
+      "ordinal_position": 2,
+      "column_name": "name",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "scenarios",
+      "ordinal_position": 3,
+      "column_name": "cover",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "scenarios",
+      "ordinal_position": 4,
+      "column_name": "created_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz",
+      "is_nullable": "NO",
+      "column_default": "now()"
+    },
+    {
+      "table_name": "scenarios",
+      "ordinal_position": 5,
+      "column_name": "updated_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "scenarios",
+      "ordinal_position": 6,
+      "column_name": "invite_code",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "scenarios",
+      "ordinal_position": 7,
+      "column_name": "owner_user_id",
+      "data_type": "uuid",
+      "udt_name": "uuid",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "scenarios",
+      "ordinal_position": 8,
+      "column_name": "description",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "scenarios",
+      "ordinal_position": 9,
+      "column_name": "mode",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "NO",
+      "column_default": "'story'::text"
+    },
+    {
+      "table_name": "scenarios",
+      "ordinal_position": 10,
+      "column_name": "gm_user_ids",
+      "data_type": "ARRAY",
+      "udt_name": "_uuid",
+      "is_nullable": "NO",
+      "column_default": "'{}'::uuid[]"
+    },
+    {
+      "table_name": "scenarios",
+      "ordinal_position": 11,
+      "column_name": "settings",
+      "data_type": "jsonb",
+      "udt_name": "jsonb",
+      "is_nullable": "NO",
+      "column_default": "'{}'::jsonb"
+    },
+    {
+      "table_name": "selected_profile_by_user_scenario",
+      "ordinal_position": 1,
+      "column_name": "user_id",
+      "data_type": "uuid",
+      "udt_name": "uuid",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "selected_profile_by_user_scenario",
+      "ordinal_position": 2,
+      "column_name": "scenario_id",
+      "data_type": "uuid",
+      "udt_name": "uuid",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "selected_profile_by_user_scenario",
+      "ordinal_position": 3,
+      "column_name": "profile_id",
+      "data_type": "uuid",
+      "udt_name": "uuid",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "selected_profile_by_user_scenario",
+      "ordinal_position": 4,
+      "column_name": "updated_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz",
+      "is_nullable": "NO",
+      "column_default": "now()"
+    },
+    {
+      "table_name": "user_push_tokens",
+      "ordinal_position": 1,
+      "column_name": "id",
+      "data_type": "uuid",
+      "udt_name": "uuid",
+      "is_nullable": "NO",
+      "column_default": "gen_random_uuid()"
+    },
+    {
+      "table_name": "user_push_tokens",
+      "ordinal_position": 2,
+      "column_name": "user_id",
+      "data_type": "uuid",
+      "udt_name": "uuid",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "user_push_tokens",
+      "ordinal_position": 3,
+      "column_name": "expo_push_token",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "user_push_tokens",
+      "ordinal_position": 4,
+      "column_name": "platform",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "user_push_tokens",
+      "ordinal_position": 5,
+      "column_name": "created_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz",
+      "is_nullable": "NO",
+      "column_default": "now()"
+    },
+    {
+      "table_name": "user_push_tokens",
+      "ordinal_position": 6,
+      "column_name": "updated_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz",
+      "is_nullable": "NO",
+      "column_default": "now()"
+    },
+    {
+      "table_name": "user_sessions",
+      "ordinal_position": 1,
+      "column_name": "id",
+      "data_type": "uuid",
+      "udt_name": "uuid",
+      "is_nullable": "NO",
+      "column_default": "gen_random_uuid()"
+    },
+    {
+      "table_name": "user_sessions",
+      "ordinal_position": 2,
+      "column_name": "user_id",
+      "data_type": "uuid",
+      "udt_name": "uuid",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "user_sessions",
+      "ordinal_position": 3,
+      "column_name": "token_hash",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "user_sessions",
+      "ordinal_position": 4,
+      "column_name": "user_agent",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "user_sessions",
+      "ordinal_position": 5,
+      "column_name": "ip",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "user_sessions",
+      "ordinal_position": 6,
+      "column_name": "created_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz",
+      "is_nullable": "NO",
+      "column_default": "now()"
+    },
+    {
+      "table_name": "user_sessions",
+      "ordinal_position": 7,
+      "column_name": "last_seen_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz",
+      "is_nullable": "NO",
+      "column_default": "now()"
+    },
+    {
+      "table_name": "user_sessions",
+      "ordinal_position": 8,
+      "column_name": "revoked_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "user_sessions",
+      "ordinal_position": 9,
+      "column_name": "revoked_reason",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "users",
+      "ordinal_position": 1,
+      "column_name": "id",
+      "data_type": "uuid",
+      "udt_name": "uuid",
+      "is_nullable": "NO",
+      "column_default": "gen_random_uuid()"
+    },
+    {
+      "table_name": "users",
+      "ordinal_position": 2,
+      "column_name": "username",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "users",
+      "ordinal_position": 3,
+      "column_name": "avatar_url",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "users",
+      "ordinal_position": 4,
+      "column_name": "settings",
+      "data_type": "jsonb",
+      "udt_name": "jsonb",
+      "is_nullable": "NO",
+      "column_default": "'{}'::jsonb"
+    },
+    {
+      "table_name": "users",
+      "ordinal_position": 5,
+      "column_name": "created_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz",
+      "is_nullable": "NO",
+      "column_default": "now()"
+    },
+    {
+      "table_name": "users",
+      "ordinal_position": 6,
+      "column_name": "updated_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "users",
+      "ordinal_position": 7,
+      "column_name": "name",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "users",
+      "ordinal_position": 8,
+      "column_name": "email",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "users",
+      "ordinal_position": 9,
+      "column_name": "password_hash",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "users",
+      "ordinal_position": 10,
+      "column_name": "deleted_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "users",
+      "ordinal_position": 11,
+      "column_name": "is_deleted",
+      "data_type": "boolean",
+      "udt_name": "bool",
+      "is_nullable": "NO",
+      "column_default": "false"
+    }
+  ],
+  "constraints": [
+    {
+      "constraint_name": "app_meta_pkey",
+      "table_name": "app_meta",
+      "constraint_type": "p",
+      "definition": "PRIMARY KEY (key)"
+    },
+    {
+      "constraint_name": "auth_identities_user_id_fkey",
+      "table_name": "auth_identities",
+      "constraint_type": "f",
+      "definition": "FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE"
+    },
+    {
+      "constraint_name": "auth_identities_pkey",
+      "table_name": "auth_identities",
+      "constraint_type": "p",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "constraint_name": "character_sheets_profile_id_fkey",
+      "table_name": "character_sheets",
+      "constraint_type": "f",
+      "definition": "FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE"
+    },
+    {
+      "constraint_name": "character_sheets_pkey",
+      "table_name": "character_sheets",
+      "constraint_type": "p",
+      "definition": "PRIMARY KEY (profile_id)"
+    },
+    {
+      "constraint_name": "conversation_participants_conversation_id_fkey",
+      "table_name": "conversation_participants",
+      "constraint_type": "f",
+      "definition": "FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE"
+    },
+    {
+      "constraint_name": "conversation_participants_profile_id_fkey",
+      "table_name": "conversation_participants",
+      "constraint_type": "f",
+      "definition": "FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE"
+    },
+    {
+      "constraint_name": "conversation_participants_pkey",
+      "table_name": "conversation_participants",
+      "constraint_type": "p",
+      "definition": "PRIMARY KEY (conversation_id, profile_id)"
+    },
+    {
+      "constraint_name": "conversations_scenario_id_fkey",
+      "table_name": "conversations",
+      "constraint_type": "f",
+      "definition": "FOREIGN KEY (scenario_id) REFERENCES scenarios(id) ON DELETE CASCADE"
+    },
+    {
+      "constraint_name": "conversations_pkey",
+      "table_name": "conversations",
+      "constraint_type": "p",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "constraint_name": "global_tags_pkey",
+      "table_name": "global_tags",
+      "constraint_type": "p",
+      "definition": "PRIMARY KEY (key)"
+    },
+    {
+      "constraint_name": "likes_scenario_id_fkey",
+      "table_name": "likes",
+      "constraint_type": "f",
+      "definition": "FOREIGN KEY (scenario_id) REFERENCES scenarios(id) ON DELETE CASCADE"
+    },
+    {
+      "constraint_name": "likes_scenario_id_post_id_fkey",
+      "table_name": "likes",
+      "constraint_type": "f",
+      "definition": "FOREIGN KEY (scenario_id, post_id) REFERENCES posts(scenario_id, id) ON DELETE CASCADE"
+    },
+    {
+      "constraint_name": "likes_scenario_id_profile_id_fkey",
+      "table_name": "likes",
+      "constraint_type": "f",
+      "definition": "FOREIGN KEY (scenario_id, profile_id) REFERENCES profiles(scenario_id, id) ON DELETE CASCADE"
+    },
+    {
+      "constraint_name": "likes_pkey",
+      "table_name": "likes",
+      "constraint_type": "p",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "constraint_name": "likes_profile_post_unique",
+      "table_name": "likes",
+      "constraint_type": "u",
+      "definition": "UNIQUE (scenario_id, profile_id, post_id)"
+    },
+    {
+      "constraint_name": "message_reads_message_id_fkey",
+      "table_name": "message_reads",
+      "constraint_type": "f",
+      "definition": "FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE"
+    },
+    {
+      "constraint_name": "message_reads_profile_id_fkey",
+      "table_name": "message_reads",
+      "constraint_type": "f",
+      "definition": "FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE"
+    },
+    {
+      "constraint_name": "message_reads_pkey",
+      "table_name": "message_reads",
+      "constraint_type": "p",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "constraint_name": "message_reads_message_id_profile_id_key",
+      "table_name": "message_reads",
+      "constraint_type": "u",
+      "definition": "UNIQUE (message_id, profile_id)"
+    },
+    {
+      "constraint_name": "messages_conversation_id_fkey",
+      "table_name": "messages",
+      "constraint_type": "f",
+      "definition": "FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE"
+    },
+    {
+      "constraint_name": "messages_scenario_id_fkey",
+      "table_name": "messages",
+      "constraint_type": "f",
+      "definition": "FOREIGN KEY (scenario_id) REFERENCES scenarios(id) ON DELETE CASCADE"
+    },
+    {
+      "constraint_name": "messages_sender_profile_id_fkey",
+      "table_name": "messages",
+      "constraint_type": "f",
+      "definition": "FOREIGN KEY (sender_profile_id) REFERENCES profiles(id) ON DELETE RESTRICT"
+    },
+    {
+      "constraint_name": "messages_sender_user_id_fkey",
+      "table_name": "messages",
+      "constraint_type": "f",
+      "definition": "FOREIGN KEY (sender_user_id) REFERENCES users(id) ON DELETE RESTRICT"
+    },
+    {
+      "constraint_name": "messages_pkey",
+      "table_name": "messages",
+      "constraint_type": "p",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "constraint_name": "posts_author_profile_id_fkey",
+      "table_name": "posts",
+      "constraint_type": "f",
+      "definition": "FOREIGN KEY (author_profile_id) REFERENCES profiles(id) ON DELETE CASCADE"
+    },
+    {
+      "constraint_name": "posts_author_user_id_fkey",
+      "table_name": "posts",
+      "constraint_type": "f",
+      "definition": "FOREIGN KEY (author_user_id) REFERENCES users(id) ON DELETE RESTRICT"
+    },
+    {
+      "constraint_name": "posts_parent_post_id_fkey",
+      "table_name": "posts",
+      "constraint_type": "f",
+      "definition": "FOREIGN KEY (parent_post_id) REFERENCES posts(id) ON DELETE SET NULL"
+    },
+    {
+      "constraint_name": "posts_quoted_post_id_fkey",
+      "table_name": "posts",
+      "constraint_type": "f",
+      "definition": "FOREIGN KEY (quoted_post_id) REFERENCES posts(id) ON DELETE SET NULL"
+    },
+    {
+      "constraint_name": "posts_scenario_id_fkey",
+      "table_name": "posts",
+      "constraint_type": "f",
+      "definition": "FOREIGN KEY (scenario_id) REFERENCES scenarios(id) ON DELETE CASCADE"
+    },
+    {
+      "constraint_name": "posts_pkey",
+      "table_name": "posts",
+      "constraint_type": "p",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "constraint_name": "profiles_owner_user_id_fkey",
+      "table_name": "profiles",
+      "constraint_type": "f",
+      "definition": "FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE"
+    },
+    {
+      "constraint_name": "profiles_scenario_id_fkey",
+      "table_name": "profiles",
+      "constraint_type": "f",
+      "definition": "FOREIGN KEY (scenario_id) REFERENCES scenarios(id) ON DELETE CASCADE"
+    },
+    {
+      "constraint_name": "profiles_pkey",
+      "table_name": "profiles",
+      "constraint_type": "p",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "constraint_name": "repost_pkey",
+      "table_name": "reposts",
+      "constraint_type": "p",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "constraint_name": "scenario_players_scenario_id_fkey",
+      "table_name": "scenario_players",
+      "constraint_type": "f",
+      "definition": "FOREIGN KEY (scenario_id) REFERENCES scenarios(id) ON DELETE CASCADE"
+    },
+    {
+      "constraint_name": "scenario_players_user_id_fkey",
+      "table_name": "scenario_players",
+      "constraint_type": "f",
+      "definition": "FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE"
+    },
+    {
+      "constraint_name": "scenario_players_pkey",
+      "table_name": "scenario_players",
+      "constraint_type": "p",
+      "definition": "PRIMARY KEY (scenario_id, user_id)"
+    },
+    {
+      "constraint_name": "scenario_tags_scenario_id_fkey",
+      "table_name": "scenario_tags",
+      "constraint_type": "f",
+      "definition": "FOREIGN KEY (scenario_id) REFERENCES scenarios(id) ON DELETE CASCADE"
+    },
+    {
+      "constraint_name": "scenario_tags_tag_key_fkey",
+      "table_name": "scenario_tags",
+      "constraint_type": "f",
+      "definition": "FOREIGN KEY (tag_key) REFERENCES global_tags(key) ON DELETE RESTRICT"
+    },
+    {
+      "constraint_name": "scenario_tags_pkey",
+      "table_name": "scenario_tags",
+      "constraint_type": "p",
+      "definition": "PRIMARY KEY (scenario_id, tag_key)"
+    },
+    {
+      "constraint_name": "scenarios_owner_user_fk",
+      "table_name": "scenarios",
+      "constraint_type": "f",
+      "definition": "FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE RESTRICT"
+    },
+    {
+      "constraint_name": "scenarios_pkey",
+      "table_name": "scenarios",
+      "constraint_type": "p",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "constraint_name": "selected_profile_by_user_scenario_profile_id_fkey",
+      "table_name": "selected_profile_by_user_scenario",
+      "constraint_type": "f",
+      "definition": "FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE"
+    },
+    {
+      "constraint_name": "selected_profile_by_user_scenario_scenario_id_fkey",
+      "table_name": "selected_profile_by_user_scenario",
+      "constraint_type": "f",
+      "definition": "FOREIGN KEY (scenario_id) REFERENCES scenarios(id) ON DELETE CASCADE"
+    },
+    {
+      "constraint_name": "selected_profile_by_user_scenario_user_id_fkey",
+      "table_name": "selected_profile_by_user_scenario",
+      "constraint_type": "f",
+      "definition": "FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE"
+    },
+    {
+      "constraint_name": "selected_profile_by_user_scenario_pkey",
+      "table_name": "selected_profile_by_user_scenario",
+      "constraint_type": "p",
+      "definition": "PRIMARY KEY (user_id, scenario_id)"
+    },
+    {
+      "constraint_name": "user_push_tokens_user_id_fkey",
+      "table_name": "user_push_tokens",
+      "constraint_type": "f",
+      "definition": "FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE"
+    },
+    {
+      "constraint_name": "user_push_tokens_pkey",
+      "table_name": "user_push_tokens",
+      "constraint_type": "p",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "constraint_name": "user_push_tokens_user_id_expo_push_token_key",
+      "table_name": "user_push_tokens",
+      "constraint_type": "u",
+      "definition": "UNIQUE (user_id, expo_push_token)"
+    },
+    {
+      "constraint_name": "user_sessions_user_id_fkey",
+      "table_name": "user_sessions",
+      "constraint_type": "f",
+      "definition": "FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE"
+    },
+    {
+      "constraint_name": "user_sessions_pkey",
+      "table_name": "user_sessions",
+      "constraint_type": "p",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "constraint_name": "user_sessions_token_hash_key",
+      "table_name": "user_sessions",
+      "constraint_type": "u",
+      "definition": "UNIQUE (token_hash)"
+    },
+    {
+      "constraint_name": "users_pkey",
+      "table_name": "users",
+      "constraint_type": "p",
+      "definition": "PRIMARY KEY (id)"
+    }
+  ],
+  "indexes": [
+    {
+      "schemaname": "public",
+      "table_name": "app_meta",
+      "indexname": "app_meta_pkey",
+      "indexdef": "CREATE UNIQUE INDEX app_meta_pkey ON public.app_meta USING btree (key)"
+    },
+    {
+      "schemaname": "public",
+      "table_name": "auth_identities",
+      "indexname": "auth_identities_pkey",
+      "indexdef": "CREATE UNIQUE INDEX auth_identities_pkey ON public.auth_identities USING btree (id)"
+    },
+    {
+      "schemaname": "public",
+      "table_name": "auth_identities",
+      "indexname": "auth_identities_provider_uidx",
+      "indexdef": "CREATE UNIQUE INDEX auth_identities_provider_uidx ON public.auth_identities USING btree (provider, provider_user_id)"
+    },
+    {
+      "schemaname": "public",
+      "table_name": "auth_identities",
+      "indexname": "auth_identities_user_idx",
+      "indexdef": "CREATE INDEX auth_identities_user_idx ON public.auth_identities USING btree (user_id)"
+    },
+    {
+      "schemaname": "public",
+      "table_name": "auth_identities",
+      "indexname": "auth_identities_user_provider_uidx",
+      "indexdef": "CREATE UNIQUE INDEX auth_identities_user_provider_uidx ON public.auth_identities USING btree (user_id, provider)"
+    },
+    {
+      "schemaname": "public",
+      "table_name": "character_sheets",
+      "indexname": "character_sheets_pkey",
+      "indexdef": "CREATE UNIQUE INDEX character_sheets_pkey ON public.character_sheets USING btree (profile_id)"
+    },
+    {
+      "schemaname": "public",
+      "table_name": "conversation_participants",
+      "indexname": "conversation_participants_pkey",
+      "indexdef": "CREATE UNIQUE INDEX conversation_participants_pkey ON public.conversation_participants USING btree (conversation_id, profile_id)"
+    },
+    {
+      "schemaname": "public",
+      "table_name": "conversation_participants",
+      "indexname": "idx_conversation_participants_profile",
+      "indexdef": "CREATE INDEX idx_conversation_participants_profile ON public.conversation_participants USING btree (profile_id, conversation_id)"
+    },
+    {
+      "schemaname": "public",
+      "table_name": "conversations",
+      "indexname": "conversations_pkey",
+      "indexdef": "CREATE UNIQUE INDEX conversations_pkey ON public.conversations USING btree (id)"
+    },
+    {
+      "schemaname": "public",
+      "table_name": "conversations",
+      "indexname": "idx_conversations_scenario_last_message_at",
+      "indexdef": "CREATE INDEX idx_conversations_scenario_last_message_at ON public.conversations USING btree (scenario_id, last_message_at DESC NULLS LAST)"
+    },
+    {
+      "schemaname": "public",
+      "table_name": "global_tags",
+      "indexname": "global_tags_pkey",
+      "indexdef": "CREATE UNIQUE INDEX global_tags_pkey ON public.global_tags USING btree (key)"
+    },
+    {
+      "schemaname": "public",
+      "table_name": "likes",
+      "indexname": "idx_likes_post",
+      "indexdef": "CREATE INDEX idx_likes_post ON public.likes USING btree (post_id, created_at DESC)"
+    },
+    {
+      "schemaname": "public",
+      "table_name": "likes",
+      "indexname": "idx_likes_profile",
+      "indexdef": "CREATE INDEX idx_likes_profile ON public.likes USING btree (profile_id, created_at DESC)"
+    },
+    {
+      "schemaname": "public",
+      "table_name": "likes",
+      "indexname": "idx_likes_scenario_created_at",
+      "indexdef": "CREATE INDEX idx_likes_scenario_created_at ON public.likes USING btree (scenario_id, created_at DESC)"
+    },
+    {
+      "schemaname": "public",
+      "table_name": "likes",
+      "indexname": "likes_pkey",
+      "indexdef": "CREATE UNIQUE INDEX likes_pkey ON public.likes USING btree (id)"
+    },
+    {
+      "schemaname": "public",
+      "table_name": "likes",
+      "indexname": "likes_post_idx",
+      "indexdef": "CREATE INDEX likes_post_idx ON public.likes USING btree (post_id, created_at DESC)"
+    },
+    {
+      "schemaname": "public",
+      "table_name": "likes",
+      "indexname": "likes_profile_idx",
+      "indexdef": "CREATE INDEX likes_profile_idx ON public.likes USING btree (profile_id, created_at DESC)"
+    },
+    {
+      "schemaname": "public",
+      "table_name": "likes",
+      "indexname": "likes_profile_post_unique",
+      "indexdef": "CREATE UNIQUE INDEX likes_profile_post_unique ON public.likes USING btree (scenario_id, profile_id, post_id)"
+    },
+    {
+      "schemaname": "public",
+      "table_name": "likes",
+      "indexname": "likes_scenario_idx",
+      "indexdef": "CREATE INDEX likes_scenario_idx ON public.likes USING btree (scenario_id)"
+    },
+    {
+      "schemaname": "public",
+      "table_name": "message_reads",
+      "indexname": "idx_message_reads_message",
+      "indexdef": "CREATE INDEX idx_message_reads_message ON public.message_reads USING btree (message_id)"
+    },
+    {
+      "schemaname": "public",
+      "table_name": "message_reads",
+      "indexname": "idx_message_reads_profile",
+      "indexdef": "CREATE INDEX idx_message_reads_profile ON public.message_reads USING btree (profile_id)"
+    },
+    {
+      "schemaname": "public",
+      "table_name": "message_reads",
+      "indexname": "message_reads_message_id_profile_id_key",
+      "indexdef": "CREATE UNIQUE INDEX message_reads_message_id_profile_id_key ON public.message_reads USING btree (message_id, profile_id)"
+    },
+    {
+      "schemaname": "public",
+      "table_name": "message_reads",
+      "indexname": "message_reads_pkey",
+      "indexdef": "CREATE UNIQUE INDEX message_reads_pkey ON public.message_reads USING btree (id)"
+    },
+    {
+      "schemaname": "public",
+      "table_name": "messages",
+      "indexname": "idx_messages_conversation_created_at",
+      "indexdef": "CREATE INDEX idx_messages_conversation_created_at ON public.messages USING btree (conversation_id, created_at)"
+    },
+    {
+      "schemaname": "public",
+      "table_name": "messages",
+      "indexname": "idx_messages_scenario_created_at",
+      "indexdef": "CREATE INDEX idx_messages_scenario_created_at ON public.messages USING btree (scenario_id, created_at)"
+    },
+    {
+      "schemaname": "public",
+      "table_name": "messages",
+      "indexname": "idx_messages_sender_user_id_created_at",
+      "indexdef": "CREATE INDEX idx_messages_sender_user_id_created_at ON public.messages USING btree (sender_user_id, created_at)"
+    },
+    {
+      "schemaname": "public",
+      "table_name": "messages",
+      "indexname": "messages_pkey",
+      "indexdef": "CREATE UNIQUE INDEX messages_pkey ON public.messages USING btree (id)"
+    },
+    {
+      "schemaname": "public",
+      "table_name": "posts",
+      "indexname": "idx_posts_author_user_id_created_at",
+      "indexdef": "CREATE INDEX idx_posts_author_user_id_created_at ON public.posts USING btree (author_user_id, created_at DESC, id DESC)"
+    },
+    {
+      "schemaname": "public",
+      "table_name": "posts",
+      "indexname": "posts_author_created_idx",
+      "indexdef": "CREATE INDEX posts_author_created_idx ON public.posts USING btree (author_profile_id, created_at DESC)"
+    },
+    {
+      "schemaname": "public",
+      "table_name": "posts",
+      "indexname": "posts_parent_idx",
+      "indexdef": "CREATE INDEX posts_parent_idx ON public.posts USING btree (parent_post_id)"
+    },
+    {
+      "schemaname": "public",
+      "table_name": "posts",
+      "indexname": "posts_pins_idx",
+      "indexdef": "CREATE INDEX posts_pins_idx ON public.posts USING btree (scenario_id, is_pinned, pin_order) WHERE (is_pinned = true)"
+    },
+    {
+      "schemaname": "public",
+      "table_name": "posts",
+      "indexname": "posts_pkey",
+      "indexdef": "CREATE UNIQUE INDEX posts_pkey ON public.posts USING btree (id)"
+    },
+    {
+      "schemaname": "public",
+      "table_name": "posts",
+      "indexname": "posts_post_type_idx",
+      "indexdef": "CREATE INDEX posts_post_type_idx ON public.posts USING btree (scenario_id, post_type)"
+    },
+    {
+      "schemaname": "public",
+      "table_name": "posts",
+      "indexname": "posts_quoted_idx",
+      "indexdef": "CREATE INDEX posts_quoted_idx ON public.posts USING btree (quoted_post_id)"
+    },
+    {
+      "schemaname": "public",
+      "table_name": "posts",
+      "indexname": "posts_scenario_created_idx",
+      "indexdef": "CREATE INDEX posts_scenario_created_idx ON public.posts USING btree (scenario_id, created_at DESC)"
+    },
+    {
+      "schemaname": "public",
+      "table_name": "posts",
+      "indexname": "posts_scenario_id_id_uidx",
+      "indexdef": "CREATE UNIQUE INDEX posts_scenario_id_id_uidx ON public.posts USING btree (scenario_id, id)"
+    },
+    {
+      "schemaname": "public",
+      "table_name": "posts",
+      "indexname": "posts_scenario_inserted_idx",
+      "indexdef": "CREATE INDEX posts_scenario_inserted_idx ON public.posts USING btree (scenario_id, inserted_at DESC, id DESC)"
+    },
+    {
+      "schemaname": "public",
+      "table_name": "profiles",
+      "indexname": "profiles_owner_idx",
+      "indexdef": "CREATE INDEX profiles_owner_idx ON public.profiles USING btree (owner_user_id)"
+    },
+    {
+      "schemaname": "public",
+      "table_name": "profiles",
+      "indexname": "profiles_pkey",
+      "indexdef": "CREATE UNIQUE INDEX profiles_pkey ON public.profiles USING btree (id)"
+    },
+    {
+      "schemaname": "public",
+      "table_name": "profiles",
+      "indexname": "profiles_scenario_handle_uidx",
+      "indexdef": "CREATE UNIQUE INDEX profiles_scenario_handle_uidx ON public.profiles USING btree (scenario_id, lower(handle))"
+    },
+    {
+      "schemaname": "public",
+      "table_name": "profiles",
+      "indexname": "profiles_scenario_id_id_uidx",
+      "indexdef": "CREATE UNIQUE INDEX profiles_scenario_id_id_uidx ON public.profiles USING btree (scenario_id, id)"
+    },
+    {
+      "schemaname": "public",
+      "table_name": "profiles",
+      "indexname": "profiles_scenario_idx",
+      "indexdef": "CREATE INDEX profiles_scenario_idx ON public.profiles USING btree (scenario_id)"
+    },
+    {
+      "schemaname": "public",
+      "table_name": "reposts",
+      "indexname": "repost_pkey",
+      "indexdef": "CREATE UNIQUE INDEX repost_pkey ON public.reposts USING btree (id)"
+    },
+    {
+      "schemaname": "public",
+      "table_name": "reposts",
+      "indexname": "reposts_profile_post_uidx",
+      "indexdef": "CREATE UNIQUE INDEX reposts_profile_post_uidx ON public.reposts USING btree (profile_id, post_id)"
+    },
+    {
+      "schemaname": "public",
+      "table_name": "scenario_players",
+      "indexname": "scenario_players_pkey",
+      "indexdef": "CREATE UNIQUE INDEX scenario_players_pkey ON public.scenario_players USING btree (scenario_id, user_id)"
+    },
+    {
+      "schemaname": "public",
+      "table_name": "scenario_players",
+      "indexname": "scenario_players_user_idx",
+      "indexdef": "CREATE INDEX scenario_players_user_idx ON public.scenario_players USING btree (user_id)"
+    },
+    {
+      "schemaname": "public",
+      "table_name": "scenario_tags",
+      "indexname": "scenario_tags_pkey",
+      "indexdef": "CREATE UNIQUE INDEX scenario_tags_pkey ON public.scenario_tags USING btree (scenario_id, tag_key)"
+    },
+    {
+      "schemaname": "public",
+      "table_name": "scenario_tags",
+      "indexname": "scenario_tags_tag_idx",
+      "indexdef": "CREATE INDEX scenario_tags_tag_idx ON public.scenario_tags USING btree (tag_key)"
+    },
+    {
+      "schemaname": "public",
+      "table_name": "scenarios",
+      "indexname": "scenarios_invite_code_uidx",
+      "indexdef": "CREATE UNIQUE INDEX scenarios_invite_code_uidx ON public.scenarios USING btree (upper(invite_code))"
+    },
+    {
+      "schemaname": "public",
+      "table_name": "scenarios",
+      "indexname": "scenarios_mode_idx",
+      "indexdef": "CREATE INDEX scenarios_mode_idx ON public.scenarios USING btree (mode)"
+    },
+    {
+      "schemaname": "public",
+      "table_name": "scenarios",
+      "indexname": "scenarios_owner_idx",
+      "indexdef": "CREATE INDEX scenarios_owner_idx ON public.scenarios USING btree (owner_user_id)"
+    },
+    {
+      "schemaname": "public",
+      "table_name": "scenarios",
+      "indexname": "scenarios_pkey",
+      "indexdef": "CREATE UNIQUE INDEX scenarios_pkey ON public.scenarios USING btree (id)"
+    },
+    {
+      "schemaname": "public",
+      "table_name": "selected_profile_by_user_scenario",
+      "indexname": "selected_profile_by_user_scenario_pkey",
+      "indexdef": "CREATE UNIQUE INDEX selected_profile_by_user_scenario_pkey ON public.selected_profile_by_user_scenario USING btree (user_id, scenario_id)"
+    },
+    {
+      "schemaname": "public",
+      "table_name": "selected_profile_by_user_scenario",
+      "indexname": "selected_profile_by_user_scenario_profile_idx",
+      "indexdef": "CREATE INDEX selected_profile_by_user_scenario_profile_idx ON public.selected_profile_by_user_scenario USING btree (profile_id)"
+    },
+    {
+      "schemaname": "public",
+      "table_name": "user_push_tokens",
+      "indexname": "idx_user_push_tokens_user",
+      "indexdef": "CREATE INDEX idx_user_push_tokens_user ON public.user_push_tokens USING btree (user_id)"
+    },
+    {
+      "schemaname": "public",
+      "table_name": "user_push_tokens",
+      "indexname": "user_push_tokens_pkey",
+      "indexdef": "CREATE UNIQUE INDEX user_push_tokens_pkey ON public.user_push_tokens USING btree (id)"
+    },
+    {
+      "schemaname": "public",
+      "table_name": "user_push_tokens",
+      "indexname": "user_push_tokens_user_id_expo_push_token_key",
+      "indexdef": "CREATE UNIQUE INDEX user_push_tokens_user_id_expo_push_token_key ON public.user_push_tokens USING btree (user_id, expo_push_token)"
+    },
+    {
+      "schemaname": "public",
+      "table_name": "user_sessions",
+      "indexname": "idx_user_sessions_user_active",
+      "indexdef": "CREATE INDEX idx_user_sessions_user_active ON public.user_sessions USING btree (user_id) WHERE (revoked_at IS NULL)"
+    },
+    {
+      "schemaname": "public",
+      "table_name": "user_sessions",
+      "indexname": "idx_user_sessions_user_last_seen",
+      "indexdef": "CREATE INDEX idx_user_sessions_user_last_seen ON public.user_sessions USING btree (user_id, last_seen_at DESC, id DESC)"
+    },
+    {
+      "schemaname": "public",
+      "table_name": "user_sessions",
+      "indexname": "user_sessions_pkey",
+      "indexdef": "CREATE UNIQUE INDEX user_sessions_pkey ON public.user_sessions USING btree (id)"
+    },
+    {
+      "schemaname": "public",
+      "table_name": "user_sessions",
+      "indexname": "user_sessions_token_hash_key",
+      "indexdef": "CREATE UNIQUE INDEX user_sessions_token_hash_key ON public.user_sessions USING btree (token_hash)"
+    },
+    {
+      "schemaname": "public",
+      "table_name": "users",
+      "indexname": "users_deleted_idx",
+      "indexdef": "CREATE INDEX users_deleted_idx ON public.users USING btree (is_deleted, deleted_at)"
+    },
+    {
+      "schemaname": "public",
+      "table_name": "users",
+      "indexname": "users_email_uidx",
+      "indexdef": "CREATE UNIQUE INDEX users_email_uidx ON public.users USING btree (lower(email)) WHERE (email IS NOT NULL)"
+    },
+    {
+      "schemaname": "public",
+      "table_name": "users",
+      "indexname": "users_pkey",
+      "indexdef": "CREATE UNIQUE INDEX users_pkey ON public.users USING btree (id)"
+    },
+    {
+      "schemaname": "public",
+      "table_name": "users",
+      "indexname": "users_username_uidx",
+      "indexdef": "CREATE UNIQUE INDEX users_username_uidx ON public.users USING btree (lower(username))"
+    }
+  ],
+  "triggers": [
+    {
+      "table_name": "messages",
+      "trigger_name": "trg_messages_touch_conversation_last_message",
+      "definition": "CREATE TRIGGER trg_messages_touch_conversation_last_message AFTER INSERT ON messages FOR EACH ROW EXECUTE FUNCTION touch_conversation_last_message()",
+      "enabled": "O"
+    }
+  ],
+  "tableStats": [
+    {
+      "table_name": "message_reads",
+      "approx_rows": "5636",
+      "total_bytes": "1458176",
+      "table_bytes": "565248",
+      "index_bytes": "892928"
+    },
+    {
+      "table_name": "messages",
+      "approx_rows": "2048",
+      "total_bytes": "1040384",
+      "table_bytes": "532480",
+      "index_bytes": "507904"
+    },
+    {
+      "table_name": "posts",
+      "approx_rows": "353",
+      "total_bytes": "507904",
+      "table_bytes": "122880",
+      "index_bytes": "385024"
+    },
+    {
+      "table_name": "user_sessions",
+      "approx_rows": "12",
+      "total_bytes": "270336",
+      "table_bytes": "24576",
+      "index_bytes": "245760"
+    },
+    {
+      "table_name": "likes",
+      "approx_rows": "45",
+      "total_bytes": "147456",
+      "table_bytes": "8192",
+      "index_bytes": "139264"
+    },
+    {
+      "table_name": "profiles",
+      "approx_rows": "88",
+      "total_bytes": "147456",
+      "table_bytes": "32768",
+      "index_bytes": "114688"
+    },
+    {
+      "table_name": "users",
+      "approx_rows": "41",
+      "total_bytes": "114688",
+      "table_bytes": "16384",
+      "index_bytes": "98304"
+    },
+    {
+      "table_name": "scenarios",
+      "approx_rows": "21",
+      "total_bytes": "114688",
+      "table_bytes": "16384",
+      "index_bytes": "98304"
+    },
+    {
+      "table_name": "user_push_tokens",
+      "approx_rows": "21",
+      "total_bytes": "98304",
+      "table_bytes": "8192",
+      "index_bytes": "90112"
+    },
+    {
+      "table_name": "conversations",
+      "approx_rows": "71",
+      "total_bytes": "90112",
+      "table_bytes": "16384",
+      "index_bytes": "73728"
+    },
+    {
+      "table_name": "conversation_participants",
+      "approx_rows": "180",
+      "total_bytes": "81920",
+      "table_bytes": "16384",
+      "index_bytes": "65536"
+    },
+    {
+      "table_name": "reposts",
+      "approx_rows": "11",
+      "total_bytes": "49152",
+      "table_bytes": "8192",
+      "index_bytes": "40960"
+    },
+    {
+      "table_name": "scenario_tags",
+      "approx_rows": "33",
+      "total_bytes": "49152",
+      "table_bytes": "8192",
+      "index_bytes": "40960"
+    },
+    {
+      "table_name": "scenario_players",
+      "approx_rows": "55",
+      "total_bytes": "40960",
+      "table_bytes": "8192",
+      "index_bytes": "32768"
+    },
+    {
+      "table_name": "auth_identities",
+      "approx_rows": "0",
+      "total_bytes": "40960",
+      "table_bytes": "0",
+      "index_bytes": "40960"
+    },
+    {
+      "table_name": "global_tags",
+      "approx_rows": "30",
+      "total_bytes": "32768",
+      "table_bytes": "8192",
+      "index_bytes": "24576"
+    },
+    {
+      "table_name": "character_sheets",
+      "approx_rows": "10",
+      "total_bytes": "32768",
+      "table_bytes": "8192",
+      "index_bytes": "24576"
+    },
+    {
+      "table_name": "app_meta",
+      "approx_rows": "0",
+      "total_bytes": "16384",
+      "table_bytes": "0",
+      "index_bytes": "16384"
+    },
+    {
+      "table_name": "selected_profile_by_user_scenario",
+      "approx_rows": "0",
+      "total_bytes": "16384",
+      "table_bytes": "0",
+      "index_bytes": "16384"
+    }
+  ]
+}
