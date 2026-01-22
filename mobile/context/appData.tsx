@@ -11,6 +11,7 @@ import type {
   Like,
   Conversation,
   Message,
+  ProfilePin,
 } from "@/data/db/schema";
 import { readDb, updateDb, writeDb } from "@/data/db/storage";
 import { seedDbIfNeeded } from "@/data/db/seed";
@@ -262,6 +263,14 @@ type AppDataApi = {
   // scenario settings
   getScenarioSettings: (scenarioId: string) => any;
   updateScenarioSettings: (scenarioId: string, patch: any) => Promise<void>;
+
+  // profile pins (one pinned post per profile)
+  getPinnedPostIdForProfile: (profileId: string) => string | null;
+  setPinnedPostForProfile: (args: {
+    scenarioId: string;
+    profileId: string;
+    postId: string | null;
+  }) => Promise<{ ok: true } | { ok: false; error: string }>;
 
   // ===== DMs =====
   listConversationsForScenario: (scenarioId: string, profileId: string) => Conversation[];
@@ -2210,6 +2219,60 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         });
 
         setState({ isReady: true, db: nextDb as any });
+      },
+
+      // --- profile pins (one pinned post per profile)
+      getPinnedPostIdForProfile: (profileId: string) => {
+        if (!db) return null;
+        const pid = String(profileId ?? "").trim();
+        if (!pid) return null;
+
+        const pins = ((db as any).profilePins ?? {}) as Record<string, ProfilePin | string>;
+        const v = pins?.[pid] as any;
+        if (!v) return null;
+        if (typeof v === "string") return v;
+        if (typeof v?.postId === "string") return v.postId;
+        return null;
+      },
+
+      setPinnedPostForProfile: async ({ scenarioId, profileId, postId }) => {
+        const sid = String(scenarioId ?? "").trim();
+        const pid = String(profileId ?? "").trim();
+        const nextPostId = postId == null ? null : String(postId).trim();
+        if (!sid) return { ok: false, error: "scenarioId is required" };
+        if (!pid) return { ok: false, error: "profileId is required" };
+
+        const prof = db?.profiles?.[pid] ?? null;
+        if (!prof) return { ok: false, error: "Profile not found" };
+        if (String((prof as any).scenarioId ?? "") !== sid) return { ok: false, error: "Profile not in scenario" };
+
+        if (nextPostId) {
+          const post = db?.posts?.[nextPostId] ?? null;
+          if (!post) return { ok: false, error: "Post not found" };
+          if (String((post as any).scenarioId ?? "") !== sid) return { ok: false, error: "Post not in scenario" };
+        }
+
+        const now = new Date().toISOString();
+        const nextDb = await updateDb((prev) => {
+          const profilePins = { ...((prev as any).profilePins ?? {}) } as Record<string, ProfilePin>;
+
+          if (!nextPostId) {
+            delete profilePins[pid];
+          } else {
+            profilePins[pid] = {
+              profileId: pid,
+              scenarioId: sid,
+              postId: nextPostId,
+              createdAt: (profilePins[pid] as any)?.createdAt ?? now,
+              updatedAt: now,
+            } as any;
+          }
+
+          return { ...prev, profilePins };
+        });
+
+        setState({ isReady: true, db: nextDb as any });
+        return { ok: true };
       },
 
       // ===== DMs =====

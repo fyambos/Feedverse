@@ -200,6 +200,14 @@ export type Like = {
   createdAt: string;
 };
 
+export type ProfilePin = {
+  profileId: string;
+  scenarioId: string;
+  postId: string;
+  createdAt: string;
+  updatedAt?: string;
+};
+
 // NOTE: migrate away from Profile.likedPostIds (legacy)
 // export type Profile = { ... likedPostIds?: string[] ... } // remove when you’re ready
 
@@ -265,4 +273,7 @@ export type DbV5 = {
   messages?: Record<string, Message>; // key = message.id
   /** User-selected conversation by scenario **/
   selectedConversationByScenario?: Record<string, string>; // key = scenarioId, value = conversationId
+
+  /** Profile pinned post (one per profile) */
+  profilePins?: Record<string, ProfilePin>; // key = profileId
 };
