@@ -12,7 +12,7 @@ import { Alert } from "@/context/dialog";
 import type { Conversation, Profile } from "@/data/db/schema";
 import { Avatar } from "@/components/ui/Avatar";
 import { pickAndPersistOneImage } from "@/components/ui/ImagePicker";
-import { formatErrorMessage } from "@/lib/format";
+import { formatErrorMessage } from "@/lib/utils/format";
 
 export default function EditGroupChatModal() {
   const scheme = useColorScheme() ?? "light";

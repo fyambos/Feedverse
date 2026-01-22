@@ -12,7 +12,7 @@ import type { Post as DbPost, Profile } from "@/data/db/schema";
 import type { PostType } from "@/lib/campaign/postTypes";
 
 import { Avatar } from "@/components/ui/Avatar";
-import { formatCount, formatDetailTimestamp } from "@/lib/format";
+import { formatCount, formatDetailTimestamp } from "@/lib/utils/format";
 
 import { PostActions } from "@/components/post/PostActions";
 import { PostHeader } from "@/components/post/PostHeader";

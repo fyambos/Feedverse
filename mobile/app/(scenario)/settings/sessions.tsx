@@ -13,7 +13,7 @@ import { Colors } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { useAuth } from "@/context/auth";
 import { Alert } from "@/context/dialog";
-import { formatErrorMessage, formatRelativeTime } from "@/lib/format";
+import { formatErrorMessage, formatRelativeTime } from "@/lib/utils/format";
 
 function Badge({ text, colors }: { text: string; colors: any }) {
   return (

@@ -13,7 +13,7 @@ import * as bcrypt from "bcryptjs";
 import type { User, UserSettings } from "@/data/db/schema";
 import { readDb, updateDb } from "@/data/db/storage"; 
 import { seedDbIfNeeded } from "@/data/db/seed";
-import { apiFetch, setAuthInvalidationHandler } from "@/lib/apiClient";
+import { apiFetch, setAuthInvalidationHandler } from "@/lib/api/apiClient";
 import { Alert } from "@/context/dialog";
 import { setCustomTintColor } from "@/constants/theme";
 import {

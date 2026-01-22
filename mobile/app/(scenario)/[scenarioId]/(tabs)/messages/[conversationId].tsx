@@ -36,11 +36,11 @@ import type { Conversation, Message, Profile } from "@/data/db/schema";
 import { AuthorAvatarPicker } from "@/components/postComposer/AuthorAvatarPicker";
 import { Avatar } from "@/components/ui/Avatar";
 import { SwipeableRow } from "@/components/ui/SwipeableRow";
-import { apiFetch } from "@/lib/apiClient";
+import { apiFetch } from "@/lib/api/apiClient";
 import { pickAndPersistManyImages } from "@/components/ui/ImagePicker";
 import { MediaGrid } from "@/components/media/MediaGrid";
 import { Lightbox } from "@/components/media/LightBox";
-import { formatErrorMessage } from "@/lib/format";
+import { formatErrorMessage } from "@/lib/utils/format";
 import { clearDraft, loadDraft, makeDraftKey, saveDraft } from "@/lib/drafts";
 
 const SEND_BTN_SCALE_DOWN = 0.92;

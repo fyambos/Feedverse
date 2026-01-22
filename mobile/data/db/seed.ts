@@ -21,7 +21,7 @@ import { MOCK_USERS } from "@/mocks/users";
 import { MOCK_SCENARIOS } from "@/mocks/scenarios";
 import { MOCK_SHEETS } from "@/mocks/sheets";
 import { MOCK_CONVERSATIONS, MOCK_MESSAGES } from "@/mocks/messages";
-import { tagKeyFromInput, buildGlobalTagFromKey } from "@/lib/tags";
+import { tagKeyFromInput, buildGlobalTagFromKey } from "@/lib/content/tags";
 
 /**
  * FORCE RESEED MODE

@@ -17,13 +17,13 @@ import type {
 } from "@/data/db/schema";
 import { readDb, updateDb, writeDb, subscribeDbChanges } from "@/data/db/storage";
 import { seedDbIfNeeded } from "@/data/db/seed";
-import { buildGlobalTagFromKey } from "@/lib/tags";
+import { buildGlobalTagFromKey } from "@/lib/content/tags";
 import { pickScenarioExportJson } from "@/lib/importExport/importFromFile";
 import { importScenarioFromJson } from "@/lib/importExport/importScenario";
 import { validateScenarioExportBundleV1 } from "@/lib/importExport/validateScenarioExport";
 import { useAuth } from "@/context/auth";
 import { usePathname, useRouter } from "expo-router";
-import { apiFetch } from "@/lib/apiClient";
+import { apiFetch } from "@/lib/api/apiClient";
 import { buildScenarioExportBundleV1 } from "@/lib/importExport/exportScenarioBundle";
 import { saveAndShareScenarioExport } from "@/lib/importExport/exportScenario";
 import BootSplash from "@/components/ui/BootSplash";

@@ -1,4 +1,4 @@
-import { Alert } from "@/context/dialog";
+import { Alert } from "../../context/dialog";
 import { InteractionManager } from "react-native";
 
 async function waitForInteractions() {

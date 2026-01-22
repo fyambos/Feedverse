@@ -15,8 +15,8 @@ import { useColorScheme } from "@/hooks/use-color-scheme";
 
 import { pickAndPersistManyImages } from "@/components/ui/ImagePicker";
 import { takeAndPersistPhoto } from "@/lib/media/takePicture";
-import { makeId } from "@/lib/format";
-import { formatErrorMessage } from "@/lib/format";
+import { makeId } from "@/lib/utils/format";
+import { formatErrorMessage } from "@/lib/utils/format";
 import { clearDraft, loadDraft, makeDraftKey, saveDraft } from "@/lib/drafts";
 
 import {

@@ -22,7 +22,7 @@ import { Colors } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 
 import { useAuth } from "@/context/auth";
-import { apiFetch } from "@/lib/apiClient";
+import { apiFetch } from "@/lib/api/apiClient";
 import { useAppData } from "@/context/appData";
 import { Alert } from "@/context/dialog";
 
@@ -34,12 +34,12 @@ import {
   tagKeyFromInput,
   tagNameFromKey,
   colorForTagKey,
-} from "@/lib/tags";
+} from "@/lib/content/tags";
 
 import { pickAndPersistOneImage } from "@/components/ui/ImagePicker";
-import { MAX_OWNED_PROFILES_PER_USER, MAX_TOTAL_PROFILES_PER_SCENARIO } from "@/lib/rules";
-import { generateInviteCode } from "@/lib/inviteCode";
-import { formatErrorMessage } from "@/lib/format";
+import { MAX_OWNED_PROFILES_PER_USER, MAX_TOTAL_PROFILES_PER_SCENARIO } from "@/lib/scenario/rules";
+import { generateInviteCode } from "@/lib/invites/inviteCode";
+import { formatErrorMessage } from "@/lib/utils/format";
 
 /* -------------------------------------------------------------------------- */
 /* Limits                                                                      */

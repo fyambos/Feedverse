@@ -14,10 +14,10 @@ import { useAuth } from "@/context/auth";
 import { consumeScenarioFeedRefreshNeeded, useAppData } from "@/context/appData";
 import { useFocusEffect } from "@react-navigation/native";
 import { SwipeableRow } from "@/components/ui/SwipeableRow";
-import { canEditPost } from "@/lib/permission";
+import { canEditPost } from "@/lib/access/permission";
 import { Avatar } from "@/components/ui/Avatar";
 import { Alert } from "@/context/dialog";
-import { formatErrorMessage } from "@/lib/format";
+import { formatErrorMessage } from "@/lib/utils/format";
 
 type Cursor = string | null;
 const PAGE_SIZE = 12;

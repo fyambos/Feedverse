@@ -1,10 +1,10 @@
 // mobile/lib/importExport/importScenario.ts
 import type { DbV5, Scenario, Profile, Post, Repost, CharacterSheet, ScenarioTag, GlobalTag, Like } from "@/data/db/schema";
-import { MAX_OWNED_PROFILES_PER_USER, MAX_TOTAL_PROFILES_PER_SCENARIO } from "@/lib/rules";
-import { generateInviteCode } from "@/lib/inviteCode";
+import { MAX_OWNED_PROFILES_PER_USER, MAX_TOTAL_PROFILES_PER_SCENARIO } from "@/lib/scenario/rules";
+import { generateInviteCode } from "@/lib/invites/inviteCode";
 import { validateScenarioExportBundleV1, isValidHandleAlnum } from "./validateScenarioExport";
 import type { ScenarioExportBundleV1 } from "./exportTypes";
-import { buildGlobalTagFromKey } from "@/lib/tags";
+import { buildGlobalTagFromKey } from "@/lib/content/tags";
 
 type ImportOptions = {
   currentUserId: string;

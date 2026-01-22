@@ -18,12 +18,12 @@ import { useAuth } from "@/context/auth";
 import { useAppData } from "@/context/appData";
 import type { Post } from "@/data/db/schema";
 
-import { canEditPost } from "@/lib/permission";
+import { canEditPost } from "@/lib/access/permission";
 
 import * as MediaLibrary from "expo-media-library";
 import { captureRef } from "react-native-view-shot";
 import { Alert } from "@/context/dialog";
-import { formatErrorMessage } from "@/lib/format";
+import { formatErrorMessage } from "@/lib/utils/format";
 
 export default function PostScreen() {
   const { scenarioId, postId, from, focusPostId: focusPostIdParam } = useLocalSearchParams<{
