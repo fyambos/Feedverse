@@ -160,3 +160,38 @@ export const UpsertUserPushTokenController = async (req: Request, res: Response)
     return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ error: error?.message || "Failed to save push token" });
   }
 };
+
+// DELETE /users/push-token
+// Body or query can include expoPushToken. If omitted, deletes all tokens for the user.
+export const DeleteUserPushTokenController = async (req: Request, res: Response) => {
+  if (req.method !== "DELETE") {
+    return res.status(405).json({ error: "Method not allowed" });
+  }
+
+  try {
+    const user = req.user as User | undefined;
+    const userId = String(user?.id ?? "").trim();
+    if (!userId) return res.status(HTTP_STATUS.UNAUTHORIZED).json({ error: "Unauthorized" });
+
+    const expoPushToken = String(
+      req.body?.expoPushToken ??
+        req.body?.expo_push_token ??
+        req.query?.expoPushToken ??
+        req.query?.expo_push_token ??
+        "",
+    ).trim();
+
+    const repo = new UserRepository();
+
+    let deleted = 0;
+    if (expoPushToken) {
+      deleted = await repo.deleteExpoPushToken({ userId, expoPushToken });
+    } else {
+      deleted = await repo.deleteAllExpoPushTokensForUser({ userId });
+    }
+
+    return res.status(HTTP_STATUS.OK).json({ ok: true, deleted });
+  } catch (error: any) {
+    return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ error: error?.message || "Failed to delete push token" });
+  }
+};

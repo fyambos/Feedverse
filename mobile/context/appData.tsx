@@ -1,3 +1,6 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
+
+const EXPO_PUSH_TOKEN_STORAGE_KEY = "feedverse.push.expoPushToken";
 // mobile/context/appData.tsx
 import React from "react";
 import { v4 as uuidv4 } from "uuid";
@@ -851,6 +854,12 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
             }
 
             if (expoPushToken) {
+              try {
+                await AsyncStorage.setItem(EXPO_PUSH_TOKEN_STORAGE_KEY, expoPushToken);
+              } catch {
+                // ignore
+              }
+
               let platform = "";
               try {
                 // Prefer react-native Platform.OS; expo-constants platform fields can be missing

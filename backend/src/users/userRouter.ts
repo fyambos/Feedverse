@@ -1,7 +1,7 @@
 import { Router } from "express";
 const userRouter = Router();
 
-import { GetUserProfileController, UpdateUserAvatarController, GetUsersByIdsController, UpdateUsernameController, UpsertUserPushTokenController } from "./userControllers";
+import { GetUserProfileController, UpdateUserAvatarController, GetUsersByIdsController, UpdateUsernameController, UpsertUserPushTokenController, DeleteUserPushTokenController } from "./userControllers";
 import { authMiddleware } from "../auth/authMiddleware";
 import { ROUTES_USERS } from "../config/constants";
 import { upload } from "../config/multer";
@@ -20,6 +20,9 @@ userRouter.patch("/username", authMiddleware, UpdateUsernameController);
 
 // POST /push-token - register Expo push token for remote notifications
 userRouter.post("/push-token", authMiddleware, UpsertUserPushTokenController);
+
+// DELETE /push-token - revoke token(s) for this user (used on logout)
+userRouter.delete("/push-token", authMiddleware, DeleteUserPushTokenController);
 
 // GET /users/sessions - list active sessions (current + other)
 userRouter.get("/sessions", authMiddleware, ListSessionsController);
