@@ -34,9 +34,9 @@ import {
   normalizeLink,
   normalizeLocation,
   trimTo,
-} from "@/lib/profileForm";
+} from "@/lib/profile/profileForm";
 
-import { MAX_TOTAL_PROFILES_PER_SCENARIO } from "@/lib/rules";
+import { MAX_TOTAL_PROFILES_PER_SCENARIO } from "@/lib/scenario/rules";
 
 /* -------------------------------------------------------------------------- */
 

@@ -3,7 +3,7 @@ import { getActiveConversation, subscribeToMessageEvents, subscribeToTypingEvent
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/context/auth";
-import { apiFetch } from "@/lib/apiClient";
+import { apiFetch } from "@/lib/api/apiClient";
 
 import { Alert, FlatList, Modal, Pressable, StyleSheet, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -19,7 +19,7 @@ import { useAppData } from "@/context/appData";
 import { Avatar } from "@/components/ui/Avatar";
 import { SwipeableRow } from "@/components/ui/SwipeableRow";
 import type { Conversation, Profile } from "@/data/db/schema";
-import { formatErrorMessage } from "@/lib/format";
+import { formatErrorMessage } from "@/lib/utils/format";
 
 import { useFocusEffect } from "@react-navigation/native";
 
@@ -689,7 +689,7 @@ useEffect(() => {
 
           <View style={{ paddingHorizontal: 16, paddingTop: 10, paddingBottom: 6 }}>
             <ThemedText style={[styles.modalSubtitle, { color: colors.textSecondary }]}>
-              pick participants (optional). create with none to DM yourself.
+              Pick participants.
             </ThemedText>
           </View>
 

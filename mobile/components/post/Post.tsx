@@ -12,7 +12,7 @@ import type { Post as DbPost, Profile } from "@/data/db/schema";
 import type { PostType } from "@/lib/campaign/postTypes";
 
 import { Avatar } from "@/components/ui/Avatar";
-import { formatCount, formatDetailTimestamp } from "@/lib/format";
+import { formatCount, formatDetailTimestamp } from "@/lib/utils/format";
 
 import { PostActions } from "@/components/post/PostActions";
 import { PostHeader } from "@/components/post/PostHeader";
@@ -56,6 +56,7 @@ type Props = {
   onShare?: () => void;
 
   repostedByLabel?: string | null;
+  pinnedLabel?: string | null;
 };
 
 type ProfileViewState =
@@ -102,6 +103,7 @@ export function Post({
   onShare,
 
   repostedByLabel = null,
+  pinnedLabel = null,
 }: Props) {
   const scheme = useColorScheme() ?? "light";
   const colors = Colors[scheme];
@@ -243,7 +245,7 @@ export function Post({
           item={item}
           onReportPost={onReportPost}
           onOpenProfile={(view) => openProfile(view)}
-          scenarioId={canUseGmMenu ? sid : undefined}
+          scenarioId={sid}
           gmProfileId={canUseGmMenu ? gmProfileId ?? undefined : undefined}
           getSheet={canUseGmMenu ? getCharacterSheetByProfileId : undefined}
           updateSheet={canUseGmMenu ? (profileId, next) => upsertCharacterSheet({ ...next, profileId }) : undefined}
@@ -337,6 +339,13 @@ export function Post({
         </View>
       ) : null}
 
+      {pinnedLabel ? (
+        <View style={styles.repostBanner}>
+          <AntDesign name="pushpin" size={14} color={colors.tint} />
+          <ThemedText style={[styles.repostBannerText, { color: colors.textSecondary }]}>{pinnedLabel}</ThemedText>
+        </View>
+      ) : null}
+
       <View style={styles.row}>
         <View style={styles.avatarCol}>
           {showThreadLine ? <View style={[styles.threadLine, { backgroundColor: colors.border }]} /> : null}
@@ -379,7 +388,7 @@ export function Post({
             item={item}
             onReportPost={onReportPost}
             onOpenProfile={(view) => openProfile(view)}
-            scenarioId={canUseGmMenu ? sid : undefined}
+            scenarioId={sid}
             gmProfileId={canUseGmMenu ? gmProfileId ?? undefined : undefined}
             getSheet={canUseGmMenu ? getCharacterSheetByProfileId : undefined}
             updateSheet={canUseGmMenu ? (profileId, next) => upsertCharacterSheet({ ...next, profileId }) : undefined}

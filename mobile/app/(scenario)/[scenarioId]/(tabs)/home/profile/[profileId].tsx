@@ -1,7 +1,7 @@
 // mobile/app/(scenario)/[scenarioId]/profile/[profileId].tsx
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, StyleSheet, View } from "react-native";
+import { ActivityIndicator, Pressable, StyleSheet, View } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 
@@ -17,7 +17,7 @@ import { Alert } from "@/context/dialog";
 import { pickAndPersistOneImage } from "@/components/ui/ImagePicker";
 import { Lightbox } from "@/components/media/LightBox";
 
-import { canEditProfile } from "@/lib/permission";
+import { canEditProfile } from "@/lib/access/permission";
 
 import { ProfileHeaderMedia } from "@/components/profile/ProfileHeaderMedia";
 import { ProfileAvatarRow } from "@/components/profile/ProfileAvatarRow";
@@ -26,8 +26,9 @@ import { ProfileTabsBar, type ProfileTab } from "@/components/profile/ProfileTab
 import { ProfilePostsList } from "@/components/profile/ProfilePostsList";
 import { ProfileStatusOverlay } from "@/components/profile/ProfileStatusOverlay";
 import { CreatePostFab } from "@/components/post/CreatePostFab";
+import { Post as PostCard } from "@/components/post/Post";
 import type { ProfileOverlayConfig, ProfileViewState } from "@/components/profile/profileTypes";
-import { formatErrorMessage } from "@/lib/format";
+import { formatErrorMessage } from "@/lib/utils/format";
 
 type Cursor = string | null;
 const PAGE_SIZE = 10;
@@ -68,6 +69,7 @@ export default function ProfileScreen() {
     upsertProfile,
     getSelectedProfileId,
     getPostById,
+    getPinnedPostIdForProfile,
 
     toggleLike,
     isPostLikedBySelectedProfile,
@@ -119,6 +121,45 @@ export default function ProfileScreen() {
     if (!profile) return false;
     return !!getCharacterSheetByProfileId?.(String(profile.id));
   }, [profile, getCharacterSheetByProfileId]);
+
+  const pinnedPostId = useMemo(() => {
+    try {
+      return getPinnedPostIdForProfile?.(String(pid)) ?? null;
+    } catch {
+      return null;
+    }
+  }, [getPinnedPostIdForProfile, pid]);
+
+  const pinnedPost = useMemo(() => {
+    if (!pinnedPostId) return null;
+    try {
+      return getPostById?.(String(pinnedPostId)) ?? null;
+    } catch {
+      return null;
+    }
+  }, [getPostById, pinnedPostId]);
+
+  const pinnedAuthorProfile = useMemo(() => {
+    try {
+      const authorId = pinnedPost ? String((pinnedPost as any).authorProfileId ?? "").trim() : "";
+      if (!authorId) return null;
+      return getProfileById?.(authorId) ?? null;
+    } catch {
+      return null;
+    }
+  }, [getProfileById, pinnedPost]);
+
+  const pinnedReplyingTo = useMemo(() => {
+    try {
+      if (!pinnedPost?.parentPostId) return "";
+      const parent = getPostById?.(String(pinnedPost.parentPostId)) ?? null;
+      if (!parent) return "";
+      const p = getProfileById?.(String((parent as any).authorProfileId)) ?? null;
+      return p?.handle ?? "";
+    } catch {
+      return "";
+    }
+  }, [getPostById, getProfileById, pinnedPost]);
 
   const isCurrentSelected =
     !!profile && !!selectedProfileId && String(selectedProfileId) === String(profile.id);
@@ -343,6 +384,12 @@ export default function ProfileScreen() {
   const loadingLock = useRef(false);
   const loadFirstPageRef = useRef<null | (() => void)>(null);
   const profileIdForFeed = profile ? String(profile.id) : null;
+
+  const visibleItems = useMemo(() => {
+    if (!pinnedPostId) return items;
+    const pinId = String(pinnedPostId);
+    return items.filter((it: any) => String(it?.id) !== pinId);
+  }, [items, pinnedPostId]);
 
   const loadFirstPage = useCallback(() => {
     if (!isReady || !profileIdForFeed) return;
@@ -581,6 +628,53 @@ export default function ProfileScreen() {
           }}
         />
       ) : null}
+
+      {activeTab === "posts" && pinnedPostId ? (
+        <View style={[styles.pinnedWrap, { borderColor: colors.border }]}>
+          {pinnedPost ? (
+            <Pressable
+              onPress={() => {
+                router.push({
+                  pathname: "/(scenario)/[scenarioId]/(tabs)/home/post/[postId]",
+                  params: {
+                    scenarioId: sid,
+                    postId: String((pinnedPost as any).id),
+                    from: "/(scenario)/[scenarioId]/(tabs)/home/profile/[profileId]",
+                    profileId: String(pid),
+                  },
+                } as any);
+              }}
+              style={({ pressed }) => [
+                {
+                  backgroundColor: pressed ? colors.pressed : colors.background,
+                  borderRadius: 12,
+                  overflow: "hidden",
+                },
+              ]}
+            >
+              <PostCard
+                scenarioId={sid}
+                profile={(pinnedAuthorProfile ?? profile) as any}
+                item={pinnedPost as any}
+                variant={(pinnedPost as any)?.parentPostId ? "reply" : "feed"}
+                replyingTo={pinnedReplyingTo}
+                pinnedLabel="Pinned"
+                showActions
+                isLiked={isPostLikedBySelectedProfile(sid, String((pinnedPost as any).id))}
+                onLike={() => toggleLike(sid, String((pinnedPost as any).id))}
+                isReposted={isPostRepostedBySelectedProfile(sid, String((pinnedPost as any).id))}
+                onRepost={() => toggleRepost(sid, String((pinnedPost as any).id))}
+              />
+            </Pressable>
+          ) : (
+            <View style={[styles.pinnedMissing, { backgroundColor: colors.pressed, borderColor: colors.border }]}>
+              <ThemedText style={{ color: colors.textSecondary, fontWeight: "700" }}>
+                Pinned post not loaded yet.
+              </ThemedText>
+            </View>
+          )}
+        </View>
+      ) : null}
     </View>
   );
 
@@ -623,7 +717,7 @@ export default function ProfileScreen() {
             colors={colors as any}
             sid={sid}
             viewingProfileId={pid}
-            items={items}
+            items={visibleItems}
             initialLoading={initialLoading}
             loadingMore={loadingMore}
             onLoadMore={loadMore}
@@ -717,5 +811,19 @@ const styles = StyleSheet.create({
     zIndex: 50,
     elevation: 50,
     pointerEvents: "box-none",
+  },
+
+  pinnedWrap: {
+    marginTop: 10,
+    marginHorizontal: 12,
+    marginBottom: 4,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 12,
+    overflow: "hidden",
+  },
+  pinnedMissing: {
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    borderWidth: StyleSheet.hairlineWidth,
   },
 });

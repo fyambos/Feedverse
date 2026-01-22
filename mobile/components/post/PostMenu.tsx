@@ -7,6 +7,7 @@ import { ThemedText } from "@/components/themed-text";
 import { Avatar } from "@/components/ui/Avatar";
 import type { Profile, Post as DbPost, CharacterSheet as DbCharacterSheet } from "@/data/db/schema";
 import { useAppData } from "@/context/appData";
+import { useAuth } from "@/context/auth";
 import { Alert } from "@/context/dialog";
 import { RpgChipsEditor, type ProfileRpgData } from "@/components/scenario/RpgChipsEditor";
 
@@ -662,6 +663,57 @@ export function PostMenu({
   // pinned state (your DB uses isPinned + pinOrder)
   const pinned = Boolean((item as any)?.isPinned) || Number((item as any)?.pinOrder ?? 0) > 0;
 
+  const { userId, currentUser } = useAuth();
+  const currentUserId: string | null = userId ?? currentUser?.id ?? null;
+
+  const selectedProfileId: string | null = (() => {
+    try {
+      if (!scenarioId) return null;
+      return typeof appData.getSelectedProfileId === "function"
+        ? (appData.getSelectedProfileId(String(scenarioId)) ?? null)
+        : null;
+    } catch {
+      return null;
+    }
+  })();
+
+  const selectedPinnedPostId: string | null =
+    selectedProfileId && typeof appData.getPinnedPostIdForProfile === "function"
+      ? appData.getPinnedPostIdForProfile(String(selectedProfileId))
+      : null;
+
+  const isPinnedToSelectedProfile = Boolean(
+    selectedPinnedPostId && String(selectedPinnedPostId) === String(item.id)
+  );
+
+  const canEditProfilePin = Boolean(scenarioId && currentUserId && selectedProfileId);
+
+  const onToggleProfilePin = React.useCallback(async () => {
+    if (!scenarioId) {
+      Alert.alert("Pin failed", "Missing scenarioId.");
+      return;
+    }
+    if (typeof appData.setPinnedPostForProfile !== "function") {
+      Alert.alert("Pin failed", "Pinned posts are not supported in this build.");
+      return;
+    }
+
+    try {
+      const res = await appData.setPinnedPostForProfile({
+        scenarioId: String(scenarioId),
+        profileId: String(selectedProfileId),
+        postId: isPinnedToSelectedProfile ? null : String(item.id),
+      });
+      if (!res?.ok) {
+        Alert.alert("Pin failed", res?.error || "Could not update pinned post.");
+        return;
+      }
+      onClose();
+    } catch (e: any) {
+      Alert.alert("Pin failed", e?.message ?? "Could not update pinned post.");
+    }
+  }, [Alert, appData, isPinnedToSelectedProfile, item.id, onClose, selectedProfileId, scenarioId]);
+
   const onTogglePin = async () => {
     if (!scenarioId) {
       Alert.alert("Pin/Unpin failed", "Missing scenarioId.");
@@ -686,6 +738,24 @@ export function PostMenu({
   // ---------- Sections ----------
   const NORMAL_SECTIONS: MenuSection[] = React.useMemo(
     () => [
+      ...(canEditProfilePin
+        ? [
+            {
+              title: "Profile",
+              emoji: "📌",
+              items: [
+                {
+                  key: "profile_pin",
+                  emoji: "📌",
+                  label: isPinnedToSelectedProfile ? "Unpin from profile" : "Pin to profile",
+                  onPress: () => {
+                    void onToggleProfilePin();
+                  },
+                },
+              ],
+            } satisfies MenuSection,
+          ]
+        : []),
       {
         title: "Post",
         emoji: "🚩",
@@ -728,7 +798,7 @@ export function PostMenu({
         })),
       },
     ],
-    [STATE_OPTIONS]
+    [STATE_OPTIONS, canEditProfilePin, isPinnedToSelectedProfile, onToggleProfilePin]
   );
 
   const GM_SECTIONS: MenuSection[] = React.useMemo(

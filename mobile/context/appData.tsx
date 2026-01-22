@@ -11,16 +11,17 @@ import type {
   Like,
   Conversation,
   Message,
+  ProfilePin,
 } from "@/data/db/schema";
 import { readDb, updateDb, writeDb } from "@/data/db/storage";
 import { seedDbIfNeeded } from "@/data/db/seed";
-import { buildGlobalTagFromKey } from "@/lib/tags";
+import { buildGlobalTagFromKey } from "@/lib/content/tags";
 import { pickScenarioExportJson } from "@/lib/importExport/importFromFile";
 import { importScenarioFromJson } from "@/lib/importExport/importScenario";
 import { useAuth } from "@/context/auth";
 import { buildScenarioExportBundleV1 } from "@/lib/importExport/exportScenarioBundle";
 import { saveAndShareScenarioExport } from "@/lib/importExport/exportScenario";
-import { makeLocalUuid } from "@/lib/ids";
+import { makeLocalUuid } from "@/lib/utils/ids";
 import BootSplash from "@/components/ui/BootSplash";
 
 // One-shot "refresh home feed" flag by scenario.
@@ -227,9 +228,6 @@ type AppDataApi = {
     scenarioId: string;
     includeProfiles: boolean;
     includePosts: boolean;
-    includeReposts: boolean;
-    includeSheets: boolean;
-    profileIds?: string[]; // if undefined => export all scenario profiles
   }) => Promise<
     | { ok: true; uri: string; filename: string; counts: { profiles: number; posts: number; reposts: number; sheets: number } }
     | { ok: false; error: string }
@@ -265,6 +263,14 @@ type AppDataApi = {
   // scenario settings
   getScenarioSettings: (scenarioId: string) => any;
   updateScenarioSettings: (scenarioId: string, patch: any) => Promise<void>;
+
+  // profile pins (one pinned post per profile)
+  getPinnedPostIdForProfile: (profileId: string) => string | null;
+  setPinnedPostForProfile: (args: {
+    scenarioId: string;
+    profileId: string;
+    postId: string | null;
+  }) => Promise<{ ok: true } | { ok: false; error: string }>;
 
   // ===== DMs =====
   listConversationsForScenario: (scenarioId: string, profileId: string) => Conversation[];
@@ -378,7 +384,14 @@ export function subscribeToNotifications(handler: NotificationHandler) {
   return () => notificationHandlers.delete(handler);
 }
 
+let notificationsEnabled = true;
+function setNotificationsEnabled(next: boolean) {
+  notificationsEnabled = !!next;
+}
+
 export async function presentNotification(n: AppNotification) {
+  if (!notificationsEnabled) return;
+
   try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const Notifications = require("expo-notifications");
@@ -519,6 +532,29 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
   const db = state.db;
 
   const auth = useAuth();
+
+  // When logged out, suppress all notifications and best-effort clear any displayed ones.
+  React.useEffect(() => {
+    const enabled = Boolean((auth as any)?.userId);
+    setNotificationsEnabled(enabled);
+
+    if (enabled) return;
+
+    (async () => {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const Notifications = require("expo-notifications");
+        if (Notifications?.dismissAllNotificationsAsync) {
+          await Notifications.dismissAllNotificationsAsync();
+        }
+        if (Notifications?.cancelAllScheduledNotificationsAsync) {
+          await Notifications.cancelAllScheduledNotificationsAsync();
+        }
+      } catch {
+        // ignore
+      }
+    })();
+  }, [(auth as any)?.userId]);
   const currentUserId = String(auth.userId ?? "");
 
   const importPickCacheRef = React.useRef<null | {
@@ -1476,16 +1512,20 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
 
           const now = new Date().toISOString();
 
-          // also reclaim any of your still-owned shared profiles in this scenario
-          // (i.e. profiles that were made public when you left, and were not adopted by someone else)
+          // Also reclaim any of your previously-owned shared profiles in this scenario
+          // (i.e. profiles that were made public + unowned when you left, and were not adopted by someone else).
           const profiles = { ...prev.profiles };
           for (const k of Object.keys(profiles)) {
             const p = (profiles as any)[k];
             if (!p) continue;
             if (String(p.scenarioId) !== sid) continue;
-            if (String(p.ownerUserId) !== uid) continue;
             if (!p.isPublic) continue;
-            profiles[k] = { ...p, isPublic: false, updatedAt: now };
+
+            const ownerId = String((p as any).ownerUserId ?? "").trim();
+            if (ownerId) continue; // already owned => adopted by someone else
+            if (String((p as any).formerOwnerUserId ?? "").trim() !== uid) continue;
+
+            profiles[k] = { ...p, ownerUserId: uid, isPublic: false, formerOwnerUserId: undefined, updatedAt: now };
           }
 
           return {
@@ -1554,6 +1594,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                 ...current,
                 ownerUserId: uid,
                 isPublic: false,
+                formerOwnerUserId: undefined,
                 updatedAt: now,
               },
             },
@@ -1762,15 +1803,23 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
 
           // normal user leaving
           // - remove from scenario playerIds
-          // - mark all profiles you own in this scenario as shared/public
-          //   (ownerUserId remains, so if you re-join and nobody adopted them, you can reclaim them)
+          // - detach all profiles you own in this scenario (make them public + unowned)
+          //   so you stop receiving any scenario-related notifications and others can adopt.
           const profiles = { ...prev.profiles };
           for (const k of Object.keys(profiles)) {
             const p = (profiles as any)[k];
             if (!p) continue;
             if (String(p.scenarioId) !== sid) continue;
-            if (String(p.ownerUserId) !== uid) continue;
-            profiles[k] = { ...p, isPublic: true, updatedAt: now };
+            const ownerId = String((p as any).ownerUserId ?? "").trim();
+            if (ownerId !== uid) continue;
+
+            profiles[k] = {
+              ...p,
+              ownerUserId: "",
+              formerOwnerUserId: uid,
+              isPublic: true,
+              updatedAt: now,
+            };
           }
 
           return {
@@ -2108,17 +2157,15 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         };
       },
 
-      exportScenarioToFile: async ({ scenarioId, includeProfiles, includePosts, includeReposts, includeSheets, profileIds }) => {
+      exportScenarioToFile: async ({ scenarioId, includeProfiles, includePosts }) => {
         try {
           if (!db) return { ok: false, error: "DB not ready" };
 
           const scope = {
             includeProfiles,
             includePosts,
-            includeReposts,
-            includeSheets,
-            exportAllProfiles: !profileIds || profileIds.length === 0,
-            selectedProfileIds: profileIds ?? [],
+            includeReposts: false,
+            includeSheets: false,
           };
 
           const bundle = buildScenarioExportBundleV1(db, scenarioId, scope);
@@ -2215,6 +2262,60 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         });
 
         setState({ isReady: true, db: nextDb as any });
+      },
+
+      // --- profile pins (one pinned post per profile)
+      getPinnedPostIdForProfile: (profileId: string) => {
+        if (!db) return null;
+        const pid = String(profileId ?? "").trim();
+        if (!pid) return null;
+
+        const pins = ((db as any).profilePins ?? {}) as Record<string, ProfilePin | string>;
+        const v = pins?.[pid] as any;
+        if (!v) return null;
+        if (typeof v === "string") return v;
+        if (typeof v?.postId === "string") return v.postId;
+        return null;
+      },
+
+      setPinnedPostForProfile: async ({ scenarioId, profileId, postId }) => {
+        const sid = String(scenarioId ?? "").trim();
+        const pid = String(profileId ?? "").trim();
+        const nextPostId = postId == null ? null : String(postId).trim();
+        if (!sid) return { ok: false, error: "scenarioId is required" };
+        if (!pid) return { ok: false, error: "profileId is required" };
+
+        const prof = db?.profiles?.[pid] ?? null;
+        if (!prof) return { ok: false, error: "Profile not found" };
+        if (String((prof as any).scenarioId ?? "") !== sid) return { ok: false, error: "Profile not in scenario" };
+
+        if (nextPostId) {
+          const post = db?.posts?.[nextPostId] ?? null;
+          if (!post) return { ok: false, error: "Post not found" };
+          if (String((post as any).scenarioId ?? "") !== sid) return { ok: false, error: "Post not in scenario" };
+        }
+
+        const now = new Date().toISOString();
+        const nextDb = await updateDb((prev) => {
+          const profilePins = { ...((prev as any).profilePins ?? {}) } as Record<string, ProfilePin>;
+
+          if (!nextPostId) {
+            delete profilePins[pid];
+          } else {
+            profilePins[pid] = {
+              profileId: pid,
+              scenarioId: sid,
+              postId: nextPostId,
+              createdAt: (profilePins[pid] as any)?.createdAt ?? now,
+              updatedAt: now,
+            } as any;
+          }
+
+          return { ...prev, profilePins };
+        });
+
+        setState({ isReady: true, db: nextDb as any });
+        return { ok: true };
       },
 
       // ===== DMs =====

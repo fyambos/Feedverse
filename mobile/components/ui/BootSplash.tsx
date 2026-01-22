@@ -30,16 +30,17 @@ const styles = StyleSheet.create({
   iconFrame: {
     width: ICON_SIZE + OUTLINE * 2,
     height: ICON_SIZE + OUTLINE * 2,
-    borderRadius: (ICON_SIZE + OUTLINE * 2) / 5,
+    borderRadius: (ICON_SIZE + OUTLINE * 2) / 2,
     borderWidth: OUTLINE,
     borderColor: "#FFFFFF",
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: DEFAULT_TINT_COLOR,
+    overflow: "hidden",
   },
   icon: {
     width: ICON_SIZE,
     height: ICON_SIZE,
-    borderRadius: ICON_SIZE / 5,
+    borderRadius: ICON_SIZE / 2,
   },
 });

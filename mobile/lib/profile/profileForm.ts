@@ -56,8 +56,8 @@ export function randInt(min: number, max: number) {
 
 export function pickFollowersForSize(size: "small" | "mid" | "big") {
   if (size === "small") return randInt(0, 500);
-  if (size === "mid") return randInt(1000, 5000);
-  return randInt(800_000, 3_000_000);
+  if (size === "mid") return randInt(1000, 10_000);
+  return randInt(10_000, 3_000_000);
 }
 
 export function pickFollowingBelowFollowers(followers: number) {
