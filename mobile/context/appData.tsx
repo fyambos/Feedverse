@@ -15,13 +15,13 @@ import type {
 } from "@/data/db/schema";
 import { readDb, updateDb, writeDb } from "@/data/db/storage";
 import { seedDbIfNeeded } from "@/data/db/seed";
-import { buildGlobalTagFromKey } from "@/lib/tags";
+import { buildGlobalTagFromKey } from "@/lib/content/tags";
 import { pickScenarioExportJson } from "@/lib/importExport/importFromFile";
 import { importScenarioFromJson } from "@/lib/importExport/importScenario";
 import { useAuth } from "@/context/auth";
 import { buildScenarioExportBundleV1 } from "@/lib/importExport/exportScenarioBundle";
 import { saveAndShareScenarioExport } from "@/lib/importExport/exportScenario";
-import { makeLocalUuid } from "@/lib/ids";
+import { makeLocalUuid } from "@/lib/utils/ids";
 import BootSplash from "@/components/ui/BootSplash";
 
 // One-shot "refresh home feed" flag by scenario.

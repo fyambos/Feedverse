@@ -17,7 +17,7 @@ import { Alert } from "@/context/dialog";
 import { pickAndPersistOneImage } from "@/components/ui/ImagePicker";
 import { Lightbox } from "@/components/media/LightBox";
 
-import { canEditProfile } from "@/lib/permission";
+import { canEditProfile } from "@/lib/access/permission";
 
 import { ProfileHeaderMedia } from "@/components/profile/ProfileHeaderMedia";
 import { ProfileAvatarRow } from "@/components/profile/ProfileAvatarRow";
@@ -28,7 +28,7 @@ import { ProfileStatusOverlay } from "@/components/profile/ProfileStatusOverlay"
 import { CreatePostFab } from "@/components/post/CreatePostFab";
 import { Post as PostCard } from "@/components/post/Post";
 import type { ProfileOverlayConfig, ProfileViewState } from "@/components/profile/profileTypes";
-import { formatErrorMessage } from "@/lib/format";
+import { formatErrorMessage } from "@/lib/utils/format";
 
 type Cursor = string | null;
 const PAGE_SIZE = 10;

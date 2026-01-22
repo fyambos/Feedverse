@@ -13,15 +13,15 @@ import { useAuth } from "@/context/auth";
 import { Alert } from "@/context/dialog";
 
 import type { Profile } from "@/data/db/schema";
-import { canEditProfile } from "@/lib/permission";
-import { formatErrorMessage } from "@/lib/format";
+import { canEditProfile } from "@/lib/access/permission";
+import { formatErrorMessage } from "@/lib/utils/format";
 
 import {
   MAX_OWNED_PROFILES_PER_USER,
   MAX_TOTAL_PROFILES_PER_SCENARIO,
   canCreateOwnedProfileForUser,
   countOwnedProfilesForUser,
-} from "@/lib/rules";
+} from "@/lib/scenario/rules";
 
 type TabKey = "mine" | "public";
 type ViewMode = "tabs" | "all"; // tabs = Mine/Public, all = single list (no tabs)

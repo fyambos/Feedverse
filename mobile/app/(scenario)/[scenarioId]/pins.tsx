@@ -18,7 +18,7 @@ import { Avatar } from "@/components/ui/Avatar";
 import { Post as PostCard } from "@/components/post/Post";
 
 import { Alert } from "@/context/dialog";
-import { formatErrorMessage } from "@/lib/format";
+import { formatErrorMessage } from "@/lib/utils/format";
 
 type PinRow = {
   id: string; // postId

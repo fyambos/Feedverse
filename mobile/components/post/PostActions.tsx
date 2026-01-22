@@ -6,7 +6,7 @@ import SimpleLineIcons from "@expo/vector-icons/SimpleLineIcons";
 import AntDesign from "@expo/vector-icons/AntDesign";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { ThemedText } from "@/components/themed-text";
-import { formatCount } from "@/lib/format";
+import { formatCount } from "@/lib/utils/format";
 import { Alert } from "@/context/dialog";
 
 type ColorsLike = {

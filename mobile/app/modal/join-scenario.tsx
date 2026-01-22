@@ -21,7 +21,7 @@ import { useColorScheme } from "@/hooks/use-color-scheme";
 import { useAuth } from "@/context/auth";
 import { useAppData } from "@/context/appData";
 import { Alert } from "@/context/dialog";
-import { formatErrorMessage } from "@/lib/format";
+import { formatErrorMessage } from "@/lib/utils/format";
 
 import * as Clipboard from "expo-clipboard";
 
