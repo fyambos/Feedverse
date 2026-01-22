@@ -67,7 +67,12 @@ export async function seedDbIfNeeded(existing: any | null) {
     const prevLikes = ((prev as any).likes ?? null) as Record<string, Like> | null;
     const likes: Record<string, Like> = prevLikes && typeof prevLikes === "object" ? { ...prevLikes } : {};
 
+    const prevProfilePins = ((prev as any).profilePins ?? null) as Record<string, any> | null;
+    const profilePins: Record<string, any> =
+      prevProfilePins && typeof prevProfilePins === "object" ? { ...prevProfilePins } : {};
+
     let changed = !prevLikes || typeof prevLikes !== "object";
+    if (!prevProfilePins || typeof prevProfilePins !== "object") changed = true;
 
     // migrate existing likes keys (v1 -> v2)
     let convertedKeys = 0;
@@ -142,7 +147,7 @@ export async function seedDbIfNeeded(existing: any | null) {
     }
 
     if (changed) {
-      const next: DbV5 = { ...(prev as any), version: 5, likes, profiles, conversations, messages } as any;
+      const next: DbV5 = { ...(prev as any), version: 5, likes, profiles, conversations, messages, profilePins } as any;
       await writeDb(next);
       return next;
     }
@@ -424,6 +429,8 @@ export async function seedDbIfNeeded(existing: any | null) {
     sheets,
     selectedProfileByScenario: {},
     likes: {},
+
+    profilePins: {},
 
     // DM
     conversations: toRecord(MOCK_CONVERSATIONS),
