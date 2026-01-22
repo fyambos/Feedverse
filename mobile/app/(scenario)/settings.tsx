@@ -22,7 +22,7 @@ import { Colors } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { useAuth } from "@/context/auth";
 import { Alert } from "@/context/dialog";
-import { formatErrorMessage } from "@/lib/format";
+import { formatErrorMessage } from "@/lib/utils/format";
 import {
   getUsernameValidationError,
   normalizeUsernameInput,

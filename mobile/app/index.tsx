@@ -16,10 +16,10 @@ import { useAuth } from "@/context/auth";
 import { useAppData } from "@/context/appData";
 import { TagPill } from "@/components/ui/TagPill";
 
-import { createScenarioIO } from "@/lib/scenarioIO";
+import { createScenarioIO } from "@/lib/scenario/scenarioIO";
 import { Alert } from "@/context/dialog";
-import { formatErrorMessage } from "@/lib/format";
-import { MAX_TOTAL_PLAYERS_PER_SCENARIO } from "@/lib/rules";
+import { formatErrorMessage } from "@/lib/utils/format";
+import { MAX_TOTAL_PLAYERS_PER_SCENARIO } from "@/lib/scenario/rules";
 
 const MAX_PLAYERS = MAX_TOTAL_PLAYERS_PER_SCENARIO;
 

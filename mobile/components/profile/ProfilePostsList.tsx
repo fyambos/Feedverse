@@ -16,7 +16,7 @@ import { SwipeableRow } from "@/components/ui/SwipeableRow";
 
 import { router } from "expo-router";
 import type { Post as DbPost, Profile, Repost as DbRepost } from "@/data/db/schema";
-import { canEditPost } from "@/lib/permission";
+import { canEditPost } from "@/lib/access/permission";
 
 type ColorsLike = {
   background: string;

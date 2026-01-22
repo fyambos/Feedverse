@@ -6,7 +6,7 @@ import { Fontisto, Ionicons } from "@expo/vector-icons";
 import { ThemedText } from "@/components/themed-text";
 import type { Profile } from "@/data/db/schema";
 import type { ProfileViewState } from "@/components/profile/profileTypes";
-import { formatCount, formatJoined, normalizeUrl, displayUrl } from "@/lib/format";
+import { formatCount, formatJoined, normalizeUrl, displayUrl } from "@/lib/utils/format";
 
 type ColorsLike = {
   text: string;
