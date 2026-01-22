@@ -384,7 +384,14 @@ export function subscribeToNotifications(handler: NotificationHandler) {
   return () => notificationHandlers.delete(handler);
 }
 
+let notificationsEnabled = true;
+function setNotificationsEnabled(next: boolean) {
+  notificationsEnabled = !!next;
+}
+
 export async function presentNotification(n: AppNotification) {
+  if (!notificationsEnabled) return;
+
   try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const Notifications = require("expo-notifications");
@@ -525,6 +532,29 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
   const db = state.db;
 
   const auth = useAuth();
+
+  // When logged out, suppress all notifications and best-effort clear any displayed ones.
+  React.useEffect(() => {
+    const enabled = Boolean((auth as any)?.userId);
+    setNotificationsEnabled(enabled);
+
+    if (enabled) return;
+
+    (async () => {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const Notifications = require("expo-notifications");
+        if (Notifications?.dismissAllNotificationsAsync) {
+          await Notifications.dismissAllNotificationsAsync();
+        }
+        if (Notifications?.cancelAllScheduledNotificationsAsync) {
+          await Notifications.cancelAllScheduledNotificationsAsync();
+        }
+      } catch {
+        // ignore
+      }
+    })();
+  }, [(auth as any)?.userId]);
   const currentUserId = String(auth.userId ?? "");
 
   const importPickCacheRef = React.useRef<null | {
@@ -1482,16 +1512,20 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
 
           const now = new Date().toISOString();
 
-          // also reclaim any of your still-owned shared profiles in this scenario
-          // (i.e. profiles that were made public when you left, and were not adopted by someone else)
+          // Also reclaim any of your previously-owned shared profiles in this scenario
+          // (i.e. profiles that were made public + unowned when you left, and were not adopted by someone else).
           const profiles = { ...prev.profiles };
           for (const k of Object.keys(profiles)) {
             const p = (profiles as any)[k];
             if (!p) continue;
             if (String(p.scenarioId) !== sid) continue;
-            if (String(p.ownerUserId) !== uid) continue;
             if (!p.isPublic) continue;
-            profiles[k] = { ...p, isPublic: false, updatedAt: now };
+
+            const ownerId = String((p as any).ownerUserId ?? "").trim();
+            if (ownerId) continue; // already owned => adopted by someone else
+            if (String((p as any).formerOwnerUserId ?? "").trim() !== uid) continue;
+
+            profiles[k] = { ...p, ownerUserId: uid, isPublic: false, formerOwnerUserId: undefined, updatedAt: now };
           }
 
           return {
@@ -1560,6 +1594,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                 ...current,
                 ownerUserId: uid,
                 isPublic: false,
+                formerOwnerUserId: undefined,
                 updatedAt: now,
               },
             },
@@ -1768,15 +1803,23 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
 
           // normal user leaving
           // - remove from scenario playerIds
-          // - mark all profiles you own in this scenario as shared/public
-          //   (ownerUserId remains, so if you re-join and nobody adopted them, you can reclaim them)
+          // - detach all profiles you own in this scenario (make them public + unowned)
+          //   so you stop receiving any scenario-related notifications and others can adopt.
           const profiles = { ...prev.profiles };
           for (const k of Object.keys(profiles)) {
             const p = (profiles as any)[k];
             if (!p) continue;
             if (String(p.scenarioId) !== sid) continue;
-            if (String(p.ownerUserId) !== uid) continue;
-            profiles[k] = { ...p, isPublic: true, updatedAt: now };
+            const ownerId = String((p as any).ownerUserId ?? "").trim();
+            if (ownerId !== uid) continue;
+
+            profiles[k] = {
+              ...p,
+              ownerUserId: "",
+              formerOwnerUserId: uid,
+              isPublic: true,
+              updatedAt: now,
+            };
           }
 
           return {
