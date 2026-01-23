@@ -331,7 +331,7 @@ export async function updateProfile(args: {
     // Also allow when the incoming patch is explicitly setting `isPublic: true` —
     // this lets a user make a profile public and apply edits in one request.
     const requestedIsPublic = (patch as any).isPublic != null ? Boolean((patch as any).isPublic) : false;
-    if (String(row0.owner_user_id) !== uid && !Boolean(row0.is_public) && !requestedIsPublic) {
+    if (String(row0.owner_user_id ?? "") !== uid && !Boolean(row0.is_public) && !requestedIsPublic) {
       // Diagnostic log to help debug edit attempts on public profiles
       /*
       console.log("updateProfile: permission denied", {
@@ -485,7 +485,7 @@ export async function deleteProfileCascade(args: {
       return { error: "Profile not found", status: 404 };
     }
 
-    if (String(row0.owner_user_id) !== uid) {
+    if (String(row0.owner_user_id ?? "") !== uid) {
       await client.query("ROLLBACK");
       return null;
     }
@@ -573,7 +573,7 @@ export async function adoptPublicProfile(args: {
       return { error: "Profile not found", status: 404 };
     }
 
-    if (String(row0.owner_user_id) === uid) {
+    if (String(row0.owner_user_id ?? "") === uid) {
       await client.query("ROLLBACK");
       return { error: "You already own this profile", status: 400 };
     }

@@ -58,16 +58,20 @@ export class ScenarioRepository {
     const params: unknown[] = [uid];
 
     if (hasOwnerUserId) {
-      whereParts.push("owner_user_id = $1");
+      // Robust across uuid/text owner_user_id types.
+      whereParts.push("owner_user_id::text = $1");
     }
 
     if (hasGmUserIdsArray) {
-      whereParts.push("$1 = ANY(gm_user_ids)");
+      // Robust across uuid[]/text[] gm_user_ids types.
+      whereParts.push(
+        gmUserIdsCol?.udt_name === "_uuid" ? "$1 = ANY(gm_user_ids::text[])" : "$1 = ANY(gm_user_ids)",
+      );
     }
 
     if (hasScenarioPlayers) {
       whereParts.push(
-        "EXISTS (SELECT 1 FROM scenario_players sp WHERE sp.scenario_id = scenarios.id AND sp.user_id = $1)",
+        "EXISTS (SELECT 1 FROM scenario_players sp WHERE sp.scenario_id = scenarios.id AND sp.user_id::text = $1)",
       );
     }
 
@@ -396,7 +400,10 @@ export class ScenarioRepository {
       await client.query("BEGIN");
 
       // ownership check
-      const owned = await client.query("SELECT 1 FROM scenarios WHERE id = $1 AND owner_user_id = $2 LIMIT 1", [sid, uid]);
+      const owned = await client.query(
+        "SELECT 1 FROM scenarios WHERE id = $1 AND owner_user_id::text = $2 LIMIT 1",
+        [sid, uid],
+      );
       if ((owned.rows?.length ?? 0) === 0) {
         await client.query("ROLLBACK");
         return null;
@@ -434,7 +441,7 @@ export class ScenarioRepository {
         if (hasUpdatedAt) setParts.push("updated_at = NOW() AT TIME ZONE 'UTC'");
 
         values.push(sid, uid);
-        const sql = `UPDATE scenarios SET ${setParts.join(", ")} WHERE id = $${idx++} AND owner_user_id = $${idx++}`;
+        const sql = `UPDATE scenarios SET ${setParts.join(", ")} WHERE id = $${idx++} AND owner_user_id::text = $${idx++}`;
         await client.query(sql, values);
       }
 
@@ -497,7 +504,10 @@ export class ScenarioRepository {
       await client.query("BEGIN");
 
       // ensure owner
-      const owned = await client.query("SELECT 1 FROM scenarios WHERE id = $1 AND owner_user_id = $2 LIMIT 1", [sid, uid]);
+      const owned = await client.query(
+        "SELECT 1 FROM scenarios WHERE id = $1 AND owner_user_id::text = $2 LIMIT 1",
+        [sid, uid],
+      );
       if ((owned.rows?.length ?? 0) === 0) {
         await client.query("ROLLBACK");
         return false;
@@ -511,7 +521,10 @@ export class ScenarioRepository {
         await client.query("DELETE FROM scenario_tags WHERE scenario_id = $1", [sid]);
       }
 
-      const del = await client.query("DELETE FROM scenarios WHERE id = $1 AND owner_user_id = $2", [sid, uid]);
+      const del = await client.query(
+        "DELETE FROM scenarios WHERE id = $1 AND owner_user_id::text = $2",
+        [sid, uid],
+      );
 
       await client.query("COMMIT");
       return (del.rowCount ?? 0) > 0;
@@ -545,6 +558,7 @@ export class ScenarioRepository {
       const ownerId = String(scenario.owner_user_id ?? "");
       const isOwner = ownerId && ownerId === uid;
 
+
       if (!(await tableExists("scenario_players"))) {
         // If there's no membership table, we can't represent leaving.
         await client.query("ROLLBACK");
@@ -566,6 +580,7 @@ export class ScenarioRepository {
 
         // owner alone => delete scenario
         await client.query("DELETE FROM scenario_players WHERE scenario_id = $1", [sid]);
+
         if (await tableExists("scenario_tags")) {
           await client.query("DELETE FROM scenario_tags WHERE scenario_id = $1", [sid]);
         }
@@ -576,32 +591,69 @@ export class ScenarioRepository {
       }
 
       await client.query(
-        "DELETE FROM scenario_players WHERE scenario_id = $1 AND user_id = $2",
+        "DELETE FROM scenario_players WHERE scenario_id = $1 AND user_id::text = $2",
         [sid, uid],
       );
+
+      // If the schema has gm_user_ids and the user is a GM, leaving should remove them.
+      try {
+        const cols = await getColumns("scenarios");
+        const gmCol = cols.find((c) => c.column_name === "gm_user_ids");
+        if (gmCol?.data_type === "ARRAY") {
+          const isUuidArray = gmCol.udt_name === "_uuid";
+          const coalesceCast = isUuidArray ? "COALESCE(gm_user_ids, '{}'::uuid[])" : "COALESCE(gm_user_ids, '{}'::text[])";
+          const elemExpr = isUuidArray ? "$2::uuid" : "$2";
+          const gmSql = `
+            UPDATE scenarios
+            SET gm_user_ids = array_remove(${coalesceCast}, ${elemExpr}),
+                updated_at = NOW() AT TIME ZONE 'UTC'
+            WHERE id = $1
+          `;
+          await client.query(gmSql, [sid, uid]);
+        } else {
+          // no-op
+        }
+      } catch (e) {
+        // best-effort
+      }
 
       // Leaving should also detach any owned profiles in this scenario so:
       // - the user stops receiving scenario-based notifications (mentions/replies/messages)
       // - the profiles can be re-adopted later (if not adopted by someone else and not deleted)
       // NOTE: owner_user_id is nullable (public/unowned profiles).
       try {
-        await client.query(
-          `
-            UPDATE profiles
-            SET owner_user_id = NULL,
-                is_public = true,
-                is_private = false,
-                updated_at = NOW() AT TIME ZONE 'UTC'
-            WHERE scenario_id = $1
-              AND owner_user_id = $2
-          `,
-          [sid, uid],
-        );
-      } catch {
+        const profilesExists = await tableExists("profiles");
+        if (!profilesExists) {
+          // no-op
+        } else {
+          const pcols = await getColumns("profiles");
+          const hasScenarioId = pcols.some((c) => c.column_name === "scenario_id");
+          const hasOwner = pcols.some((c) => c.column_name === "owner_user_id");
+          if (!hasScenarioId || !hasOwner) {
+            // no-op
+          } else {
+            const setParts: string[] = ["owner_user_id = NULL"];
+            if (pcols.some((c) => c.column_name === "is_public")) setParts.push("is_public = true");
+            if (pcols.some((c) => c.column_name === "is_private")) setParts.push("is_private = false");
+            if (pcols.some((c) => c.column_name === "updated_at")) {
+              setParts.push("updated_at = NOW() AT TIME ZONE 'UTC'");
+            }
+
+            const sql = `
+              UPDATE profiles
+              SET ${setParts.join(", ")}
+              WHERE scenario_id = $1
+                AND owner_user_id::text = $2
+            `;
+            await client.query(sql, [sid, uid]);
+          }
+        }
+      } catch (e) {
         // best-effort; do not block leaving if profile detachment fails
       }
 
       await client.query("COMMIT");
+
       return { deleted: false };
     } catch (e) {
       await client.query("ROLLBACK");
@@ -625,7 +677,7 @@ export class ScenarioRepository {
       await client.query("BEGIN");
 
       const owned = await client.query(
-        "SELECT 1 FROM scenarios WHERE id = $1 AND owner_user_id = $2 LIMIT 1",
+        "SELECT 1 FROM scenarios WHERE id = $1 AND owner_user_id::text = $2 LIMIT 1",
         [sid, from],
       );
       if ((owned.rows?.length ?? 0) === 0) {
@@ -634,7 +686,7 @@ export class ScenarioRepository {
       }
 
       const member = await client.query(
-        "SELECT 1 FROM scenario_players WHERE scenario_id = $1 AND user_id = $2 LIMIT 1",
+        "SELECT 1 FROM scenario_players WHERE scenario_id = $1 AND user_id::text = $2 LIMIT 1",
         [sid, to],
       );
       if ((member.rows?.length ?? 0) === 0) {
@@ -676,7 +728,7 @@ export class ScenarioRepository {
     if (!hasScenarioPlayers) return false;
 
     const res = await pool.query(
-      "SELECT 1 FROM scenario_players WHERE scenario_id = $1 AND user_id = $2 LIMIT 1",
+      "SELECT 1 FROM scenario_players WHERE scenario_id = $1 AND user_id::text = $2 LIMIT 1",
       [scenarioId, userId],
     );
     return (res.rows?.length ?? 0) > 0;
@@ -695,7 +747,7 @@ export class ScenarioRepository {
       INSERT INTO scenario_players (scenario_id, user_id)
       SELECT $1, $2
       WHERE NOT EXISTS (
-        SELECT 1 FROM scenario_players WHERE scenario_id = $1 AND user_id = $2
+        SELECT 1 FROM scenario_players WHERE scenario_id = $1 AND user_id::text = $2
       )
       `,
       [scenarioId, userId],

@@ -1491,10 +1491,12 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
             const existing = (prev.scenarios as any)?.[id];
 
             const playerIdsRaw = raw?.player_ids ?? raw?.playerIds;
-            const playerIds = Array.isArray(playerIdsRaw) ? playerIdsRaw.map(String) : [];
+            const hasPlayerIds = Array.isArray(playerIdsRaw);
+            const playerIds = hasPlayerIds ? playerIdsRaw.map(String) : undefined;
 
             const gmUserIdsRaw = raw?.gm_user_ids ?? raw?.gmUserIds;
             const gmUserIds = Array.isArray(gmUserIdsRaw) ? gmUserIdsRaw.map(String).filter(Boolean) : undefined;
+
 
             const settings = raw?.settings != null ? raw.settings : undefined;
 
@@ -1507,7 +1509,9 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
               ownerUserId: String(raw?.owner_user_id ?? raw?.ownerUserId ?? existing?.ownerUserId ?? ""),
               description: raw?.description != null ? String(raw.description) : existing?.description,
               mode: raw?.mode === "campaign" || raw?.mode === "story" ? raw.mode : (existing?.mode ?? "story"),
-              playerIds: playerIds.length > 0 ? playerIds : (existing?.playerIds ?? []),
+              // IMPORTANT: empty arrays are meaningful (e.g. you left and you're no longer a member).
+              // Only fall back when the field is absent.
+              playerIds: hasPlayerIds ? (playerIds ?? []) : (existing?.playerIds ?? []),
               tags: Array.isArray(raw?.tags) ? raw.tags : (existing?.tags ?? []),
               gmUserIds: gmUserIds ?? (existing as any)?.gmUserIds,
               settings: settings ?? (existing as any)?.settings,
@@ -4276,7 +4280,8 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
           const now = new Date().toISOString();
 
           const playerIdsRaw = raw?.player_ids ?? raw?.playerIds;
-          const playerIds = Array.isArray(playerIdsRaw) ? playerIdsRaw.map(String).filter(Boolean) : [];
+          const hasPlayerIds = Array.isArray(playerIdsRaw);
+          const playerIds = hasPlayerIds ? playerIdsRaw.map(String).filter(Boolean) : undefined;
 
           const gmUserIdsRaw = raw?.gm_user_ids ?? raw?.gmUserIds;
           const gmUserIds = Array.isArray(gmUserIdsRaw) ? gmUserIdsRaw.map(String).filter(Boolean) : undefined;
@@ -4295,7 +4300,8 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                 : (fallback as any)?.mode === "campaign"
                   ? "campaign"
                   : "story",
-            playerIds: playerIds.length ? playerIds : ((fallback as any)?.playerIds ?? []),
+            // IMPORTANT: empty arrays are meaningful (e.g. no members in join table).
+            playerIds: hasPlayerIds ? (playerIds ?? []) : ((fallback as any)?.playerIds ?? []),
             tags: Array.isArray(raw?.tags) ? raw.tags : ((fallback as any)?.tags ?? []),
             gmUserIds: gmUserIds ?? (fallback as any)?.gmUserIds,
             settings: raw?.settings != null ? raw.settings : (fallback as any)?.settings,
@@ -4952,6 +4958,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         };
 
         const leaveScenarioLocal = async () => {
+          let detachedProfilesCount = 0;
           const nextDb = await updateDb((prev) => {
             const current = prev.scenarios?.[sid];
             if (!current) return prev;
@@ -5021,16 +5028,20 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
 
             // normal user leaving
             // - remove from scenario playerIds
-            // - mark all profiles you own in this scenario as shared/public
-            //   (ownerUserId remains, so if you re-join and nobody adopted them, you can reclaim them)
+            // - detach all profiles you own in this scenario so they are shared/public + unowned
             const profiles = { ...prev.profiles };
             for (const k of Object.keys(profiles)) {
               const p = (profiles as any)[k];
               if (!p) continue;
               if (String(p.scenarioId) !== sid) continue;
               if (String(p.ownerUserId) !== uid) continue;
-              profiles[k] = { ...p, isPublic: true, updatedAt: now };
+              detachedProfilesCount += 1;
+              profiles[k] = { ...p, ownerUserId: "", isPublic: true, updatedAt: now };
             }
+
+            const gmUserIds = Array.isArray((current as any).gmUserIds)
+              ? (current as any).gmUserIds.map(String).filter((x: string) => x !== uid)
+              : (current as any).gmUserIds;
 
             return {
               ...prev,
@@ -5039,6 +5050,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                 [sid]: {
                   ...current,
                   playerIds: remaining,
+                  gmUserIds,
                   updatedAt: now,
                 } as any,
               },
@@ -5077,6 +5089,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
             await deleteScenarioCascadeLocal();
           } else {
             // Mirror local behavior so the scenario immediately disappears from the list.
+            let detachedProfilesCount = 0;
             const nextDb = await updateDb((prev) => {
               const current = prev.scenarios?.[sid];
               if (!current) return prev;
@@ -5091,8 +5104,13 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                 if (!p) continue;
                 if (String(p.scenarioId) !== sid) continue;
                 if (String(p.ownerUserId) !== uid) continue;
-                profiles[k] = { ...p, isPublic: true, updatedAt: now };
+                detachedProfilesCount += 1;
+                profiles[k] = { ...p, ownerUserId: "", isPublic: true, updatedAt: now };
               }
+
+              const gmUserIds = Array.isArray((current as any).gmUserIds)
+                ? (current as any).gmUserIds.map(String).filter((x: string) => x !== uid)
+                : (current as any).gmUserIds;
 
               return {
                 ...prev,
@@ -5101,6 +5119,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                   [sid]: {
                     ...current,
                     playerIds: remaining,
+                    gmUserIds,
                     updatedAt: now,
                   } as any,
                 },
@@ -5748,10 +5767,17 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
 
           const normalizeProfileFromServer = (raw: any, scenarioId: string): Profile => {
             const nowIso = new Date().toISOString();
+            const hasOwnerKey = raw != null && ("ownerUserId" in raw || "owner_user_id" in raw);
+            const ownerFromApi = raw?.ownerUserId ?? raw?.owner_user_id;
+            const ownerUserId = hasOwnerKey
+              ? ownerFromApi == null
+                ? ""
+                : String(ownerFromApi)
+              : "";
             return {
               id: String(raw?.id ?? "").trim(),
               scenarioId: String(raw?.scenarioId ?? raw?.scenario_id ?? scenarioId),
-              ownerUserId: String(raw?.ownerUserId ?? raw?.owner_user_id ?? currentUserId),
+              ownerUserId,
               displayName: String(raw?.displayName ?? raw?.display_name ?? ""),
               handle: String(raw?.handle ?? ""),
               avatarUrl: String(raw?.avatarUrl ?? raw?.avatar_url ?? ""),
