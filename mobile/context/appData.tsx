@@ -3792,15 +3792,102 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
           const key = `${reposterId}|${pid}`;
           const already = Boolean((db as any)?.reposts?.[key]);
 
-          const res = await apiFetch({
-            path: `/reposts/posts/${encodeURIComponent(pid)}`,
-            token,
-            init: {
-              method: already ? "DELETE" : "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ scenarioId: sid, profileId: reposterId }),
-            },
+          // Optimistic UI: update local DB immediately so the icon tint + count update instantly.
+          // If the backend request fails, we roll back this local change.
+          const optimisticNow = new Date().toISOString();
+          const optimisticDb = await updateDb((prev) => {
+            const reposts = { ...((prev as any).reposts ?? {}) } as any;
+            const posts = { ...(prev as any).posts } as any;
+
+            const post = posts[pid];
+            const nextDelta = already ? -1 : 1;
+
+            if (already) {
+              delete reposts[key];
+            } else {
+              reposts[key] = {
+                id: key,
+                scenarioId: sid,
+                profileId: reposterId,
+                postId: pid,
+                createdAt: optimisticNow,
+              } as any;
+            }
+
+            if (post) {
+              posts[pid] = {
+                ...post,
+                repostCount: Math.max(0, Number((post as any).repostCount ?? 0) + nextDelta),
+                updatedAt: optimisticNow,
+              } as any;
+            }
+
+            return { ...prev, reposts, posts };
           });
+
+          setState({ isReady: true, db: optimisticDb as any });
+
+          const rollbackOptimistic = async () => {
+            const rollbackDb = await updateDb((prev) => {
+              const reposts = { ...((prev as any).reposts ?? {}) } as any;
+              const posts = { ...(prev as any).posts } as any;
+
+              const post = posts[pid];
+              const shouldExist = already;
+              const existsNow = Boolean(reposts[key]);
+
+              // Only change what we optimistically changed.
+              if (shouldExist && !existsNow) {
+                reposts[key] = {
+                  id: key,
+                  scenarioId: sid,
+                  profileId: reposterId,
+                  postId: pid,
+                  createdAt: optimisticNow,
+                } as any;
+
+                if (post) {
+                  posts[pid] = {
+                    ...post,
+                    repostCount: Math.max(0, Number((post as any).repostCount ?? 0) + 1),
+                    updatedAt: optimisticNow,
+                  } as any;
+                }
+              }
+
+              if (!shouldExist && existsNow) {
+                delete reposts[key];
+
+                if (post) {
+                  posts[pid] = {
+                    ...post,
+                    repostCount: Math.max(0, Number((post as any).repostCount ?? 0) - 1),
+                    updatedAt: optimisticNow,
+                  } as any;
+                }
+              }
+
+              return { ...prev, reposts, posts };
+            });
+
+            setState({ isReady: true, db: rollbackDb as any });
+          };
+
+          let res: Awaited<ReturnType<typeof apiFetch>>;
+          try {
+            res = await apiFetch({
+              path: `/reposts/posts/${encodeURIComponent(pid)}`,
+              token,
+              init: {
+                method: already ? "DELETE" : "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ scenarioId: sid, profileId: reposterId }),
+              },
+            });
+          } catch (e) {
+            await rollbackOptimistic();
+            throw e;
+          }
 
           if (!res.ok) {
             const msg =
@@ -3809,6 +3896,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                 : typeof res.text === "string" && res.text.trim().length
                   ? res.text
                   : `Repost failed (HTTP ${res.status})`;
+            await rollbackOptimistic();
             throw new Error(msg);
           }
 
