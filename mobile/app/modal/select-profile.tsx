@@ -70,23 +70,24 @@ export default function SelectProfileModal() {
   const [tab, setTab] = React.useState<TabKey>("mine");
   const [mode, setMode] = React.useState<ViewMode>("tabs");
 
-  // When viewing Shared profiles, we need fresh scenario.playerIds to avoid
-  // offering "Adopt" while the owner is actually still in the scenario.
-  const [sharedSyncing, setSharedSyncing] = React.useState(false);
-  const sharedSyncCompleteRef = React.useRef(false);
+  const refreshOnceRef = React.useRef<{ sid: string; started: boolean }>({ sid: "", started: false });
+  const [scenarioRefreshDone, setScenarioRefreshDone] = React.useState(false);
 
   React.useEffect(() => {
     if (!isReady) return;
     if (!sid) return;
-    if (!(mode === "tabs" && tab === "public")) return;
+    if (refreshOnceRef.current.sid !== sid) {
+      refreshOnceRef.current = { sid, started: false };
+      setScenarioRefreshDone(false);
+    }
+    if (refreshOnceRef.current.started) return;
+    refreshOnceRef.current.started = true;
 
     let cancelled = false;
-    sharedSyncCompleteRef.current = false;
-    setSharedSyncing(true);
 
     Promise.resolve()
       .then(async () => {
-        // Best-effort: refresh scenario list (players/owners) and profiles.
+        // Best-effort: refresh scenario + profiles so ownerUserId values are present.
         await syncScenarios?.({ force: true });
         await syncProfilesForScenario?.(sid);
       })
@@ -95,14 +96,13 @@ export default function SelectProfileModal() {
       })
       .finally(() => {
         if (cancelled) return;
-        sharedSyncCompleteRef.current = true;
-        setSharedSyncing(false);
+        setScenarioRefreshDone(true);
       });
 
     return () => {
       cancelled = true;
     };
-  }, [isReady, sid, mode, tab, syncScenarios, syncProfilesForScenario]);
+  }, [isReady, sid, syncScenarios, syncProfilesForScenario]);
 
   // state for multi select
   const [multi, setMulti] = React.useState<boolean>(false);
@@ -292,9 +292,11 @@ const allProfiles = React.useMemo<Profile[]>(() => {
     const showCheckbox = multi && isMineTab && selectEnabled;
     const checked = selectedIds.has(id);
 
-    const isSharedFromOther = !!item.isPublic && String(item.ownerUserId) !== String(userId);
     const ownerId = String(item.ownerUserId ?? "");
     const owner = ownerId ? (usersMap[ownerId] ?? null) : null;
+    const isShared = !!item.isPublic;
+    const isUnownedShared = isShared && !ownerId;
+    const shouldOfferAdopt = scenarioRefreshDone && isUnownedShared;
 
     const canEditThis = canEditProfile({
       profile: item,
@@ -337,23 +339,9 @@ const allProfiles = React.useMemo<Profile[]>(() => {
             return;
           }
 
-          // shared profile from someone else
-          if (isSharedFromOther) {
-            if (sharedSyncing || !sharedSyncCompleteRef.current) {
-              Alert.alert("Loading…", "Refreshing scenario players. Try again in a moment.");
-              return;
-            }
-
-            // If the owner is still in the scenario, just select the profile (no adopt)
-            const ownerId = String(item.ownerUserId ?? "");
-            const scenarioPlayerIds = Array.isArray((scenario as any)?.playerIds)
-              ? (scenario as any).playerIds.map(String)
-              : [];
-            if (ownerId && scenarioPlayerIds.includes(ownerId)) {
-              await finishSelection(String(item.id));
-              return;
-            }
-            // Otherwise, allow adoption
+          // Shared + unowned: allow adopt only after we've refreshed once.
+          // If we haven't refreshed yet, still allow switching immediately and refresh continues in background.
+          if (shouldOfferAdopt) {
             setAdopt({ open: true, profileId: id });
             return;
           }
