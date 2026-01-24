@@ -3435,130 +3435,153 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
             throw new Error("Pick a valid profile before posting.");
           }
 
+          // Optimistic: write locally immediately so the composer can close instantly.
+          // In backend mode, feeds are filtered to posts we've "seen" from the server,
+          // so we also mark this post as seen right away.
+          const pLocal = { ...(p as any), id, scenarioId: sid, authorProfileId } as any;
+
+          const nextLocal = await updateDb((prev) => {
+            const existing = (prev.posts as any)?.[id];
+
+            const insertedAt = (existing as any)?.insertedAt ?? (pLocal as any).insertedAt ?? now;
+            const createdAt = (pLocal as any).createdAt ?? (existing as any)?.createdAt ?? now;
+
+            return {
+              ...prev,
+              posts: {
+                ...prev.posts,
+                [id]: {
+                  ...(existing ?? {}),
+                  ...pLocal,
+                  id,
+                  insertedAt,
+                  createdAt,
+                  updatedAt: now,
+                },
+              },
+            };
+          });
+
+          try {
+            const seen = (serverSeenPostsRef.current.byScenario[sid] ??= {});
+            if (id) seen[id] = true;
+          } catch {}
+
+          setState({ isReady: true, db: nextLocal as any });
+
           const rawImageUrls = Array.isArray((p as any)?.imageUrls) ? (p as any).imageUrls.map(String).filter(Boolean) : [];
           const localImageUris = rawImageUrls.filter((u: string) => !/^https?:\/\//i.test(u));
           const remoteImageUrls = rawImageUrls.filter((u: string) => /^https?:\/\//i.test(u));
 
-          const res = await apiFetch({
-            path: `/scenarios/${encodeURIComponent(sid)}/posts`,
-            token,
-            init: {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                id,
-                authorProfileId,
-                text: (p as any)?.text,
-                imageUrls: remoteImageUrls,
-                replyCount: (p as any)?.replyCount,
-                repostCount: (p as any)?.repostCount,
-                likeCount: (p as any)?.likeCount,
-                parentPostId: (p as any)?.parentPostId,
-                quotedPostId: (p as any)?.quotedPostId,
-                insertedAt: (p as any)?.insertedAt,
-                createdAt: (p as any)?.createdAt,
-                postType: (p as any)?.postType,
-                meta: (p as any)?.meta,
-                isPinned: (p as any)?.isPinned,
-                pinOrder: (p as any)?.pinOrder,
-              }),
-            },
-          });
+          // Fire-and-forget backend write + image upload. If it fails, keep the optimistic post.
+          void (async () => {
+            const res = await apiFetch({
+              path: `/scenarios/${encodeURIComponent(sid)}/posts`,
+              token,
+              init: {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  id,
+                  authorProfileId,
+                  text: (pLocal as any)?.text,
+                  imageUrls: remoteImageUrls,
+                  replyCount: (pLocal as any)?.replyCount,
+                  repostCount: (pLocal as any)?.repostCount,
+                  likeCount: (pLocal as any)?.likeCount,
+                  parentPostId: (pLocal as any)?.parentPostId,
+                  quotedPostId: (pLocal as any)?.quotedPostId,
+                  insertedAt: (pLocal as any)?.insertedAt,
+                  createdAt: (pLocal as any)?.createdAt,
+                  postType: (pLocal as any)?.postType,
+                  meta: (pLocal as any)?.meta,
+                  isPinned: (pLocal as any)?.isPinned,
+                  pinOrder: (pLocal as any)?.pinOrder,
+                }),
+              },
+            });
 
-          if (!res.ok) {
-            const msg =
-              typeof (res.json as any)?.error === "string"
-                ? String((res.json as any).error)
-                : typeof res.text === "string" && res.text.trim().length
-                  ? res.text
-                  : `Save failed (HTTP ${res.status})`;
-            throw new Error(msg);
-          } else {
-            // In backend mode, feed queries intentionally filter to posts we've "seen" from the server.
-            // Some deployments may return 2xx without an embedded `post` payload; in that case we still
-            // want the optimistic/local post to appear immediately.
-            if (sid && id) {
+            if (!res.ok) return;
+
+            const createdPostId = String((res.json as any)?.post?.id ?? id);
+            if (sid && createdPostId) {
               const seen = (serverSeenPostsRef.current.byScenario[sid] ??= {});
-              seen[id] = true;
+              seen[createdPostId] = true;
             }
 
-            let raw = (res.json as any)?.post;
-            if (raw) {
-              const postId = String(raw?.id ?? id);
-              if (sid) {
-                const seen = (serverSeenPostsRef.current.byScenario[sid] ??= {});
-                if (postId) seen[postId] = true;
+            let raw = (res.json as any)?.post ?? null;
+
+            // If there are local images, upload them to R2 and persist returned URLs.
+            if (createdPostId && localImageUris.length > 0) {
+              const form = new FormData();
+              for (let i = 0; i < localImageUris.length; i++) {
+                const uri = String(localImageUris[i]);
+                const name = `post_${createdPostId}_${i}_${Date.now()}.jpg`;
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                form.append("images", { uri, name, type: "image/jpeg" } as any);
               }
 
-              // If there are local images, upload them to R2 and persist returned URLs in Neon.
-              if (postId && localImageUris.length > 0) {
-                const form = new FormData();
-                for (let i = 0; i < localImageUris.length; i++) {
-                  const uri = String(localImageUris[i]);
-                  const name = `post_${postId}_${i}_${Date.now()}.jpg`;
-                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                  form.append("images", { uri, name, type: "image/jpeg" } as any);
-                }
-
-                const up = await apiFetch({
-                  path: `/posts/${encodeURIComponent(postId)}/images`,
-                  token,
-                  init: {
-                    method: "POST",
-                    body: form as any,
-                  },
-                });
-
-                if (!up.ok) {
-                  const msg =
-                    typeof (up.json as any)?.error === "string"
-                      ? String((up.json as any).error)
-                      : typeof up.text === "string" && up.text.trim().length
-                        ? up.text
-                        : `Upload failed (HTTP ${up.status})`;
-                  throw new Error(msg);
-                }
-
-                raw = (up.json as any)?.post ?? raw;
-              }
-
-              const nextDb = await updateDb((prev) => {
-                const posts = { ...(prev.posts ?? {}) } as any;
-                const existing = posts[postId] ?? {};
-                posts[postId] = {
-                  ...existing,
-                  ...p,
-                  id: postId,
-                  scenarioId: String(raw?.scenarioId ?? (p as any)?.scenarioId ?? sid),
-                  authorProfileId: String(raw?.authorProfileId ?? (p as any)?.authorProfileId ?? ""),
-                  authorUserId: String(raw?.authorUserId ?? raw?.author_user_id ?? (p as any)?.authorUserId ?? existing?.authorUserId ?? "").trim() || undefined,
-                  text: String(raw?.text ?? (p as any)?.text ?? ""),
-                  imageUrls: Array.isArray(raw?.imageUrls)
-                    ? raw.imageUrls.map(String)
-                    : Array.isArray((p as any)?.imageUrls)
-                      ? (p as any).imageUrls.map(String).filter(Boolean)
-                      : [],
-                  replyCount: Number(raw?.replyCount ?? (p as any)?.replyCount ?? 0),
-                  repostCount: Number(raw?.repostCount ?? (p as any)?.repostCount ?? 0),
-                  likeCount: Number(raw?.likeCount ?? (p as any)?.likeCount ?? 0),
-                  parentPostId: raw?.parentPostId ?? (p as any)?.parentPostId,
-                  quotedPostId: raw?.quotedPostId ?? (p as any)?.quotedPostId,
-                  insertedAt: raw?.insertedAt ? new Date(raw.insertedAt).toISOString() : ((p as any)?.insertedAt ?? now),
-                  createdAt: raw?.createdAt ? new Date(raw.createdAt).toISOString() : ((p as any)?.createdAt ?? now),
-                  updatedAt: raw?.updatedAt ? new Date(raw.updatedAt).toISOString() : now,
-                  postType: raw?.postType ?? (p as any)?.postType,
-                  meta: raw?.meta ?? (p as any)?.meta,
-                  isPinned: raw?.isPinned ?? (p as any)?.isPinned,
-                  pinOrder: raw?.pinOrder ?? (p as any)?.pinOrder,
-                } as any;
-
-                return { ...prev, posts };
+              const up = await apiFetch({
+                path: `/posts/${encodeURIComponent(createdPostId)}/images`,
+                token,
+                init: {
+                  method: "POST",
+                  body: form as any,
+                },
               });
 
-              setState({ isReady: true, db: nextDb as any });
-              return;
+              if (up.ok) {
+                raw = (up.json as any)?.post ?? raw;
+              }
             }
-          }
+
+            if (!raw) return;
+
+            const postId = String(raw?.id ?? createdPostId ?? id);
+            const nextDb = await updateDb((prev) => {
+              const posts = { ...(prev.posts ?? {}) } as any;
+
+              if (postId && postId !== id && posts[id]) delete posts[id];
+
+              const existing = posts[postId] ?? {};
+              posts[postId] = {
+                ...existing,
+                ...pLocal,
+                id: postId,
+                scenarioId: String(raw?.scenarioId ?? (pLocal as any)?.scenarioId ?? sid),
+                authorProfileId: String(raw?.authorProfileId ?? (pLocal as any)?.authorProfileId ?? ""),
+                authorUserId:
+                  String(raw?.authorUserId ?? raw?.author_user_id ?? (pLocal as any)?.authorUserId ?? existing?.authorUserId ?? "")
+                    .trim() || undefined,
+                text: String(raw?.text ?? (pLocal as any)?.text ?? ""),
+                imageUrls: Array.isArray(raw?.imageUrls)
+                  ? raw.imageUrls.map(String).filter(Boolean)
+                  : Array.isArray((pLocal as any)?.imageUrls)
+                    ? (pLocal as any).imageUrls.map(String).filter(Boolean)
+                    : (existing?.imageUrls ?? []),
+                replyCount: Number(raw?.replyCount ?? (pLocal as any)?.replyCount ?? existing?.replyCount ?? 0),
+                repostCount: Number(raw?.repostCount ?? (pLocal as any)?.repostCount ?? existing?.repostCount ?? 0),
+                likeCount: Number(raw?.likeCount ?? (pLocal as any)?.likeCount ?? existing?.likeCount ?? 0),
+                parentPostId: raw?.parentPostId ?? (pLocal as any)?.parentPostId ?? existing?.parentPostId,
+                quotedPostId: raw?.quotedPostId ?? (pLocal as any)?.quotedPostId ?? existing?.quotedPostId,
+                insertedAt: raw?.insertedAt ? new Date(raw.insertedAt).toISOString() : ((pLocal as any)?.insertedAt ?? existing?.insertedAt ?? now),
+                createdAt: raw?.createdAt ? new Date(raw.createdAt).toISOString() : ((pLocal as any)?.createdAt ?? existing?.createdAt ?? now),
+                updatedAt: raw?.updatedAt ? new Date(raw.updatedAt).toISOString() : now,
+                postType: raw?.postType ?? (pLocal as any)?.postType ?? existing?.postType,
+                meta: raw?.meta ?? (pLocal as any)?.meta ?? existing?.meta,
+                isPinned: raw?.isPinned ?? (pLocal as any)?.isPinned ?? existing?.isPinned,
+                pinOrder: raw?.pinOrder ?? (pLocal as any)?.pinOrder ?? existing?.pinOrder,
+              } as any;
+
+              return { ...prev, posts };
+            });
+
+            setState({ isReady: true, db: nextDb as any });
+          })().catch(() => {
+            // ignore; keep optimistic post
+          });
+
+          return;
         }
 
         const next = await updateDb((prev) => {
