@@ -20,6 +20,7 @@ messageRouter.get(
       .object({
         limit: z.coerce.number().int().min(1).max(200).optional(),
         beforeCreatedAt: z.string().optional(),
+        cursor: z.string().optional(),
         selectedProfileId: z.string().uuid().optional(),
       })
       .passthrough(),
@@ -30,10 +31,11 @@ messageRouter.get(
 
   const limit = req.query?.limit ? Number(req.query.limit) : undefined;
   const beforeCreatedAt = req.query?.beforeCreatedAt ? String(req.query.beforeCreatedAt) : undefined;
+  const cursor = req.query?.cursor ? String(req.query.cursor) : undefined;
 
   // console.info("[messages] list", { conversationId, userId, limit, beforeCreatedAt });
   const selectedProfileId = req.query?.selectedProfileId ? String(req.query.selectedProfileId) : undefined;
-  const out = await listMessages({ conversationId, userId, selectedProfileId, limit, beforeCreatedAt });
+  const out = await listMessages({ conversationId, userId, selectedProfileId, limit, beforeCreatedAt, cursor });
   // console.info("[messages] list: resultCount", { conversationId, count: out?.messages?.length ?? 0 });
   if (out == null) return res.status(403).json({ error: "Forbidden" });
 

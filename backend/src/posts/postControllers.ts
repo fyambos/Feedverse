@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import { ERROR_MESSAGES, HTTP_METHODS, HTTP_STATUS } from "../config/constants";
 import { upload } from "../config/multer";
+import { sendMethodNotAllowed } from "../lib/apiResponses";
 import {
   CreatePostForScenarioService,
   DeletePostService,
@@ -12,7 +13,7 @@ import {
 
 export const ListScenarioPostsController = async (req: Request, res: Response) => {
   if (req.method !== HTTP_METHODS.GET) {
-    return res.status(HTTP_STATUS.BAD_REQUEST).send(ERROR_MESSAGES.METHOD_NOT_ALLOWED);
+    return sendMethodNotAllowed(req, res);
   }
 
   try {
@@ -24,20 +25,16 @@ export const ListScenarioPostsController = async (req: Request, res: Response) =
 
     const rawLimit = req.query?.limit;
     const rawCursor = req.query?.cursor;
-    const hasPaging = rawLimit != null || rawCursor != null;
 
-    if (hasPaging) {
-      const limit = Math.max(1, Math.min(500, Number.isFinite(Number(rawLimit)) ? Math.floor(Number(rawLimit)) : 200));
-      const cursor = rawCursor == null ? null : String(rawCursor);
-      const page = await ListPostsPageForScenarioService(userId, scenarioId, { limit, cursor });
-      if (!page) return res.status(HTTP_STATUS.FORBIDDEN).json({ error: "Not allowed" });
-      return res.status(HTTP_STATUS.OK).json(page);
-    }
+    const limit = Math.max(
+      1,
+      Math.min(500, Number.isFinite(Number(rawLimit)) ? Math.floor(Number(rawLimit)) : 200),
+    );
+    const cursor = rawCursor == null ? null : String(rawCursor);
 
-    const posts = await ListPostsForScenarioService(userId, scenarioId);
-    if (!posts) return res.status(HTTP_STATUS.FORBIDDEN).json({ error: "Not allowed" });
-
-    return res.status(HTTP_STATUS.OK).json(posts);
+    const page = await ListPostsPageForScenarioService(userId, scenarioId, { limit, cursor });
+    if (!page) return res.status(HTTP_STATUS.FORBIDDEN).json({ error: "Not allowed" });
+    return res.status(HTTP_STATUS.OK).json(page);
   } catch (error: unknown) {
     console.error("Erreur récupération posts:", error);
     return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ error: ERROR_MESSAGES.INTERNAL_SERVER_ERROR });
@@ -46,7 +43,7 @@ export const ListScenarioPostsController = async (req: Request, res: Response) =
 
 export const CreateScenarioPostController = async (req: Request, res: Response) => {
   if (req.method !== HTTP_METHODS.POST) {
-    return res.status(HTTP_STATUS.BAD_REQUEST).send(ERROR_MESSAGES.METHOD_NOT_ALLOWED);
+    return res.status(HTTP_STATUS.BAD_REQUEST).json({ error: ERROR_MESSAGES.METHOD_NOT_ALLOWED });
   }
 
   try {
@@ -90,7 +87,7 @@ export const CreateScenarioPostController = async (req: Request, res: Response) 
 
 export const UpdatePostController = async (req: Request, res: Response) => {
   if (req.method !== HTTP_METHODS.PATCH) {
-    return res.status(HTTP_STATUS.BAD_REQUEST).send(ERROR_MESSAGES.METHOD_NOT_ALLOWED);
+    return res.status(HTTP_STATUS.BAD_REQUEST).json({ error: ERROR_MESSAGES.METHOD_NOT_ALLOWED });
   }
 
   try {
@@ -118,7 +115,7 @@ export const UpdatePostController = async (req: Request, res: Response) => {
 
 export const DeletePostController = async (req: Request, res: Response) => {
   if (req.method !== HTTP_METHODS.DELETE) {
-    return res.status(HTTP_STATUS.BAD_REQUEST).send(ERROR_MESSAGES.METHOD_NOT_ALLOWED);
+    return res.status(HTTP_STATUS.BAD_REQUEST).json({ error: ERROR_MESSAGES.METHOD_NOT_ALLOWED });
   }
 
   try {
@@ -146,7 +143,7 @@ export const UploadPostImagesController = [
   upload.array("images", 8),
   async (req: Request, res: Response) => {
     if (req.method !== HTTP_METHODS.POST) {
-      return res.status(HTTP_STATUS.BAD_REQUEST).send(ERROR_MESSAGES.METHOD_NOT_ALLOWED);
+      return sendMethodNotAllowed(req, res);
     }
 
     try {

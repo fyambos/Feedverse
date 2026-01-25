@@ -1,10 +1,11 @@
 import type { Request, Response } from "express";
 import { ERROR_MESSAGES, HTTP_METHODS, HTTP_STATUS } from "../config/constants";
+import { sendMethodNotAllowed } from "../lib/apiResponses";
 import { ListLikesForScenarioService, SetLikeStateService } from "./likeServices";
 
 export const ListScenarioLikesController = async (req: Request, res: Response) => {
   if (req.method !== HTTP_METHODS.GET) {
-    return res.status(HTTP_STATUS.BAD_REQUEST).send(ERROR_MESSAGES.METHOD_NOT_ALLOWED);
+    return sendMethodNotAllowed(req, res);
   }
 
   try {
@@ -28,7 +29,7 @@ export const SetPostLikeController = async (req: Request, res: Response) => {
   const isPost = req.method === HTTP_METHODS.POST;
   const isDelete = req.method === HTTP_METHODS.DELETE;
   if (!isPost && !isDelete) {
-    return res.status(HTTP_STATUS.BAD_REQUEST).send(ERROR_MESSAGES.METHOD_NOT_ALLOWED);
+    return sendMethodNotAllowed(req, res);
   }
 
   try {

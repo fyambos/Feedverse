@@ -2355,7 +2355,8 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
           token,
         });
 
-        const rows = Array.isArray((res.json as any)?.messages) ? ((res.json as any).messages as any[]) : null;
+        const json: any = res.json as any;
+        const rows = Array.isArray(json?.items) ? (json.items as any[]) : Array.isArray(json?.messages) ? (json.messages as any[]) : null;
         if (!res.ok || !rows) return;
 
         // Debug: log server response message IDs

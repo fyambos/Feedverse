@@ -25,6 +25,8 @@ function isBodyParserSyntaxError(err: unknown): err is SyntaxError & { status?: 
 
 export const notFoundHandler: RequestHandler = (req, res) => {
   res.status(HTTP_STATUS.NOT_FOUND).json({
+    ok: false,
+    status: HTTP_STATUS.NOT_FOUND,
     error: "Not found",
     path: req.originalUrl,
     requestId: req.requestId ?? null,
@@ -69,7 +71,10 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, next) => {
   logger.error({ err, method: req.method, path: req.originalUrl, status, requestId: req.requestId ?? null }, "Unhandled error");
 
   const payload: any = {
+    ok: false,
+    status,
     error: errorMessage,
+    path: req.originalUrl,
     requestId: req.requestId ?? null,
   };
   if (details != null) payload.details = details;

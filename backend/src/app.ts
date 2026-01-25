@@ -55,6 +55,12 @@ export function createApp() {
   // Structured request/response logging
   app.use(createHttpLogger());
 
+  // API version header (default v1).
+  app.use((_req, res, next) => {
+    res.setHeader("X-API-Version", "1");
+    next();
+  });
+
   // Health checks (no auth)
   app.get("/healthz", async (_req, res) => {
     const db = await dbPing({ timeoutMs: 1500 });
@@ -74,17 +80,27 @@ export function createApp() {
     return res.status(200).json({ ok: true, uptimeSec: Math.round(process.uptime()), db });
   });
 
-  app.use(ROUTES_AUTH.BASE, authRouter);
-  app.use(ROUTES_USERS.BASE, userRouter);
-  app.use("/scenarios", scenarioRouter);
-  app.use("/profiles", profileRouter);
-  app.use("/posts", postRouter);
-  app.use("/reposts", repostRouter);
-  app.use("/likes", likeRouter);
-  app.use("/global-tags", globalTagRouter);
-  app.use(conversationRouter);
-  app.use(messageRouter);
-  app.use(realtimeRouter);
+  const mountRoutes = (router: any) => {
+    router.use(ROUTES_AUTH.BASE, authRouter);
+    router.use(ROUTES_USERS.BASE, userRouter);
+    router.use("/scenarios", scenarioRouter);
+    router.use("/profiles", profileRouter);
+    router.use("/posts", postRouter);
+    router.use("/reposts", repostRouter);
+    router.use("/likes", likeRouter);
+    router.use("/global-tags", globalTagRouter);
+    router.use(conversationRouter);
+    router.use(messageRouter);
+    router.use(realtimeRouter);
+  };
+
+  // Unversioned (current) routes
+  mountRoutes(app);
+
+  // Versioned routes (non-breaking strategy)
+  const v1 = express.Router();
+  mountRoutes(v1);
+  app.use("/v1", v1);
 
   // Final handlers
   app.use(notFoundHandler);

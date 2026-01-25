@@ -153,7 +153,8 @@ export async function listMessages(args: {
   selectedProfileId?: string;
   limit?: number;
   beforeCreatedAt?: string;
-}): Promise<{ messages: MessageApi[] } | null> {
+  cursor?: string;
+}): Promise<{ items: MessageApi[]; nextCursor: string | null } | null> {
   const cid = String(args.conversationId ?? "").trim();
   const uid = String(args.userId ?? "").trim();
   if (!cid || !uid) return null;
@@ -161,6 +162,23 @@ export async function listMessages(args: {
   const limit = Math.max(1, Math.min(200, Number.isFinite(args.limit as any) ? Number(args.limit) : 100));
   const before = args.beforeCreatedAt ? String(args.beforeCreatedAt) : "";
   const beforeDate = before ? new Date(before) : null;
+
+  // Cursor format: `${createdAtIso}|${id}`
+  const cursorRaw = String(args.cursor ?? "").trim();
+  let cursorCreatedAtIso: string | null = null;
+  let cursorId: string | null = null;
+  if (cursorRaw) {
+    const parts = cursorRaw.split("|");
+    if (parts.length >= 2) {
+      const t = String(parts[0] ?? "").trim();
+      const id = String(parts.slice(1).join("|") ?? "").trim();
+      const dt = new Date(t);
+      if (t && id && Number.isFinite(dt.getTime())) {
+        cursorCreatedAtIso = dt.toISOString();
+        cursorId = id;
+      }
+    }
+  }
 
   const client = await pool.connect();
   try {
@@ -213,15 +231,28 @@ export async function listMessages(args: {
       FROM messages
       WHERE conversation_id = $1
         AND ($2::timestamptz IS NULL OR created_at < $2::timestamptz)
+        AND (
+          $4::timestamptz IS NULL
+          OR (created_at, id) < ($4::timestamptz, $5::uuid)
+        )
       ORDER BY created_at DESC, id DESC
       LIMIT $3
     `,
-      [cid, beforeDate ? beforeDate.toISOString() : null, limit],
+      [cid, beforeDate ? beforeDate.toISOString() : null, limit, cursorCreatedAtIso, cursorId],
     );
 
     // Reverse to oldest->newest for easier client rendering.
-    const messages = res.rows.map(mapMessageRowToApi).reverse();
-    return { messages };
+    const items = res.rows.map(mapMessageRowToApi).reverse();
+
+    let nextCursor: string | null = null;
+    if (res.rows.length === limit) {
+      const oldest = res.rows[res.rows.length - 1];
+      const tIso = new Date(String((oldest as any)?.created_at ?? "")).toISOString();
+      const id = String((oldest as any)?.id ?? "");
+      if (tIso && id) nextCursor = `${tIso}|${id}`;
+    }
+
+    return { items, nextCursor };
   } catch {
     return null;
   } finally {

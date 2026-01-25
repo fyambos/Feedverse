@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
 import { ERROR_MESSAGES, HTTP_METHODS, HTTP_STATUS } from "../config/constants";
+import { sendMethodNotAllowed } from "../lib/apiResponses";
 import {
   listActiveUserSessions,
   revokeOtherUserSessions,
@@ -19,7 +20,7 @@ function toIso(v: unknown): string {
 
 export const ListSessionsController = async (req: Request, res: Response) => {
   if (req.method !== HTTP_METHODS.GET) {
-    return res.status(HTTP_STATUS.BAD_REQUEST).send(ERROR_MESSAGES.METHOD_NOT_ALLOWED);
+    return sendMethodNotAllowed(req, res);
   }
 
   try {
@@ -51,7 +52,7 @@ export const ListSessionsController = async (req: Request, res: Response) => {
 
 export const LogoutOtherSessionsController = async (req: Request, res: Response) => {
   if (req.method !== HTTP_METHODS.POST) {
-    return res.status(HTTP_STATUS.BAD_REQUEST).send(ERROR_MESSAGES.METHOD_NOT_ALLOWED);
+    return sendMethodNotAllowed(req, res);
   }
 
   try {

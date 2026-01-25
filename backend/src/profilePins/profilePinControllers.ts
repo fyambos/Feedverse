@@ -1,10 +1,11 @@
 import type { Request, Response } from "express";
 import { ERROR_MESSAGES, HTTP_METHODS, HTTP_STATUS } from "../config/constants";
+import { sendMethodNotAllowed } from "../lib/apiResponses";
 import { ListProfilePinsForScenarioService, SetProfilePinnedPostService } from "./profilePinServices";
 
 export const ListScenarioProfilePinsController = async (req: Request, res: Response) => {
   if (req.method !== HTTP_METHODS.GET) {
-    return res.status(HTTP_STATUS.BAD_REQUEST).send(ERROR_MESSAGES.METHOD_NOT_ALLOWED);
+    return sendMethodNotAllowed(req, res);
   }
 
   try {
@@ -26,7 +27,7 @@ export const ListScenarioProfilePinsController = async (req: Request, res: Respo
 
 export const PutProfilePinnedPostController = async (req: Request, res: Response) => {
   if (req.method !== HTTP_METHODS.PUT) {
-    return res.status(HTTP_STATUS.BAD_REQUEST).send(ERROR_MESSAGES.METHOD_NOT_ALLOWED);
+    return sendMethodNotAllowed(req, res);
   }
 
   try {

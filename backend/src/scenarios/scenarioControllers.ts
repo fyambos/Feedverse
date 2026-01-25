@@ -5,6 +5,7 @@ import { pool } from "../config/database";
 
 import type { Request, Response } from "express";
 import { HTTP_METHODS, HTTP_STATUS, ERROR_MESSAGES } from "../config/constants";
+import { sendMethodNotAllowed } from "../lib/apiResponses";
 import {
   CreateScenarioService,
   DeleteScenarioService,
@@ -17,9 +18,7 @@ import {
 
 export const ListScenariosController = async (req: Request, res: Response) => {
   if (req.method !== HTTP_METHODS.GET) {
-    return res
-      .status(HTTP_STATUS.BAD_REQUEST)
-      .send(ERROR_MESSAGES.METHOD_NOT_ALLOWED);
+    return sendMethodNotAllowed(req, res);
   }
 
   try {
@@ -36,9 +35,7 @@ export const ListScenariosController = async (req: Request, res: Response) => {
 
 export const JoinScenarioByInviteCodeController = async (req: Request, res: Response) => {
   if (req.method !== HTTP_METHODS.POST) {
-    return res
-      .status(HTTP_STATUS.BAD_REQUEST)
-      .send(ERROR_MESSAGES.METHOD_NOT_ALLOWED);
+    return sendMethodNotAllowed(req, res);
   }
 
   try {
@@ -70,9 +67,7 @@ export const JoinScenarioByInviteCodeController = async (req: Request, res: Resp
 
 export const CreateScenarioController = async (req: Request, res: Response) => {
   if (req.method !== HTTP_METHODS.POST) {
-    return res
-      .status(HTTP_STATUS.BAD_REQUEST)
-      .send(ERROR_MESSAGES.METHOD_NOT_ALLOWED);
+    return sendMethodNotAllowed(req, res);
   }
 
   try {
@@ -115,9 +110,7 @@ export const CreateScenarioController = async (req: Request, res: Response) => {
 
 export const UpdateScenarioController = async (req: Request, res: Response) => {
   if (req.method !== HTTP_METHODS.PATCH) {
-    return res
-      .status(HTTP_STATUS.BAD_REQUEST)
-      .send(ERROR_MESSAGES.METHOD_NOT_ALLOWED);
+    return sendMethodNotAllowed(req, res);
   }
 
   try {
@@ -149,9 +142,7 @@ export const UpdateScenarioController = async (req: Request, res: Response) => {
 
 export const DeleteScenarioController = async (req: Request, res: Response) => {
   if (req.method !== HTTP_METHODS.DELETE) {
-    return res
-      .status(HTTP_STATUS.BAD_REQUEST)
-      .send(ERROR_MESSAGES.METHOD_NOT_ALLOWED);
+    return sendMethodNotAllowed(req, res);
   }
 
   try {
@@ -181,9 +172,7 @@ export const DeleteScenarioController = async (req: Request, res: Response) => {
 
 export const LeaveScenarioController = async (req: Request, res: Response) => {
   if (req.method !== HTTP_METHODS.POST) {
-    return res
-      .status(HTTP_STATUS.BAD_REQUEST)
-      .send(ERROR_MESSAGES.METHOD_NOT_ALLOWED);
+    return sendMethodNotAllowed(req, res);
   }
 
   try {
@@ -207,9 +196,7 @@ export const LeaveScenarioController = async (req: Request, res: Response) => {
 
 export const TransferScenarioOwnershipController = async (req: Request, res: Response) => {
   if (req.method !== HTTP_METHODS.POST) {
-    return res
-      .status(HTTP_STATUS.BAD_REQUEST)
-      .send(ERROR_MESSAGES.METHOD_NOT_ALLOWED);
+    return sendMethodNotAllowed(req, res);
   }
 
   try {

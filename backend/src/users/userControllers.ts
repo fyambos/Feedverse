@@ -10,12 +10,13 @@ import {
   USER_MESSAGES,
 } from "../config/constants";
 import { normalizeUsername, validateUsername } from "../lib/username";
+import { sendMethodNotAllowed } from "../lib/apiResponses";
 
 
 // PATCH /username
 export const UpdateUsernameController = async (req: Request, res: Response) => {
   if (req.method !== "PATCH") {
-    return res.status(405).json({ error: "Method not allowed" });
+    return sendMethodNotAllowed(req, res);
   }
   try {
     const user = req.user as User | undefined;
@@ -47,7 +48,7 @@ export const UpdateUsernameController = async (req: Request, res: Response) => {
 
 export const GetUserProfileController = async (req: Request, res: Response) => {
   if (req.method !== HTTP_METHODS.GET) {
-    return res.status(HTTP_STATUS.BAD_REQUEST).send(ERROR_MESSAGES.METHOD_NOT_ALLOWED);
+    return sendMethodNotAllowed(req, res);
   }
 
   try {
@@ -72,7 +73,7 @@ export const GetUserProfileController = async (req: Request, res: Response) => {
 
 export const UpdateUserAvatarController = async (req: Request, res: Response) => {
   if (req.method !== HTTP_METHODS.POST) {
-    return res.status(HTTP_STATUS.BAD_REQUEST).send(ERROR_MESSAGES.METHOD_NOT_ALLOWED);
+    return sendMethodNotAllowed(req, res);
   }
 
   try {
@@ -105,7 +106,7 @@ export const UpdateUserAvatarController = async (req: Request, res: Response) =>
 
 export const GetUsersByIdsController = async (req: Request, res: Response) => {
   if (req.method !== HTTP_METHODS.GET) {
-    return res.status(HTTP_STATUS.BAD_REQUEST).send(ERROR_MESSAGES.METHOD_NOT_ALLOWED);
+    return sendMethodNotAllowed(req, res);
   }
 
   try {
@@ -136,7 +137,7 @@ export const GetUsersByIdsController = async (req: Request, res: Response) => {
 // POST /users/push-token
 export const UpsertUserPushTokenController = async (req: Request, res: Response) => {
   if (req.method !== HTTP_METHODS.POST) {
-    return res.status(HTTP_STATUS.BAD_REQUEST).send(ERROR_MESSAGES.METHOD_NOT_ALLOWED);
+    return sendMethodNotAllowed(req, res);
   }
 
   try {
@@ -166,7 +167,7 @@ export const UpsertUserPushTokenController = async (req: Request, res: Response)
 // Body or query can include expoPushToken. If omitted, deletes all tokens for the user.
 export const DeleteUserPushTokenController = async (req: Request, res: Response) => {
   if (req.method !== "DELETE") {
-    return res.status(405).json({ error: "Method not allowed" });
+    return sendMethodNotAllowed(req, res);
   }
 
   try {

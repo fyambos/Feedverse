@@ -15,6 +15,7 @@ import { UserRepository } from "../users/userRepositories";
 import { createUserSession, findUserSessionByRefreshTokenHash, hashTokenSha256Hex, revokeUserSessionById, rotateUserSessionRefreshToken } from "../sessions/sessionRepositories";
 import { z } from "zod";
 import { validateBody } from "../middleware/validationMiddleware";
+import { sendMethodNotAllowed } from "../lib/apiResponses";
 
 const userRepository = new UserRepository();
 
@@ -74,9 +75,7 @@ export const RegisterController = [
   ),
   async (req: Request, res: Response) => {
     if (req.method !== HTTP_METHODS.POST) {
-      return res
-        .status(HTTP_STATUS.BAD_REQUEST)
-        .send(ERROR_MESSAGES.METHOD_NOT_ALLOWED);
+      return sendMethodNotAllowed(req, res);
     }
 
     try {
@@ -150,9 +149,7 @@ export const RegisterController = [
 
 export const LoginController = async (req: Request, res: Response) => {
   if (req.method !== HTTP_METHODS.POST) {
-    return res
-      .status(HTTP_STATUS.BAD_REQUEST)
-      .send(ERROR_MESSAGES.METHOD_NOT_ALLOWED);
+    return sendMethodNotAllowed(req, res);
   }
 
   try {
@@ -212,7 +209,7 @@ export const LoginController = async (req: Request, res: Response) => {
 
 export const RefreshTokenController = async (req: Request, res: Response) => {
   if (req.method !== HTTP_METHODS.POST) {
-    return res.status(HTTP_STATUS.BAD_REQUEST).send(ERROR_MESSAGES.METHOD_NOT_ALLOWED);
+    return sendMethodNotAllowed(req, res);
   }
 
   try {
@@ -224,22 +221,22 @@ export const RefreshTokenController = async (req: Request, res: Response) => {
     const refreshTokenHash = hashTokenSha256Hex(rawRefresh);
     const session = await findUserSessionByRefreshTokenHash({ refreshTokenHash });
     if (!session?.id || !session?.user_id) {
-      return res.status(HTTP_STATUS.FORBIDDEN).send(AUTH.INVALID_TOKEN);
+      return res.status(HTTP_STATUS.FORBIDDEN).json({ error: AUTH.INVALID_TOKEN });
     }
 
     if ((session as any).revoked_at) {
-      return res.status(HTTP_STATUS.FORBIDDEN).send(AUTH.INVALID_TOKEN);
+      return res.status(HTTP_STATUS.FORBIDDEN).json({ error: AUTH.INVALID_TOKEN });
     }
 
     const expiresAt: Date | null = (session as any).refresh_expires_at ?? null;
     if (!expiresAt || new Date(expiresAt).valueOf() <= Date.now()) {
-      return res.status(HTTP_STATUS.FORBIDDEN).send(AUTH.INVALID_TOKEN);
+      return res.status(HTTP_STATUS.FORBIDDEN).json({ error: AUTH.INVALID_TOKEN });
     }
 
     const userId = String((session as any).user_id);
     const user = await userRepository.findById(userId);
     if (!user) {
-      return res.status(HTTP_STATUS.FORBIDDEN).send(AUTH.INVALID_TOKEN);
+      return res.status(HTTP_STATUS.FORBIDDEN).json({ error: AUTH.INVALID_TOKEN });
     }
 
     const signed = signAuthToken({ user, sid: String((session as any).id) });
@@ -257,7 +254,7 @@ export const RefreshTokenController = async (req: Request, res: Response) => {
     });
 
     if (!ok) {
-      return res.status(HTTP_STATUS.FORBIDDEN).send(AUTH.INVALID_TOKEN);
+      return res.status(HTTP_STATUS.FORBIDDEN).json({ error: AUTH.INVALID_TOKEN });
     }
 
     return res.status(HTTP_STATUS.OK).json({
@@ -274,7 +271,7 @@ export const RefreshTokenController = async (req: Request, res: Response) => {
 
 export const LogoutController = async (req: Request, res: Response) => {
   if (req.method !== HTTP_METHODS.POST) {
-    return res.status(HTTP_STATUS.BAD_REQUEST).send(ERROR_MESSAGES.METHOD_NOT_ALLOWED);
+    return res.status(HTTP_STATUS.BAD_REQUEST).json({ error: ERROR_MESSAGES.METHOD_NOT_ALLOWED });
   }
 
   try {
@@ -291,5 +288,5 @@ export const LogoutController = async (req: Request, res: Response) => {
 };
 
 export const ProtectedController = async (_req: Request, res: Response) => {
-  res.status(HTTP_STATUS.OK).json("Accès à la route protégé !");
+  res.status(HTTP_STATUS.OK).json({ ok: true });
 };

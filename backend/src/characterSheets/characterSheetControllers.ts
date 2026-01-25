@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
 import { ERROR_MESSAGES, HTTP_METHODS, HTTP_STATUS } from "../config/constants";
+import { sendMethodNotAllowed } from "../lib/apiResponses";
 import {
   GetCharacterSheetForProfileService,
   ListCharacterSheetsForScenarioService,
@@ -8,7 +9,7 @@ import {
 
 export const ListScenarioCharacterSheetsController = async (req: Request, res: Response) => {
   if (req.method !== HTTP_METHODS.GET) {
-    return res.status(HTTP_STATUS.BAD_REQUEST).send(ERROR_MESSAGES.METHOD_NOT_ALLOWED);
+    return sendMethodNotAllowed(req, res);
   }
 
   try {
@@ -30,7 +31,7 @@ export const ListScenarioCharacterSheetsController = async (req: Request, res: R
 
 export const GetProfileCharacterSheetController = async (req: Request, res: Response) => {
   if (req.method !== HTTP_METHODS.GET) {
-    return res.status(HTTP_STATUS.BAD_REQUEST).send(ERROR_MESSAGES.METHOD_NOT_ALLOWED);
+    return sendMethodNotAllowed(req, res);
   }
 
   try {
@@ -52,7 +53,7 @@ export const GetProfileCharacterSheetController = async (req: Request, res: Resp
 
 export const PutProfileCharacterSheetController = async (req: Request, res: Response) => {
   if (req.method !== HTTP_METHODS.PUT) {
-    return res.status(HTTP_STATUS.BAD_REQUEST).send(ERROR_MESSAGES.METHOD_NOT_ALLOWED);
+    return sendMethodNotAllowed(req, res);
   }
 
   try {
