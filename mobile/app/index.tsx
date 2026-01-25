@@ -25,6 +25,9 @@ const MAX_PLAYERS = MAX_TOTAL_PLAYERS_PER_SCENARIO;
 const DISCORD_INVITE_URL = "https://discord.gg/pR8HbSDQdn";
 const DISCORD_LOGO = require("../assets/images/DiscordLogo.png");
 
+const BUY_ME_A_COFFEE_URL = "https://buymeacoffee.com/feedverse";
+const BUY_ME_A_COFFEE_ICON = require("../assets/images/BuyMeACoffeeIcon.png");
+
 type ScenarioMenuState = {
   open: boolean;
   scenarioId: string | null;
@@ -70,6 +73,12 @@ export default function ScenarioListScreen() {
 
   const openDiscord = useCallback(() => {
     void Linking.openURL(DISCORD_INVITE_URL).catch(() => {
+      Alert.alert("Can't open link", "Please try again later.");
+    });
+  }, []);
+
+  const openBuyMeACoffee = useCallback(() => {
+    void Linking.openURL(BUY_ME_A_COFFEE_URL).catch(() => {
       Alert.alert("Can't open link", "Please try again later.");
     });
   }, []);
@@ -788,6 +797,21 @@ export default function ScenarioListScreen() {
             >
               <Image source={DISCORD_LOGO} style={styles.discordIcon} />
             </Pressable>
+
+              <Pressable
+                onPress={openBuyMeACoffee}
+                hitSlop={10}
+                style={({ pressed }) => [
+                  styles.bmacBtn,
+                  { backgroundColor: colors.card, borderColor: colors.border },
+                  pressed && { opacity: 0.7 },
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel="Buy me a coffee"
+                accessibilityHint="Opens the Buy Me a Coffee page"
+              >
+                <Image source={BUY_ME_A_COFFEE_ICON} style={styles.bmacIcon} />
+              </Pressable>
           </View>
 
           <ThemedText type="defaultSemiBold" style={styles.topBarTitle}>
@@ -1120,9 +1144,9 @@ const styles = StyleSheet.create({
   headerIconBtn: { padding: 6, backgroundColor: "transparent" },
 
   discordBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     borderWidth: StyleSheet.hairlineWidth,
     alignItems: "center",
     justifyContent: "center",
@@ -1131,7 +1155,24 @@ const styles = StyleSheet.create({
   discordIcon: {
     width: "100%",
     height: "100%",
-    borderRadius: 21,
+    borderRadius: 17,
+    resizeMode: "cover",
+  },
+
+  bmacBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    marginLeft: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+  },
+  bmacIcon: {
+    width: "100%",
+    height: "100%",
+    borderRadius: 17,
     resizeMode: "cover",
   },
 
