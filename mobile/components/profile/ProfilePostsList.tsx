@@ -154,7 +154,11 @@ export function ProfilePostsList({
       ListHeaderComponent={ListHeaderComponent}
       renderItem={({ item }) => {
         const feedItem = item as FeedItem;
-        const post: DbPost = isRepostItem(feedItem) ? feedItem.post : (feedItem as DbPost);
+        const rawPost: DbPost = isRepostItem(feedItem) ? feedItem.post : (feedItem as DbPost);
+
+        // Use the latest DB row (counts, etc.) so UI updates immediately.
+        const postId = String(rawPost.id);
+        const post: DbPost = getPostById(postId) ?? rawPost;
 
         const authorProfile = getProfileById(String(post.authorProfileId));
         if (!authorProfile) return null;
@@ -172,8 +176,6 @@ export function ProfilePostsList({
               userId,
             })
           : false;
-
-        const postId = String(post.id);
 
         const isLiked = getIsLiked ? getIsLiked(postId) : false;
         const isReposted = getIsReposted ? getIsReposted(postId) : false;

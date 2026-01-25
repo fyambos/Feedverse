@@ -287,6 +287,8 @@ export default function PostScreen() {
             renderItem={({ item, index }) => {
               const itemId = String(item.id);
 
+              const liveItem = getPostById(itemId) ?? item;
+
               const authorProfileId = item.authorProfileId ? String(item.authorProfileId) : "";
               const profile = authorProfileId ? getProfileById(authorProfileId) : null;
               if (!profile) return null;
@@ -322,7 +324,7 @@ export default function PostScreen() {
                 <PostCard
                   scenarioId={sid}
                   profile={profile as any}
-                  item={item as any}
+                  item={liveItem as any}
                   variant={variant}
                   replyingTo={parentProfile?.handle}
                   showActions

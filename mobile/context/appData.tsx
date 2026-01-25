@@ -3605,6 +3605,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
           // In backend mode, feeds are filtered to posts we've "seen" from the server,
           // so we also mark this post as seen right away.
           const pLocal = { ...(p as any), id, scenarioId: sid, authorProfileId } as any;
+          const parentPostId = pLocal?.parentPostId ? String(pLocal.parentPostId) : "";
 
           const nextLocal = await updateDb((prev) => {
             const existing = (prev.posts as any)?.[id];
@@ -3612,20 +3613,29 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
             const insertedAt = (existing as any)?.insertedAt ?? (pLocal as any).insertedAt ?? now;
             const createdAt = (pLocal as any).createdAt ?? (existing as any)?.createdAt ?? now;
 
-            return {
-              ...prev,
-              posts: {
-                ...prev.posts,
-                [id]: {
-                  ...(existing ?? {}),
-                  ...pLocal,
-                  id,
-                  insertedAt,
-                  createdAt,
-                  updatedAt: now,
-                },
+            const posts = {
+              ...prev.posts,
+              [id]: {
+                ...(existing ?? {}),
+                ...pLocal,
+                id,
+                insertedAt,
+                createdAt,
+                updatedAt: now,
               },
-            };
+            } as any;
+
+            // If this is a reply, bump parent.replyCount optimistically.
+            if (parentPostId && posts[parentPostId]) {
+              const parent = posts[parentPostId];
+              posts[parentPostId] = {
+                ...parent,
+                replyCount: Math.max(0, Number((parent as any).replyCount ?? 0) + 1),
+                updatedAt: now,
+              } as any;
+            }
+
+            return { ...prev, posts };
           });
 
           try {
@@ -3638,6 +3648,11 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
             await markSeenPostsAsync(sid, [id]);
             const row = (nextLocal as any)?.posts?.[id] ?? null;
             if (row) await upsertPostsAsync([row]);
+
+            if (parentPostId) {
+              const parentRow = (nextLocal as any)?.posts?.[parentPostId] ?? null;
+              if (parentRow) await upsertPostsAsync([parentRow]);
+            }
           } catch {
             // ignore
           }
@@ -3781,26 +3796,42 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
           const insertedAt = (existing as any)?.insertedAt ?? (p as any).insertedAt ?? now;
           const createdAt = (p as any).createdAt ?? (existing as any)?.createdAt ?? now;
 
-          return {
-            ...prev,
-            posts: {
-              ...prev.posts,
-              [id]: {
-                ...(existing ?? {}),
-                ...p,
-                id,
-                insertedAt,
-                createdAt,
-                updatedAt: now,
-              },
+          const parentPostId = (p as any)?.parentPostId ? String((p as any).parentPostId) : "";
+
+          const posts = {
+            ...prev.posts,
+            [id]: {
+              ...(existing ?? {}),
+              ...p,
+              id,
+              insertedAt,
+              createdAt,
+              updatedAt: now,
             },
-          };
+          } as any;
+
+          if (parentPostId && posts[parentPostId]) {
+            const parent = posts[parentPostId];
+            posts[parentPostId] = {
+              ...parent,
+              replyCount: Math.max(0, Number((parent as any).replyCount ?? 0) + 1),
+              updatedAt: now,
+            } as any;
+          }
+
+          return { ...prev, posts };
         });
 
         // Keep SQL index in sync BEFORE setState so SQL-backed paging sees the new/updated post.
         try {
           const row = (next as any)?.posts?.[id] ?? null;
           if (row) await upsertPostsAsync([row]);
+
+          const parentPostId = (p as any)?.parentPostId ? String((p as any).parentPostId) : "";
+          if (parentPostId) {
+            const parentRow = (next as any)?.posts?.[parentPostId] ?? null;
+            if (parentRow) await upsertPostsAsync([parentRow]);
+          }
         } catch {
           // ignore
         }

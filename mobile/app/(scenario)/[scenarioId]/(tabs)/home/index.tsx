@@ -71,6 +71,7 @@ export default function HomeScreen() {
 
     listPostsPage,
     getProfileById,
+    getPostById,
     deletePost,
 
     toggleLike,
@@ -692,6 +693,7 @@ export default function HomeScreen() {
           const canEdit = canEditPost({ authorProfile: profile, userId: userId ?? null });
 
           const postId = String(item.id);
+          const livePost = getPostById(postId) ?? item;
           const liked = isPostLikedBySelectedProfile(sid, postId);
           const reposted = isPostRepostedBySelectedProfile(sid, postId);
 
@@ -700,7 +702,7 @@ export default function HomeScreen() {
               <PostCard
                 scenarioId={sid}
                 profile={profile as any}
-                item={item as any}
+                item={livePost as any}
                 refreshTick={refreshTick}
                 variant="feed"
                 showActions
