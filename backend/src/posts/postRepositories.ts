@@ -204,6 +204,83 @@ export async function listPostsPageForScenario(args: {
   }
 }
 
+export async function getPostThreadForScenario(args: {
+  scenarioId: string;
+  userId: string;
+  postId: string;
+}): Promise<{ items: PostApi[] } | null> {
+  const sid = String(args.scenarioId ?? "").trim();
+  const uid = String(args.userId ?? "").trim();
+  const pid = String(args.postId ?? "").trim();
+  if (!sid || !uid || !pid) return null;
+
+  const client = await pool.connect();
+  try {
+    const ok = await scenarioAccess(client, sid, uid);
+    if (!ok) return null;
+
+    const res = await client.query<PostRow>(
+      `
+      WITH RECURSIVE thread AS (
+        SELECT
+          id,
+          scenario_id,
+          author_profile_id,
+          author_user_id,
+          text,
+          image_urls,
+          reply_count,
+          repost_count,
+          like_count,
+          parent_post_id,
+          quoted_post_id,
+          inserted_at,
+          created_at,
+          post_type,
+          meta,
+          is_pinned,
+          pin_order,
+          updated_at
+        FROM posts
+        WHERE scenario_id = $1 AND id = $2
+
+        UNION ALL
+
+        SELECT
+          p.id,
+          p.scenario_id,
+          p.author_profile_id,
+          p.author_user_id,
+          p.text,
+          p.image_urls,
+          p.reply_count,
+          p.repost_count,
+          p.like_count,
+          p.parent_post_id,
+          p.quoted_post_id,
+          p.inserted_at,
+          p.created_at,
+          p.post_type,
+          p.meta,
+          p.is_pinned,
+          p.pin_order,
+          p.updated_at
+        FROM posts p
+        JOIN thread t ON p.parent_post_id = t.id
+        WHERE p.scenario_id = $1
+      )
+      SELECT * FROM thread
+      ORDER BY created_at ASC, id ASC
+      `,
+      [sid, pid],
+    );
+
+    return { items: res.rows.map(mapPostRowToApi) };
+  } finally {
+    client.release();
+  }
+}
+
 export async function createPostForScenario(args: {
   scenarioId: string;
   userId: string;

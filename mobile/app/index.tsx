@@ -501,6 +501,15 @@ export default function ScenarioListScreen() {
     }, 0);
   };
 
+  const openPlayersForMenuScenario = () => {
+    const sid = String(menu.scenarioId ?? "").trim();
+    if (!sid) return;
+    closeScenarioMenu();
+    setTimeout(() => {
+      router.push(`/(scenario)/${sid}/players` as any);
+    }, 0);
+  };
+
   const muteAllNotificationsForMenuScenario = () => {
     const sid = String(menu.scenarioId ?? "").trim();
     if (!sid) return;
@@ -559,6 +568,22 @@ export default function ScenarioListScreen() {
             <Ionicons name="copy-outline" size={18} color={colors.text} />
             <ThemedText style={{ color: colors.text, fontSize: 15, fontWeight: "600" }}>
               Copy Invite Code
+            </ThemedText>
+          </Pressable>
+
+          <View style={[styles.menuDivider, { backgroundColor: colors.border }]} />
+
+          {/* Players */}
+          <Pressable
+            onPress={openPlayersForMenuScenario}
+            style={({ pressed }) => [
+              styles.menuItem,
+              { backgroundColor: pressed ? colors.pressed : "transparent" },
+            ]}
+          >
+            <Ionicons name="people-outline" size={18} color={colors.text} />
+            <ThemedText style={{ color: colors.text, fontSize: 15, fontWeight: "700" }}>
+              Players
             </ThemedText>
           </Pressable>
 

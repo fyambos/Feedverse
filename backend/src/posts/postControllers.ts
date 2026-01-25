@@ -5,6 +5,7 @@ import { sendMethodNotAllowed } from "../lib/apiResponses";
 import {
   CreatePostForScenarioService,
   DeletePostService,
+  GetPostThreadForScenarioService,
   ListPostsForScenarioService,
   ListPostsPageForScenarioService,
   UpdatePostService,
@@ -37,6 +38,31 @@ export const ListScenarioPostsController = async (req: Request, res: Response) =
     return res.status(HTTP_STATUS.OK).json(page);
   } catch (error: unknown) {
     console.error("Erreur récupération posts:", error);
+    return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ error: ERROR_MESSAGES.INTERNAL_SERVER_ERROR });
+  }
+};
+
+export const GetScenarioPostThreadController = async (req: Request, res: Response) => {
+  if (req.method !== HTTP_METHODS.GET) {
+    return sendMethodNotAllowed(req, res);
+  }
+
+  try {
+    const userId = String(req.user?.id ?? "").trim();
+    if (!userId) return res.status(HTTP_STATUS.UNAUTHORIZED).json({ error: "Unauthorized" });
+
+    const scenarioId = String(req.params?.id ?? "").trim();
+    if (!scenarioId) return res.status(HTTP_STATUS.BAD_REQUEST).json({ error: "scenarioId is required" });
+
+    const postId = String((req.params as any)?.postId ?? "").trim();
+    if (!postId) return res.status(HTTP_STATUS.BAD_REQUEST).json({ error: "postId is required" });
+
+    const result = await GetPostThreadForScenarioService(userId, scenarioId, postId);
+    if (!result) return res.status(HTTP_STATUS.FORBIDDEN).json({ error: "Not allowed" });
+
+    return res.status(HTTP_STATUS.OK).json(result);
+  } catch (error: unknown) {
+    console.error("GetScenarioPostThreadController failed", error);
     return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ error: ERROR_MESSAGES.INTERNAL_SERVER_ERROR });
   }
 };

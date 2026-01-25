@@ -46,6 +46,7 @@ export default function HomeScreen() {
     db,
 
     listPostsPage,
+    refreshPostsForScenario,
     getProfileById,
     getPostById,
     deletePost,
@@ -112,6 +113,17 @@ export default function HomeScreen() {
         },
       },
     ];
+
+    actions.push({
+      text: "Players",
+      icon: { name: "people-outline" as const },
+      onPress: () => {
+        router.push({
+          pathname: "/(scenario)/[scenarioId]/players",
+          params: { scenarioId: sid },
+        } as any);
+      },
+    });
 
     // Add "View pins" only in campaign mode, before View Settings
     if (isCampaign) {
@@ -352,7 +364,22 @@ export default function HomeScreen() {
 
     try {
       listRef.current?.scrollToOffset({ offset: 0, animated: true });
+
+      // Force posts sync (including replies) in backend mode.
+      // This bypasses the normal throttle.
+      try {
+        refreshPostsForScenario?.(sid);
+      } catch {}
+
       loadFirstPage();
+
+      // The forced sync is async; reload shortly after so new replies show up.
+      setTimeout(() => {
+        try {
+          loadFirstPageRef.current();
+        } catch {}
+      }, 450);
+
       // bump a tick so FlatList re-renders items (updates relative timestamps)
       setRefreshTick(Date.now());
       // shallow-clone current items to ensure rows receive new object references
@@ -361,7 +388,7 @@ export default function HomeScreen() {
       setRefreshing(false);
       loadingLock.current = false;
     }
-  }, [isReady, loadFirstPage]);
+  }, [isReady, loadFirstPage, refreshPostsForScenario, sid]);
 
   // Ensure the feed loads on first focus (some backend sync paths can populate
   // the DB after the initial render). Also refresh when a post/delete flagged it.

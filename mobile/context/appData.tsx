@@ -249,6 +249,11 @@ type AppDataApi = {
   getPostById: (id: string) => Post | null;
   listPostsForScenario: (scenarioId: string) => Post[];
   listRepliesForPost: (postId: string) => Post[];
+  // fast-path: fetch a single thread from backend and hydrate local DB
+  syncPostThreadForScenario: (scenarioId: string, rootPostId: string) => Promise<boolean>;
+
+  // manual refresh hook for pull-to-refresh (forces sync, including replies)
+  refreshPostsForScenario: (scenarioId: string) => void;
 
   // paging
   listPostsPage: (args: PostsPageArgs) => PostsPageResult;
@@ -682,6 +687,118 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
   const notificationNavRef = React.useRef<{ key: string; atMs: number } | null>(null);
   const notificationNavTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const syncPostThreadForScenario = React.useCallback<AppDataApi["syncPostThreadForScenario"]>(
+    async (scenarioId, rootPostId) => {
+      const sid = String(scenarioId ?? "").trim();
+      const pid = String(rootPostId ?? "").trim();
+      if (!sid || !pid) return false;
+      if (!db) return false;
+      if (!auth.isReady) return false;
+
+      // Backend mode scenario ids are UUIDs; avoid calling the server for local/imported scenarios.
+      if (!isUuidLike(sid)) return false;
+
+      const token = String(auth.token ?? "").trim();
+      const baseUrl = String(process.env.EXPO_PUBLIC_API_BASE_URL ?? "").trim();
+      if (!token || !baseUrl) return false;
+
+      try {
+        const res = await apiFetch({
+          path: `/scenarios/${encodeURIComponent(sid)}/posts/${encodeURIComponent(pid)}/thread`,
+          token,
+        });
+        if (!res.ok) return false;
+
+        const rows: any[] = Array.isArray((res.json as any)?.items)
+          ? ((res.json as any).items as any[])
+          : Array.isArray(res.json)
+            ? (res.json as any[])
+            : [];
+
+        if (rows.length === 0) return false;
+
+        const seen = (serverSeenPostsRef.current.byScenario[sid] ??= {});
+        const seenIds: string[] = [];
+        for (const raw of rows) {
+          const id = String(raw?.id ?? "").trim();
+          if (!id) continue;
+          seen[id] = true;
+          seenIds.push(id);
+        }
+
+        const now = new Date().toISOString();
+        const nextDb = await updateDb((prev) => {
+          const posts = { ...(prev.posts ?? {}) } as any;
+
+          for (const raw of rows) {
+            const id = String(raw?.id ?? "").trim();
+            if (!id) continue;
+
+            const existing = posts[id] ?? {};
+
+            posts[id] = {
+              ...existing,
+              id,
+              scenarioId: String(raw?.scenarioId ?? raw?.scenario_id ?? existing?.scenarioId ?? sid),
+              authorProfileId: String(raw?.authorProfileId ?? raw?.author_profile_id ?? existing?.authorProfileId ?? ""),
+              authorUserId:
+                String(raw?.authorUserId ?? raw?.author_user_id ?? existing?.authorUserId ?? "").trim() || undefined,
+              text: String(raw?.text ?? existing?.text ?? ""),
+              imageUrls: Array.isArray(raw?.imageUrls ?? raw?.image_urls)
+                ? (raw?.imageUrls ?? raw?.image_urls).map(String)
+                : (existing?.imageUrls ?? []),
+              replyCount: Number(raw?.replyCount ?? raw?.reply_count ?? existing?.replyCount ?? 0),
+              repostCount: Number(raw?.repostCount ?? raw?.repost_count ?? existing?.repostCount ?? 0),
+              likeCount: Number(raw?.likeCount ?? raw?.like_count ?? existing?.likeCount ?? 0),
+              parentPostId: raw?.parentPostId ?? raw?.parent_post_id ?? existing?.parentPostId,
+              quotedPostId: raw?.quotedPostId ?? raw?.quoted_post_id ?? existing?.quotedPostId,
+              insertedAt: raw?.insertedAt
+                ? new Date(raw.insertedAt).toISOString()
+                : raw?.inserted_at
+                  ? new Date(raw.inserted_at).toISOString()
+                  : (existing?.insertedAt ?? now),
+              createdAt: raw?.createdAt
+                ? new Date(raw.createdAt).toISOString()
+                : raw?.created_at
+                  ? new Date(raw.created_at).toISOString()
+                  : (existing?.createdAt ?? now),
+              updatedAt: raw?.updatedAt
+                ? new Date(raw.updatedAt).toISOString()
+                : raw?.updated_at
+                  ? new Date(raw.updated_at).toISOString()
+                  : now,
+              postType: raw?.postType ?? raw?.post_type ?? existing?.postType,
+              meta: raw?.meta ?? existing?.meta,
+              isPinned: raw?.isPinned ?? raw?.is_pinned ?? existing?.isPinned,
+              pinOrder: raw?.pinOrder ?? raw?.pin_order ?? existing?.pinOrder,
+            } as any;
+          }
+
+          return { ...prev, posts } as any;
+        });
+
+        try {
+          if (seenIds.length > 0) await markSeenPostsAsync(sid, seenIds);
+          const upserts: any[] = [];
+          for (const raw of rows) {
+            const id = String(raw?.id ?? "").trim();
+            const p = id ? (nextDb as any)?.posts?.[id] : null;
+            if (p) upserts.push(p);
+          }
+          if (upserts.length > 0) await upsertPostsAsync(upserts as any);
+        } catch {
+          // best-effort
+        }
+
+        setState({ isReady: true, db: nextDb as any });
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    [auth.isReady, auth.token, db, isUuidLike],
+  );
+
   // Request notification permissions and register handlers when ready
   React.useEffect(() => {
     if (!state.isReady || !dbReady) return;
@@ -921,7 +1038,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                   }
                 } catch {}
 
-                notificationNavTimerRef.current = setTimeout(() => {
+                notificationNavTimerRef.current = setTimeout(async () => {
                   if (cancelled) return;
                   try {
                     const currentPath = String(pathnameRef.current ?? "");
@@ -940,6 +1057,16 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                       pathname: "/(scenario)/[scenarioId]/(tabs)/home/post/[postId]",
                       params: { scenarioId: sid, postId: destPostId, ...(focusPostId ? { focusPostId } : {}) },
                     } as any;
+
+                    // Fast-path: hydrate thread before navigation so content is ready.
+                    // Keep this bounded so navigation never feels blocked.
+                    try {
+                      const timeoutMs = 600;
+                      await Promise.race([
+                        syncPostThreadForScenario(sid, destPostId),
+                        new Promise((r) => setTimeout(r, timeoutMs)),
+                      ]);
+                    } catch {}
 
                     // Smart routing:
                     // - Same scenario:
@@ -1105,7 +1232,21 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         // Register received handler: fires while app is foregrounded.
         try {
           notificationReceivedListenerRef.current = Notifications.addNotificationReceivedListener((notif: any) => {
-            void notif;
+            try {
+              const data = notif?.request?.content?.data ?? notif?.data ?? {};
+              const sid = String(data?.scenarioId ?? data?.scenario_id ?? "").trim();
+              const kind = String(data?.kind ?? "").trim();
+              const postId = String(data?.postId ?? data?.post_id ?? "").trim();
+              const parentPostId = String(data?.parentPostId ?? data?.parent_post_id ?? "").trim();
+              const rootPostId = String(data?.rootPostId ?? data?.root_post_id ?? "").trim();
+
+              if (!sid || !postId) return;
+
+              const dest = kind === "reply" ? (rootPostId || parentPostId || postId) : postId;
+              void syncPostThreadForScenario(sid, dest);
+            } catch {
+              // ignore
+            }
           });
         } catch {}
       } catch (e) {
@@ -2689,6 +2830,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
           postsSyncRef.current.inFlightByScenario[sid] = false;
         });
     };
+
     const toggleLikePostImpl: AppDataApi["toggleLikePost"] = async (scenarioId, profileId, postId) => {
       const sid = String(scenarioId ?? "").trim();
       const pid = String(profileId ?? "").trim();
@@ -2960,6 +3102,27 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
           }
           return items.sort(sortAscByCreatedAtThenId);
         })(),
+
+      syncPostThreadForScenario,
+
+      refreshPostsForScenario: (scenarioId: string) => {
+        const sid = String(scenarioId ?? "").trim();
+        if (!sid) return;
+
+        // Only meaningful in backend mode; schedulePostsSync already no-ops otherwise.
+        try {
+          postsSyncRef.current.lastSyncAtByScenario[sid] = 0;
+          delete postsSyncRef.current.backfillCursorByScenario[sid];
+        } catch {
+          // ignore
+        }
+
+        try {
+          schedulePostsSync(sid);
+        } catch {
+          // ignore
+        }
+      },
 
       // generic paged posts (feed)
       listPostsPage: ({ scenarioId, limit = 15, cursor, filter, includeReplies = false }) => {

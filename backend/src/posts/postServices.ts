@@ -1,6 +1,7 @@
 import {
   createPostForScenario,
   deletePost,
+  getPostThreadForScenario,
   listPostsForScenario,
   listPostsPageForScenario,
   updatePost,
@@ -33,4 +34,8 @@ export const DeletePostService = async (args: { userId: string; postId: string }
 
 export const UploadPostImagesService = async (args: { userId: string; postId: string; files: Express.Multer.File[] }) => {
   return await uploadPostImages({ userId: args.userId, postId: args.postId, files: args.files });
+};
+
+export const GetPostThreadForScenarioService = async (userId: string, scenarioId: string, postId: string) => {
+  return await getPostThreadForScenario({ userId, scenarioId, postId });
 };

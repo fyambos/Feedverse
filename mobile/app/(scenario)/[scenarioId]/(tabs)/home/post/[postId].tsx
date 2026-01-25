@@ -57,6 +57,8 @@ export default function PostScreen() {
     listRepliesForPost,
     deletePost,
 
+    syncPostThreadForScenario,
+
     toggleLike,
     isPostLikedBySelectedProfile,
 
@@ -110,6 +112,13 @@ export default function PostScreen() {
 
   const root = isReady ? getPostById(pid) : null;
   const isDeletedRoot = isReady && !root;
+
+  useEffect(() => {
+    if (!isReady) return;
+    if (!sid || !pid) return;
+    // Fast-path fetch for notification deep-links / cold navigation.
+    void syncPostThreadForScenario?.(sid, pid);
+  }, [isReady, sid, pid, syncPostThreadForScenario]);
 
   const isMissingParent =
     isReady && !!root?.parentPostId && !getPostById(String(root.parentPostId));

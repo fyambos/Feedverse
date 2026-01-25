@@ -17,6 +17,7 @@ import {
 } from "../profiles/profileControllers";
 import {
 	CreateScenarioPostController,
+	GetScenarioPostThreadController,
 	ListScenarioPostsController,
 } from "../posts/postControllers";
 import { ListScenarioRepostsController } from "../reposts/repostControllers";
@@ -34,6 +35,7 @@ import {
 const scenarioRouter = Router();
 
 const idParamSchema = z.object({ id: z.string().uuid() }).passthrough();
+const threadParamSchema = z.object({ id: z.string().uuid(), postId: z.string().trim().min(1) }).passthrough();
 
 scenarioRouter.get("/", authMiddleware, ListScenariosController);
 scenarioRouter.post(
@@ -105,6 +107,14 @@ scenarioRouter.get(
 			.passthrough(),
 	),
 	ListScenarioPostsController,
+);
+
+scenarioRouter.get(
+	"/:id/posts/:postId/thread",
+	authMiddleware,
+	validateParams(threadParamSchema),
+	requireScenarioMember(),
+	GetScenarioPostThreadController,
 );
 scenarioRouter.post(
 	"/:id/posts",
