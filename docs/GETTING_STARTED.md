@@ -38,21 +38,16 @@ npm i
 ```
 
 ### Environment (Part of the development team? Request the .env file. Other wise, read below)
-- Backend reads `backend/.env`. Copy [backend/.env-example](backend/.env-example) and fill required secrets (DB_URL, R2 keys, JWT_SECRET, etc.).
+- Backend reads `backend/.env`. Copy [backend/.env-example](backend/.env-example) and fill required secrets (DATABASE_URL or DB_* fields, R2 keys, JWT_SECRET, etc.).
 - `EXPO_PUBLIC_API_BASE_URL` in `backend/.env` is used by `tools/testing.js` to launch Expo against a configured URL (for QA against a hosted environment). For local dev, tools set `EXPO_PUBLIC_API_BASE_URL` to your machine IP.
 
 
 ### Secret keys
 
-#### Firebase admin SDK private key
-To generate a private key file for your service account:
-- Create a new Firebase project inside the [Firebase console](https://console.firebase.google.com/u/0/).
-- Click on the gear icon next to 'Project overview' in your newly created project and go in Project Settings.
-- Click on the Service Accounts tab.
-- Click Generate New Private Key, then confirm by clicking Generate Key.
-- Securely store the JSON file containing the key (out of the repo).
-- EITHER Create a compact single line service account with `jq -c . /absolute/path/to/feedverse_sa_KEY.json` and paste the output and put it into FIREBASE_SERVICE_ACCOUNT in the .env file as a string.
-- OR you can run `export GOOGLE_APPLICATION_CREDENTIALS=/absolute/path/to/feedverse_sa_KEY.json` to put it in the console's environment variables.
+#### Firebase
+Firebase is used on the mobile side (Android `google-services.json`, optional iOS plist) for native services like push notifications.
+
+The current backend does not require Firebase Admin credentials.
 
 #### Google Services Key (if you are part of the dev team, request the file instead)
 - Still in the settings, go to the General tab.
