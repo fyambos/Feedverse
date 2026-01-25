@@ -14,6 +14,24 @@ import type {
   ProfilePin,
 } from "@/data/db/schema";
 import { readDb, updateDb, writeDb } from "@/data/db/storage";
+import {
+  rebuildFeedIndexFromDbAsync,
+  getFeedIndexCountsSync,
+  queryHomePostsPageSync,
+  queryProfileFeedPageSync,
+  upsertPostsAsync,
+  upsertLikesAsync,
+  deleteLikeAsync,
+  upsertRepostsAsync,
+  deleteRepostAsync,
+  deletePostCascadeAsync,
+} from "@/data/db/sqliteStore";
+import {
+  findScenarioIdByInviteCodeSync,
+  getProfileByHandleSync,
+  listConversationsForScenarioSync,
+  queryMessagesPageSync,
+} from "@/data/db/sqliteCore";
 import { seedDbIfNeeded } from "@/data/db/seed";
 import { buildGlobalTagFromKey } from "@/lib/content/tags";
 import { pickScenarioExportJson } from "@/lib/importExport/importFromFile";
@@ -526,6 +544,19 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       const existing = await readDb();
       const db = await seedDbIfNeeded(existing);
       setState({ isReady: true, db });
+
+      // Feed tables are the source of truth for paging; only rebuild on first-run/migration.
+      try {
+        if (db) {
+          const counts = getFeedIndexCountsSync();
+          const dbPostCount = Object.keys((db as any)?.posts ?? {}).length;
+          if (counts.posts === 0 && dbPostCount > 0) {
+            await rebuildFeedIndexFromDbAsync(db);
+          }
+        }
+      } catch {
+        // ignore
+      }
     })();
   }, []);
 
@@ -629,6 +660,18 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         Boolean(likesMap[k2]) ||
         (Boolean(likesMap[k1]) && String(likesMap[k1]?.scenarioId ?? "") === sid);
 
+      // Keep SQL index in sync.
+      try {
+        if (liked) {
+          const row = (likesMap as any)?.[k2] ?? (likesMap as any)?.[k1] ?? null;
+          if (row) await upsertLikesAsync([row]);
+        } else {
+          await deleteLikeAsync(sid, pid, poid);
+        }
+      } catch {
+        // ignore
+      }
+
       return { ok: true, liked };
     };
 
@@ -662,9 +705,14 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
 
       getProfileByHandle: (scenarioId, handle) => {
         if (!db) return null;
-        const needle = normalizeHandle(handle);
-        for (const p of Object.values(db.profiles)) {
-          if (p.scenarioId === String(scenarioId) && normalizeHandle(p.handle) === needle) return p;
+        const sid = String(scenarioId ?? "").trim();
+        if (!sid) return null;
+
+        try {
+          const p = getProfileByHandleSync(sid, String(handle ?? ""));
+          if (p?.id) return (db as any)?.profiles?.[String(p.id)] ?? p;
+        } catch {
+          return null;
         }
         return null;
       },
@@ -692,6 +740,20 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       // generic paged posts (feed)
       listPostsPage: ({ scenarioId, limit = 15, cursor, filter, includeReplies = false }) => {
         if (!db) return { items: [], nextCursor: null };
+
+        // SQL-backed fast path when no arbitrary filter is needed.
+        if (!filter) {
+          try {
+            return queryHomePostsPageSync({
+              scenarioId: String(scenarioId),
+              limit,
+              cursor: cursor ?? null,
+              includeReplies,
+            });
+          } catch {
+            // fall back to JS scan below
+          }
+        }
 
         let items = Object.values(db.posts).filter((p) => p.scenarioId === String(scenarioId));
 
@@ -731,6 +793,19 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       // profile feed page
       listProfileFeedPage: ({ scenarioId, profileId, tab, limit = 15, cursor }) => {
         if (!db) return { items: [], nextCursor: null };
+
+        // SQL-backed fast path.
+        try {
+          return queryProfileFeedPageSync({
+            scenarioId: String(scenarioId),
+            profileId: String(profileId),
+            tab,
+            limit,
+            cursor: cursor ?? null,
+          });
+        } catch {
+          // fall back to JS scan below
+        }
 
         const sid = String(scenarioId);
         const pid = String(profileId);
@@ -1043,6 +1118,14 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         });
 
         setState({ isReady: true, db: next as any });
+
+        // Keep SQL index in sync.
+        try {
+          const post = (next as any)?.posts?.[id] ?? null;
+          if (post) await upsertPostsAsync([post]);
+        } catch {
+          // ignore
+        }
       },
 
       deletePost: async (postId) => {
@@ -1091,6 +1174,12 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         });
 
         setState({ isReady: true, db: next as any });
+
+        try {
+          await deletePostCascadeAsync(id);
+        } catch {
+          // ignore
+        }
 
         if (removedScenarioId) markScenarioFeedRefreshNeeded(removedScenarioId);
       },
@@ -1249,6 +1338,23 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         });
 
         setState({ isReady: true, db: next as any });
+
+        // Keep SQL index in sync.
+        try {
+          const selectedProfileId = (next as any).selectedProfileByScenario?.[sid];
+          const reposterId = selectedProfileId ? String(selectedProfileId) : "";
+          if (reposterId) {
+            const key = `${reposterId}|${pid}`;
+            const r = (next as any)?.reposts?.[key] ?? null;
+            if (r) {
+              await upsertRepostsAsync([r]);
+            } else {
+              await deleteRepostAsync(sid, reposterId, pid);
+            }
+          }
+        } catch {
+          // ignore
+        }
       },
 
       // --- pins (campaign)
@@ -1494,12 +1600,17 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         let alreadyIn = false;
         let foundScenarioId: string | null = null;
 
-        const nextDb = await updateDb((prev) => {
-          const scenarios = Object.values(prev.scenarios ?? {});
-          const found = scenarios.find((s) => String((s as any).inviteCode ?? "").toUpperCase() === code);
-          if (!found) return prev;
+        let scenarioIdHint: string | null = null;
+        try {
+          scenarioIdHint = findScenarioIdByInviteCodeSync(code);
+        } catch {
+          scenarioIdHint = null;
+        }
 
-          const sid = String((found as any).id);
+        const nextDb = await updateDb((prev) => {
+          const sid = String(scenarioIdHint ?? "").trim();
+          if (!sid) return prev;
+
           foundScenarioId = sid;
 
           const current = prev.scenarios[sid];
@@ -2325,10 +2436,12 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         const pid = String(profileId);
         const map = ((db as any).conversations ?? {}) as Record<string, Conversation>;
 
-        return Object.values(map)
-          .filter((c) => String((c as any).scenarioId) === sid)
-          .filter((c) => Array.isArray((c as any).participantProfileIds) && (c as any).participantProfileIds.map(String).includes(pid))
-          .sort(sortDescByLastMessageAtThenId);
+        try {
+          const items = listConversationsForScenarioSync(sid, pid);
+          return items.map((c) => (map as any)?.[String((c as any).id ?? "")] ?? c);
+        } catch {
+          return [];
+        }
       },
 
       listMessagesPage: ({ scenarioId, conversationId, limit = 30, cursor }: MessagesPageArgs) => {
@@ -2337,22 +2450,15 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         const cid = String(conversationId);
         const map = ((db as any).messages ?? {}) as Record<string, Message>;
 
-        let items = Object.values(map).filter(
-          (m) => String((m as any).scenarioId) === sid && String((m as any).conversationId) === cid
-        );
-
-        items.sort(sortAscByCreatedAtThenIdGeneric);
-
-        let startIndex = 0;
-        if (cursor) {
-          const idx = items.findIndex((m) => makeMessageCursor(m) === cursor);
-          startIndex = idx >= 0 ? idx + 1 : 0;
+        try {
+          const res = queryMessagesPageSync({ scenarioId: sid, conversationId: cid, limit, cursor });
+          return {
+            items: res.items.map((m) => (map as any)?.[String((m as any).id ?? "")] ?? m),
+            nextCursor: res.nextCursor,
+          };
+        } catch {
+          return { items: [], nextCursor: null };
         }
-
-        const page = items.slice(startIndex, startIndex + limit);
-        const next = page.length === limit ? makeMessageCursor(page[page.length - 1]) : null;
-
-        return { items: page, nextCursor: next };
       },
 
       upsertConversation: async (c: Conversation) => {

@@ -62,7 +62,16 @@ function toIntOrUndef(x: any): number | undefined {
 }
 
 export async function seedDbIfNeeded(existing: any | null) {
-  if (!FORCE_RESEED && existing && existing.version === 5) {
+  const hasAnySeedData =
+    !!existing &&
+    existing.version === 5 &&
+    (Object.keys((existing as any)?.users ?? {}).length > 0 ||
+      Object.keys((existing as any)?.scenarios ?? {}).length > 0 ||
+      Object.keys((existing as any)?.profiles ?? {}).length > 0 ||
+      Object.keys((existing as any)?.posts ?? {}).length > 0);
+
+  // If storage created an empty baseline (e.g. first-run), still seed mocks.
+  if (!FORCE_RESEED && existing && existing.version === 5 && hasAnySeedData) {
     const prev = existing as any;
     const prevLikes = ((prev as any).likes ?? null) as Record<string, Like> | null;
     const likes: Record<string, Like> = prevLikes && typeof prevLikes === "object" ? { ...prevLikes } : {};
