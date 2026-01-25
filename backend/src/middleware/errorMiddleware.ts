@@ -24,6 +24,7 @@ export const notFoundHandler: RequestHandler = (req, res) => {
   res.status(HTTP_STATUS.NOT_FOUND).json({
     error: "Not found",
     path: req.originalUrl,
+    requestId: req.requestId ?? null,
   });
 };
 
@@ -58,5 +59,6 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, next) => {
 
   res.status(status).json({
     error: errorMessage,
+    requestId: req.requestId ?? null,
   });
 };

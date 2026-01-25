@@ -15,6 +15,7 @@ import { realtimeRouter } from "./realtime/realtimeRoutes";
 import { APP_CONFIG } from "./config/constants";
 import { ROUTES_AUTH, ROUTES_USERS } from "./config/constants";
 import { errorHandler, notFoundHandler } from "./middleware/errorMiddleware";
+import { requestContextMiddleware, requestLoggerMiddleware } from "./middleware/requestMiddleware";
 
 process.on("unhandledRejection", (reason) => {
   console.error("Unhandled promise rejection", reason);
@@ -25,8 +26,10 @@ process.on("uncaughtException", (err) => {
 });
 
 const app = express();
+app.use(requestContextMiddleware);
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
+app.use(requestLoggerMiddleware);
 
 app.use(ROUTES_AUTH.BASE, authRouter);
 app.use(ROUTES_USERS.BASE, userRouter);

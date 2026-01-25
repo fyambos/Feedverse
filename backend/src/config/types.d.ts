@@ -8,8 +8,9 @@ import { User } from "../users/userModels";
 declare global {
   namespace Express {
     interface Request {
-      user: User;
+      user?: User;
       authTokenHash?: string;
+      requestId?: string;
     }
   }
 }
