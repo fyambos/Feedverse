@@ -11,6 +11,7 @@ import { Colors } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { useAppData } from "@/context/appData";
 import { useAuth } from "@/context/auth";
+import { scenarioIdFromPathname } from "@/lib/utils/idFromPathName";
 
 function TabIcon({
   iosName,
@@ -27,35 +28,6 @@ function TabIcon({
     return <IconSymbol size={size} name={iosName as any} color={color} />;
   }
   return <Ionicons name={androidIonicon} size={size} color={color} />;
-}
-
-function scenarioIdFromPathname(pathname: string): string {
-  const parts = pathname
-    .split("/")
-    .map((p) => p.trim())
-    .filter(Boolean);
-
-  // Typical shapes:
-  // - /(scenario)/demo-kpop/(tabs)/home
-  // - /demo-kpop/home (depending on router config)
-  const scenarioIdx = parts.findIndex((p) => p === "(scenario)" || p === "scenario");
-  const candidate =
-    scenarioIdx >= 0
-      ? parts[scenarioIdx + 1]
-      : parts.length > 0
-      ? parts[0]
-      : "";
-
-  const raw = String(candidate ?? "").trim();
-  if (!raw) return "";
-  if (raw === "modal") return "";
-  if (raw.startsWith("(")) return ""; // route group
-
-  try {
-    return decodeURIComponent(raw);
-  } catch {
-    return raw;
-  }
 }
 
 export default function TabLayout() {

@@ -10,7 +10,7 @@ import { ThemedView } from "@/components/themed-view";
 import { ThemedText } from "@/components/themed-text";
 import { Colors } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
-import { Post as PostCard } from "@/components/post/Post";
+import { MemoPost as PostCard } from "@/components/post/Post";
 
 import { SwipeableRow } from "@/components/ui/SwipeableRow";
 
@@ -287,6 +287,8 @@ export default function PostScreen() {
             renderItem={({ item, index }) => {
               const itemId = String(item.id);
 
+              const liveItem = getPostById(itemId) ?? item;
+
               const authorProfileId = item.authorProfileId ? String(item.authorProfileId) : "";
               const profile = authorProfileId ? getProfileById(authorProfileId) : null;
               if (!profile) return null;
@@ -322,16 +324,24 @@ export default function PostScreen() {
                 <PostCard
                   scenarioId={sid}
                   profile={profile as any}
-                  item={item as any}
+                  item={liveItem as any}
                   variant={variant}
                   replyingTo={parentProfile?.handle}
                   showActions
                   showThreadLine={showThreadLine}
                   highlighted={String(itemId) === String(highlightPostId)}
                   isLiked={liked}
-                  onLike={() => toggleLike(sid, itemId)}
+                  onLike={() => {
+                    void toggleLike(sid, itemId).catch((e: unknown) => {
+                      Alert.alert("Could not like", formatErrorMessage(e, "Please try again."));
+                    });
+                  }}
                   isReposted={reposted}
-                  onRepost={() => toggleRepost(sid, itemId)}
+                  onRepost={() => {
+                    void toggleRepost(sid, itemId).catch((e: unknown) => {
+                      Alert.alert("Could not repost", formatErrorMessage(e, "Please try again."));
+                    });
+                  }}
                   onShare={onShare}
                 />
               );

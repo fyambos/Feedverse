@@ -1,7 +1,7 @@
 export type ProfileRow = {
   id: string;
   scenario_id: string;
-  owner_user_id: string;
+  owner_user_id: string | null;
   display_name: string;
   handle: string;
   avatar_url: string;
@@ -59,7 +59,7 @@ export function mapProfileRowToApi(row: ProfileRow): ProfileApi {
   return {
     id: String(row.id),
     scenarioId: String(row.scenario_id),
-    ownerUserId: String(row.owner_user_id),
+    ownerUserId: row.owner_user_id != null ? String(row.owner_user_id) : "",
     displayName: String(row.display_name ?? ""),
     handle: String(row.handle ?? ""),
     avatarUrl: String(row.avatar_url ?? ""),

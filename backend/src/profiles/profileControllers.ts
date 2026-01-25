@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
 import { ERROR_MESSAGES, HTTP_METHODS, HTTP_STATUS } from "../config/constants";
+import { sendMethodNotAllowed } from "../lib/apiResponses";
 import { r2Service } from "../config/cloudflare/r2Service";
 import { pool } from "../config/database";
 import {
@@ -13,7 +14,7 @@ import {
 
 export const ListScenarioProfilesController = async (req: Request, res: Response) => {
   if (req.method !== HTTP_METHODS.GET) {
-    return res.status(HTTP_STATUS.BAD_REQUEST).send(ERROR_MESSAGES.METHOD_NOT_ALLOWED);
+    return sendMethodNotAllowed(req, res);
   }
 
   try {
@@ -35,7 +36,7 @@ export const ListScenarioProfilesController = async (req: Request, res: Response
 
 export const CreateScenarioProfileController = async (req: Request, res: Response) => {
   if (req.method !== HTTP_METHODS.POST) {
-    return res.status(HTTP_STATUS.BAD_REQUEST).send(ERROR_MESSAGES.METHOD_NOT_ALLOWED);
+    return sendMethodNotAllowed(req, res);
   }
 
   try {
@@ -69,14 +70,14 @@ export const CreateScenarioProfileController = async (req: Request, res: Respons
 
     return res.status(HTTP_STATUS.CREATED).json({ profile: result.profile });
   } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : "";
-    return res.status(HTTP_STATUS.BAD_REQUEST).json({ error: msg || ERROR_MESSAGES.INTERNAL_SERVER_ERROR });
+    console.error("CreateScenarioProfileController failed", error);
+    return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ error: ERROR_MESSAGES.INTERNAL_SERVER_ERROR });
   }
 };
 
 export const UpdateProfileController = async (req: Request, res: Response) => {
   if (req.method !== HTTP_METHODS.PATCH) {
-    return res.status(HTTP_STATUS.BAD_REQUEST).send(ERROR_MESSAGES.METHOD_NOT_ALLOWED);
+    return sendMethodNotAllowed(req, res);
   }
 
   try {
@@ -114,7 +115,7 @@ export const UpdateProfileController = async (req: Request, res: Response) => {
 
 export const DeleteProfileController = async (req: Request, res: Response) => {
   if (req.method !== HTTP_METHODS.DELETE) {
-    return res.status(HTTP_STATUS.BAD_REQUEST).send(ERROR_MESSAGES.METHOD_NOT_ALLOWED);
+    return sendMethodNotAllowed(req, res);
   }
 
   try {
@@ -140,7 +141,7 @@ export const DeleteProfileController = async (req: Request, res: Response) => {
 
 export const AdoptProfileController = async (req: Request, res: Response) => {
   if (req.method !== HTTP_METHODS.POST) {
-    return res.status(HTTP_STATUS.BAD_REQUEST).send(ERROR_MESSAGES.METHOD_NOT_ALLOWED);
+    return sendMethodNotAllowed(req, res);
   }
 
   try {
@@ -166,7 +167,7 @@ export const AdoptProfileController = async (req: Request, res: Response) => {
 
 export const UpdateProfileAvatarController = async (req: Request, res: Response) => {
   if (req.method !== HTTP_METHODS.POST) {
-    return res.status(HTTP_STATUS.BAD_REQUEST).send(ERROR_MESSAGES.METHOD_NOT_ALLOWED);
+    return sendMethodNotAllowed(req, res);
   }
 
   try {
@@ -208,14 +209,14 @@ export const UpdateProfileAvatarController = async (req: Request, res: Response)
 
     return res.status(HTTP_STATUS.OK).json({ avatarUrl, profile: result.profile });
   } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : "";
-    return res.status(HTTP_STATUS.BAD_REQUEST).json({ error: msg || ERROR_MESSAGES.INTERNAL_SERVER_ERROR });
+    console.error("UpdateProfileAvatarController failed", error);
+    return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ error: ERROR_MESSAGES.INTERNAL_SERVER_ERROR });
   }
 };
 
 export const UpdateProfileHeaderController = async (req: Request, res: Response) => {
   if (req.method !== HTTP_METHODS.POST) {
-    return res.status(HTTP_STATUS.BAD_REQUEST).send(ERROR_MESSAGES.METHOD_NOT_ALLOWED);
+    return sendMethodNotAllowed(req, res);
   }
 
   try {
@@ -257,14 +258,14 @@ export const UpdateProfileHeaderController = async (req: Request, res: Response)
 
     return res.status(HTTP_STATUS.OK).json({ headerUrl, profile: result.profile });
   } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : "";
-    return res.status(HTTP_STATUS.BAD_REQUEST).json({ error: msg || ERROR_MESSAGES.INTERNAL_SERVER_ERROR });
+    console.error("UpdateProfileHeaderController failed", error);
+    return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ error: ERROR_MESSAGES.INTERNAL_SERVER_ERROR });
   }
 };
 
 export const TransferProfilesController = async (req: Request, res: Response) => {
   if (req.method !== HTTP_METHODS.POST) {
-    return res.status(HTTP_STATUS.BAD_REQUEST).send(ERROR_MESSAGES.METHOD_NOT_ALLOWED);
+    return sendMethodNotAllowed(req, res);
   }
 
   try {

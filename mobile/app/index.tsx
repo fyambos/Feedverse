@@ -1,6 +1,6 @@
 // mobile/app/index.tsx
 import React, { useMemo, useRef, useState, useCallback } from "react";
-import { StyleSheet, FlatList, Pressable, Image, View, Modal } from "react-native";
+import { StyleSheet, FlatList, Pressable, Image, View, Modal, Linking } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router, Stack } from "expo-router";
@@ -21,6 +21,12 @@ import { formatErrorMessage } from "@/lib/utils/format";
 import { MAX_TOTAL_PLAYERS_PER_SCENARIO } from "@/lib/scenario/rules";
 
 const MAX_PLAYERS = MAX_TOTAL_PLAYERS_PER_SCENARIO;
+
+const DISCORD_INVITE_URL = "https://discord.gg/pR8HbSDQdn";
+const DISCORD_LOGO = require("../assets/images/DiscordLogo.png");
+
+const BUY_ME_A_COFFEE_URL = "https://buymeacoffee.com/feedverse";
+const BUY_ME_A_COFFEE_ICON = require("../assets/images/BuyMeACoffeeIcon.png");
 
 type ScenarioMenuState = {
   open: boolean;
@@ -50,6 +56,9 @@ export default function ScenarioListScreen() {
     leaveScenario: leaveScenarioApi,
     deleteScenario: deleteScenarioApi,
 
+    // notification prefs
+    updateScenarioNotificationPrefs,
+
     // import/export APIs
     exportScenarioToFile,
   } = useAppData() as any;
@@ -64,6 +73,18 @@ export default function ScenarioListScreen() {
 
     router.push({ pathname: "/modal/import-scenario" } as any);
   }, [isReady]);
+
+  const openDiscord = useCallback(() => {
+    void Linking.openURL(DISCORD_INVITE_URL).catch(() => {
+      Alert.alert("Can't open link", "Please try again later.");
+    });
+  }, []);
+
+  const openBuyMeACoffee = useCallback(() => {
+    void Linking.openURL(BUY_ME_A_COFFEE_URL).catch(() => {
+      Alert.alert("Can't open link", "Please try again later.");
+    });
+  }, []);
 
   const [menu, setMenu] = useState<ScenarioMenuState>({
     open: false,
@@ -471,6 +492,43 @@ export default function ScenarioListScreen() {
     }, 0);
   };
 
+  const openNotificationSettingsForMenuScenario = () => {
+    const sid = String(menu.scenarioId ?? "").trim();
+    if (!sid) return;
+    closeScenarioMenu();
+    setTimeout(() => {
+      router.push(`/(scenario)/${sid}/notifications-settings` as any);
+    }, 0);
+  };
+
+  const muteAllNotificationsForMenuScenario = () => {
+    const sid = String(menu.scenarioId ?? "").trim();
+    if (!sid) return;
+
+    closeScenarioMenu();
+
+    if (!isBackendMode) {
+      Alert.alert("Not available", "Mute all is only available in backend mode.");
+      return;
+    }
+
+    Alert.alert("Mute all notifications?", "This disables all notifications for this scenario.", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Mute all",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await updateScenarioNotificationPrefs?.(sid, { muteAll: true });
+            Alert.alert("Muted", "All notifications for this scenario are now off.");
+          } catch (e: any) {
+            Alert.alert("Mute failed", formatErrorMessage(e, "Could not mute notifications"));
+          }
+        },
+      },
+    ]);
+  };
+
   const ScenarioMenuSheet = () => (
     <Modal transparent visible={menu.open} animationType="fade" onRequestClose={closeScenarioMenu}>
       <Pressable style={[styles.menuBackdrop, { backgroundColor: colors.modalBackdrop }]} onPress={closeScenarioMenu}>
@@ -517,6 +575,27 @@ export default function ScenarioListScreen() {
             <Ionicons name="download-outline" size={18} color={colors.text} />
             <ThemedText style={{ color: colors.text, fontSize: 15, fontWeight: "700" }}>
               Export
+            </ThemedText>
+          </Pressable>
+
+          {/* Notifications */}
+          <Pressable
+            onPress={openNotificationSettingsForMenuScenario}
+            style={({ pressed }) => [styles.menuItem, { backgroundColor: pressed ? colors.pressed : "transparent" }]}
+          >
+            <Ionicons name="notifications-outline" size={18} color={colors.text} />
+            <ThemedText style={{ color: colors.text, fontSize: 15, fontWeight: "700" }}>
+              Notification settings
+            </ThemedText>
+          </Pressable>
+
+          <Pressable
+            onPress={muteAllNotificationsForMenuScenario}
+            style={({ pressed }) => [styles.menuItem, { backgroundColor: pressed ? colors.pressed : "transparent" }]}
+          >
+            <Ionicons name="notifications-off-outline" size={18} color="#ff3b30" />
+            <ThemedText style={{ color: "#ff3b30", fontSize: 15, fontWeight: "700" }}>
+              Mute all notifications
             </ThemedText>
           </Pressable>
           
@@ -764,7 +843,37 @@ export default function ScenarioListScreen() {
         ]}
       >
         <View style={styles.topBarRow}>
-          <View style={styles.topBarSide} />
+          <View style={[styles.topBarSide, { justifyContent: "flex-start" }]}>
+            <Pressable
+              onPress={openDiscord}
+              hitSlop={10}
+              style={({ pressed }) => [
+                styles.discordBtn,
+                { backgroundColor: colors.card, borderColor: colors.border },
+                pressed && { opacity: 0.7 },
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel="Join Discord"
+              accessibilityHint="Opens the Discord invite link"
+            >
+              <Image source={DISCORD_LOGO} style={styles.discordIcon} />
+            </Pressable>
+
+              <Pressable
+                onPress={openBuyMeACoffee}
+                hitSlop={10}
+                style={({ pressed }) => [
+                  styles.bmacBtn,
+                  { backgroundColor: colors.card, borderColor: colors.border },
+                  pressed && { opacity: 0.7 },
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel="Buy me a coffee"
+                accessibilityHint="Opens the Buy Me a Coffee page"
+              >
+                <Image source={BUY_ME_A_COFFEE_ICON} style={styles.bmacIcon} />
+              </Pressable>
+          </View>
 
           <ThemedText type="defaultSemiBold" style={styles.topBarTitle}>
             Scenarios
@@ -1094,6 +1203,39 @@ export default function ScenarioListScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, paddingHorizontal: 16, paddingTop: 16 },
   headerIconBtn: { padding: 6, backgroundColor: "transparent" },
+
+  discordBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    borderWidth: StyleSheet.hairlineWidth,
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+  },
+  discordIcon: {
+    width: "100%",
+    height: "100%",
+    borderRadius: 17,
+    resizeMode: "cover",
+  },
+
+  bmacBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    marginLeft: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+  },
+  bmacIcon: {
+    width: "100%",
+    height: "100%",
+    borderRadius: 17,
+    resizeMode: "cover",
+  },
 
   ctaRow: {
     flexDirection: "row",

@@ -1,5 +1,5 @@
-import dotenv from "dotenv";
-dotenv.config();
+import { isTestEnv, loadEnv, requireEnv } from "./env";
+loadEnv();
 
 // ============================================================================
 // DATABASE
@@ -13,6 +13,29 @@ export const DATABASE_PORT: number =
 export const DATABASE_PASSWORD = process.env.DB_PASSWORD;
 export const DATABASE_NAME = process.env.DB_NAME;
 export const DATABASE_SSL_MODE = Boolean(process.env.DB_SSLMODE);
+
+// Postgres pool tuning (pg.Pool options)
+export const DB_POOL_MAX: number =
+  Number.parseInt(process.env.DB_POOL_MAX ?? "10", 10) || 10;
+export const DB_POOL_IDLE_TIMEOUT_MS: number =
+  Number.parseInt(process.env.DB_POOL_IDLE_TIMEOUT_MS ?? "30000", 10) || 30000;
+export const DB_POOL_CONNECTION_TIMEOUT_MS: number =
+  Number.parseInt(process.env.DB_POOL_CONNECTION_TIMEOUT_MS ?? "10000", 10) || 10000;
+export const DB_POOL_MAX_USES: number | undefined = (() => {
+  const raw = String(process.env.DB_POOL_MAX_USES ?? "").trim();
+  if (!raw) return undefined;
+  const n = Number.parseInt(raw, 10);
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+})();
+
+// Startup DB retry/backoff
+export const DB_STARTUP_CHECK_ENABLED: boolean = String(process.env.DB_STARTUP_CHECK ?? "1").trim() !== "0";
+export const DB_STARTUP_RETRY_ATTEMPTS: number =
+  Number.parseInt(process.env.DB_STARTUP_RETRY_ATTEMPTS ?? "8", 10) || 8;
+export const DB_STARTUP_RETRY_BASE_DELAY_MS: number =
+  Number.parseInt(process.env.DB_STARTUP_RETRY_BASE_DELAY_MS ?? "250", 10) || 250;
+export const DB_STARTUP_RETRY_MAX_DELAY_MS: number =
+  Number.parseInt(process.env.DB_STARTUP_RETRY_MAX_DELAY_MS ?? "5000", 10) || 5000;
 
 // ============================================================================
 // CLOUDFLARE / R2
@@ -40,6 +63,8 @@ export const HTTP_STATUS = {
   UNAUTHORIZED: 401,
   FORBIDDEN: 403,
   NOT_FOUND: 404,
+  METHOD_NOT_ALLOWED: 405,
+  TOO_MANY_REQUESTS: 429,
   INTERNAL_SERVER_ERROR: 500,
 } as const;
 
@@ -72,7 +97,27 @@ export const AUTH = {
   // - Set JWT_EXPIRES_IN=none to create tokens without an exp claim (no expiry).
   // - Any value accepted by jsonwebtoken's `expiresIn` is valid (e.g. "30d", "12h").
   EXPIRATION_TIME: process.env.JWT_EXPIRES_IN || "365d",
-  SECRET_KEY: process.env.JWT_SECRET || "dev-secret",
+  // Refresh token lifetime (used by /auth/refresh). Keep longer than access token.
+  REFRESH_TOKEN_DAYS: Number.parseInt(process.env.JWT_REFRESH_DAYS || "365", 10) || 365,
+  // Refresh tokens are random bytes encoded as base64url.
+  REFRESH_TOKEN_BYTES: Number.parseInt(process.env.JWT_REFRESH_BYTES || "32", 10) || 32,
+  SECRET_KEY: isTestEnv() ? (process.env.JWT_SECRET || "test-secret") : requireEnv("JWT_SECRET"),
+} as const;
+
+// ============================================================================
+// WEBSOCKETS
+// ============================================================================
+
+export const WEBSOCKET = {
+  // Hard cap on inbound message size (bytes).
+  MAX_PAYLOAD_BYTES: Number.parseInt(process.env.WS_MAX_PAYLOAD_BYTES ?? "16384", 10) || 16384,
+  // Soft caps on concurrent connections.
+  MAX_CONNECTIONS_PER_IP: Number.parseInt(process.env.WS_MAX_CONNECTIONS_PER_IP ?? "25", 10) || 25,
+  MAX_CONNECTIONS_PER_USER: Number.parseInt(process.env.WS_MAX_CONNECTIONS_PER_USER ?? "5", 10) || 5,
+  MAX_CONNECTIONS_PER_SCENARIO: Number.parseInt(process.env.WS_MAX_CONNECTIONS_PER_SCENARIO ?? "200", 10) || 200,
+  // Basic inbound message rate limit (per connection).
+  MAX_MESSAGES_PER_10S: Number.parseInt(process.env.WS_MAX_MESSAGES_PER_10S ?? "30", 10) || 30,
+  HEARTBEAT_INTERVAL_MS: Number.parseInt(process.env.WS_HEARTBEAT_INTERVAL_MS ?? "30000", 10) || 30000,
 } as const;
 
 // ============================================================================
@@ -198,6 +243,6 @@ export const APP_CONFIG = {
   DEFAULT_LOCALE: "fr-FR",
   MAX_REQUEST_TIMEOUsT_MS: 30000,
   RATE_LIMIT_WINDOW_MS: 900000, // 15 minutes
-  RATE_LIMIT_MAX_REQUESTS: 100,
+  RATE_LIMIT_MAX_REQUESTS: 5000,
   EMPTY_STRING: "",
 } as const;

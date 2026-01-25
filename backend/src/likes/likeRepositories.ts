@@ -6,6 +6,7 @@ import type { PostApi, PostRow } from "../posts/postModels";
 import { mapPostRowToApi } from "../posts/postModels";
 import { sendExpoPush } from "../push/expoPush";
 import { UserRepository } from "../users/userRepositories";
+import { getScenarioNotificationPrefs } from "../notifications/scenarioNotificationPrefs";
 
 async function scenarioAccess(client: PoolClient, scenarioId: string, userId: string): Promise<boolean> {
   const res = await client.query(
@@ -240,7 +241,16 @@ export async function setLikeState(args: {
               if (!recipientOwnerId) return;
               if (senderOwnerId && senderOwnerId === recipientOwnerId) return;
 
-              const title = `${senderLabel} liked your post`;
+              // Respect per-scenario prefs (likes toggle + ignored recipient profile).
+              try {
+                const prefs = await getScenarioNotificationPrefs(client2, sid, recipientOwnerId);
+                if (prefs && prefs.likesEnabled === false) return;
+                if (prefs?.ignoredProfileIds?.includes(recipientProfileId)) return;
+              } catch {
+                // best-effort
+              }
+
+              const title = `${senderLabel} liked your ${parentPostId ? "reply" : "post"}`;
               const body = postText ? (postText.length > 140 ? postText.slice(0, 137) + "…" : postText) : undefined;
 
               // If the liked post is a reply, compute the thread root (best-effort)
@@ -312,8 +322,8 @@ export async function setLikeState(args: {
     } catch {
       // ignore
     }
-    const msg = e instanceof Error ? e.message : "";
-    return { error: msg || "Set like failed", status: 400 };
+    console.error("setLike failed", e);
+    return { error: "Set like failed", status: 400 };
   } finally {
     client.release();
   }

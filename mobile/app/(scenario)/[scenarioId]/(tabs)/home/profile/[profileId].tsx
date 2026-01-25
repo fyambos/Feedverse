@@ -26,7 +26,7 @@ import { ProfileTabsBar, type ProfileTab } from "@/components/profile/ProfileTab
 import { ProfilePostsList } from "@/components/profile/ProfilePostsList";
 import { ProfileStatusOverlay } from "@/components/profile/ProfileStatusOverlay";
 import { CreatePostFab } from "@/components/post/CreatePostFab";
-import { Post as PostCard } from "@/components/post/Post";
+import { MemoPost as PostCard } from "@/components/post/Post";
 import type { ProfileOverlayConfig, ProfileViewState } from "@/components/profile/profileTypes";
 import { formatErrorMessage } from "@/lib/utils/format";
 
@@ -662,9 +662,19 @@ export default function ProfileScreen() {
                 pinnedLabel="Pinned"
                 showActions
                 isLiked={isPostLikedBySelectedProfile(sid, String((pinnedPost as any).id))}
-                onLike={() => toggleLike(sid, String((pinnedPost as any).id))}
+                onLike={() => {
+                  const id = String((pinnedPost as any).id);
+                  void toggleLike(sid, id).catch((e: unknown) => {
+                    Alert.alert("Could not like", formatErrorMessage(e, "Please try again."));
+                  });
+                }}
                 isReposted={isPostRepostedBySelectedProfile(sid, String((pinnedPost as any).id))}
-                onRepost={() => toggleRepost(sid, String((pinnedPost as any).id))}
+                onRepost={() => {
+                  const id = String((pinnedPost as any).id);
+                  void toggleRepost(sid, id).catch((e: unknown) => {
+                    Alert.alert("Could not repost", formatErrorMessage(e, "Please try again."));
+                  });
+                }}
               />
             </Pressable>
           ) : (
@@ -730,9 +740,17 @@ export default function ProfileScreen() {
             ListHeaderComponent={headerEl}
             emptyText={emptyText}
             getIsLiked={(postId: string) => isPostLikedBySelectedProfile(sid, String(postId))}
-            onLikePost={(postId: string) => toggleLike(sid, String(postId))}
+            onLikePost={(postId: string) => {
+              void toggleLike(sid, String(postId)).catch((e: unknown) => {
+                Alert.alert("Could not like", formatErrorMessage(e, "Please try again."));
+              });
+            }}
             getIsReposted={(postId: string) => isPostRepostedBySelectedProfile(sid, String(postId))}
-            onRepostPost={(postId: string) => toggleRepost(sid, String(postId))}
+            onRepostPost={(postId: string) => {
+              void toggleRepost(sid, String(postId)).catch((e: unknown) => {
+                Alert.alert("Could not repost", formatErrorMessage(e, "Please try again."));
+              });
+            }}
             repostLabelForPost={(postAuthorProfileId: string, postId: string) =>
               repostLabelForPost(postAuthorProfileId, postId)
             }

@@ -6,6 +6,8 @@ import { authMiddleware } from "../auth/authMiddleware";
 import { ROUTES_USERS } from "../config/constants";
 import { upload } from "../config/multer";
 import { ListSessionsController, LogoutOtherSessionsController } from "../sessions/sessionControllers";
+import { z } from "zod";
+import { validateBody } from "../middleware/validationMiddleware";
 
 userRouter.get(ROUTES_USERS.PROFILE, authMiddleware, GetUserProfileController);
 
@@ -16,10 +18,33 @@ userRouter.get("/", authMiddleware, GetUsersByIdsController);
 userRouter.post("/avatar", authMiddleware, upload.single("avatar"), UpdateUserAvatarController);
 
 // PATCH /username - update username
-userRouter.patch("/username", authMiddleware, UpdateUsernameController);
+userRouter.patch(
+	"/username",
+	authMiddleware,
+	validateBody(z.object({ username: z.string().trim().min(3) }).passthrough()),
+	UpdateUsernameController,
+);
 
 // POST /push-token - register Expo push token for remote notifications
-userRouter.post("/push-token", authMiddleware, UpsertUserPushTokenController);
+userRouter.post(
+	"/push-token",
+	authMiddleware,
+	validateBody(
+		z
+			.object({
+				expoPushToken: z.string().trim().min(1),
+				platform: z.string().trim().min(1).optional(),
+				expo_push_token: z.string().trim().min(1).optional(),
+			})
+			.passthrough()
+			.transform((v) => ({
+				...v,
+				// Normalize snake_case to camelCase if present.
+				expoPushToken: String((v as any).expoPushToken ?? (v as any).expo_push_token ?? "").trim(),
+			})),
+	),
+	UpsertUserPushTokenController,
+);
 
 // DELETE /push-token - revoke token(s) for this user (used on logout)
 userRouter.delete("/push-token", authMiddleware, DeleteUserPushTokenController);

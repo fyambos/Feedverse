@@ -10,12 +10,13 @@ import {
   USER_MESSAGES,
 } from "../config/constants";
 import { normalizeUsername, validateUsername } from "../lib/username";
+import { sendMethodNotAllowed } from "../lib/apiResponses";
 
 
 // PATCH /username
 export const UpdateUsernameController = async (req: Request, res: Response) => {
   if (req.method !== "PATCH") {
-    return res.status(405).json({ error: "Method not allowed" });
+    return sendMethodNotAllowed(req, res);
   }
   try {
     const user = req.user as User | undefined;
@@ -39,14 +40,15 @@ export const UpdateUsernameController = async (req: Request, res: Response) => {
     }
     await repo.updateUsername(userId, usernameNormalized);
     return res.status(200).json({ username: usernameNormalized });
-  } catch (error: any) {
-    return res.status(500).json({ error: error?.message || "Failed to update username" });
+  } catch (error: unknown) {
+    console.error("UpdateUsernameController failed", error);
+    return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ error: ERROR_MESSAGES.INTERNAL_SERVER_ERROR });
   }
 };
 
 export const GetUserProfileController = async (req: Request, res: Response) => {
   if (req.method !== HTTP_METHODS.GET) {
-    return res.status(HTTP_STATUS.BAD_REQUEST).send(ERROR_MESSAGES.METHOD_NOT_ALLOWED);
+    return sendMethodNotAllowed(req, res);
   }
 
   try {
@@ -64,16 +66,14 @@ export const GetUserProfileController = async (req: Request, res: Response) => {
     const { password_hash: _pw, ...safe } = user as any;
     return res.status(HTTP_STATUS.OK).json(safe);
   } catch (error: unknown) {
-    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
-      message: USER_MESSAGES.NOT_FOUND,
-      error: error,
-    });
+    console.error("GetUserProfileController failed", error);
+    return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ error: ERROR_MESSAGES.INTERNAL_SERVER_ERROR });
   }
 };
 
 export const UpdateUserAvatarController = async (req: Request, res: Response) => {
   if (req.method !== HTTP_METHODS.POST) {
-    return res.status(HTTP_STATUS.BAD_REQUEST).send(ERROR_MESSAGES.METHOD_NOT_ALLOWED);
+    return sendMethodNotAllowed(req, res);
   }
 
   try {
@@ -99,14 +99,14 @@ export const UpdateUserAvatarController = async (req: Request, res: Response) =>
 
     return res.status(HTTP_STATUS.OK).json({ avatarUrl });
   } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : "";
-    return res.status(HTTP_STATUS.BAD_REQUEST).json({ error: msg || ERROR_MESSAGES.INTERNAL_SERVER_ERROR });
+    console.error("UpdateUserAvatarController failed", error);
+    return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ error: ERROR_MESSAGES.INTERNAL_SERVER_ERROR });
   }
 };
 
 export const GetUsersByIdsController = async (req: Request, res: Response) => {
   if (req.method !== HTTP_METHODS.GET) {
-    return res.status(HTTP_STATUS.BAD_REQUEST).send(ERROR_MESSAGES.METHOD_NOT_ALLOWED);
+    return sendMethodNotAllowed(req, res);
   }
 
   try {
@@ -129,14 +129,15 @@ export const GetUsersByIdsController = async (req: Request, res: Response) => {
 
     return res.status(HTTP_STATUS.OK).json({ users });
   } catch (error: unknown) {
-    return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ message: USER_MESSAGES.FAILED_FETCH, error });
+    console.error("GetUsersByIdsController failed", error);
+    return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ error: ERROR_MESSAGES.INTERNAL_SERVER_ERROR });
   }
 };
 
 // POST /users/push-token
 export const UpsertUserPushTokenController = async (req: Request, res: Response) => {
   if (req.method !== HTTP_METHODS.POST) {
-    return res.status(HTTP_STATUS.BAD_REQUEST).send(ERROR_MESSAGES.METHOD_NOT_ALLOWED);
+    return sendMethodNotAllowed(req, res);
   }
 
   try {
@@ -156,8 +157,9 @@ export const UpsertUserPushTokenController = async (req: Request, res: Response)
     await repo.upsertExpoPushToken({ userId, expoPushToken, platform });
 
     return res.status(HTTP_STATUS.OK).json({ ok: true });
-  } catch (error: any) {
-    return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ error: error?.message || "Failed to save push token" });
+  } catch (error: unknown) {
+    console.error("UpsertUserPushTokenController failed", error);
+    return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ error: ERROR_MESSAGES.INTERNAL_SERVER_ERROR });
   }
 };
 
@@ -165,7 +167,7 @@ export const UpsertUserPushTokenController = async (req: Request, res: Response)
 // Body or query can include expoPushToken. If omitted, deletes all tokens for the user.
 export const DeleteUserPushTokenController = async (req: Request, res: Response) => {
   if (req.method !== "DELETE") {
-    return res.status(405).json({ error: "Method not allowed" });
+    return sendMethodNotAllowed(req, res);
   }
 
   try {
@@ -191,7 +193,8 @@ export const DeleteUserPushTokenController = async (req: Request, res: Response)
     }
 
     return res.status(HTTP_STATUS.OK).json({ ok: true, deleted });
-  } catch (error: any) {
-    return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ error: error?.message || "Failed to delete push token" });
+  } catch (error: unknown) {
+    console.error("DeleteUserPushTokenController failed", error);
+    return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ error: ERROR_MESSAGES.INTERNAL_SERVER_ERROR });
   }
 };

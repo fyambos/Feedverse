@@ -346,8 +346,8 @@ export async function upsertCharacterSheetForProfile(args: {
     } catch {
       // ignore
     }
-    const msg = e instanceof Error ? e.message : "";
-    return { error: msg || "Update failed", status: 400 };
+    console.error("upsertCharacterSheet failed", e);
+    return { error: "Update failed", status: 400 };
   } finally {
     client.release();
   }

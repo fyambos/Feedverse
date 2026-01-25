@@ -44,6 +44,7 @@ import realtimeService from "../realtime/realtimeService";
 import websocketService from "../realtime/websocketService";
 import { sendExpoPush } from "../push/expoPush";
 import { UserRepository } from "../users/userRepositories";
+import { listScenarioNotificationPrefsByUserIds } from "../notifications/scenarioNotificationPrefs";
 
 async function scenarioAccess(client: PoolClient, scenarioId: string, userId: string): Promise<boolean> {
   const res = await client.query(
@@ -153,7 +154,8 @@ export async function listMessages(args: {
   selectedProfileId?: string;
   limit?: number;
   beforeCreatedAt?: string;
-}): Promise<{ messages: MessageApi[] } | null> {
+  cursor?: string;
+}): Promise<{ items: MessageApi[]; nextCursor: string | null } | null> {
   const cid = String(args.conversationId ?? "").trim();
   const uid = String(args.userId ?? "").trim();
   if (!cid || !uid) return null;
@@ -161,6 +163,23 @@ export async function listMessages(args: {
   const limit = Math.max(1, Math.min(200, Number.isFinite(args.limit as any) ? Number(args.limit) : 100));
   const before = args.beforeCreatedAt ? String(args.beforeCreatedAt) : "";
   const beforeDate = before ? new Date(before) : null;
+
+  // Cursor format: `${createdAtIso}|${id}`
+  const cursorRaw = String(args.cursor ?? "").trim();
+  let cursorCreatedAtIso: string | null = null;
+  let cursorId: string | null = null;
+  if (cursorRaw) {
+    const parts = cursorRaw.split("|");
+    if (parts.length >= 2) {
+      const t = String(parts[0] ?? "").trim();
+      const id = String(parts.slice(1).join("|") ?? "").trim();
+      const dt = new Date(t);
+      if (t && id && Number.isFinite(dt.getTime())) {
+        cursorCreatedAtIso = dt.toISOString();
+        cursorId = id;
+      }
+    }
+  }
 
   const client = await pool.connect();
   try {
@@ -213,15 +232,28 @@ export async function listMessages(args: {
       FROM messages
       WHERE conversation_id = $1
         AND ($2::timestamptz IS NULL OR created_at < $2::timestamptz)
+        AND (
+          $4::timestamptz IS NULL
+          OR (created_at, id) < ($4::timestamptz, $5::uuid)
+        )
       ORDER BY created_at DESC, id DESC
       LIMIT $3
     `,
-      [cid, beforeDate ? beforeDate.toISOString() : null, limit],
+      [cid, beforeDate ? beforeDate.toISOString() : null, limit, cursorCreatedAtIso, cursorId],
     );
 
     // Reverse to oldest->newest for easier client rendering.
-    const messages = res.rows.map(mapMessageRowToApi).reverse();
-    return { messages };
+    const items = res.rows.map(mapMessageRowToApi).reverse();
+
+    let nextCursor: string | null = null;
+    if (res.rows.length === limit) {
+      const oldest = res.rows[res.rows.length - 1];
+      const tIso = new Date(String((oldest as any)?.created_at ?? "")).toISOString();
+      const id = String((oldest as any)?.id ?? "");
+      if (tIso && id) nextCursor = `${tIso}|${id}`;
+    }
+
+    return { items, nextCursor };
   } catch {
     return null;
   } finally {
@@ -374,6 +406,43 @@ export async function sendMessage(args: {
 
           if (ownerIds.size === 0) return;
 
+          // Apply per-scenario notification prefs (messages toggle + group toggle + ignored profiles).
+          try {
+            const isGroupChat = (parts.rows?.length ?? 0) > 2;
+            const prefsByUserId = await listScenarioNotificationPrefsByUserIds(client2, sid, Array.from(ownerIds));
+
+            for (const ownerId of Array.from(ownerIds)) {
+              const prefs = prefsByUserId.get(ownerId);
+              const messagesEnabled = prefs?.messagesEnabled ?? true;
+              const groupEnabled = prefs?.groupMessagesEnabled ?? true;
+
+              if (!messagesEnabled) {
+                ownerIds.delete(ownerId);
+                ownerToProfileIds.delete(ownerId);
+                continue;
+              }
+              if (isGroupChat && !groupEnabled) {
+                ownerIds.delete(ownerId);
+                ownerToProfileIds.delete(ownerId);
+                continue;
+              }
+
+              const ignored = new Set<string>((prefs?.ignoredProfileIds ?? []).map(String));
+              const pids = (ownerToProfileIds.get(ownerId) ?? []).map(String).filter(Boolean);
+              const allowedPids = pids.filter((pid) => !ignored.has(String(pid)));
+              if (allowedPids.length === 0) {
+                ownerIds.delete(ownerId);
+                ownerToProfileIds.delete(ownerId);
+                continue;
+              }
+              ownerToProfileIds.set(ownerId, allowedPids);
+            }
+          } catch {
+            // best-effort
+          }
+
+          if (ownerIds.size === 0) return;
+
           // Build notification payload
           const title = (await client2.query(`SELECT display_name FROM profiles WHERE id = $1 LIMIT 1`, [senderProfileId])).rows?.[0]?.display_name ?? "New message";
           const body = String(row.text ?? "");
@@ -418,8 +487,8 @@ export async function sendMessage(args: {
     } catch {
       // ignore
     }
-    const msg = e instanceof Error ? e.message : "";
-    return { error: msg || "Send failed", status: 400 };
+    console.error("sendMessage failed", e);
+    return { error: "Send failed", status: 400 };
   } finally {
     client.release();
   }
@@ -655,8 +724,8 @@ export async function sendMessageWithImages(args: {
       await Promise.all(uploadedUrls.map((u) => r2Service.deleteByPublicUrl(String(u)).catch(() => false)));
     }
 
-    const msg = e instanceof Error ? e.message : "";
-    return { error: msg || "Send failed", status: 400 };
+    console.error("sendMessageWithImages failed", e);
+    return { error: "Send failed", status: 400 };
   } finally {
     client.release();
   }
@@ -796,8 +865,8 @@ export async function updateMessage(args: {
     } catch {
       // ignore
     }
-    const msg = e instanceof Error ? e.message : "";
-    return { error: msg || "Update failed", status: 400 };
+    console.error("updateMessage failed", e);
+    return { error: "Update failed", status: 400 };
   } finally {
     client.release();
   }
@@ -876,8 +945,8 @@ export async function deleteMessage(args: {
     } catch {
       // ignore
     }
-    const msg = e instanceof Error ? e.message : "";
-    return { error: msg || "Delete failed", status: 400 };
+    console.error("deleteMessage failed", e);
+    return { error: "Delete failed", status: 400 };
   } finally {
     client.release();
   }

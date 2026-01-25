@@ -218,6 +218,24 @@ describe("post capabilities as owned vs public profiles", () => {
       expect(client.query).toHaveBeenCalledWith("COMMIT");
     });
 
+    it(`${label}: can create an image-only post`, async () => {
+      const client = makeClient({ ...cfg, scenarioId });
+      (pool.connect as jest.Mock).mockResolvedValue(client);
+
+      const res = await createPostForScenario({
+        scenarioId,
+        userId: cfg.userId,
+        input: {
+          authorProfileId: cfg.actorProfileId,
+          text: "",
+          imageUrls: ["https://example.com/a.jpg"],
+        },
+      });
+
+      expect(res && "post" in res).toBe(true);
+      expect(client.query).toHaveBeenCalledWith("COMMIT");
+    });
+
     it(`${label}: can reply`, async () => {
       const client = makeClient({ ...cfg, scenarioId });
       (pool.connect as jest.Mock).mockResolvedValue(client);

@@ -241,8 +241,8 @@ export async function createProfileForScenario(args: {
     } catch {
       // ignore
     }
-    const msg = e instanceof Error ? e.message : "";
-    return { error: msg || "Insert failed", status: 400 };
+    console.error("createProfileForScenario failed", e);
+    return { error: "Insert failed", status: 400 };
   } finally {
     client.release();
   }
@@ -331,7 +331,7 @@ export async function updateProfile(args: {
     // Also allow when the incoming patch is explicitly setting `isPublic: true` —
     // this lets a user make a profile public and apply edits in one request.
     const requestedIsPublic = (patch as any).isPublic != null ? Boolean((patch as any).isPublic) : false;
-    if (String(row0.owner_user_id) !== uid && !Boolean(row0.is_public) && !requestedIsPublic) {
+    if (String(row0.owner_user_id ?? "") !== uid && !Boolean(row0.is_public) && !requestedIsPublic) {
       // Diagnostic log to help debug edit attempts on public profiles
       /*
       console.log("updateProfile: permission denied", {
@@ -435,8 +435,8 @@ export async function updateProfile(args: {
     } catch {
       // ignore
     }
-    const msg = e instanceof Error ? e.message : "";
-    return { error: msg || "Update failed", status: 400 };
+    console.error("updateProfile failed", e);
+    return { error: "Update failed", status: 400 };
   } finally {
     client.release();
   }
@@ -485,7 +485,7 @@ export async function deleteProfileCascade(args: {
       return { error: "Profile not found", status: 404 };
     }
 
-    if (String(row0.owner_user_id) !== uid) {
+    if (String(row0.owner_user_id ?? "") !== uid) {
       await client.query("ROLLBACK");
       return null;
     }
@@ -521,8 +521,8 @@ export async function deleteProfileCascade(args: {
     } catch {
       // ignore
     }
-    const msg = e instanceof Error ? e.message : "";
-    return { error: msg || "Delete failed", status: 400 };
+    console.error("deleteProfile failed", e);
+    return { error: "Delete failed", status: 400 };
   } finally {
     client.release();
   }
@@ -573,7 +573,7 @@ export async function adoptPublicProfile(args: {
       return { error: "Profile not found", status: 404 };
     }
 
-    if (String(row0.owner_user_id) === uid) {
+    if (String(row0.owner_user_id ?? "") === uid) {
       await client.query("ROLLBACK");
       return { error: "You already own this profile", status: 400 };
     }
@@ -634,8 +634,8 @@ export async function adoptPublicProfile(args: {
     } catch {
       // ignore
     }
-    const msg = e instanceof Error ? e.message : "";
-    return { error: msg || "Adoption failed", status: 400 };
+    console.error("adoptPublicProfile failed", e);
+    return { error: "Adoption failed", status: 400 };
   } finally {
     client.release();
   }
@@ -725,8 +725,8 @@ export async function transferProfiles(args: {
     } catch {
       // ignore
     }
-    const msg = e instanceof Error ? e.message : "";
-    return { error: msg || "Transfer failed", status: 400 };
+    console.error("transferProfiles failed", e);
+    return { error: "Transfer failed", status: 400 };
   } finally {
     client.release();
   }

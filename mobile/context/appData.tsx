@@ -18,12 +18,36 @@ import type {
   Message,
   ProfilePin,
 } from "@/data/db/schema";
-import { readDb, updateDb, writeDb, subscribeDbChanges } from "@/data/db/storage";
+import {
+  rebuildFeedIndexFromDbAsync,
+  getFeedIndexCountsSync,
+  queryHomePostsPageSync,
+  queryProfileFeedPageSync,
+  upsertPostsAsync,
+  upsertLikesAsync,
+  replaceScenarioLikesAsync,
+  deleteLikeAsync,
+  upsertRepostsAsync,
+  replaceScenarioRepostsAsync,
+  deleteRepostAsync,
+  deletePostCascadeAsync,
+  markSeenPostsAsync,
+} from "@/data/db/sqliteStore";
+import {
+  findScenarioIdByInviteCodeSync,
+  getProfileByHandleSync,
+  listConversationsForScenarioSync,
+  queryMessagesPageSync,
+} from "@/data/db/sqliteCore";
+import { readDb, subscribeDbChanges, updateDb, writeDb } from "@/data/db/storage";
 import { seedDbIfNeeded } from "@/data/db/seed";
 import { buildGlobalTagFromKey } from "@/lib/content/tags";
 import { pickScenarioExportJson } from "@/lib/importExport/importFromFile";
 import { importScenarioFromJson } from "@/lib/importExport/importScenario";
 import { validateScenarioExportBundleV1 } from "@/lib/importExport/validateScenarioExport";
+import { coerceStringArray } from "@/lib/utils/pgArrays";
+import { hasAnyMedia } from "@/lib/utils/media";
+import { conversationIdFromPathname, postIdFromPathname, scenarioIdFromPathname } from "@/lib/utils/idFromPathName";
 import { useAuth } from "@/context/auth";
 import { usePathname, useRouter } from "expo-router";
 import { apiFetch } from "@/lib/api/apiClient";
@@ -31,69 +55,44 @@ import { buildScenarioExportBundleV1 } from "@/lib/importExport/exportScenarioBu
 import { saveAndShareScenarioExport } from "@/lib/importExport/exportScenario";
 import BootSplash from "@/components/ui/BootSplash";
 
-function scenarioIdFromPathname(pathname: string): string {
-  const parts = String(pathname ?? "")
-    .split("/")
-    .map((p) => p.trim())
-    .filter(Boolean);
+type ScenarioNotificationPrefs = {
+  scenarioId: string;
+  userId: string;
+  mentionsEnabled: boolean;
+  repliesEnabled: boolean;
+  messagesEnabled: boolean;
+  groupMessagesEnabled: boolean;
+  likesEnabled: boolean;
+  repostsEnabled: boolean;
+  quotesEnabled: boolean;
+  ignoredProfileIds: string[];
+};
 
-  const scenarioIdx = parts.findIndex((p) => p === "(scenario)" || p === "scenario");
-  const candidate =
-    scenarioIdx >= 0
-      ? parts[scenarioIdx + 1]
-      : parts.length > 0
-        ? parts[0]
-        : "";
-
-  const raw = String(candidate ?? "").trim();
-  if (!raw) return "";
-  if (raw === "modal") return "";
-  if (raw.startsWith("(")) return "";
-
+function getScenarioNotificationPrefsFromDb(db: any, scenarioId: string): ScenarioNotificationPrefs | null {
   try {
-    return decodeURIComponent(raw);
+    const sid = String(scenarioId ?? "").trim();
+    if (!sid) return null;
+    const map = (db as any)?.scenarioNotificationPrefsByScenarioId ?? null;
+    const prefs = map?.[sid] ?? null;
+    return prefs ? (prefs as any) : null;
   } catch {
-    return raw;
+    return null;
   }
 }
 
-function conversationIdFromPathname(pathname: string): string {
-  const parts = String(pathname ?? "")
-    .split("/")
-    .map((p) => p.trim())
-    .filter(Boolean);
-
-  const idx = parts.findIndex((p) => p === "messages");
-  if (idx < 0) return "";
-  const candidate = String(parts[idx + 1] ?? "").trim();
-  if (!candidate) return "";
-  if (candidate === "index") return "";
-  if (candidate.startsWith("(")) return "";
-
-  try {
-    return decodeURIComponent(candidate);
-  } catch {
-    return candidate;
-  }
-}
-
-function postIdFromPathname(pathname: string): string {
-  const parts = String(pathname ?? "")
-    .split("/")
-    .map((p) => p.trim())
-    .filter(Boolean);
-
-  const idx = parts.findIndex((p) => p === "post");
-  if (idx < 0) return "";
-  const candidate = String(parts[idx + 1] ?? "").trim();
-  if (!candidate) return "";
-  if (candidate.startsWith("(")) return "";
-
-  try {
-    return decodeURIComponent(candidate);
-  } catch {
-    return candidate;
-  }
+function defaultScenarioNotificationPrefsMobile(scenarioId: string, userId: string): ScenarioNotificationPrefs {
+  return {
+    scenarioId: String(scenarioId),
+    userId: String(userId),
+    mentionsEnabled: true,
+    repliesEnabled: true,
+    messagesEnabled: true,
+    groupMessagesEnabled: true,
+    likesEnabled: true,
+    repostsEnabled: true,
+    quotesEnabled: true,
+    ignoredProfileIds: [],
+  };
 }
 
 // Non-reactive tracker for which conversation is currently being viewed.
@@ -368,6 +367,10 @@ type AppDataApi = {
   getScenarioSettings: (scenarioId: string) => any;
   updateScenarioSettings: (scenarioId: string, patch: any) => Promise<void>;
 
+  // scenario notification prefs (backend mode)
+  getScenarioNotificationPrefs: (scenarioId: string) => Promise<ScenarioNotificationPrefs | null>;
+  updateScenarioNotificationPrefs: (scenarioId: string, patch: any) => Promise<ScenarioNotificationPrefs | null>;
+
   // ===== DMs =====
   // backend-mode helpers (no-op in local mode)
   syncConversationsForScenario: (scenarioId: string) => Promise<void>;
@@ -534,85 +537,6 @@ function sortAscByCreatedAtThenId(a: Post, b: Post) {
   return String(a.id).localeCompare(String(b.id));
 }
 
-function hasAnyMedia(p: any) {
-  const urls = p?.imageUrls;
-  if (Array.isArray(urls) && urls.length > 0) return true;
-  const single = p?.imageUrl;
-  if (typeof single === "string" && single.length > 0) return true;
-  const media = p?.media;
-  if (Array.isArray(media) && media.length > 0) return true;
-  return false;
-}
-
-function parsePgTextArrayLiteral(input: string): string[] {
-  const s = String(input ?? "").trim();
-  if (!s.startsWith("{") || !s.endsWith("}")) return [];
-  const body = s.slice(1, -1);
-  if (!body) return [];
-
-  const out: string[] = [];
-  let cur = "";
-  let inQuotes = false;
-  let escape = false;
-
-  for (let i = 0; i < body.length; i++) {
-    const ch = body[i];
-
-    if (escape) {
-      cur += ch;
-      escape = false;
-      continue;
-    }
-
-    if (ch === "\\") {
-      escape = true;
-      continue;
-    }
-
-    if (ch === '"') {
-      inQuotes = !inQuotes;
-      continue;
-    }
-
-    if (ch === "," && !inQuotes) {
-      const v = cur.trim();
-      if (v && v.toUpperCase() !== "NULL") out.push(v);
-      cur = "";
-      continue;
-    }
-
-    cur += ch;
-  }
-
-  const last = cur.trim();
-  if (last && last.toUpperCase() !== "NULL") out.push(last);
-  return out.map((x) => String(x)).filter(Boolean);
-}
-
-function coerceStringArray(value: unknown): string[] {
-  if (Array.isArray(value)) return value.map(String).filter(Boolean);
-  if (value == null) return [];
-  if (typeof value === "string") {
-    const trimmed = value.trim();
-
-    // JSON array?
-    if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
-      try {
-        const parsed = JSON.parse(trimmed);
-        if (Array.isArray(parsed)) return parsed.map(String).filter(Boolean);
-      } catch {
-        // ignore
-      }
-    }
-
-    // Postgres array literal?
-    if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
-      return parsePgTextArrayLiteral(trimmed);
-    }
-  }
-  return [];
-}
-
 function makeFeedCursor(item: ProfileFeedItem): FeedCursor {
   const rep = item.reposterProfileId ? String(item.reposterProfileId) : "";
   return `${String(item.activityAt)}|${String(item.kind)}|${String(item.post.id)}|${rep}`;
@@ -706,6 +630,19 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       const existing = await readDb();
       const db = await seedDbIfNeeded(existing);
       setState({ isReady: true, db });
+
+      // Feed tables are the source of truth for paging; only rebuild on first-run/migration.
+      try {
+        if (db) {
+          const counts = getFeedIndexCountsSync();
+          const dbPostCount = Object.keys((db as any)?.posts ?? {}).length;
+          if (counts.posts === 0 && dbPostCount > 0) {
+            await rebuildFeedIndexFromDbAsync(db);
+          }
+        }
+      } catch {
+        // ignore
+      }
     })();
   }, []);
 
@@ -1491,10 +1428,12 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
             const existing = (prev.scenarios as any)?.[id];
 
             const playerIdsRaw = raw?.player_ids ?? raw?.playerIds;
-            const playerIds = Array.isArray(playerIdsRaw) ? playerIdsRaw.map(String) : [];
+            const hasPlayerIds = Array.isArray(playerIdsRaw);
+            const playerIds = hasPlayerIds ? playerIdsRaw.map(String) : undefined;
 
             const gmUserIdsRaw = raw?.gm_user_ids ?? raw?.gmUserIds;
             const gmUserIds = Array.isArray(gmUserIdsRaw) ? gmUserIdsRaw.map(String).filter(Boolean) : undefined;
+
 
             const settings = raw?.settings != null ? raw.settings : undefined;
 
@@ -1507,7 +1446,9 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
               ownerUserId: String(raw?.owner_user_id ?? raw?.ownerUserId ?? existing?.ownerUserId ?? ""),
               description: raw?.description != null ? String(raw.description) : existing?.description,
               mode: raw?.mode === "campaign" || raw?.mode === "story" ? raw.mode : (existing?.mode ?? "story"),
-              playerIds: playerIds.length > 0 ? playerIds : (existing?.playerIds ?? []),
+              // IMPORTANT: empty arrays are meaningful (e.g. you left and you're no longer a member).
+              // Only fall back when the field is absent.
+              playerIds: hasPlayerIds ? (playerIds ?? []) : (existing?.playerIds ?? []),
               tags: Array.isArray(raw?.tags) ? raw.tags : (existing?.tags ?? []),
               gmUserIds: gmUserIds ?? (existing as any)?.gmUserIds,
               settings: settings ?? (existing as any)?.settings,
@@ -1600,7 +1541,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       profilesSyncRef.current.lastSyncAtByScenario[sid] = nowMs;
 
       try {
-        const [profilesRes, sheetsRes, pinsRes] = await Promise.all([
+        const [profilesRes, sheetsRes, pinsRes, notifPrefsRes] = await Promise.all([
           apiFetch({
             path: `/scenarios/${encodeURIComponent(sid)}/profiles`,
             token,
@@ -1611,6 +1552,10 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
           }),
           apiFetch({
             path: `/scenarios/${encodeURIComponent(sid)}/profile-pins`,
+            token,
+          }),
+          apiFetch({
+            path: `/scenarios/${encodeURIComponent(sid)}/notification-prefs`,
             token,
           }),
         ]);
@@ -1626,6 +1571,9 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
           const users = { ...((prev as any).users ?? {}) } as any;
           const sheets = { ...((prev as any).sheets ?? {}) } as Record<string, CharacterSheet>;
           const profilePins = { ...((prev as any).profilePins ?? {}) } as Record<string, ProfilePin>;
+          const scenarioNotificationPrefsByScenarioId = {
+            ...(((prev as any).scenarioNotificationPrefsByScenarioId ?? {}) as any),
+          };
 
           const seen = new Set<string>();
 
@@ -1808,7 +1756,30 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
             } as any;
           }
 
-          return { ...(prev as any), profiles, sheets, users } as any;
+          // Cache server-side notification prefs for this scenario (best-effort).
+          try {
+            const uid = String(auth.userId ?? "").trim();
+            const prefs = notifPrefsRes?.ok ? (notifPrefsRes as any)?.json?.prefs ?? null : null;
+            if (uid) {
+              scenarioNotificationPrefsByScenarioId[sid] = prefs
+                ? {
+                    ...defaultScenarioNotificationPrefsMobile(sid, uid),
+                    ...(prefs as any),
+                    scenarioId: sid,
+                    userId: uid,
+                    ignoredProfileIds: Array.isArray((prefs as any)?.ignoredProfileIds)
+                      ? (prefs as any).ignoredProfileIds.map(String).filter(Boolean)
+                      : Array.isArray((prefs as any)?.ignored_profile_ids)
+                        ? (prefs as any).ignored_profile_ids.map(String).filter(Boolean)
+                        : [],
+                  }
+                : defaultScenarioNotificationPrefsMobile(sid, uid);
+            }
+          } catch {
+            // ignore
+          }
+
+          return { ...(prev as any), profiles, sheets, users, profilePins, scenarioNotificationPrefsByScenarioId } as any;
         });
 
         setState({ isReady: true, db: nextDb as any });
@@ -2157,6 +2128,12 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                             const senderProfile = profiles?.[senderPid] as any;
                             const sendingUserId = String((payload as any)?.senderUserId ?? m?.senderUserId ?? m?.sender_user_id ?? "").trim();
 
+                            // Per-scenario notification prefs (messages/group + ignored profiles)
+                            const prefs = getScenarioNotificationPrefsFromDb(dbNow as any, sid) ?? null;
+                            const messagesEnabled = prefs?.messagesEnabled ?? true;
+                            const groupMessagesEnabled = prefs?.groupMessagesEnabled ?? true;
+                            const ignored = new Set<string>((prefs?.ignoredProfileIds ?? []).map(String));
+
                             // If the sender profile is owned by the current user, skip notification
                             if (String(senderProfile?.ownerUserId ?? "") === String(currentUserId ?? "")) {
                               // skip notifications for messages that originate from profiles owned by current user
@@ -2167,20 +2144,32 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                                 ? (conv as any).participantProfileIds.map(String).filter(Boolean)
                                 : [];
 
+                              const isGroupChat = participantIds.length > 2;
+                              if (!messagesEnabled) {
+                                // user muted all messages for this scenario
+                                return;
+                              }
+                              if (isGroupChat && !groupMessagesEnabled) {
+                                // user muted group chat messages for this scenario
+                                return;
+                              }
+
                               // Only notify for conversations that include at least one profile owned by the current user.
                               const ownedParticipantIds = participantIds.filter(
                                 (pid) => String((profiles?.[pid] as any)?.ownerUserId ?? "") === String(currentUserId ?? "")
                               );
 
+                              const ownedUnignored = ownedParticipantIds.filter((pid) => !ignored.has(String(pid)));
+
                               // If the user is currently viewing this conversation, skip notification.
                               if (viewingConvId && String(viewingConvId) === String(convId)) {
                                 // skip notification when conversation is open
-                              } else if (ownedParticipantIds.length > 0) {
+                              } else if (ownedUnignored.length > 0) {
                                 // Pick the best target profile for navigation (prefer selected profile if it's owned and a participant).
                                 const preferred =
-                                  selectedProfileId && ownedParticipantIds.includes(String(selectedProfileId))
+                                  selectedProfileId && ownedUnignored.includes(String(selectedProfileId))
                                     ? String(selectedProfileId)
-                                    : String(ownedParticipantIds[0]);
+                                    : String(ownedUnignored[0]);
 
                                 const title = senderProfile?.displayName ? `DM from ${senderProfile.displayName}` : "New message";
                                 const body = String(m.text ?? "");
@@ -2224,12 +2213,19 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                         const ownedMentioned = mentionedProfileIds.filter(
                           (pid) => String((profiles?.[pid] as any)?.ownerUserId ?? "") === String(currentUserId ?? ""),
                         );
-                        if (ownedMentioned.length === 0) return;
+
+                        const prefs = getScenarioNotificationPrefsFromDb(dbNow as any, sid2) ?? null;
+                        const mentionsEnabled = prefs?.mentionsEnabled ?? true;
+                        if (!mentionsEnabled) return;
+
+                        const ignored = new Set<string>((prefs?.ignoredProfileIds ?? []).map(String));
+                        const ownedUnignored = ownedMentioned.filter((pid) => !ignored.has(String(pid)));
+                        if (ownedUnignored.length === 0) return;
 
                         const targetProfileId =
-                          selectedProfileId && ownedMentioned.includes(selectedProfileId)
+                          selectedProfileId && ownedUnignored.includes(selectedProfileId)
                             ? selectedProfileId
-                            : String(ownedMentioned[0]);
+                            : String(ownedUnignored[0]);
 
                         const title = String(payload?.title ?? "You were mentioned").trim() || "You were mentioned";
                         const body = String(payload?.body ?? "").trim();
@@ -2317,7 +2313,8 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
           token,
         });
 
-        const rows = Array.isArray((res.json as any)?.messages) ? ((res.json as any).messages as any[]) : null;
+        const json: any = res.json as any;
+        const rows = Array.isArray(json?.items) ? (json.items as any[]) : Array.isArray(json?.messages) ? (json.messages as any[]) : null;
         if (!res.ok || !rows) return;
 
         // Debug: log server response message IDs
@@ -2506,9 +2503,12 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
 
         // mark server-seen posts for filtering (server post ids may be non-uuid)
         const seen = (serverSeenPostsRef.current.byScenario[sid] ??= {});
+        const seenIds: string[] = [];
         for (const raw of allRows) {
           const id = String(raw?.id ?? "").trim();
-          if (id) seen[id] = true;
+          if (!id) continue;
+          seen[id] = true;
+          seenIds.push(id);
         }
 
         const now = new Date().toISOString();
@@ -2614,6 +2614,71 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
 
           return { ...prev, posts, reposts, likes };
         });
+
+        // Keep SQL index in sync BEFORE setState so SQL-backed paging sees the update.
+        try {
+          if (seenIds.length > 0) {
+            await markSeenPostsAsync(sid, seenIds);
+          }
+
+          if (allRows.length > 0) {
+            const upserts: any[] = [];
+            for (const raw of allRows) {
+              const id = String(raw?.id ?? "").trim();
+              const p = id ? (nextDb as any)?.posts?.[id] : null;
+              if (p) upserts.push(p);
+            }
+            if (upserts.length > 0) await upsertPostsAsync(upserts as any);
+          }
+
+          if (Array.isArray(likeRows)) {
+            const mapped = likeRows
+              .map((li: any) => {
+                const profileId = String(li?.profileId ?? li?.profile_id ?? "").trim();
+                const postId = String(li?.postId ?? li?.post_id ?? "").trim();
+                const scenarioId = String(li?.scenarioId ?? li?.scenario_id ?? sid).trim();
+                if (!profileId || !postId || scenarioId !== sid) return null;
+                return {
+                  id: String(li?.id ?? "") || null,
+                  scenarioId: sid,
+                  profileId,
+                  postId,
+                  createdAt: li?.createdAt
+                    ? new Date(li.createdAt).toISOString()
+                    : li?.created_at
+                      ? new Date(li.created_at).toISOString()
+                      : now,
+                } as any;
+              })
+              .filter(Boolean);
+            await replaceScenarioLikesAsync(sid, mapped as any);
+          }
+
+          if (Array.isArray(repostRows)) {
+            const mapped = repostRows
+              .map((r: any) => {
+                const profileId = String(r?.profileId ?? r?.profile_id ?? "").trim();
+                const postId = String(r?.postId ?? r?.post_id ?? "").trim();
+                const scenarioId = String(r?.scenarioId ?? r?.scenario_id ?? sid).trim();
+                if (!profileId || !postId || scenarioId !== sid) return null;
+                return {
+                  id: String(r?.id ?? `${profileId}|${postId}`),
+                  scenarioId: sid,
+                  profileId,
+                  postId,
+                  createdAt: r?.createdAt
+                    ? new Date(r.createdAt).toISOString()
+                    : r?.created_at
+                      ? new Date(r.created_at).toISOString()
+                      : now,
+                } as any;
+              })
+              .filter(Boolean);
+            await replaceScenarioRepostsAsync(sid, mapped as any);
+          }
+        } catch {
+          // ignore
+        }
 
         setState({ isReady: true, db: nextDb as any });
       })()
@@ -2732,6 +2797,21 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
           return { ...prev, likes, posts } as any;
         });
 
+        // Keep SQL index in sync BEFORE setState so SQL-backed paging sees the update.
+        try {
+          const postRow = (nextDb as any)?.posts?.[poid] ?? null;
+          if (postRow) await upsertPostsAsync([postRow]);
+
+          if (liked) {
+            const row = ((nextDb as any)?.likes ?? {})?.[likeKeyV2(sid, pid, poid)] ?? null;
+            if (row) await upsertLikesAsync([row]);
+          } else {
+            await deleteLikeAsync(sid, pid, poid);
+          }
+        } catch {
+          // ignore
+        }
+
         setState({ isReady: true, db: nextDb as any });
         return { ok: true, liked };
       }
@@ -2781,8 +2861,6 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         return { ...prev, likes, posts };
       });
 
-      setState({ isReady: true, db: nextDb as any });
-
       const likesMap = (nextDb as any)?.likes ?? {};
       const k2 = likeKeyV2(sid, pid, poid);
       const k1 = likeKeyV1(pid, poid);
@@ -2790,6 +2868,23 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       const liked =
         Boolean(likesMap[k2]) ||
         (Boolean(likesMap[k1]) && String(likesMap[k1]?.scenarioId ?? "") === sid);
+
+      // Keep SQL index in sync BEFORE setState so SQL-backed paging sees the update.
+      try {
+        const postRow = (nextDb as any)?.posts?.[poid] ?? null;
+        if (postRow) await upsertPostsAsync([postRow]);
+
+        if (liked) {
+          const row = (likesMap as any)?.[k2] ?? (likesMap as any)?.[k1] ?? null;
+          if (row) await upsertLikesAsync([row]);
+        } else {
+          await deleteLikeAsync(sid, pid, poid);
+        }
+      } catch {
+        // ignore
+      }
+
+      setState({ isReady: true, db: nextDb as any });
 
       return { ok: true, liked };
     };
@@ -2800,9 +2895,14 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
 
       getProfileByHandle: (scenarioId, handle) => {
         if (!db) return null;
-        const needle = normalizeHandle(handle);
-        for (const p of Object.values(db.profiles)) {
-          if (p.scenarioId === String(scenarioId) && normalizeHandle(p.handle) === needle) return p;
+        const sid = String(scenarioId ?? "").trim();
+        if (!sid) return null;
+
+        try {
+          const p = getProfileByHandleSync(sid, String(handle ?? ""));
+          if (p?.id) return (db as any)?.profiles?.[String(p.id)] ?? p;
+        } catch {
+          return null;
         }
         return null;
       },
@@ -2870,6 +2970,21 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         if (backendEnabled && sid && !isUuidLike(sid)) return { items: [], nextCursor: null };
         schedulePostsSync(sid);
 
+        // SQL-backed fast path when no arbitrary JS filter is needed.
+        if (!filter) {
+          try {
+            return queryHomePostsPageSync({
+              scenarioId: sid,
+              limit,
+              cursor: cursor ?? null,
+              includeReplies,
+              requireSeen: backendEnabled,
+            });
+          } catch {
+            // fall back to JS scan below
+          }
+        }
+
         let items = Object.values(db.posts).filter((p) => p.scenarioId === sid);
 
         if (backendEnabled) {
@@ -2920,6 +3035,20 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         const pid = String(profileId);
 
         if (backendEnabled && sid && !isUuidLike(sid)) return { items: [], nextCursor: null };
+
+        // SQL-backed fast path.
+        try {
+          return queryProfileFeedPageSync({
+            scenarioId: sid,
+            profileId: String(profileId),
+            tab,
+            limit,
+            cursor: cursor ?? null,
+            requireSeen: backendEnabled,
+          });
+        } catch {
+          // fall back to JS scan below
+        }
 
         const seen = backendEnabled ? (serverSeenPostsRef.current.byScenario[sid] ?? {}) : null;
 
@@ -3431,130 +3560,193 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
             throw new Error("Pick a valid profile before posting.");
           }
 
+          // Optimistic: write locally immediately so the composer can close instantly.
+          // In backend mode, feeds are filtered to posts we've "seen" from the server,
+          // so we also mark this post as seen right away.
+          const pLocal = { ...(p as any), id, scenarioId: sid, authorProfileId } as any;
+          const parentPostId = pLocal?.parentPostId ? String(pLocal.parentPostId) : "";
+
+          const nextLocal = await updateDb((prev) => {
+            const existing = (prev.posts as any)?.[id];
+
+            const insertedAt = (existing as any)?.insertedAt ?? (pLocal as any).insertedAt ?? now;
+            const createdAt = (pLocal as any).createdAt ?? (existing as any)?.createdAt ?? now;
+
+            const posts = {
+              ...prev.posts,
+              [id]: {
+                ...(existing ?? {}),
+                ...pLocal,
+                id,
+                insertedAt,
+                createdAt,
+                updatedAt: now,
+              },
+            } as any;
+
+            // If this is a reply, bump parent.replyCount optimistically.
+            if (parentPostId && posts[parentPostId]) {
+              const parent = posts[parentPostId];
+              posts[parentPostId] = {
+                ...parent,
+                replyCount: Math.max(0, Number((parent as any).replyCount ?? 0) + 1),
+                updatedAt: now,
+              } as any;
+            }
+
+            return { ...prev, posts };
+          });
+
+          try {
+            const seen = (serverSeenPostsRef.current.byScenario[sid] ??= {});
+            if (id) seen[id] = true;
+          } catch {}
+
+          // Keep SQL index in sync BEFORE setState so SQL-backed paging sees the optimistic post.
+          try {
+            await markSeenPostsAsync(sid, [id]);
+            const row = (nextLocal as any)?.posts?.[id] ?? null;
+            if (row) await upsertPostsAsync([row]);
+
+            if (parentPostId) {
+              const parentRow = (nextLocal as any)?.posts?.[parentPostId] ?? null;
+              if (parentRow) await upsertPostsAsync([parentRow]);
+            }
+          } catch {
+            // ignore
+          }
+
+          setState({ isReady: true, db: nextLocal as any });
+
           const rawImageUrls = Array.isArray((p as any)?.imageUrls) ? (p as any).imageUrls.map(String).filter(Boolean) : [];
           const localImageUris = rawImageUrls.filter((u: string) => !/^https?:\/\//i.test(u));
           const remoteImageUrls = rawImageUrls.filter((u: string) => /^https?:\/\//i.test(u));
 
-          const res = await apiFetch({
-            path: `/scenarios/${encodeURIComponent(sid)}/posts`,
-            token,
-            init: {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                id,
-                authorProfileId,
-                text: (p as any)?.text,
-                imageUrls: remoteImageUrls,
-                replyCount: (p as any)?.replyCount,
-                repostCount: (p as any)?.repostCount,
-                likeCount: (p as any)?.likeCount,
-                parentPostId: (p as any)?.parentPostId,
-                quotedPostId: (p as any)?.quotedPostId,
-                insertedAt: (p as any)?.insertedAt,
-                createdAt: (p as any)?.createdAt,
-                postType: (p as any)?.postType,
-                meta: (p as any)?.meta,
-                isPinned: (p as any)?.isPinned,
-                pinOrder: (p as any)?.pinOrder,
-              }),
-            },
-          });
+          // Fire-and-forget backend write + image upload. If it fails, keep the optimistic post.
+          void (async () => {
+            const res = await apiFetch({
+              path: `/scenarios/${encodeURIComponent(sid)}/posts`,
+              token,
+              init: {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  id,
+                  authorProfileId,
+                  text: (pLocal as any)?.text,
+                  imageUrls: remoteImageUrls,
+                  replyCount: (pLocal as any)?.replyCount,
+                  repostCount: (pLocal as any)?.repostCount,
+                  likeCount: (pLocal as any)?.likeCount,
+                  parentPostId: (pLocal as any)?.parentPostId,
+                  quotedPostId: (pLocal as any)?.quotedPostId,
+                  insertedAt: (pLocal as any)?.insertedAt,
+                  createdAt: (pLocal as any)?.createdAt,
+                  postType: (pLocal as any)?.postType,
+                  meta: (pLocal as any)?.meta,
+                  isPinned: (pLocal as any)?.isPinned,
+                  pinOrder: (pLocal as any)?.pinOrder,
+                }),
+              },
+            });
 
-          if (!res.ok) {
-            const msg =
-              typeof (res.json as any)?.error === "string"
-                ? String((res.json as any).error)
-                : typeof res.text === "string" && res.text.trim().length
-                  ? res.text
-                  : `Save failed (HTTP ${res.status})`;
-            throw new Error(msg);
-          } else {
-            // In backend mode, feed queries intentionally filter to posts we've "seen" from the server.
-            // Some deployments may return 2xx without an embedded `post` payload; in that case we still
-            // want the optimistic/local post to appear immediately.
-            if (sid && id) {
+            if (!res.ok) return;
+
+            const createdPostId = String((res.json as any)?.post?.id ?? id);
+            if (sid && createdPostId) {
               const seen = (serverSeenPostsRef.current.byScenario[sid] ??= {});
-              seen[id] = true;
+              seen[createdPostId] = true;
             }
 
-            let raw = (res.json as any)?.post;
-            if (raw) {
-              const postId = String(raw?.id ?? id);
-              if (sid) {
-                const seen = (serverSeenPostsRef.current.byScenario[sid] ??= {});
-                if (postId) seen[postId] = true;
+            let raw = (res.json as any)?.post ?? null;
+
+            // If there are local images, upload them to R2 and persist returned URLs.
+            if (createdPostId && localImageUris.length > 0) {
+              const form = new FormData();
+              for (let i = 0; i < localImageUris.length; i++) {
+                const uri = String(localImageUris[i]);
+                const name = `post_${createdPostId}_${i}_${Date.now()}.jpg`;
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                form.append("images", { uri, name, type: "image/jpeg" } as any);
               }
 
-              // If there are local images, upload them to R2 and persist returned URLs in Neon.
-              if (postId && localImageUris.length > 0) {
-                const form = new FormData();
-                for (let i = 0; i < localImageUris.length; i++) {
-                  const uri = String(localImageUris[i]);
-                  const name = `post_${postId}_${i}_${Date.now()}.jpg`;
-                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                  form.append("images", { uri, name, type: "image/jpeg" } as any);
-                }
-
-                const up = await apiFetch({
-                  path: `/posts/${encodeURIComponent(postId)}/images`,
-                  token,
-                  init: {
-                    method: "POST",
-                    body: form as any,
-                  },
-                });
-
-                if (!up.ok) {
-                  const msg =
-                    typeof (up.json as any)?.error === "string"
-                      ? String((up.json as any).error)
-                      : typeof up.text === "string" && up.text.trim().length
-                        ? up.text
-                        : `Upload failed (HTTP ${up.status})`;
-                  throw new Error(msg);
-                }
-
-                raw = (up.json as any)?.post ?? raw;
-              }
-
-              const nextDb = await updateDb((prev) => {
-                const posts = { ...(prev.posts ?? {}) } as any;
-                const existing = posts[postId] ?? {};
-                posts[postId] = {
-                  ...existing,
-                  ...p,
-                  id: postId,
-                  scenarioId: String(raw?.scenarioId ?? (p as any)?.scenarioId ?? sid),
-                  authorProfileId: String(raw?.authorProfileId ?? (p as any)?.authorProfileId ?? ""),
-                  authorUserId: String(raw?.authorUserId ?? raw?.author_user_id ?? (p as any)?.authorUserId ?? existing?.authorUserId ?? "").trim() || undefined,
-                  text: String(raw?.text ?? (p as any)?.text ?? ""),
-                  imageUrls: Array.isArray(raw?.imageUrls)
-                    ? raw.imageUrls.map(String)
-                    : Array.isArray((p as any)?.imageUrls)
-                      ? (p as any).imageUrls.map(String).filter(Boolean)
-                      : [],
-                  replyCount: Number(raw?.replyCount ?? (p as any)?.replyCount ?? 0),
-                  repostCount: Number(raw?.repostCount ?? (p as any)?.repostCount ?? 0),
-                  likeCount: Number(raw?.likeCount ?? (p as any)?.likeCount ?? 0),
-                  parentPostId: raw?.parentPostId ?? (p as any)?.parentPostId,
-                  quotedPostId: raw?.quotedPostId ?? (p as any)?.quotedPostId,
-                  insertedAt: raw?.insertedAt ? new Date(raw.insertedAt).toISOString() : ((p as any)?.insertedAt ?? now),
-                  createdAt: raw?.createdAt ? new Date(raw.createdAt).toISOString() : ((p as any)?.createdAt ?? now),
-                  updatedAt: raw?.updatedAt ? new Date(raw.updatedAt).toISOString() : now,
-                  postType: raw?.postType ?? (p as any)?.postType,
-                  meta: raw?.meta ?? (p as any)?.meta,
-                  isPinned: raw?.isPinned ?? (p as any)?.isPinned,
-                  pinOrder: raw?.pinOrder ?? (p as any)?.pinOrder,
-                } as any;
-
-                return { ...prev, posts };
+              const up = await apiFetch({
+                path: `/posts/${encodeURIComponent(createdPostId)}/images`,
+                token,
+                init: {
+                  method: "POST",
+                  body: form as any,
+                },
               });
 
-              setState({ isReady: true, db: nextDb as any });
-              return;
+              if (up.ok) {
+                raw = (up.json as any)?.post ?? raw;
+              }
             }
-          }
+
+            if (!raw) return;
+
+            const postId = String(raw?.id ?? createdPostId ?? id);
+            const nextDb = await updateDb((prev) => {
+              const posts = { ...(prev.posts ?? {}) } as any;
+
+              if (postId && postId !== id && posts[id]) delete posts[id];
+
+              const existing = posts[postId] ?? {};
+              posts[postId] = {
+                ...existing,
+                ...pLocal,
+                id: postId,
+                scenarioId: String(raw?.scenarioId ?? (pLocal as any)?.scenarioId ?? sid),
+                authorProfileId: String(raw?.authorProfileId ?? (pLocal as any)?.authorProfileId ?? ""),
+                authorUserId:
+                  String(raw?.authorUserId ?? raw?.author_user_id ?? (pLocal as any)?.authorUserId ?? existing?.authorUserId ?? "")
+                    .trim() || undefined,
+                text: String(raw?.text ?? (pLocal as any)?.text ?? ""),
+                imageUrls: Array.isArray(raw?.imageUrls)
+                  ? raw.imageUrls.map(String).filter(Boolean)
+                  : Array.isArray((pLocal as any)?.imageUrls)
+                    ? (pLocal as any).imageUrls.map(String).filter(Boolean)
+                    : (existing?.imageUrls ?? []),
+                replyCount: Number(raw?.replyCount ?? (pLocal as any)?.replyCount ?? existing?.replyCount ?? 0),
+                repostCount: Number(raw?.repostCount ?? (pLocal as any)?.repostCount ?? existing?.repostCount ?? 0),
+                likeCount: Number(raw?.likeCount ?? (pLocal as any)?.likeCount ?? existing?.likeCount ?? 0),
+                parentPostId: raw?.parentPostId ?? (pLocal as any)?.parentPostId ?? existing?.parentPostId,
+                quotedPostId: raw?.quotedPostId ?? (pLocal as any)?.quotedPostId ?? existing?.quotedPostId,
+                insertedAt: raw?.insertedAt ? new Date(raw.insertedAt).toISOString() : ((pLocal as any)?.insertedAt ?? existing?.insertedAt ?? now),
+                createdAt: raw?.createdAt ? new Date(raw.createdAt).toISOString() : ((pLocal as any)?.createdAt ?? existing?.createdAt ?? now),
+                updatedAt: raw?.updatedAt ? new Date(raw.updatedAt).toISOString() : now,
+                postType: raw?.postType ?? (pLocal as any)?.postType ?? existing?.postType,
+                meta: raw?.meta ?? (pLocal as any)?.meta ?? existing?.meta,
+                isPinned: raw?.isPinned ?? (pLocal as any)?.isPinned ?? existing?.isPinned,
+                pinOrder: raw?.pinOrder ?? (pLocal as any)?.pinOrder ?? existing?.pinOrder,
+              } as any;
+
+              return { ...prev, posts };
+            });
+
+            // Keep SQL index in sync BEFORE setState so SQL-backed paging sees server-confirmed post.
+            try {
+              if (postId && postId !== id) {
+                await deletePostCascadeAsync(id);
+              }
+
+              if (sid && postId) {
+                await markSeenPostsAsync(sid, [postId]);
+              }
+
+              const row = (nextDb as any)?.posts?.[postId] ?? null;
+              if (row) await upsertPostsAsync([row]);
+            } catch {
+              // ignore
+            }
+
+            setState({ isReady: true, db: nextDb as any });
+          })().catch(() => {
+            // ignore; keep optimistic post
+          });
+
+          return;
         }
 
         const next = await updateDb((prev) => {
@@ -3563,21 +3755,45 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
           const insertedAt = (existing as any)?.insertedAt ?? (p as any).insertedAt ?? now;
           const createdAt = (p as any).createdAt ?? (existing as any)?.createdAt ?? now;
 
-          return {
-            ...prev,
-            posts: {
-              ...prev.posts,
-              [id]: {
-                ...(existing ?? {}),
-                ...p,
-                id,
-                insertedAt,
-                createdAt,
-                updatedAt: now,
-              },
+          const parentPostId = (p as any)?.parentPostId ? String((p as any).parentPostId) : "";
+
+          const posts = {
+            ...prev.posts,
+            [id]: {
+              ...(existing ?? {}),
+              ...p,
+              id,
+              insertedAt,
+              createdAt,
+              updatedAt: now,
             },
-          };
+          } as any;
+
+          if (parentPostId && posts[parentPostId]) {
+            const parent = posts[parentPostId];
+            posts[parentPostId] = {
+              ...parent,
+              replyCount: Math.max(0, Number((parent as any).replyCount ?? 0) + 1),
+              updatedAt: now,
+            } as any;
+          }
+
+          return { ...prev, posts };
         });
+
+        // Keep SQL index in sync BEFORE setState so SQL-backed paging sees the new/updated post.
+        try {
+          const row = (next as any)?.posts?.[id] ?? null;
+          if (row) await upsertPostsAsync([row]);
+
+          const parentPostId = (p as any)?.parentPostId ? String((p as any).parentPostId) : "";
+          if (parentPostId) {
+            const parentRow = (next as any)?.posts?.[parentPostId] ?? null;
+            if (parentRow) await upsertPostsAsync([parentRow]);
+          }
+        } catch {
+          // ignore
+        }
 
         setState({ isReady: true, db: next as any });
       },
@@ -3641,6 +3857,13 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
 
           return { ...prev, posts, reposts, likes, scenarios };
         });
+
+        // Keep SQL index in sync BEFORE setState so SQL-backed paging drops the post immediately.
+        try {
+          await deletePostCascadeAsync(id);
+        } catch {
+          // ignore
+        }
 
         setState({ isReady: true, db: next as any });
 
@@ -3788,15 +4011,146 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
           const key = `${reposterId}|${pid}`;
           const already = Boolean((db as any)?.reposts?.[key]);
 
-          const res = await apiFetch({
-            path: `/reposts/posts/${encodeURIComponent(pid)}`,
-            token,
-            init: {
-              method: already ? "DELETE" : "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ scenarioId: sid, profileId: reposterId }),
-            },
+          // Optimistic UI: update local DB immediately so the icon tint + count update instantly.
+          // If the backend request fails, we roll back this local change.
+          const optimisticNow = new Date().toISOString();
+          const optimisticDb = await updateDb((prev) => {
+            const reposts = { ...((prev as any).reposts ?? {}) } as any;
+            const posts = { ...(prev as any).posts } as any;
+
+            const post = posts[pid];
+            const nextDelta = already ? -1 : 1;
+
+            if (already) {
+              delete reposts[key];
+            } else {
+              reposts[key] = {
+                id: key,
+                scenarioId: sid,
+                profileId: reposterId,
+                postId: pid,
+                createdAt: optimisticNow,
+              } as any;
+            }
+
+            if (post) {
+              posts[pid] = {
+                ...post,
+                repostCount: Math.max(0, Number((post as any).repostCount ?? 0) + nextDelta),
+                updatedAt: optimisticNow,
+              } as any;
+            }
+
+            return { ...prev, reposts, posts };
           });
+
+          // Keep SQL index in sync for optimistic state BEFORE setState.
+          try {
+            const postRow = (optimisticDb as any)?.posts?.[pid] ?? null;
+            if (postRow) await upsertPostsAsync([postRow]);
+
+            if (!already) {
+              await upsertRepostsAsync([
+                {
+                  id: key,
+                  scenarioId: sid,
+                  profileId: reposterId,
+                  postId: pid,
+                  createdAt: optimisticNow,
+                } as any,
+              ]);
+            } else {
+              await deleteRepostAsync(sid, reposterId, pid);
+            }
+          } catch {
+            // ignore
+          }
+
+          setState({ isReady: true, db: optimisticDb as any });
+
+          const rollbackOptimistic = async () => {
+            const rollbackDb = await updateDb((prev) => {
+              const reposts = { ...((prev as any).reposts ?? {}) } as any;
+              const posts = { ...(prev as any).posts } as any;
+
+              const post = posts[pid];
+              const shouldExist = already;
+              const existsNow = Boolean(reposts[key]);
+
+              // Only change what we optimistically changed.
+              if (shouldExist && !existsNow) {
+                reposts[key] = {
+                  id: key,
+                  scenarioId: sid,
+                  profileId: reposterId,
+                  postId: pid,
+                  createdAt: optimisticNow,
+                } as any;
+
+                if (post) {
+                  posts[pid] = {
+                    ...post,
+                    repostCount: Math.max(0, Number((post as any).repostCount ?? 0) + 1),
+                    updatedAt: optimisticNow,
+                  } as any;
+                }
+              }
+
+              if (!shouldExist && existsNow) {
+                delete reposts[key];
+
+                if (post) {
+                  posts[pid] = {
+                    ...post,
+                    repostCount: Math.max(0, Number((post as any).repostCount ?? 0) - 1),
+                    updatedAt: optimisticNow,
+                  } as any;
+                }
+              }
+
+              return { ...prev, reposts, posts };
+            });
+
+            // Best-effort rollback in SQL index BEFORE setState.
+            try {
+              const postRow = (rollbackDb as any)?.posts?.[pid] ?? null;
+              if (postRow) await upsertPostsAsync([postRow]);
+
+              if (already) {
+                await upsertRepostsAsync([
+                  {
+                    id: key,
+                    scenarioId: sid,
+                    profileId: reposterId,
+                    postId: pid,
+                    createdAt: optimisticNow,
+                  } as any,
+                ]);
+              } else {
+                await deleteRepostAsync(sid, reposterId, pid);
+              }
+            } catch {
+              // ignore
+            }
+
+            setState({ isReady: true, db: rollbackDb as any });
+          };
+
+          let res: Awaited<ReturnType<typeof apiFetch>>;
+          try {
+            res = await apiFetch({
+              path: `/reposts/posts/${encodeURIComponent(pid)}`,
+              token,
+              init: {
+                method: already ? "DELETE" : "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ scenarioId: sid, profileId: reposterId }),
+              },
+            });
+          } catch (e) {
+            await rollbackOptimistic();
+            throw e;
+          }
 
           if (!res.ok) {
             const msg =
@@ -3805,6 +4159,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                 : typeof res.text === "string" && res.text.trim().length
                   ? res.text
                   : `Repost failed (HTTP ${res.status})`;
+            await rollbackOptimistic();
             throw new Error(msg);
           }
 
@@ -3874,6 +4229,21 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
             return { ...prev, reposts, posts };
           });
 
+          // Keep SQL index in sync with authoritative result BEFORE setState.
+          try {
+            const postRow = (nextDb as any)?.posts?.[pid] ?? null;
+            if (postRow) await upsertPostsAsync([postRow]);
+
+            if (reposted) {
+              const r = (nextDb as any)?.reposts?.[key] ?? null;
+              if (r) await upsertRepostsAsync([r]);
+            } else {
+              await deleteRepostAsync(sid, reposterId, pid);
+            }
+          } catch {
+            // ignore
+          }
+
           setState({ isReady: true, db: nextDb as any });
           return;
         }
@@ -3917,6 +4287,26 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
             },
           };
         });
+
+        // Keep SQL index in sync BEFORE setState.
+        try {
+          const postRow = (next as any)?.posts?.[pid] ?? null;
+          if (postRow) await upsertPostsAsync([postRow]);
+
+          const selectedProfileId = (next as any).selectedProfileByScenario?.[sid];
+          const reposterId = selectedProfileId ? String(selectedProfileId) : "";
+          if (reposterId) {
+            const key = `${reposterId}|${pid}`;
+            const r = (next as any)?.reposts?.[key] ?? null;
+            if (r) {
+              await upsertRepostsAsync([r]);
+            } else {
+              await deleteRepostAsync(sid, reposterId, pid);
+            }
+          }
+        } catch {
+          // ignore
+        }
 
         setState({ isReady: true, db: next as any });
       },
@@ -4276,7 +4666,8 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
           const now = new Date().toISOString();
 
           const playerIdsRaw = raw?.player_ids ?? raw?.playerIds;
-          const playerIds = Array.isArray(playerIdsRaw) ? playerIdsRaw.map(String).filter(Boolean) : [];
+          const hasPlayerIds = Array.isArray(playerIdsRaw);
+          const playerIds = hasPlayerIds ? playerIdsRaw.map(String).filter(Boolean) : undefined;
 
           const gmUserIdsRaw = raw?.gm_user_ids ?? raw?.gmUserIds;
           const gmUserIds = Array.isArray(gmUserIdsRaw) ? gmUserIdsRaw.map(String).filter(Boolean) : undefined;
@@ -4295,7 +4686,8 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                 : (fallback as any)?.mode === "campaign"
                   ? "campaign"
                   : "story",
-            playerIds: playerIds.length ? playerIds : ((fallback as any)?.playerIds ?? []),
+            // IMPORTANT: empty arrays are meaningful (e.g. no members in join table).
+            playerIds: hasPlayerIds ? (playerIds ?? []) : ((fallback as any)?.playerIds ?? []),
             tags: Array.isArray(raw?.tags) ? raw.tags : ((fallback as any)?.tags ?? []),
             gmUserIds: gmUserIds ?? (fallback as any)?.gmUserIds,
             settings: raw?.settings != null ? raw.settings : (fallback as any)?.settings,
@@ -4367,21 +4759,6 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       },
 
       joinScenarioByInviteCode: async (inviteCode, userId) => {
-                // After joining, clear selected profile if it is no longer owned by the user or is still public (adopted by someone else)
-        await updateDb((prev: any) => {
-          const sid = String(foundScenarioId || "");
-          if (!sid) return prev;
-          const selectedProfileByScenario = { ...((prev as any).selectedProfileByScenario ?? {}) };
-          const selectedProfileId = selectedProfileByScenario[sid];
-          if (selectedProfileId) {
-            const profile = (prev as any).profiles?.[selectedProfileId];
-            // If the profile is gone, or is now owned by someone else, or is still public (not reclaimed), clear selection
-            if (!profile || String(profile.ownerUserId) !== String(userId) || !!profile.isPublic) {
-              delete selectedProfileByScenario[sid];
-            }
-          }
-          return { ...prev, selectedProfileByScenario };
-        });
         const code = String(inviteCode ?? "").trim().toUpperCase();
         const uid = String(userId ?? "").trim();
         if (!code || !uid) return null;
@@ -4470,6 +4847,15 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
               }
             }
 
+            const selectedProfileByScenario = { ...((prev as any).selectedProfileByScenario ?? {}) };
+            const selectedProfileId = selectedProfileByScenario[sid];
+            if (selectedProfileId) {
+              const profile = (profiles as any)?.[selectedProfileId] ?? (prev as any).profiles?.[selectedProfileId];
+              if (!profile || String(profile.ownerUserId) !== uid || !!profile.isPublic) {
+                delete selectedProfileByScenario[sid];
+              }
+            }
+
             return {
               ...prev,
               scenarios: {
@@ -4477,6 +4863,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                 [sid]: nextScenario as any,
               },
               profiles,
+              selectedProfileByScenario,
             };
           });
 
@@ -4489,12 +4876,17 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         let alreadyIn = false;
         let foundScenarioId: string | null = null;
 
-        const nextDb = await updateDb((prev) => {
-          const scenarios = Object.values(prev.scenarios ?? {});
-          const found = scenarios.find((s) => String((s as any).inviteCode ?? "").toUpperCase() === code);
-          if (!found) return prev;
+        let scenarioIdHint: string | null = null;
+        try {
+          scenarioIdHint = findScenarioIdByInviteCodeSync(code);
+        } catch {
+          scenarioIdHint = null;
+        }
 
-          const sid = String((found as any).id);
+        const nextDb = await updateDb((prev) => {
+          const sid = String(scenarioIdHint ?? "").trim();
+          if (!sid) return prev;
+
           foundScenarioId = sid;
 
           const current = prev.scenarios[sid];
@@ -4519,6 +4911,15 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
             profiles[k] = { ...p, isPublic: false, updatedAt: now };
           }
 
+          const selectedProfileByScenario = { ...((prev as any).selectedProfileByScenario ?? {}) };
+          const selectedProfileId = selectedProfileByScenario[sid];
+          if (selectedProfileId) {
+            const profile = (profiles as any)?.[selectedProfileId] ?? (prev as any).profiles?.[selectedProfileId];
+            if (!profile || String(profile.ownerUserId) !== uid || !!profile.isPublic) {
+              delete selectedProfileByScenario[sid];
+            }
+          }
+
           return {
             ...prev,
             scenarios: {
@@ -4530,6 +4931,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
               } as any,
             },
             profiles,
+            selectedProfileByScenario,
           };
         });
 
@@ -4952,6 +5354,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         };
 
         const leaveScenarioLocal = async () => {
+          let detachedProfilesCount = 0;
           const nextDb = await updateDb((prev) => {
             const current = prev.scenarios?.[sid];
             if (!current) return prev;
@@ -5021,16 +5424,20 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
 
             // normal user leaving
             // - remove from scenario playerIds
-            // - mark all profiles you own in this scenario as shared/public
-            //   (ownerUserId remains, so if you re-join and nobody adopted them, you can reclaim them)
+            // - detach all profiles you own in this scenario so they are shared/public + unowned
             const profiles = { ...prev.profiles };
             for (const k of Object.keys(profiles)) {
               const p = (profiles as any)[k];
               if (!p) continue;
               if (String(p.scenarioId) !== sid) continue;
               if (String(p.ownerUserId) !== uid) continue;
-              profiles[k] = { ...p, isPublic: true, updatedAt: now };
+              detachedProfilesCount += 1;
+              profiles[k] = { ...p, ownerUserId: "", isPublic: true, updatedAt: now };
             }
+
+            const gmUserIds = Array.isArray((current as any).gmUserIds)
+              ? (current as any).gmUserIds.map(String).filter((x: string) => x !== uid)
+              : (current as any).gmUserIds;
 
             return {
               ...prev,
@@ -5039,6 +5446,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                 [sid]: {
                   ...current,
                   playerIds: remaining,
+                  gmUserIds,
                   updatedAt: now,
                 } as any,
               },
@@ -5077,6 +5485,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
             await deleteScenarioCascadeLocal();
           } else {
             // Mirror local behavior so the scenario immediately disappears from the list.
+            let detachedProfilesCount = 0;
             const nextDb = await updateDb((prev) => {
               const current = prev.scenarios?.[sid];
               if (!current) return prev;
@@ -5091,8 +5500,13 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                 if (!p) continue;
                 if (String(p.scenarioId) !== sid) continue;
                 if (String(p.ownerUserId) !== uid) continue;
-                profiles[k] = { ...p, isPublic: true, updatedAt: now };
+                detachedProfilesCount += 1;
+                profiles[k] = { ...p, ownerUserId: "", isPublic: true, updatedAt: now };
               }
+
+              const gmUserIds = Array.isArray((current as any).gmUserIds)
+                ? (current as any).gmUserIds.map(String).filter((x: string) => x !== uid)
+                : (current as any).gmUserIds;
 
               return {
                 ...prev,
@@ -5101,6 +5515,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                   [sid]: {
                     ...current,
                     playerIds: remaining,
+                    gmUserIds,
                     updatedAt: now,
                   } as any,
                 },
@@ -5748,10 +6163,17 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
 
           const normalizeProfileFromServer = (raw: any, scenarioId: string): Profile => {
             const nowIso = new Date().toISOString();
+            const hasOwnerKey = raw != null && ("ownerUserId" in raw || "owner_user_id" in raw);
+            const ownerFromApi = raw?.ownerUserId ?? raw?.owner_user_id;
+            const ownerUserId = hasOwnerKey
+              ? ownerFromApi == null
+                ? ""
+                : String(ownerFromApi)
+              : "";
             return {
               id: String(raw?.id ?? "").trim(),
               scenarioId: String(raw?.scenarioId ?? raw?.scenario_id ?? scenarioId),
-              ownerUserId: String(raw?.ownerUserId ?? raw?.owner_user_id ?? currentUserId),
+              ownerUserId,
               displayName: String(raw?.displayName ?? raw?.display_name ?? ""),
               handle: String(raw?.handle ?? ""),
               avatarUrl: String(raw?.avatarUrl ?? raw?.avatar_url ?? ""),
@@ -6380,6 +6802,108 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         setState({ isReady: true, db: nextDb as any });
       },
 
+      getScenarioNotificationPrefs: async (scenarioId: string) => {
+        const sid = String(scenarioId ?? "").trim();
+        if (!backendEnabled) return null;
+        if (!sid || !isUuidLike(sid)) return null;
+
+        const token = String(auth.token ?? "").trim();
+        const uid = String(auth.userId ?? "").trim();
+        if (!token || !uid) return null;
+
+        const res = await apiFetch({
+          path: `/scenarios/${encodeURIComponent(sid)}/notification-prefs`,
+          token,
+        });
+        if (!res.ok) return null;
+
+        const prefs = (res.json as any)?.prefs ?? null;
+
+        try {
+          const normalized: ScenarioNotificationPrefs = prefs
+            ? {
+                ...defaultScenarioNotificationPrefsMobile(sid, uid),
+                ...(prefs as any),
+                scenarioId: sid,
+                userId: uid,
+                ignoredProfileIds: Array.isArray((prefs as any)?.ignoredProfileIds)
+                  ? (prefs as any).ignoredProfileIds.map(String).filter(Boolean)
+                  : Array.isArray((prefs as any)?.ignored_profile_ids)
+                    ? (prefs as any).ignored_profile_ids.map(String).filter(Boolean)
+                    : [],
+              }
+            : defaultScenarioNotificationPrefsMobile(sid, uid);
+
+          const nextDb = await updateDb((prev) => {
+            const scenarioNotificationPrefsByScenarioId = {
+              ...(((prev as any).scenarioNotificationPrefsByScenarioId ?? {}) as any),
+              [sid]: normalized,
+            };
+            return { ...(prev as any), scenarioNotificationPrefsByScenarioId } as any;
+          });
+          setState({ isReady: true, db: nextDb as any });
+        } catch {
+          // ignore caching failures
+        }
+
+        return prefs as any;
+      },
+
+      updateScenarioNotificationPrefs: async (scenarioId: string, patch: any) => {
+        const sid = String(scenarioId ?? "").trim();
+        if (!backendEnabled) throw new Error("Not in backend mode");
+        if (!sid || !isUuidLike(sid)) throw new Error("Invalid scenarioId");
+
+        const token = String(auth.token ?? "").trim();
+        const uid = String(auth.userId ?? "").trim();
+        if (!token || !uid) throw new Error("Not signed in");
+
+        const res = await apiFetch({
+          path: `/scenarios/${encodeURIComponent(sid)}/notification-prefs`,
+          token,
+          init: {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(patch ?? {}),
+          },
+        });
+
+        if (!res.ok) {
+          throw new Error(String((res.json as any)?.error ?? "Update failed"));
+        }
+
+        const prefs = (res.json as any)?.prefs ?? null;
+
+        try {
+          const normalized: ScenarioNotificationPrefs = prefs
+            ? {
+                ...defaultScenarioNotificationPrefsMobile(sid, uid),
+                ...(prefs as any),
+                scenarioId: sid,
+                userId: uid,
+                ignoredProfileIds: Array.isArray((prefs as any)?.ignoredProfileIds)
+                  ? (prefs as any).ignoredProfileIds.map(String).filter(Boolean)
+                  : Array.isArray((prefs as any)?.ignored_profile_ids)
+                    ? (prefs as any).ignored_profile_ids.map(String).filter(Boolean)
+                    : [],
+              }
+            : defaultScenarioNotificationPrefsMobile(sid, uid);
+
+          const nextDb = await updateDb((prev) => {
+            const scenarioNotificationPrefsByScenarioId = {
+              ...(((prev as any).scenarioNotificationPrefsByScenarioId ?? {}) as any),
+              [sid]: normalized,
+            };
+            return { ...(prev as any), scenarioNotificationPrefsByScenarioId } as any;
+          });
+          setState({ isReady: true, db: nextDb as any });
+        } catch {
+          // ignore caching failures
+        }
+
+        return prefs as any;
+      },
+
       // ===== DMs =====
       syncConversationsForScenario: async (scenarioId: string) => {
         await syncConversationsForScenarioImpl(String(scenarioId ?? ""));
@@ -6406,10 +6930,12 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
           });
         }
 
-        return Object.values(map)
-          .filter((c) => String((c as any).scenarioId) === sid)
-          .filter((c) => Array.isArray((c as any).participantProfileIds) && (c as any).participantProfileIds.map(String).includes(pid))
-          .sort(sortDescByLastMessageAtThenId);
+        try {
+          const items = listConversationsForScenarioSync(sid, pid);
+          return items.map((c) => (map as any)?.[String((c as any).id ?? "")] ?? c);
+        } catch {
+          return [];
+        }
       },
 
       listMessagesPage: ({ scenarioId, conversationId, limit = 30, cursor }: MessagesPageArgs) => {
@@ -6418,22 +6944,15 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         const cid = String(conversationId);
         const map = ((db as any).messages ?? {}) as Record<string, Message>;
 
-        let items = Object.values(map).filter(
-          (m) => String((m as any).scenarioId) === sid && String((m as any).conversationId) === cid
-        );
-
-        items.sort(sortAscByCreatedAtThenIdGeneric);
-
-        let startIndex = 0;
-        if (cursor) {
-          const idx = items.findIndex((m) => makeMessageCursor(m) === cursor);
-          startIndex = idx >= 0 ? idx + 1 : 0;
+        try {
+          const res = queryMessagesPageSync({ scenarioId: sid, conversationId: cid, limit, cursor });
+          return {
+            items: res.items.map((m) => (map as any)?.[String((m as any).id ?? "")] ?? m),
+            nextCursor: res.nextCursor,
+          };
+        } catch {
+          return { items: [], nextCursor: null };
         }
-
-        const page = items.slice(startIndex, startIndex + limit);
-        const next = page.length === limit ? makeMessageCursor(page[page.length - 1]) : null;
-
-        return { items: page, nextCursor: next };
       },
 
       upsertConversation: async (c: Conversation) => {
@@ -6653,54 +7172,63 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
           const optimisticCreatedAt = new Date().toISOString();
           const optimisticTextForPreview = body ? body : images.length > 0 ? "photo" : "";
 
-          try {
-            const optimisticDb = await updateDb((prev) => {
-              const conversations = { ...((prev as any).conversations ?? {}) } as Record<string, Conversation>;
-              const messages = { ...((prev as any).messages ?? {}) } as Record<string, Message>;
+          const applyOptimistic = (prevDb: any) => {
+            const conversations = { ...((prevDb as any).conversations ?? {}) } as Record<string, Conversation>;
+            const messages = { ...((prevDb as any).messages ?? {}) } as Record<string, Message>;
 
-              const existing = messages[optimisticId];
-              const base = existing ? { ...(existing as any) } : {};
-              messages[optimisticId] = {
-                ...base,
-                id: optimisticId,
-                scenarioId: sid,
-                conversationId: cid,
-                senderProfileId: from,
-                text: body,
-                kind: String(kindVal ?? (base as any)?.kind ?? "text"),
-                imageUrls: images,
-                createdAt: String((base as any)?.createdAt ?? optimisticCreatedAt),
+            const existing = messages[optimisticId];
+            const base = existing ? { ...(existing as any) } : {};
+            messages[optimisticId] = {
+              ...base,
+              id: optimisticId,
+              scenarioId: sid,
+              conversationId: cid,
+              senderProfileId: from,
+              text: body,
+              kind: String(kindVal ?? (base as any)?.kind ?? "text"),
+              imageUrls: images,
+              createdAt: String((base as any)?.createdAt ?? optimisticCreatedAt),
+              updatedAt: optimisticCreatedAt,
+              editedAt: undefined,
+              clientStatus: "sending",
+              clientError: undefined,
+            } as any;
+
+            const conv = conversations[cid];
+            if (conv && String((conv as any).scenarioId ?? "") === sid) {
+              const existingIds = Array.isArray((conv as any).messageIds)
+                ? (conv as any).messageIds.map(String).filter(Boolean)
+                : [];
+              if (!existingIds.includes(optimisticId)) existingIds.push(optimisticId);
+
+              conversations[cid] = {
+                ...conv,
+                lastMessageAt: optimisticCreatedAt,
                 updatedAt: optimisticCreatedAt,
-                editedAt: undefined,
-                clientStatus: "sending",
-                clientError: undefined,
+                messageIds: existingIds,
+                lastMessageText: optimisticTextForPreview,
+                lastMessageKind: String(kindVal ?? "text"),
+                lastMessageSenderProfileId: from,
               } as any;
+            }
 
-              const conv = conversations[cid];
-              if (conv && String((conv as any).scenarioId ?? "") === sid) {
-                const existingIds = Array.isArray((conv as any).messageIds)
-                  ? (conv as any).messageIds.map(String).filter(Boolean)
-                  : [];
-                if (!existingIds.includes(optimisticId)) existingIds.push(optimisticId);
+            return { ...(prevDb as any), conversations, messages } as any;
+          };
 
-                conversations[cid] = {
-                  ...conv,
-                  lastMessageAt: optimisticCreatedAt,
-                  updatedAt: optimisticCreatedAt,
-                  messageIds: existingIds,
-                  lastMessageText: optimisticTextForPreview,
-                  lastMessageKind: String(kindVal ?? "text"),
-                  lastMessageSenderProfileId: from,
-                } as any;
-              }
-
-              return { ...(prev as any), conversations, messages } as any;
+          // IMPORTANT: update UI state immediately (don't await sqlite/IO writes)
+          // so the bubble appears instantly.
+          try {
+            setState((prevState) => {
+              const curDb = (prevState as any)?.db;
+              if (!curDb) return prevState as any;
+              return { isReady: true, db: applyOptimistic(curDb) } as any;
             });
+          } catch {}
 
-            setState({ isReady: true, db: optimisticDb as any });
-          } catch {
-            // If optimistic insert fails for any reason, continue with the network send.
-          }
+          // Persist in background (AppDataProvider subscribes to db changes).
+          try {
+            void updateDb((prev) => applyOptimistic(prev as any));
+          } catch {}
 
           const hasLocalImages = images.some((u) => !/^https?:\/\//i.test(u));
 
@@ -6742,15 +7270,29 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
 
           if (!res.ok) {
             const err = (res.json as any)?.error ?? res.text ?? "Send failed";
+            const applyFailed = (prevDb: any) => {
+              const messages = { ...((prevDb as any).messages ?? {}) } as Record<string, Message>;
+              const existing = messages[optimisticId];
+              if (!existing) return prevDb as any;
+              messages[optimisticId] = {
+                ...(existing as any),
+                clientStatus: "failed",
+                clientError: String(err),
+                updatedAt: new Date().toISOString(),
+              } as any;
+              return { ...(prevDb as any), messages } as any;
+            };
+
             try {
-              const failedDb = await updateDb((prev) => {
-                const messages = { ...((prev as any).messages ?? {}) } as Record<string, Message>;
-                const existing = messages[optimisticId];
-                if (!existing) return prev as any;
-                messages[optimisticId] = { ...(existing as any), clientStatus: "failed", clientError: String(err), updatedAt: new Date().toISOString() } as any;
-                return { ...(prev as any), messages } as any;
+              setState((prevState) => {
+                const curDb = (prevState as any)?.db;
+                if (!curDb) return prevState as any;
+                return { isReady: true, db: applyFailed(curDb) } as any;
               });
-              setState({ isReady: true, db: failedDb as any });
+            } catch {}
+
+            try {
+              void updateDb((prev) => applyFailed(prev as any));
             } catch {}
             return { ok: false, error: err };
           }
@@ -6763,9 +7305,9 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
           const localPickedImages = images.filter((u) => !/^https?:\/\//i.test(u));
           const imageUrlsForDb = remoteImageUrls.length > 0 ? remoteImageUrls : localPickedImages;
 
-          const nextDb = await updateDb((prev) => {
-            const conversations = { ...((prev as any).conversations ?? {}) } as Record<string, Conversation>;
-            const messages = { ...((prev as any).messages ?? {}) } as Record<string, Message>;
+          const applyServerConfirm = (prevDb: any) => {
+            const conversations = { ...((prevDb as any).conversations ?? {}) } as Record<string, Conversation>;
+            const messages = { ...((prevDb as any).messages ?? {}) } as Record<string, Message>;
 
             // Remove optimistic placeholder (if still present).
             try {
@@ -6814,10 +7356,21 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
               } as any;
             }
 
-            return { ...(prev as any), conversations, messages } as any;
-          });
+            return { ...(prevDb as any), conversations, messages } as any;
+          };
 
-          setState({ isReady: true, db: nextDb as any });
+          try {
+            setState((prevState) => {
+              const curDb = (prevState as any)?.db;
+              if (!curDb) return prevState as any;
+              return { isReady: true, db: applyServerConfirm(curDb) } as any;
+            });
+          } catch {}
+
+          try {
+            void updateDb((prev) => applyServerConfirm(prev as any));
+          } catch {}
+
           return { ok: true, messageId: mid };
         }
 

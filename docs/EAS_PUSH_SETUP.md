@@ -32,9 +32,30 @@ Add to `app.json` (example snippet inside `expo`):
 
 3) iOS — APNs
 
-- Create an APNs Auth Key in your Apple Developer account (recommended) — it provides a key ID and a .p8 file.
-- You'll later upload that key to EAS or let EAS manage credentials during build.
-- Ensure your `ios.bundleIdentifier` (in `app.json`) matches the one you register in App Store Connect.
+- Prefer an **APNs Auth Key (.p8)** (recommended by Apple) instead of certificates.
+
+Step-by-step:
+
+1. Apple Developer → **Certificates, Identifiers & Profiles**
+2. **Keys** → “+”
+3. Name it (ex: `Feedverse Push`)
+4. Enable **Apple Push Notifications service (APNs)**
+5. Download the `.p8` file (only downloadable once)
+6. Note your:
+  - **Key ID** (ex: `ABC123DEFG`)
+  - **Team ID** (from your Apple Developer account)
+7. Ensure `ios.bundleIdentifier` in `mobile/app.json` matches the App ID you’ll use.
+
+EAS integration:
+
+- If you run `eas build -p ios`, EAS can manage credentials for you.
+- If you want to upload manually, use `eas credentials` and provide the APNs key when prompted.
+
+Common failure modes:
+
+- Bundle identifier mismatch (build succeeds but pushes never arrive)
+- Wrong Team ID / Key ID
+- Using an expired/incorrect provisioning profile for the push environment
 
 4) `app.json` / config changes (example `expo` root section)
 
@@ -106,8 +127,13 @@ EAS will prompt to manage or upload credentials (upload `google-services.json`, 
 
 7) Server-side push keys
 
-- Android: use FCM Server key or the new FCM HTTP v1 credentials to send push messages.
-- iOS: use APNs key (.p8) or use Apple Push Notification service through provider token flow.
+- Android: use FCM HTTP v1 credentials (service account JSON) when sending directly.
+- iOS: APNs key (.p8) is handled by EAS/Expo push pipeline when using Expo push tokens.
+
+Delivery behavior in this repo:
+
+- Push sends are **best-effort** and should never crash API requests.
+- Transient failures are retried a few times with backoff.
 
 8) App runtime (already added to code):
 

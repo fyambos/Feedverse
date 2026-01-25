@@ -31,21 +31,30 @@ import {
 
 import { MAX_IMAGES, mediaForPost, remainingSlots, uniqueLimit } from "@/lib/postComposer/media";
 
+const MAX_THREAD_ITEMS = 20;
+
 import { QuotedPostCard } from "@/components/postComposer/QuotedPostCard";
 import { DateTimePickerOverlay } from "@/components/postComposer/DateTimePickerOverlay";
 import { CreatePostHeader } from "@/components/postComposer/CreatePostHeader";
 import { AuthorAvatarPicker } from "@/components/postComposer/AuthorAvatarPicker";
 import { ThreadComposer } from "@/components/postComposer/ThreadComposer";
-import { MediaPreview } from "@/components/postComposer/MediaPreview";
 import { PostSettingsSection } from "@/components/postComposer/PostSettingSection";
 import { ComposerToolbar } from "@/components/postComposer/ComposerToolbar";
 import { DiceRollOverlay } from "@/components/postComposer/DiceRollOverlay";
 
 import { RowCard } from "@/components/ui/RowCard";
-import { PostTypePicker } from "@/components/postComposer/PostTypePicker";
 import type { PostType } from "@/lib/campaign/postTypes";
+import type { SheetListItem } from "@/components/postComposer/UseSheetListPicker";
 
-import { UseSheetListPicker, type SheetListItem } from "@/components/postComposer/UseSheetListPicker";
+const LazyPostTypePicker = React.lazy(async () => {
+  const mod = await import("@/components/postComposer/PostTypePicker");
+  return { default: mod.PostTypePicker };
+});
+
+const LazyUseSheetListPicker = React.lazy(async () => {
+  const mod = await import("@/components/postComposer/UseSheetListPicker");
+  return { default: mod.UseSheetListPicker };
+});
 
 type Params = {
   scenarioId: string;
@@ -300,6 +309,9 @@ export default function CreatePostModal() {
   const [threadTexts, setThreadTexts] = useState<string[]>([""]);
   const [focusedThreadIndex, setFocusedThreadIndex] = useState(0);
 
+  // media per thread item (parallel array to threadTexts)
+  const [threadImageUrls, setThreadImageUrls] = useState<string[][]>(() => [[]]);
+
   const setThreadTextAt = useCallback((idx: number, value: string) => {
     setThreadTexts((prev) => {
       const next = [...prev];
@@ -309,28 +321,42 @@ export default function CreatePostModal() {
   }, []);
 
   const addThreadItem = useCallback(() => {
+    if (threadTexts.length >= MAX_THREAD_ITEMS) {
+      Alert.alert("Thread limit reached", `You can add up to ${MAX_THREAD_ITEMS} posts in a thread.`);
+      return;
+    }
+
     setThreadTexts((prev) => [...prev, ""]);
-  }, []);
+    setThreadImageUrls((prev) => [...prev, []]);
+    setFocusedThreadIndex(threadTexts.length);
+  }, [threadTexts.length]);
 
   const removeThreadItem = useCallback((idx: number) => {
     setThreadTexts((prev) => prev.filter((_, i) => i !== idx));
+    setThreadImageUrls((prev) => prev.filter((_, i) => i !== idx));
+
+    // Video thumb only belongs to the first post.
+    if (idx === 0) {
+      setVideoThumbUri(null);
+      setAddVideoIcon(false);
+    }
+
+    setFocusedThreadIndex((prev) => {
+      if (prev === idx) return Math.max(0, idx - 1);
+      if (prev > idx) return prev - 1;
+      return prev;
+    });
   }, []);
 
   // media
-  const [imageUrls, setImageUrls] = useState<string[]>([]);
   const [videoThumbUri, setVideoThumbUri] = useState<string | null>(null);
   const [addVideoIcon, setAddVideoIcon] = useState(false);
   const [picking, setPicking] = useState(false);
   const [posting, setPosting] = useState(false);
   const [postingRoll, setPostingRoll] = useState<number | null>(null);
 
-  const clearMedia = useCallback(() => {
-    setImageUrls([]);
-    setVideoThumbUri(null);
-    setAddVideoIcon(false);
-  }, []);
-
   const guardNoVideoThumb = useCallback(() => {
+    if (focusedThreadIndex !== 0) return true;
     if (!videoThumbUri) return true;
     Alert.alert("Video thumbnail active", "Remove the video thumbnail to add multiple images.");
     return false;
@@ -339,7 +365,10 @@ export default function CreatePostModal() {
   const pickImages = useCallback(async () => {
     if (!guardNoVideoThumb()) return;
 
-    const remaining = remainingSlots(imageUrls.length, MAX_IMAGES);
+    const idx = Math.max(0, Math.min(focusedThreadIndex, (threadImageUrls?.length ?? 1) - 1));
+    const curCount = (threadImageUrls?.[idx]?.length ?? 0);
+
+    const remaining = remainingSlots(curCount, MAX_IMAGES);
     if (remaining <= 0) {
       Alert.alert("Limit reached", `You can add up to ${MAX_IMAGES} images.`);
       return;
@@ -355,18 +384,29 @@ export default function CreatePostModal() {
 
       if (!picked.length) return;
 
-      setAddVideoIcon(false);
-      setVideoThumbUri(null);
-      setImageUrls((prev) => uniqueLimit([...prev, ...picked], MAX_IMAGES));
+      if (idx === 0) {
+        setAddVideoIcon(false);
+        setVideoThumbUri(null);
+      }
+
+      setThreadImageUrls((prev) => {
+        const next = [...(prev ?? [])];
+        const base = Array.isArray(next[idx]) ? next[idx] : [];
+        next[idx] = uniqueLimit([...base, ...picked], MAX_IMAGES);
+        return next.length ? next : [[]];
+      });
     } finally {
       setPicking(false);
     }
-  }, [guardNoVideoThumb, imageUrls.length]);
+  }, [guardNoVideoThumb, focusedThreadIndex, threadImageUrls]);
 
   const takePhoto = useCallback(async () => {
     if (!guardNoVideoThumb()) return;
 
-    const remaining = remainingSlots(imageUrls.length, MAX_IMAGES);
+    const idx = Math.max(0, Math.min(focusedThreadIndex, (threadImageUrls?.length ?? 1) - 1));
+    const curCount = (threadImageUrls?.[idx]?.length ?? 0);
+
+    const remaining = remainingSlots(curCount, MAX_IMAGES);
     if (remaining <= 0) {
       Alert.alert("Limit reached", `You can add up to ${MAX_IMAGES} images.`);
       return;
@@ -377,15 +417,28 @@ export default function CreatePostModal() {
       const persistedUri = await takeAndPersistPhoto("img");
       if (!persistedUri) return;
 
-      setAddVideoIcon(false);
-      setVideoThumbUri(null);
-      setImageUrls((prev) => uniqueLimit([...prev, persistedUri], MAX_IMAGES));
+      if (idx === 0) {
+        setAddVideoIcon(false);
+        setVideoThumbUri(null);
+      }
+
+      setThreadImageUrls((prev) => {
+        const next = [...(prev ?? [])];
+        const base = Array.isArray(next[idx]) ? next[idx] : [];
+        next[idx] = uniqueLimit([...base, persistedUri], MAX_IMAGES);
+        return next.length ? next : [[]];
+      });
     } finally {
       setPicking(false);
     }
-  }, [guardNoVideoThumb, imageUrls.length]);
+  }, [guardNoVideoThumb, focusedThreadIndex, threadImageUrls]);
 
   const pickVideoThumb = useCallback(async () => {
+    if (focusedThreadIndex !== 0) {
+      Alert.alert("Video thumbnail", "Video thumbnails are only supported on the first post of a thread.");
+      return;
+    }
+
     setPicking(true);
     try {
       const picked = await pickAndPersistManyImages({
@@ -397,17 +450,42 @@ export default function CreatePostModal() {
       const uri = picked?.[0];
       if (!uri) return;
 
-      setImageUrls([]);
+      setThreadImageUrls((prev) => {
+        const next = [...(prev ?? [])];
+        next[0] = [];
+        return next.length ? next : [[]];
+      });
       setVideoThumbUri(uri);
       setAddVideoIcon(true);
     } finally {
       setPicking(false);
     }
-  }, []);
+  }, [focusedThreadIndex]);
 
-  const removeImageAt = useCallback((idx: number) => {
-    setImageUrls((prev) => prev.filter((_, i) => i !== idx));
-  }, []);
+
+  const clearMediaForThreadItem = useCallback((threadIdx: number) => {
+    const idx = Math.max(0, Math.min(threadIdx, Math.max(0, threadTexts.length - 1)));
+    setThreadImageUrls((prev) => {
+      const next = [...(prev ?? [])];
+      next[idx] = [];
+      return next.length ? next : [[]];
+    });
+
+    if (idx === 0) {
+      setVideoThumbUri(null);
+      setAddVideoIcon(false);
+    }
+  }, [threadTexts.length]);
+
+  const removeImageAtForThreadItem = useCallback((threadIdx: number, imageIdx: number) => {
+    const idx = Math.max(0, Math.min(threadIdx, Math.max(0, threadTexts.length - 1)));
+    setThreadImageUrls((prev) => {
+      const next = [...(prev ?? [])];
+      const base = Array.isArray(next[idx]) ? next[idx] : [];
+      next[idx] = base.filter((_, i) => i !== imageIdx);
+      return next.length ? next : [[]];
+    });
+  }, [threadTexts.length]);
 
   // date/time
   const [date, setDate] = useState<Date>(new Date());
@@ -462,6 +540,21 @@ export default function CreatePostModal() {
     savedAt: string;
   };
 
+  type PostDraftV2 = {
+    version: 2;
+    scenarioId: string;
+    authorProfileId: string | null;
+    parentPostId?: string | null;
+    quotedPostId?: string | null;
+    threadTexts: string[];
+    threadImageUrls: string[][];
+    videoThumbUri: string | null;
+    addVideoIcon: boolean;
+    postType?: PostType;
+    meta?: any;
+    savedAt: string;
+  };
+
   function newDraftId() {
     return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
   }
@@ -487,10 +580,10 @@ export default function CreatePostModal() {
   const hasDraftContent = useMemo(() => {
     if (isEdit) return false;
     const hasText = Array.isArray(threadTexts) && threadTexts.some((t) => String(t ?? "").trim().length > 0);
-    const hasImages = Array.isArray(imageUrls) && imageUrls.length > 0;
+    const hasImages = Array.isArray(threadImageUrls) && threadImageUrls.some((arr) => Array.isArray(arr) && arr.length > 0);
     const hasVideo = Boolean(String(videoThumbUri ?? "").trim());
     return hasText || hasImages || hasVideo;
-  }, [isEdit, threadTexts, imageUrls, videoThumbUri]);
+  }, [isEdit, threadTexts, threadImageUrls, videoThumbUri]);
 
   const draftPausedRef = React.useRef(false);
   const bypassDiscardConfirmRef = React.useRef(false);
@@ -511,14 +604,21 @@ export default function CreatePostModal() {
 
     draftPausedRef.current = true;
 
-    const payload: PostDraftV1 = {
-      version: 1,
+    const safeThreadImageUrls = Array.isArray(threadTexts)
+      ? threadTexts.map((_, i) => {
+          const raw = threadImageUrls?.[i];
+          return Array.isArray(raw) ? raw.map(String).filter(Boolean).slice(0, MAX_IMAGES) : [];
+        })
+      : [[]];
+
+    const payload: PostDraftV2 = {
+      version: 2,
       scenarioId: sid,
       authorProfileId: authorProfileId ? String(authorProfileId) : null,
       parentPostId: parentId ? String(parentId) : null,
       quotedPostId: quoteId ? String(quoteId) : null,
       threadTexts: Array.isArray(threadTexts) ? threadTexts.map(String) : [""],
-      imageUrls: Array.isArray(imageUrls) ? imageUrls.map(String).filter(Boolean) : [],
+      threadImageUrls: safeThreadImageUrls,
       videoThumbUri: videoThumbUri ? String(videoThumbUri) : null,
       addVideoIcon: Boolean(addVideoIcon),
       postType: isCampaign ? ((postType as any) || "rp") : undefined,
@@ -536,7 +636,7 @@ export default function CreatePostModal() {
         // ignore
       }
     }
-  }, [activeDraftKey, isEdit, sid, authorProfileId, parentId, quoteId, threadTexts, imageUrls, videoThumbUri, addVideoIcon, isCampaign, postType, meta, autosaveDraftKey]);
+  }, [activeDraftKey, isEdit, sid, authorProfileId, parentId, quoteId, threadTexts, threadImageUrls, videoThumbUri, addVideoIcon, isCampaign, postType, meta, autosaveDraftKey]);
 
   // Restore draft on open (create-only)
   useEffect(() => {
@@ -546,18 +646,35 @@ export default function CreatePostModal() {
     let cancelled = false;
     (async () => {
       try {
-        const d = await loadDraft<PostDraftV1>(activeDraftKey);
+        const d = await loadDraft<PostDraftV1 | PostDraftV2>(activeDraftKey);
         if (!d || cancelled) return;
-        if (d.version !== 1) return;
 
         // Only restore on create. For edits, the post hydration should win.
         if (isEdit) return;
 
-        const nextTexts = Array.isArray(d.threadTexts) && d.threadTexts.length ? d.threadTexts.map(String) : [""];
+        const nextTexts = Array.isArray((d as any).threadTexts) && (d as any).threadTexts.length
+          ? (d as any).threadTexts.map(String)
+          : [""];
         setThreadTexts(nextTexts);
-        setImageUrls(Array.isArray(d.imageUrls) ? d.imageUrls.map(String).filter(Boolean) : []);
-        setVideoThumbUri(d.videoThumbUri ? String(d.videoThumbUri) : null);
-        setAddVideoIcon(Boolean(d.addVideoIcon));
+
+        if ((d as any).version === 2) {
+          const raw = Array.isArray((d as any).threadImageUrls) ? (d as any).threadImageUrls : [];
+          const nextImgs = nextTexts.map((_: string, i: number) => {
+            const arr = raw?.[i];
+            return Array.isArray(arr) ? arr.map(String).filter(Boolean).slice(0, MAX_IMAGES) : [];
+          });
+          setThreadImageUrls(nextImgs.length ? nextImgs : [[]]);
+        } else if ((d as any).version === 1) {
+          const first = Array.isArray((d as any).imageUrls) ? (d as any).imageUrls.map(String).filter(Boolean).slice(0, MAX_IMAGES) : [];
+          const nextImgs = nextTexts.map((_: string, i: number) => (i === 0 ? first : []));
+          setThreadImageUrls(nextImgs.length ? nextImgs : [[]]);
+        } else {
+          return;
+        }
+
+        setVideoThumbUri((d as any).videoThumbUri ? String((d as any).videoThumbUri) : null);
+        setAddVideoIcon(Boolean((d as any).addVideoIcon));
+        setFocusedThreadIndex(0);
 
         didRestoreDraftRef.current = true;
 
@@ -597,14 +714,21 @@ export default function CreatePostModal() {
         return;
       }
 
-      const payload: PostDraftV1 = {
-        version: 1,
+      const safeThreadImageUrls = Array.isArray(threadTexts)
+        ? threadTexts.map((_, i) => {
+            const raw = threadImageUrls?.[i];
+            return Array.isArray(raw) ? raw.map(String).filter(Boolean).slice(0, MAX_IMAGES) : [];
+          })
+        : [[]];
+
+      const payload: PostDraftV2 = {
+        version: 2,
         scenarioId: sid,
         authorProfileId: authorProfileId ? String(authorProfileId) : null,
         parentPostId: parentId ? String(parentId) : null,
         quotedPostId: quoteId ? String(quoteId) : null,
         threadTexts: Array.isArray(threadTexts) ? threadTexts.map(String) : [""],
-        imageUrls: Array.isArray(imageUrls) ? imageUrls.map(String).filter(Boolean) : [],
+        threadImageUrls: safeThreadImageUrls,
         videoThumbUri: videoThumbUri ? String(videoThumbUri) : null,
         addVideoIcon: Boolean(addVideoIcon),
         postType: isCampaign ? ((postType as any) || "rp") : undefined,
@@ -621,7 +745,7 @@ export default function CreatePostModal() {
         draftSaveTimerRef.current = null;
       }
     };
-  }, [activeDraftKey, autosaveDraftKey, isReady, isEdit, hasDraftContent, sid, authorProfileId, parentId, quoteId, threadTexts, imageUrls, videoThumbUri, addVideoIcon, isCampaign, postType, meta]);
+  }, [activeDraftKey, autosaveDraftKey, isReady, isEdit, hasDraftContent, sid, authorProfileId, parentId, quoteId, threadTexts, threadImageUrls, videoThumbUri, addVideoIcon, isCampaign, postType, meta]);
 
   // Confirm discard when leaving composer with a draft
   useEffect(() => {
@@ -729,11 +853,11 @@ export default function CreatePostModal() {
     if (raw.length === 1 && foundAddVideoIcon) {
       setVideoThumbUri(raw[0]);
       setAddVideoIcon(true);
-      setImageUrls([]);
+      setThreadImageUrls([[]]);
     } else {
       setVideoThumbUri(null);
       setAddVideoIcon(false);
-      setImageUrls(uniqueLimit(raw, MAX_IMAGES));
+      setThreadImageUrls([uniqueLimit(raw, MAX_IMAGES)]);
     }
 
     setReplyCount(toCountStringOrEmpty(clampInt(found.replyCount ?? 0, 0, MAX_COUNT)));
@@ -821,12 +945,26 @@ export default function CreatePostModal() {
     setSelectedProfileId(sid, String(authorProfileId)).catch(() => {});
   }, [isReady, isEdit, sid, authorProfileId, selectedId, setSelectedProfileId]);
 
-  const canPost =
-    !posting &&
-    !picking &&
-    Boolean(authorProfileId) &&
-    threadTexts.length > 0 &&
-    threadTexts.every((t) => isTruthyText(t));
+  const canPost = (() => {
+    if (posting) return false;
+    if (picking) return false;
+    if (!authorProfileId) return false;
+    if (threadTexts.length === 0) return false;
+    if (threadTexts.length > MAX_THREAD_ITEMS) return false;
+
+    const imgs = Array.isArray(threadImageUrls) ? threadImageUrls : [];
+
+    // Each item must have either text or images.
+    // The first item can also be video-thumb-only.
+    for (let i = 0; i < threadTexts.length; i++) {
+      const hasText = isTruthyText(threadTexts[i] ?? "");
+      const hasImgs = Array.isArray(imgs[i]) && imgs[i].length > 0;
+      const hasVideo = i === 0 && Boolean(videoThumbUri);
+      if (!hasText && !hasImgs && !hasVideo) return false;
+    }
+
+    return true;
+  })();
 
   const buildSafeCounts = useCallback(() => {
     return {
@@ -857,11 +995,17 @@ export default function CreatePostModal() {
 
     const safeCounts = buildSafeCounts();
 
-    const { imageUrls: postImageUrls, addVideoIconForPost } = mediaForPost({
-      imageUrls,
-      videoThumbUri,
-      addVideoIcon,
-    });
+    const getMediaForIndex = (idx: number) => {
+      const safeIdx = Math.max(0, Math.min(idx, Math.max(0, threadTexts.length - 1)));
+      const baseImages = Array.isArray(threadImageUrls?.[safeIdx]) ? threadImageUrls[safeIdx] : [];
+      return mediaForPost({
+        imageUrls: baseImages,
+        videoThumbUri: safeIdx === 0 ? videoThumbUri : null,
+        addVideoIcon: safeIdx === 0 ? addVideoIcon : false,
+      });
+    };
+
+    const { imageUrls: postImageUrls, addVideoIconForPost } = getMediaForIndex(0);
 
     const forcedLog = isCampaign && forceLogForUsedItemsRef.current;
 
@@ -978,20 +1122,22 @@ export default function CreatePostModal() {
         const baseText = threadTexts[i].trim();
         const text = i === 0 && isCampaign && savedPostType === "roll" ? `${baseText}${rollLine}` : baseText;
 
+        const { imageUrls: mediaImageUrls, addVideoIconForPost: mediaAddVideoIcon } = getMediaForIndex(i);
+
         const post: Post & { addVideoIcon?: boolean; insertedAt?: string } = {
           id,
           scenarioId: sid,
           authorProfileId: safeAuthorId,
           text,
           createdAt,
-          imageUrls: i === 0 ? postImageUrls : [],
+          imageUrls: mediaImageUrls,
           replyCount: i === 0 ? safeCounts.reply : 0,
           repostCount: i === 0 ? safeCounts.repost : 0,
           likeCount: i === 0 ? safeCounts.like : 0,
           parentPostId: i === 0 ? undefined : prevId,
           quotedPostId: undefined,
           insertedAt: insertedAtBaseIso,
-          addVideoIcon: i === 0 ? addVideoIconForPost : false,
+          addVideoIcon: mediaAddVideoIcon,
 
           // only on the first thread item
           postType: i === 0 ? (savedPostType as any) : undefined,
@@ -1033,7 +1179,7 @@ export default function CreatePostModal() {
     posting,
     ensureAuthorValid,
     buildSafeCounts,
-    imageUrls,
+    threadImageUrls,
     videoThumbUri,
     addVideoIcon,
     isEdit,
@@ -1111,20 +1257,16 @@ export default function CreatePostModal() {
                   parentId={parentId}
                   quoteId={quoteId}
                   threadTexts={threadTexts}
+                  threadImageUrls={threadImageUrls}
+                  videoThumbUri={videoThumbUri}
+                  addVideoIcon={addVideoIcon}
                   focusedThreadIndex={focusedThreadIndex}
                   setFocusedThreadIndex={setFocusedThreadIndex}
                   onChangeThreadTextAt={setThreadTextAt}
                   onAddThreadItem={addThreadItem}
                   onRemoveThreadItem={removeThreadItem}
-                />
-
-                <MediaPreview
-                  colors={colors}
-                  imageUrls={imageUrls}
-                  videoThumbUri={videoThumbUri}
-                  addVideoIcon={addVideoIcon}
-                  onClearMedia={clearMedia}
-                  onRemoveImageAt={removeImageAt}
+                  onClearThreadMedia={clearMediaForThreadItem}
+                  onRemoveThreadImageAt={removeImageAtForThreadItem}
                 />
 
                 {quotedPost ? (
@@ -1149,55 +1291,63 @@ export default function CreatePostModal() {
               onPickVideoThumb={pickVideoThumb}
               leftTools={
                 isCampaign ? (
-                  <>
-                    <UseSheetListPicker
-                      colors={colors as any}
-                      title="use items"
-                      subtitle="pick what you’re using this post."
-                      items={inventory}
-                      disabled={!canUseItems}
-                      onConfirm={applyUsedItems}
-                      variant="icon"
-                      icon="🎒"
-                      accessibilityLabel="Use item"
-                    />
+                  <React.Suspense
+                    fallback={
+                      <View style={{ padding: 8 }}>
+                        <ActivityIndicator />
+                      </View>
+                    }
+                  >
+                    <>
+                      <LazyUseSheetListPicker
+                        colors={colors as any}
+                        title="use items"
+                        subtitle="pick what you’re using this post."
+                        items={inventory}
+                        disabled={!canUseItems}
+                        onConfirm={applyUsedItems}
+                        variant="icon"
+                        icon="🎒"
+                        accessibilityLabel="Use item"
+                      />
 
-                    <UseSheetListPicker
-                      colors={colors as any}
-                      title="use equipment"
-                      subtitle="pick what you’re using this post."
-                      items={equipment}
-                      disabled={!canUseEquipment}
-                      onConfirm={applyUsedEquipment}
-                      variant="icon"
-                      icon="🛡️"
-                      accessibilityLabel="Use equipment"
-                    />
+                      <LazyUseSheetListPicker
+                        colors={colors as any}
+                        title="use equipment"
+                        subtitle="pick what you’re using this post."
+                        items={equipment}
+                        disabled={!canUseEquipment}
+                        onConfirm={applyUsedEquipment}
+                        variant="icon"
+                        icon="🛡️"
+                        accessibilityLabel="Use equipment"
+                      />
 
-                    <UseSheetListPicker
-                      colors={colors as any}
-                      title="use spells"
-                      subtitle="pick what you’re using this post."
-                      items={spells}
-                      disabled={!canUseSpells}
-                      onConfirm={applyUsedSpells}
-                      variant="icon"
-                      icon="✨"
-                      accessibilityLabel="Use spells"
-                    />
+                      <LazyUseSheetListPicker
+                        colors={colors as any}
+                        title="use spells"
+                        subtitle="pick what you’re using this post."
+                        items={spells}
+                        disabled={!canUseSpells}
+                        onConfirm={applyUsedSpells}
+                        variant="icon"
+                        icon="✨"
+                        accessibilityLabel="Use spells"
+                      />
 
-                    <UseSheetListPicker
-                      colors={colors as any}
-                      title="use abilities"
-                      subtitle="pick what you’re using this post."
-                      items={abilities}
-                      disabled={!canUseAbilities}
-                      onConfirm={applyUsedAbilities}
-                      variant="icon"
-                      icon="🧠"
-                      accessibilityLabel="Use abilities"
-                    />
-                  </>
+                      <LazyUseSheetListPicker
+                        colors={colors as any}
+                        title="use abilities"
+                        subtitle="pick what you’re using this post."
+                        items={abilities}
+                        disabled={!canUseAbilities}
+                        onConfirm={applyUsedAbilities}
+                        variant="icon"
+                        icon="🧠"
+                        accessibilityLabel="Use abilities"
+                      />
+                    </>
+                  </React.Suspense>
                 ) : null
               }
             />
@@ -1206,14 +1356,16 @@ export default function CreatePostModal() {
             {isCampaign ? (
               <View style={{ marginLeft: 20, marginRight: 20, gap: 10 }}>
                 <RowCard label="Post type" colors={colors}>
-                  <PostTypePicker
-                    colors={colors}
-                    value={postType}
-                    onChange={(t) => {
-                      setPostType(t);
-                      setMeta(undefined);
-                    }}
-                  />
+                  <React.Suspense fallback={<ActivityIndicator />}>
+                    <LazyPostTypePicker
+                      colors={colors}
+                      value={postType}
+                      onChange={(t) => {
+                        setPostType(t);
+                        setMeta(undefined);
+                      }}
+                    />
+                  </React.Suspense>
                 </RowCard>
               </View>
             ) : null}

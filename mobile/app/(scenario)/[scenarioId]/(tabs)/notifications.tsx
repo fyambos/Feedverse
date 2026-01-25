@@ -2,6 +2,7 @@
 import React from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { router, useLocalSearchParams } from "expo-router";
 
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
@@ -11,6 +12,9 @@ import { useColorScheme } from "@/hooks/use-color-scheme";
 export default function NotificationsScreen() {
   const scheme = useColorScheme() ?? "light";
   const colors = Colors[scheme];
+
+  const params = useLocalSearchParams();
+  const scenarioId = String((params as any)?.scenarioId ?? "").trim();
 
   return (
     <ThemedView style={[styles.container, { backgroundColor: colors.background }]}>
@@ -37,15 +41,18 @@ export default function NotificationsScreen() {
         </View>
 
         <Pressable
-          onPress={() => {}}
+          onPress={() => {
+            if (!scenarioId) return;
+            router.push(`/(scenario)/${scenarioId}/notifications-settings` as any);
+          }}
           style={({ pressed }) => [
             styles.ghostBtn,
             { borderColor: colors.border, backgroundColor: pressed ? colors.pressed : colors.background },
           ]}
           accessibilityRole="button"
-          accessibilityLabel="Nothing to see yet"
+          accessibilityLabel="Notification settings"
         >
-          <ThemedText style={{ color: colors.text, fontWeight: "800" }}>nothing to see yet</ThemedText>
+          <ThemedText style={{ color: colors.text, fontWeight: "800" }}>notification settings</ThemedText>
         </Pressable>
       </View>
     </ThemedView>

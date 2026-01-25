@@ -448,6 +448,70 @@ export function Post({
   );
 }
 
+function samePost(prev: Props, next: Props): boolean {
+  if (prev === next) return true;
+
+  if (prev.scenarioId !== next.scenarioId) return false;
+  if (prev.refreshTick !== next.refreshTick) return false;
+  if (prev.variant !== next.variant) return false;
+  if (prev.replyingTo !== next.replyingTo) return false;
+
+  if (prev.showActions !== next.showActions) return false;
+  if (prev.showThreadLine !== next.showThreadLine) return false;
+  if (prev.highlighted !== next.highlighted) return false;
+  if (prev.showMenu !== next.showMenu) return false;
+  if (prev.isInteractive !== next.isInteractive) return false;
+  if (prev.showQuoted !== next.showQuoted) return false;
+
+  if (prev.isLiked !== next.isLiked) return false;
+  if (prev.isReposted !== next.isReposted) return false;
+  if (prev.onLike !== next.onLike) return false;
+  if (prev.onRepost !== next.onRepost) return false;
+  if (prev.onShare !== next.onShare) return false;
+
+  if (prev.repostedByLabel !== next.repostedByLabel) return false;
+  if (prev.pinnedLabel !== next.pinnedLabel) return false;
+
+  const aProfile: any = prev.profile;
+  const bProfile: any = next.profile;
+  if (String(aProfile?.id ?? "") !== String(bProfile?.id ?? "")) return false;
+  if (String(aProfile?.updatedAt ?? "") !== String(bProfile?.updatedAt ?? "")) return false;
+  if (String(aProfile?.avatarUrl ?? "") !== String(bProfile?.avatarUrl ?? "")) return false;
+
+  const a: any = prev.item;
+  const b: any = next.item;
+  if (String(a?.id ?? "") !== String(b?.id ?? "")) return false;
+  if (String(a?.updatedAt ?? "") !== String(b?.updatedAt ?? "")) return false;
+  if (String(a?.text ?? "") !== String(b?.text ?? "")) return false;
+  if (String(a?.createdAt ?? "") !== String(b?.createdAt ?? "")) return false;
+
+  if (Number(a?.replyCount ?? 0) !== Number(b?.replyCount ?? 0)) return false;
+  if (Number(a?.repostCount ?? 0) !== Number(b?.repostCount ?? 0)) return false;
+  if (Number(a?.likeCount ?? 0) !== Number(b?.likeCount ?? 0)) return false;
+
+  if (String(a?.parentPostId ?? "") !== String(b?.parentPostId ?? "")) return false;
+  if (String(a?.quotedPostId ?? "") !== String(b?.quotedPostId ?? "")) return false;
+  if (String(a?.postType ?? "") !== String(b?.postType ?? "")) return false;
+  if (Number(a?.isPinned ?? 0) !== Number(b?.isPinned ?? 0)) return false;
+  if (Number(a?.pinOrder ?? 0) !== Number(b?.pinOrder ?? 0)) return false;
+  if (Number(a?.hasMedia ?? 0) !== Number(b?.hasMedia ?? 0)) return false;
+
+  // Image URLs are optional; compare shallowly if present.
+  const ia = Array.isArray(a?.imageUrls) ? a.imageUrls : null;
+  const ib = Array.isArray(b?.imageUrls) ? b.imageUrls : null;
+  if ((ia == null) !== (ib == null)) return false;
+  if (ia && ib) {
+    if (ia.length !== ib.length) return false;
+    for (let i = 0; i < ia.length; i++) {
+      if (String(ia[i]) !== String(ib[i])) return false;
+    }
+  }
+
+  return true;
+}
+
+export const MemoPost = React.memo(Post, samePost);
+
 const styles = StyleSheet.create({
   wrap: { paddingHorizontal: 16, paddingVertical: 12 },
   wrapReply: { paddingHorizontal: 16, paddingVertical: 4 },

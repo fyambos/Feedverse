@@ -2,6 +2,7 @@ import React from "react";
 import { Pressable, StyleSheet, TextInput, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { ThemedText } from "@/components/themed-text";
+import { MediaPreview } from "@/components/postComposer/MediaPreview";
 
 function isTruthyText(s: string) {
   return (s ?? "").trim().length > 0;
@@ -13,11 +14,16 @@ export function ThreadComposer({
   parentId,
   quoteId,
   threadTexts,
+  threadImageUrls,
+  videoThumbUri,
+  addVideoIcon,
   focusedThreadIndex,
   setFocusedThreadIndex,
   onChangeThreadTextAt,
   onAddThreadItem,
   onRemoveThreadItem,
+  onClearThreadMedia,
+  onRemoveThreadImageAt,
 }: {
   colors: any;
   isEdit: boolean;
@@ -25,18 +31,37 @@ export function ThreadComposer({
   quoteId?: string;
 
   threadTexts: string[];
+  threadImageUrls?: string[][];
+  videoThumbUri?: string | null;
+  addVideoIcon?: boolean;
   focusedThreadIndex: number;
   setFocusedThreadIndex: (idx: number) => void;
 
   onChangeThreadTextAt: (idx: number, value: string) => void;
   onAddThreadItem: () => void;
   onRemoveThreadItem: (idx: number) => void;
+
+  onClearThreadMedia?: (threadIdx: number) => void;
+  onRemoveThreadImageAt?: (threadIdx: number, imageIdx: number) => void;
 }) {
   return (
     <View style={{ flex: 1 }}>
       {threadTexts.map((value, idx) => {
         const isLast = idx === threadTexts.length - 1;
         const canRemove = !isEdit && !parentId && !quoteId && threadTexts.length > 1;
+
+        const itemImages = Array.isArray(threadImageUrls?.[idx]) ? (threadImageUrls?.[idx] as string[]) : [];
+        const itemVideoThumbUri = idx === 0 ? (videoThumbUri ?? null) : null;
+        const itemAddVideoIcon = idx === 0 ? Boolean(addVideoIcon) : false;
+        const itemHasMedia = itemImages.length > 0 || Boolean(itemVideoThumbUri);
+
+        const showAddButton = !isEdit && !parentId && !quoteId && isLast;
+        const lastHasText = isTruthyText(threadTexts[threadTexts.length - 1] ?? "");
+        const lastHasImages = Array.isArray(threadImageUrls?.[threadTexts.length - 1])
+          ? (threadImageUrls as string[][])[threadTexts.length - 1].length > 0
+          : false;
+        const lastHasVideo = threadTexts.length - 1 === 0 && Boolean(videoThumbUri);
+        const lastIsReady = lastHasText || lastHasImages || lastHasVideo;
 
         return (
           <View key={`thread_${idx}`} style={styles.threadItemWrap}>
@@ -74,6 +99,19 @@ export function ThreadComposer({
               textAlignVertical="top"
             />
 
+            {itemHasMedia ? (
+              <View style={{ marginTop: 10 }}>
+                <MediaPreview
+                  colors={colors}
+                  imageUrls={itemImages}
+                  videoThumbUri={itemVideoThumbUri}
+                  addVideoIcon={itemAddVideoIcon}
+                  onClearMedia={() => onClearThreadMedia?.(idx)}
+                  onRemoveImageAt={(imageIdx: number) => onRemoveThreadImageAt?.(idx, imageIdx)}
+                />
+              </View>
+            ) : null}
+
             <View style={styles.threadFooterRow}>
               <View style={{ flex: 1 }} />
 
@@ -83,19 +121,15 @@ export function ThreadComposer({
                 </ThemedText>
               ) : null}
 
-              {!isEdit && !parentId && !quoteId && isLast ? (
+              {showAddButton ? (
                 <Pressable
                   onPress={onAddThreadItem}
-                  disabled={!isTruthyText(threadTexts[threadTexts.length - 1] ?? "")}
+                  disabled={!lastIsReady}
                   hitSlop={10}
                   style={({ pressed }) => [
                     styles.threadPlusTiny,
                     {
-                      opacity: !isTruthyText(threadTexts[threadTexts.length - 1] ?? "")
-                        ? 0.35
-                        : pressed
-                        ? 0.8
-                        : 1,
+                      opacity: !lastIsReady ? 0.35 : pressed ? 0.8 : 1,
                     },
                   ]}
                 >

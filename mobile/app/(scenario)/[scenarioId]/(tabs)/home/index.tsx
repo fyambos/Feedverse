@@ -8,7 +8,7 @@ import { ThemedView } from "@/components/themed-view";
 import { ThemedText } from "@/components/themed-text";
 import { Colors } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
-import { Post as PostCard } from "@/components/post/Post";
+import { MemoPost as PostCard } from "@/components/post/Post";
 import { CreatePostFab } from "@/components/post/CreatePostFab";
 import { useAuth } from "@/context/auth";
 import { consumeScenarioFeedRefreshNeeded, useAppData } from "@/context/appData";
@@ -18,35 +18,10 @@ import { canEditPost } from "@/lib/access/permission";
 import { Avatar } from "@/components/ui/Avatar";
 import { Alert } from "@/context/dialog";
 import { formatErrorMessage } from "@/lib/utils/format";
+import { scenarioIdFromPathname } from "@/lib/utils/idFromPathName";
 
 type Cursor = string | null;
 const PAGE_SIZE = 12;
-
-function scenarioIdFromPathname(pathname: string): string {
-  const parts = pathname
-    .split("/")
-    .map((p) => p.trim())
-    .filter(Boolean);
-
-  const scenarioIdx = parts.findIndex((p) => p === "(scenario)" || p === "scenario");
-  const candidate =
-    scenarioIdx >= 0
-      ? parts[scenarioIdx + 1]
-      : parts.length > 0
-      ? parts[0]
-      : "";
-
-  const raw = String(candidate ?? "").trim();
-  if (!raw) return "";
-  if (raw === "modal") return "";
-  if (raw.startsWith("(")) return "";
-
-  try {
-    return decodeURIComponent(raw);
-  } catch {
-    return raw;
-  }
-}
 
 export default function HomeScreen() {
   const { scenarioId } = useLocalSearchParams<{ scenarioId: string }>();
@@ -71,6 +46,7 @@ export default function HomeScreen() {
 
     listPostsPage,
     getProfileById,
+    getPostById,
     deletePost,
 
     toggleLike,
@@ -156,6 +132,24 @@ export default function HomeScreen() {
             pathname: "/modal/create-scenario",
             params: { scenarioId: sid },
           } as any);
+        },
+      },
+      {
+        text: "Notification settings",
+        onPress: () => {
+          router.push(`/(scenario)/${sid}/notifications-settings` as any);
+        },
+      },
+      {
+        text: "Mute all notifications",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await app?.updateScenarioNotificationPrefs?.(sid, { muteAll: true });
+            Alert.alert("Muted", "All notifications for this scenario are now off.");
+          } catch (e: any) {
+            Alert.alert("Mute failed", formatErrorMessage(e, "Could not mute notifications"));
+          }
         },
       },
       { text: "Export…", onPress: exportThisScenario },
@@ -692,6 +686,7 @@ export default function HomeScreen() {
           const canEdit = canEditPost({ authorProfile: profile, userId: userId ?? null });
 
           const postId = String(item.id);
+          const livePost = getPostById(postId) ?? item;
           const liked = isPostLikedBySelectedProfile(sid, postId);
           const reposted = isPostRepostedBySelectedProfile(sid, postId);
 
@@ -700,14 +695,22 @@ export default function HomeScreen() {
               <PostCard
                 scenarioId={sid}
                 profile={profile as any}
-                item={item as any}
+                item={livePost as any}
                 refreshTick={refreshTick}
                 variant="feed"
                 showActions
                 isLiked={liked}
-                onLike={() => toggleLike(sid, postId)}
+                onLike={() => {
+                  void toggleLike(sid, postId).catch((e: unknown) => {
+                    Alert.alert("Could not like", formatErrorMessage(e, "Please try again."));
+                  });
+                }}
                 isReposted={reposted}
-                onRepost={() => toggleRepost(sid, postId)}
+                onRepost={() => {
+                  void toggleRepost(sid, postId).catch((e: unknown) => {
+                    Alert.alert("Could not repost", formatErrorMessage(e, "Please try again."));
+                  });
+                }}
               />
             </Pressable>
           );

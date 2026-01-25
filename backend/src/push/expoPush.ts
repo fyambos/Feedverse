@@ -21,6 +21,35 @@ function chunk<T>(arr: T[], size: number): T[][] {
   return out;
 }
 
+function sleep(ms: number) {
+  return new Promise<void>((resolve) => setTimeout(resolve, ms));
+}
+
+async function fetchWithRetry(fetchAny: any, url: string, init: any, attempts: number) {
+  let lastErr: any = null;
+  for (let i = 1; i <= attempts; i++) {
+    try {
+      const res = await fetchAny(url, init);
+      // Retry on transient errors.
+      if (res && (res.status === 429 || res.status >= 500)) {
+        lastErr = new Error(`HTTP ${res.status}`);
+      } else {
+        return res;
+      }
+    } catch (e: any) {
+      lastErr = e;
+    }
+
+    const base = 250;
+    const max = 5000;
+    const exp = Math.min(max, base * 2 ** (i - 1));
+    const jitter = 0.3;
+    const delay = Math.round(exp * (1 - jitter + Math.random() * 2 * jitter));
+    await sleep(delay);
+  }
+  throw lastErr ?? new Error("fetch failed");
+}
+
 export async function sendExpoPush(messages: ExpoPushMessage[]): Promise<void> {
   const fetchAny: any = (globalThis as any).fetch;
   if (typeof fetchAny !== "function") {
@@ -45,7 +74,7 @@ export async function sendExpoPush(messages: ExpoPushMessage[]): Promise<void> {
   const batches = chunk(valid, 100);
   for (const batch of batches) {
     try {
-      const res = await fetchAny("https://exp.host/--/api/v2/push/send", {
+      const res = await fetchWithRetry(fetchAny, "https://exp.host/--/api/v2/push/send", {
         method: "POST",
         headers: {
           Accept: "application/json",
@@ -53,7 +82,7 @@ export async function sendExpoPush(messages: ExpoPushMessage[]): Promise<void> {
           "Content-Type": "application/json",
         },
         body: JSON.stringify(batch),
-      });
+      }, 3);
 
       // Best-effort logging; avoid throwing.
       if (!res?.ok) {

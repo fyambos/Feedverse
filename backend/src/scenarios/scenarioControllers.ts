@@ -5,6 +5,7 @@ import { pool } from "../config/database";
 
 import type { Request, Response } from "express";
 import { HTTP_METHODS, HTTP_STATUS, ERROR_MESSAGES } from "../config/constants";
+import { sendMethodNotAllowed } from "../lib/apiResponses";
 import {
   CreateScenarioService,
   DeleteScenarioService,
@@ -17,9 +18,7 @@ import {
 
 export const ListScenariosController = async (req: Request, res: Response) => {
   if (req.method !== HTTP_METHODS.GET) {
-    return res
-      .status(HTTP_STATUS.BAD_REQUEST)
-      .send(ERROR_MESSAGES.METHOD_NOT_ALLOWED);
+    return sendMethodNotAllowed(req, res);
   }
 
   try {
@@ -36,9 +35,7 @@ export const ListScenariosController = async (req: Request, res: Response) => {
 
 export const JoinScenarioByInviteCodeController = async (req: Request, res: Response) => {
   if (req.method !== HTTP_METHODS.POST) {
-    return res
-      .status(HTTP_STATUS.BAD_REQUEST)
-      .send(ERROR_MESSAGES.METHOD_NOT_ALLOWED);
+    return sendMethodNotAllowed(req, res);
   }
 
   try {
@@ -70,9 +67,7 @@ export const JoinScenarioByInviteCodeController = async (req: Request, res: Resp
 
 export const CreateScenarioController = async (req: Request, res: Response) => {
   if (req.method !== HTTP_METHODS.POST) {
-    return res
-      .status(HTTP_STATUS.BAD_REQUEST)
-      .send(ERROR_MESSAGES.METHOD_NOT_ALLOWED);
+    return sendMethodNotAllowed(req, res);
   }
 
   try {
@@ -108,18 +103,14 @@ export const CreateScenarioController = async (req: Request, res: Response) => {
 
     return res.status(HTTP_STATUS.CREATED).json({ scenario: created });
   } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : "";
-    return res
-      .status(HTTP_STATUS.BAD_REQUEST)
-      .json({ error: msg || ERROR_MESSAGES.INTERNAL_SERVER_ERROR });
+    console.error("CreateScenarioController failed", error);
+    return res.status(HTTP_STATUS.BAD_REQUEST).json({ error: ERROR_MESSAGES.INVALID_REQUEST });
   }
 };
 
 export const UpdateScenarioController = async (req: Request, res: Response) => {
   if (req.method !== HTTP_METHODS.PATCH) {
-    return res
-      .status(HTTP_STATUS.BAD_REQUEST)
-      .send(ERROR_MESSAGES.METHOD_NOT_ALLOWED);
+    return sendMethodNotAllowed(req, res);
   }
 
   try {
@@ -151,9 +142,7 @@ export const UpdateScenarioController = async (req: Request, res: Response) => {
 
 export const DeleteScenarioController = async (req: Request, res: Response) => {
   if (req.method !== HTTP_METHODS.DELETE) {
-    return res
-      .status(HTTP_STATUS.BAD_REQUEST)
-      .send(ERROR_MESSAGES.METHOD_NOT_ALLOWED);
+    return sendMethodNotAllowed(req, res);
   }
 
   try {
@@ -183,9 +172,7 @@ export const DeleteScenarioController = async (req: Request, res: Response) => {
 
 export const LeaveScenarioController = async (req: Request, res: Response) => {
   if (req.method !== HTTP_METHODS.POST) {
-    return res
-      .status(HTTP_STATUS.BAD_REQUEST)
-      .send(ERROR_MESSAGES.METHOD_NOT_ALLOWED);
+    return sendMethodNotAllowed(req, res);
   }
 
   try {
@@ -202,18 +189,14 @@ export const LeaveScenarioController = async (req: Request, res: Response) => {
     const result = await LeaveScenarioService({ userId, scenarioId });
     return res.status(HTTP_STATUS.OK).json(result);
   } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : "";
-    return res
-      .status(HTTP_STATUS.BAD_REQUEST)
-      .json({ error: msg || ERROR_MESSAGES.INTERNAL_SERVER_ERROR });
+    console.error("LeaveScenarioController failed", error);
+    return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ error: ERROR_MESSAGES.INTERNAL_SERVER_ERROR });
   }
 };
 
 export const TransferScenarioOwnershipController = async (req: Request, res: Response) => {
   if (req.method !== HTTP_METHODS.POST) {
-    return res
-      .status(HTTP_STATUS.BAD_REQUEST)
-      .send(ERROR_MESSAGES.METHOD_NOT_ALLOWED);
+    return sendMethodNotAllowed(req, res);
   }
 
   try {
@@ -262,7 +245,8 @@ export const TransferScenarioOwnershipController = async (req: Request, res: Res
       const repo = new ScenarioRepository();
       await repo.updateCover(scenarioId, coverUrl);
       return res.status(200).json({ coverUrl });
-    } catch (error: any) {
-      return res.status(500).json({ error: error?.message || "Failed to upload cover" });
+    } catch (error: unknown) {
+      console.error("UploadScenarioCoverController failed", error);
+      return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ error: ERROR_MESSAGES.INTERNAL_SERVER_ERROR });
     }
   };

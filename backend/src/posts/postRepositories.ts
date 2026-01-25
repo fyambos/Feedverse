@@ -9,6 +9,8 @@ import realtimeService from "../realtime/realtimeService";
 import websocketService from "../realtime/websocketService";
 import { sendExpoPush } from "../push/expoPush";
 import { UserRepository } from "../users/userRepositories";
+import { listScenarioNotificationPrefsByUserIds } from "../notifications/scenarioNotificationPrefs";
+import { getScenarioNotificationPrefs } from "../notifications/scenarioNotificationPrefs";
 
 async function scenarioAccess(client: PoolClient, scenarioId: string, userId: string): Promise<boolean> {
   const res = await client.query(
@@ -231,11 +233,13 @@ export async function createPostForScenario(args: {
   const authorProfileId = String(args.input?.authorProfileId ?? "").trim();
   const text = String(args.input?.text ?? "");
   if (!authorProfileId) return { error: "authorProfileId is required", status: 400 };
-  if (!text.trim()) return { error: "text is required", status: 400 };
-
   const imageUrls = Array.isArray(args.input?.imageUrls)
     ? args.input!.imageUrls!.map(String).filter(Boolean)
     : [];
+
+  if (!text.trim() && imageUrls.length === 0) {
+    return { error: "Text or images required", status: 400 };
+  }
 
   const parentPostId = args.input?.parentPostId ? String(args.input.parentPostId) : null;
   const quotedPostId = args.input?.quotedPostId ? String(args.input.quotedPostId) : null;
@@ -462,6 +466,24 @@ export async function createPostForScenario(args: {
 
               if (ownerIds.size === 0) return;
 
+              // Apply per-scenario notification prefs (mentions toggle + ignored profiles).
+              const prefsByUserId = await listScenarioNotificationPrefsByUserIds(client2, sid, Array.from(ownerIds));
+
+              const ownerToAllowedMentionProfileIds = new Map<string, string[]>();
+              for (const r of resProfiles.rows) {
+                const owner = String(r?.owner_user_id ?? "").trim();
+                const pid = String(r?.id ?? "").trim();
+                if (!owner || !pid) continue;
+
+                const prefs = prefsByUserId.get(owner);
+                const mentionsEnabled = prefs?.mentionsEnabled ?? true;
+                if (!mentionsEnabled) continue;
+                if (prefs?.ignoredProfileIds?.includes(pid)) continue;
+
+                if (!ownerToAllowedMentionProfileIds.has(owner)) ownerToAllowedMentionProfileIds.set(owner, []);
+                ownerToAllowedMentionProfileIds.get(owner)!.push(pid);
+              }
+
               // Remove sender's owner (if sender profile is owned) so sender doesn't get a push.
               let senderOwner = "";
               try {
@@ -474,9 +496,15 @@ export async function createPostForScenario(args: {
                   [authorProfileId],
                 );
                 senderOwner = String(resSender.rows?.[0]?.owner_user_id ?? "").trim();
-                if (senderOwner) ownerIds.delete(senderOwner);
+                if (senderOwner) {
+                  ownerIds.delete(senderOwner);
+                  ownerToAllowedMentionProfileIds.delete(senderOwner);
+                }
               } catch {}
 
+              // Rebuild recipient set after prefs filtering.
+              ownerIds.clear();
+              for (const owner of ownerToAllowedMentionProfileIds.keys()) ownerIds.add(owner);
               if (ownerIds.size === 0) return;
 
               // Build push title/body.
@@ -524,16 +552,11 @@ export async function createPostForScenario(args: {
               // We intentionally include profile ids (not user ids) so clients can decide if they own
               // the mentioned profile(s) without leaking extra user identifiers.
               try {
-                const mentionedProfileIds = resProfiles.rows
-                  .filter((r) => {
-                    const owner = String(r?.owner_user_id ?? "").trim();
-                    if (!owner) return false;
-                    if (!ownerIds.has(owner)) return false;
-                    if (senderOwner && owner === senderOwner) return false;
-                    return true;
-                  })
-                  .map((r) => String(r.id ?? "").trim())
-                  .filter(Boolean);
+                const mentionedProfileIds: string[] = [];
+                for (const [owner, pids] of ownerToAllowedMentionProfileIds.entries()) {
+                  if (!ownerIds.has(owner)) continue;
+                  for (const pid of pids) mentionedProfileIds.push(pid);
+                }
 
                 if (mentionedProfileIds.length > 0) {
                   const payload = {
@@ -560,13 +583,9 @@ export async function createPostForScenario(args: {
                 // Pick a stable recipient profileId for each owner so mobile can
                 // switch selection correctly when multiple mentioned profiles exist.
                 const ownerToProfileId = new Map<string, string>();
-                for (const r of resProfiles.rows) {
-                  const owner = String((r as any)?.owner_user_id ?? "").trim();
-                  const pid = String((r as any)?.id ?? "").trim();
-                  if (!owner || !pid) continue;
+                for (const [owner, pids] of ownerToAllowedMentionProfileIds.entries()) {
                   if (!ownerIds.has(owner)) continue;
-                  if (senderOwner && owner === senderOwner) continue;
-                  if (!ownerToProfileId.has(owner)) ownerToProfileId.set(owner, pid);
+                  if (!ownerToProfileId.has(owner)) ownerToProfileId.set(owner, String(pids?.[0] ?? "").trim());
                 }
 
                 const expoMessages = tokenRows
@@ -613,13 +632,15 @@ export async function createPostForScenario(args: {
         try {
           const client2 = await pool.connect();
           try {
-            // Find parent post author profile.
-            const parentRes = await client2.query<{ author_profile_id: string | null }>(
-              "SELECT author_profile_id FROM posts WHERE id = $1 LIMIT 1",
+            // Find parent post author profile (+ whether it's itself a reply).
+            const parentRes = await client2.query<{ author_profile_id: string | null; parent_post_id: string | null }>(
+              "SELECT author_profile_id, parent_post_id FROM posts WHERE id = $1 LIMIT 1",
               [parentPostId],
             );
             const parentAuthorProfileId = String(parentRes.rows?.[0]?.author_profile_id ?? "").trim();
             if (!parentAuthorProfileId) return;
+
+            const parentIsReply = Boolean(String(parentRes.rows?.[0]?.parent_post_id ?? "").trim());
 
             // Resolve recipient owner and sender label/owner (skip self-notifies).
             const profRes = await client2.query<{
@@ -654,7 +675,16 @@ export async function createPostForScenario(args: {
             if (!recipientOwnerId) return;
             if (senderOwnerId && senderOwnerId === recipientOwnerId) return;
 
-            const title = `${senderLabel} replied to your post`;
+            // Respect per-scenario prefs (replies toggle + ignored recipient profile).
+            try {
+              const prefs = await getScenarioNotificationPrefs(client2, sid, recipientOwnerId);
+              if (prefs && prefs.repliesEnabled === false) return;
+              if (prefs?.ignoredProfileIds?.includes(parentAuthorProfileId)) return;
+            } catch {
+              // best-effort; default is enabled
+            }
+
+            const title = `${senderLabel} replied to your ${parentIsReply ? "reply" : "post"}`;
             const bodyRaw = String(text ?? "").trim();
             const body = bodyRaw ? (bodyRaw.length > 140 ? bodyRaw.slice(0, 137) + "…" : bodyRaw) : undefined;
 
@@ -718,6 +748,135 @@ export async function createPostForScenario(args: {
       })();
     }
 
+    // Quote notifications (best-effort) for new quotes.
+    if (isNewInsert && quotedPostId && postId) {
+      (async () => {
+        try {
+          const client2 = await pool.connect();
+          try {
+            // Find quoted post author profile (+ whether the quoted post is itself a reply).
+            const quotedRes = await client2.query<{ author_profile_id: string | null; parent_post_id: string | null }>(
+              "SELECT author_profile_id, parent_post_id FROM posts WHERE id = $1 LIMIT 1",
+              [quotedPostId],
+            );
+            const quotedAuthorProfileId = String(quotedRes.rows?.[0]?.author_profile_id ?? "").trim();
+            if (!quotedAuthorProfileId) return;
+
+            const quotedIsReply = Boolean(String(quotedRes.rows?.[0]?.parent_post_id ?? "").trim());
+
+            // Resolve recipient owner and sender label/owner (skip self-notifies).
+            const profRes = await client2.query<{
+              id: string;
+              owner_user_id: string | null;
+              handle: string | null;
+              display_name: string | null;
+            }>(
+              "SELECT id, owner_user_id, handle, display_name FROM profiles WHERE id = ANY($1::uuid[])",
+              [[quotedAuthorProfileId, authorProfileId]],
+            );
+
+            let recipientOwnerId = "";
+            let senderOwnerId = "";
+            let senderLabel = "Someone";
+
+            for (const r of profRes.rows) {
+              const pid = String(r?.id ?? "").trim();
+              const owner = String(r?.owner_user_id ?? "").trim();
+
+              if (pid === quotedAuthorProfileId) {
+                recipientOwnerId = owner;
+              }
+              if (pid === authorProfileId) {
+                senderOwnerId = owner;
+                const h = String(r?.handle ?? "").trim();
+                const dn = String(r?.display_name ?? "").trim();
+                senderLabel = h ? `@${h}` : dn || senderLabel;
+              }
+            }
+
+            if (!recipientOwnerId) return;
+            if (senderOwnerId && senderOwnerId === recipientOwnerId) return;
+
+            // Respect per-scenario prefs (quotes toggle + ignored recipient profile).
+            try {
+              const prefs = await getScenarioNotificationPrefs(client2, sid, recipientOwnerId);
+              if (prefs && prefs.quotesEnabled === false) return;
+              if (prefs?.ignoredProfileIds?.includes(quotedAuthorProfileId)) return;
+            } catch {
+              // best-effort; default is enabled
+            }
+
+            const title = `${senderLabel} quoted your ${quotedIsReply ? "reply" : "post"}`;
+            const bodyRaw = String(text ?? "").trim();
+            const body = bodyRaw ? (bodyRaw.length > 140 ? bodyRaw.slice(0, 137) + "…" : bodyRaw) : undefined;
+
+            // If the quoting post is a reply, compute the thread root (best-effort)
+            // so clients can open the first-line parent post and highlight the reply.
+            const parentPid = String(parentPostId ?? "").trim();
+            let rootPostId = postId;
+            if (parentPid) {
+              rootPostId = parentPid;
+              try {
+                let cur = rootPostId;
+                const seen = new Set<string>();
+                for (let i = 0; i < 25; i++) {
+                  if (!cur || seen.has(cur)) break;
+                  seen.add(cur);
+
+                  const r = await client2.query<{ parent_post_id: string | null }>(
+                    "SELECT parent_post_id FROM posts WHERE id = $1 LIMIT 1",
+                    [cur],
+                  );
+                  const ppid = String(r.rows?.[0]?.parent_post_id ?? "").trim();
+                  if (!ppid) {
+                    rootPostId = cur;
+                    break;
+                  }
+                  cur = ppid;
+                }
+              } catch {
+                // ignore; fall back to parentPostId
+                rootPostId = parentPid;
+              }
+            }
+
+            try {
+              const repo = new UserRepository();
+              const tokenRows = await repo.listExpoPushTokensForUserIds([recipientOwnerId]);
+              const expoMessages = tokenRows
+                .map((r) => String((r as any)?.expo_push_token ?? (r as any)?.expoPushToken ?? "").trim())
+                .filter(Boolean)
+                .map((to) => ({
+                  to,
+                  title,
+                  body,
+                  channelId: "default",
+                  priority: "high" as const,
+                  data: {
+                    scenarioId: sid,
+                    postId,
+                    parentPostId: parentPid || undefined,
+                    rootPostId: (parentPid ? rootPostId : undefined) || undefined,
+                    kind: "quote",
+                    authorProfileId,
+                    profileId: quotedAuthorProfileId,
+                    quotedPostId,
+                  },
+                }));
+
+              await sendExpoPush(expoMessages);
+            } catch (e: any) {
+              console.warn("Expo push send failed", e?.message ?? e);
+            }
+          } finally {
+            client2.release();
+          }
+        } catch (e) {
+          console.warn("Error while attempting quote push send:", (e as Error)?.message ?? e);
+        }
+      })();
+    }
+
     return { post: mapPostRowToApi(row) };
   } catch (e: unknown) {
     try {
@@ -725,8 +884,8 @@ export async function createPostForScenario(args: {
     } catch {
       // ignore
     }
-    const msg = e instanceof Error ? e.message : "";
-    return { error: msg || "Insert failed", status: 400 };
+    console.error("createPost failed", e);
+    return { error: "Insert failed", status: 400 };
   } finally {
     client.release();
   }
@@ -844,8 +1003,8 @@ export async function updatePost(args: {
     } catch {
       // ignore
     }
-    const msg = e instanceof Error ? e.message : "";
-    return { error: msg || "Update failed", status: 400 };
+    console.error("updatePost failed", e);
+    return { error: "Update failed", status: 400 };
   } finally {
     client.release();
   }
@@ -951,8 +1110,8 @@ export async function uploadPostImages(args: {
       // ignore
     }
 
-    const msg = e instanceof Error ? e.message : "";
-    return { error: msg || "Upload failed", status: 400 };
+    console.error("uploadPostImages failed", e);
+    return { error: "Upload failed", status: 400 };
   } finally {
     client.release();
   }
@@ -1035,8 +1194,8 @@ export async function deletePost(args: {
     } catch {
       // ignore
     }
-    const msg = e instanceof Error ? e.message : "";
-    return { error: msg || "Delete failed", status: 400 };
+    console.error("deletePost failed", e);
+    return { error: "Delete failed", status: 400 };
   } finally {
     client.release();
   }

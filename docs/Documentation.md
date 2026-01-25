@@ -6,6 +6,8 @@ Docs de référence :
 
 - Lancer le projet : [docs/GETTING_STARTED.md](GETTING_STARTED.md)
 - Base de données : [docs/Database.md](Database.md)
+- Endpoints publics (sans auth) : [docs/Public Endpoints.md](Public%20Endpoints.md)
+- Notes techniques (stack, conventions, healthz/readyz, pagination, etc.) : [docs/Engineering Notes.md](Engineering%20Notes.md)
 - Snapshot DB : [backend/schema-introspect.json](../backend/schema-introspect.json)
 
 ---
@@ -75,6 +77,8 @@ Le montage des routes est centralisé dans [backend/src/server.ts](../backend/sr
 
 Le mobile construit l’URL via `EXPO_PUBLIC_API_BASE_URL` + le chemin (ex: `/scenarios`).
 
+Le backend monte aussi des routes versionnées sous `/v1` (ex: `/v1/scenarios`) et ajoute `X-API-Version: 1` sur toutes les réponses.
+
 ### Auth
 
 Toutes les routes importantes sont authentifiées via :
@@ -87,11 +91,14 @@ Selon les endpoints, le backend accepte souvent les deux variantes dans le body 
 
 ### Erreurs
 
-La plupart des endpoints renvoient :
+Les handlers de fin de chaîne (404 + middleware d’erreur) renvoient une enveloppe standard :
 
-- `4xx/5xx` avec `{ error: string }`
+- `4xx/5xx` → `{ ok: false, status, error, path, requestId, details? }`
 
-Certaines routes auth renvoient d’autres shapes (voir section Auth).
+Notes :
+
+- `requestId` correspond au header `x-request-id` (toujours renvoyé par le backend).
+- Certains endpoints legacy peuvent encore renvoyer `{ error: string }` (le client doit rester tolérant).
 
 ### Pagination
 
@@ -100,8 +107,8 @@ Certaines routes auth renvoient d’autres shapes (voir section Auth).
   - Avec `limit` ou `cursor` → réponse = `{ items: Post[], nextCursor: string | null }`.
   - `cursor` est un string opaque côté client (format actuel: `${updatedAtIso}|${id}`).
 
-- Messages : `GET /conversations/:conversationId/messages` supporte `limit` + `beforeCreatedAt`.
-  - Réponse actuelle : `{ messages: Message[] }` (pas de `nextCursor`).
+- Messages : `GET /conversations/:conversationId/messages` supporte `limit` + `cursor` (et `beforeCreatedAt` historique).
+  - Réponse paginée : `{ items: Message[], nextCursor: string | null }`.
 
 ### Uploads (multipart)
 
