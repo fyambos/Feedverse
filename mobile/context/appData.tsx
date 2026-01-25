@@ -45,77 +45,15 @@ import { buildGlobalTagFromKey } from "@/lib/content/tags";
 import { pickScenarioExportJson } from "@/lib/importExport/importFromFile";
 import { importScenarioFromJson } from "@/lib/importExport/importScenario";
 import { validateScenarioExportBundleV1 } from "@/lib/importExport/validateScenarioExport";
+import { coerceStringArray } from "@/lib/utils/pgArrays";
+import { hasAnyMedia } from "@/lib/utils/media";
+import { conversationIdFromPathname, postIdFromPathname, scenarioIdFromPathname } from "@/lib/utils/idFromPathName";
 import { useAuth } from "@/context/auth";
 import { usePathname, useRouter } from "expo-router";
 import { apiFetch } from "@/lib/api/apiClient";
 import { buildScenarioExportBundleV1 } from "@/lib/importExport/exportScenarioBundle";
 import { saveAndShareScenarioExport } from "@/lib/importExport/exportScenario";
 import BootSplash from "@/components/ui/BootSplash";
-
-function scenarioIdFromPathname(pathname: string): string {
-  const parts = String(pathname ?? "")
-    .split("/")
-    .map((p) => p.trim())
-    .filter(Boolean);
-
-  const scenarioIdx = parts.findIndex((p) => p === "(scenario)" || p === "scenario");
-  const candidate =
-    scenarioIdx >= 0
-      ? parts[scenarioIdx + 1]
-      : parts.length > 0
-        ? parts[0]
-        : "";
-
-  const raw = String(candidate ?? "").trim();
-  if (!raw) return "";
-  if (raw === "modal") return "";
-  if (raw.startsWith("(")) return "";
-
-  try {
-    return decodeURIComponent(raw);
-  } catch {
-    return raw;
-  }
-}
-
-function conversationIdFromPathname(pathname: string): string {
-  const parts = String(pathname ?? "")
-    .split("/")
-    .map((p) => p.trim())
-    .filter(Boolean);
-
-  const idx = parts.findIndex((p) => p === "messages");
-  if (idx < 0) return "";
-  const candidate = String(parts[idx + 1] ?? "").trim();
-  if (!candidate) return "";
-  if (candidate === "index") return "";
-  if (candidate.startsWith("(")) return "";
-
-  try {
-    return decodeURIComponent(candidate);
-  } catch {
-    return candidate;
-  }
-}
-
-function postIdFromPathname(pathname: string): string {
-  const parts = String(pathname ?? "")
-    .split("/")
-    .map((p) => p.trim())
-    .filter(Boolean);
-
-  const idx = parts.findIndex((p) => p === "post");
-  if (idx < 0) return "";
-  const candidate = String(parts[idx + 1] ?? "").trim();
-  if (!candidate) return "";
-  if (candidate.startsWith("(")) return "";
-
-  try {
-    return decodeURIComponent(candidate);
-  } catch {
-    return candidate;
-  }
-}
 
 // Non-reactive tracker for which conversation is currently being viewed.
 // Using a module-level map avoids React state update loops and stays
@@ -553,85 +491,6 @@ function sortAscByCreatedAtThenId(a: Post, b: Post) {
   const c = String(a.createdAt).localeCompare(String(b.createdAt));
   if (c !== 0) return c;
   return String(a.id).localeCompare(String(b.id));
-}
-
-function hasAnyMedia(p: any) {
-  const urls = p?.imageUrls;
-  if (Array.isArray(urls) && urls.length > 0) return true;
-  const single = p?.imageUrl;
-  if (typeof single === "string" && single.length > 0) return true;
-  const media = p?.media;
-  if (Array.isArray(media) && media.length > 0) return true;
-  return false;
-}
-
-function parsePgTextArrayLiteral(input: string): string[] {
-  const s = String(input ?? "").trim();
-  if (!s.startsWith("{") || !s.endsWith("}")) return [];
-  const body = s.slice(1, -1);
-  if (!body) return [];
-
-  const out: string[] = [];
-  let cur = "";
-  let inQuotes = false;
-  let escape = false;
-
-  for (let i = 0; i < body.length; i++) {
-    const ch = body[i];
-
-    if (escape) {
-      cur += ch;
-      escape = false;
-      continue;
-    }
-
-    if (ch === "\\") {
-      escape = true;
-      continue;
-    }
-
-    if (ch === '"') {
-      inQuotes = !inQuotes;
-      continue;
-    }
-
-    if (ch === "," && !inQuotes) {
-      const v = cur.trim();
-      if (v && v.toUpperCase() !== "NULL") out.push(v);
-      cur = "";
-      continue;
-    }
-
-    cur += ch;
-  }
-
-  const last = cur.trim();
-  if (last && last.toUpperCase() !== "NULL") out.push(last);
-  return out.map((x) => String(x)).filter(Boolean);
-}
-
-function coerceStringArray(value: unknown): string[] {
-  if (Array.isArray(value)) return value.map(String).filter(Boolean);
-  if (value == null) return [];
-  if (typeof value === "string") {
-    const trimmed = value.trim();
-
-    // JSON array?
-    if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
-      try {
-        const parsed = JSON.parse(trimmed);
-        if (Array.isArray(parsed)) return parsed.map(String).filter(Boolean);
-      } catch {
-        // ignore
-      }
-    }
-
-    // Postgres array literal?
-    if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
-      return parsePgTextArrayLiteral(trimmed);
-    }
-  }
-  return [];
 }
 
 function makeFeedCursor(item: ProfileFeedItem): FeedCursor {

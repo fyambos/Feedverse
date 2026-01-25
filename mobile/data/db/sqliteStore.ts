@@ -2,6 +2,7 @@ import { InteractionManager } from "react-native";
 import * as SQLite from "expo-sqlite";
 
 import type { DbV5, Like, Post, Repost } from "./schema";
+import { hasAnyMedia } from "../../lib/utils/media";
 
 const SQLITE_DB_NAME = "feedverse_v6.db";
 
@@ -29,16 +30,6 @@ function decodeOptionalInt(v: any): number | undefined {
 
 function normalizeInsertedAt(p: any): string {
 	return String(p?.insertedAt ?? p?.createdAt ?? "");
-}
-
-function hasAnyMedia(p: any) {
-	const urls = p?.imageUrls;
-	if (Array.isArray(urls) && urls.length > 0) return true;
-	const single = p?.imageUrl;
-	if (typeof single === "string" && single.length > 0) return true;
-	const media = p?.media;
-	if (Array.isArray(media) && media.length > 0) return true;
-	return false;
 }
 
 function postFromRow(row: any): Post {

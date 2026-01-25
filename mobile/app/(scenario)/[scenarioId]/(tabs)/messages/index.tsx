@@ -20,35 +20,9 @@ import { Avatar } from "@/components/ui/Avatar";
 import { SwipeableRow } from "@/components/ui/SwipeableRow";
 import type { Conversation, Profile } from "@/data/db/schema";
 import { formatErrorMessage } from "@/lib/utils/format";
+import { scenarioIdFromPathname } from "@/lib/utils/idFromPathName";
 
 import { useFocusEffect } from "@react-navigation/native";
-
-function scenarioIdFromPathname(pathname: string): string {
-  
-  const parts = pathname
-    .split("/")
-    .map((p) => p.trim())
-    .filter(Boolean);
-
-  const scenarioIdx = parts.findIndex((p) => p === "(scenario)" || p === "scenario");
-  const candidate =
-    scenarioIdx >= 0
-      ? parts[scenarioIdx + 1]
-      : parts.length > 0
-      ? parts[0]
-      : "";
-
-  const raw = String(candidate ?? "").trim();
-  if (!raw) return "";
-  if (raw === "modal") return "";
-  if (raw.startsWith("(")) return "";
-
-  try {
-    return decodeURIComponent(raw);
-  } catch {
-    return raw;
-  }
-}
 
 export default function MessagesScreen() {
     // Force re-render on message event
