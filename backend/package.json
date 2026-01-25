@@ -13,7 +13,8 @@
     "dev": "tsc -w & nodemon -q dist/cjs/server.js",
     "smoke:profile": "node scripts/smokeProfile.mjs",
     "lint": "eslint . --ext .ts",
-    "test": "jest --config=jest.config.cjs"
+    "test": "jest --config=jest.config.cjs",
+    "test:coverage": "jest --config=jest.config.cjs --coverage"
   },
   "author": "Les YAMBOS",
   "license": "ISC",

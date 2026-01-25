@@ -6,6 +6,7 @@ Docs de référence :
 
 - Lancer le projet : [docs/GETTING_STARTED.md](GETTING_STARTED.md)
 - Base de données : [docs/Database.md](Database.md)
+- Endpoints publics (sans auth) : [docs/Public Endpoints.md](Public%20Endpoints.md)
 - Snapshot DB : [backend/schema-introspect.json](../backend/schema-introspect.json)
 
 ---

@@ -12,6 +12,7 @@ declare global {
       authTokenHash?: string;
       authSessionId?: string;
       requestId?: string;
+      scenarioRole?: "owner" | "gm" | "member";
     }
   }
 }

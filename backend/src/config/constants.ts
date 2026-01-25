@@ -104,6 +104,22 @@ export const AUTH = {
 } as const;
 
 // ============================================================================
+// WEBSOCKETS
+// ============================================================================
+
+export const WEBSOCKET = {
+  // Hard cap on inbound message size (bytes).
+  MAX_PAYLOAD_BYTES: Number.parseInt(process.env.WS_MAX_PAYLOAD_BYTES ?? "16384", 10) || 16384,
+  // Soft caps on concurrent connections.
+  MAX_CONNECTIONS_PER_IP: Number.parseInt(process.env.WS_MAX_CONNECTIONS_PER_IP ?? "25", 10) || 25,
+  MAX_CONNECTIONS_PER_USER: Number.parseInt(process.env.WS_MAX_CONNECTIONS_PER_USER ?? "5", 10) || 5,
+  MAX_CONNECTIONS_PER_SCENARIO: Number.parseInt(process.env.WS_MAX_CONNECTIONS_PER_SCENARIO ?? "200", 10) || 200,
+  // Basic inbound message rate limit (per connection).
+  MAX_MESSAGES_PER_10S: Number.parseInt(process.env.WS_MAX_MESSAGES_PER_10S ?? "30", 10) || 30,
+  HEARTBEAT_INTERVAL_MS: Number.parseInt(process.env.WS_HEARTBEAT_INTERVAL_MS ?? "30000", 10) || 30000,
+} as const;
+
+// ============================================================================
 // USERS
 // ============================================================================
 

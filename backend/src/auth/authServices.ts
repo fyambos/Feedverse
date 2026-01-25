@@ -1,4 +1,4 @@
-import { v4 as uuidv4 } from "uuid";
+import { randomUUID } from "crypto";
 import bcrypt from "bcryptjs";
 import {
   LoginRequest,
@@ -76,7 +76,7 @@ export const RegisterUserService = async (
     }
   }
 
-  const uuid = uuidv4();
+  const uuid = randomUUID();
   const date = new Date();
   const hashedPassword = await bcrypt.hash(password_hash, 10);
   const nameFormatted = nameFormatting(usernameNormalized);

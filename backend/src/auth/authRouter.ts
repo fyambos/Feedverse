@@ -36,6 +36,6 @@ authRouter.post(ROUTES_AUTH.REGISTER, RegisterController);
 authRouter.post(ROUTES_AUTH.LOGIN, validateBody(loginBodySchema), LoginController);
 authRouter.post(ROUTES_AUTH.REFRESH_TOKEN, validateBody(refreshBodySchema), RefreshTokenController);
 authRouter.post(ROUTES_AUTH.LOGOUT, authMiddleware, LogoutController);
-authRouter.get(ROUTES_AUTH.PROTECTED, ProtectedController);
+authRouter.get(ROUTES_AUTH.PROTECTED, authMiddleware, ProtectedController);
 
 export default authRouter;

@@ -25,6 +25,7 @@ import { ListScenarioCharacterSheetsController } from "../characterSheets/charac
 import { ListScenarioProfilePinsController } from "../profilePins/profilePinControllers";
 import { z } from "zod";
 import { validateBody, validateParams, validateQuery } from "../middleware/validationMiddleware";
+import { requireScenarioMember, requireScenarioOwner } from "../middleware/scenarioScopeMiddleware";
 
 const scenarioRouter = Router();
 
@@ -65,13 +66,32 @@ scenarioRouter.post(
 	),
 	CreateScenarioController,
 );
-scenarioRouter.get("/:id/profiles", authMiddleware, validateParams(idParamSchema), ListScenarioProfilesController);
-scenarioRouter.post("/:id/profiles", authMiddleware, validateParams(idParamSchema), CreateScenarioProfileController);
-scenarioRouter.post("/:id/transfer-profiles", authMiddleware, validateParams(idParamSchema), TransferProfilesController);
+scenarioRouter.post(
+	"/:id/profiles",
+	authMiddleware,
+	validateParams(idParamSchema),
+	requireScenarioMember(),
+	CreateScenarioProfileController,
+);
+scenarioRouter.get(
+	"/:id/profiles",
+	authMiddleware,
+	validateParams(idParamSchema),
+	requireScenarioMember(),
+	ListScenarioProfilesController,
+);
+scenarioRouter.post(
+	"/:id/transfer-profiles",
+	authMiddleware,
+	validateParams(idParamSchema),
+	requireScenarioMember(),
+	TransferProfilesController,
+);
 scenarioRouter.get(
 	"/:id/posts",
 	authMiddleware,
 	validateParams(idParamSchema),
+	requireScenarioMember(),
 	validateQuery(
 		z
 			.object({
@@ -86,6 +106,7 @@ scenarioRouter.post(
 	"/:id/posts",
 	authMiddleware,
 	validateParams(idParamSchema),
+	requireScenarioMember(),
 	validateBody(
 		z
 			.object({
@@ -106,23 +127,61 @@ scenarioRouter.post(
 	),
 	CreateScenarioPostController,
 );
-scenarioRouter.get("/:id/reposts", authMiddleware, validateParams(idParamSchema), ListScenarioRepostsController);
-scenarioRouter.get("/:id/likes", authMiddleware, validateParams(idParamSchema), ListScenarioLikesController);
-scenarioRouter.get("/:id/character-sheets", authMiddleware, validateParams(idParamSchema), ListScenarioCharacterSheetsController);
-scenarioRouter.get("/:id/profile-pins", authMiddleware, validateParams(idParamSchema), ListScenarioProfilePinsController);
+scenarioRouter.get(
+	"/:id/reposts",
+	authMiddleware,
+	validateParams(idParamSchema),
+	requireScenarioMember(),
+	ListScenarioRepostsController,
+);
+scenarioRouter.get(
+	"/:id/likes",
+	authMiddleware,
+	validateParams(idParamSchema),
+	requireScenarioMember(),
+	ListScenarioLikesController,
+);
+scenarioRouter.get(
+	"/:id/character-sheets",
+	authMiddleware,
+	validateParams(idParamSchema),
+	requireScenarioMember(),
+	ListScenarioCharacterSheetsController,
+);
+scenarioRouter.get(
+	"/:id/profile-pins",
+	authMiddleware,
+	validateParams(idParamSchema),
+	requireScenarioMember(),
+	ListScenarioProfilePinsController,
+);
 scenarioRouter.patch(
 	"/:id",
 	authMiddleware,
 	validateParams(idParamSchema),
+	requireScenarioOwner(),
 	validateBody(z.object({}).passthrough()),
 	UpdateScenarioController,
 );
-scenarioRouter.delete("/:id", authMiddleware, validateParams(idParamSchema), DeleteScenarioController);
-scenarioRouter.post("/:id/leave", authMiddleware, validateParams(idParamSchema), LeaveScenarioController);
+scenarioRouter.delete(
+	"/:id",
+	authMiddleware,
+	validateParams(idParamSchema),
+	requireScenarioOwner(),
+	DeleteScenarioController,
+);
+scenarioRouter.post(
+	"/:id/leave",
+	authMiddleware,
+	validateParams(idParamSchema),
+	requireScenarioMember(),
+	LeaveScenarioController,
+);
 scenarioRouter.post(
 	"/:id/transfer-ownership",
 	authMiddleware,
 	validateParams(idParamSchema),
+	requireScenarioOwner(),
 	validateBody(
 		z
 			.object({
@@ -137,6 +196,7 @@ scenarioRouter.post(
   "/:id/cover",
   authMiddleware,
   validateParams(idParamSchema),
+  requireScenarioOwner(),
   upload.single("cover"),
   UploadScenarioCoverController,
 );
