@@ -40,7 +40,7 @@ import { apiFetch } from "@/lib/api/apiClient";
 import { pickAndPersistManyImages } from "@/components/ui/ImagePicker";
 import { MediaGrid } from "@/components/media/MediaGrid";
 import { Lightbox } from "@/components/media/LightBox";
-import { formatErrorMessage } from "@/lib/utils/format";
+import { formatChatDayHeader, formatErrorMessage, getLocalDayKey } from "@/lib/utils/format";
 import { clearDraft, loadDraft, makeDraftKey, saveDraft } from "@/lib/drafts";
 
 const SEND_BTN_SCALE_DOWN = 0.92;
@@ -1486,6 +1486,17 @@ export default function ConversationThreadScreen() {
       !showFailed &&
       !String((item as any).id ?? "").startsWith("client_");
 
+    const showDayHeader = (() => {
+      if (reorderMode) return false;
+      if (kind === "separator") return false;
+      const myKey = getLocalDayKey((item as any)?.createdAt);
+      if (!myKey) return false;
+      const prevKey = opts?.prev ? getLocalDayKey((opts.prev as any)?.createdAt) : "";
+      if (!prevKey) return true;
+      return prevKey !== myKey;
+    })();
+    const dayHeaderText = showDayHeader ? formatChatDayHeader((item as any)?.createdAt) : "";
+
     const canSwipeEdit = !reorderMode && editAllowedIds.has(senderId);
 
     if (kind === "separator") {
@@ -1656,6 +1667,12 @@ export default function ConversationThreadScreen() {
       </Pressable>
     );
 
+    const dayHeader = showDayHeader && dayHeaderText ? (
+      <View style={{ alignItems: "center", paddingVertical: 8 }}>
+        <ThemedText style={{ color: colors.textSecondary, fontSize: 12, fontWeight: "800" }}>{dayHeaderText}</ThemedText>
+      </View>
+    ) : null;
+
     return (
       <SwipeableRow
         enabled={canSwipeEdit}
@@ -1678,7 +1695,10 @@ export default function ConversationThreadScreen() {
           ]);
         }}
       >
-        {row}
+        <View>
+          {dayHeader}
+          {row}
+        </View>
       </SwipeableRow>
     );
   };

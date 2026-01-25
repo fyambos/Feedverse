@@ -43,6 +43,50 @@ export function formatRelativeTime(iso: string) {
 
   return includeYear ? `${day} ${mon} ${year}` : `${day} ${mon}`;
 }
+
+export function getLocalDayKey(isoLike: unknown): string {
+  const ms = Date.parse(String(isoLike ?? ""));
+  if (!Number.isFinite(ms)) return "";
+  const d = new Date(ms);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+// Chat-style day headers (shown above the first message of each day).
+// Rules:
+// - Today / Yesterday
+// - Within 28 days: "Mon 11"
+// - Beyond 28 days: "Mon 11 Dec"
+// - Beyond 365 days: "Mon 11 Dec 2024"
+export function formatChatDayHeader(isoLike: unknown, now: Date = new Date()): string {
+  const ms = Date.parse(String(isoLike ?? ""));
+  if (!Number.isFinite(ms)) return "";
+  const d = new Date(ms);
+
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const that = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const diffDays = Math.floor((today.getTime() - that.getTime()) / 86_400_000);
+  const absDays = Math.abs(diffDays);
+
+  if (diffDays === 0) return "Today";
+  if (diffDays === 1) return "Yesterday";
+
+  const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+  const w = weekdays[d.getDay()] ?? "";
+  const day = d.getDate();
+
+  const includeMonth = absDays > 28;
+  const includeYear = absDays > 365;
+
+  if (includeYear) return `${w} ${day} ${months[d.getMonth()] ?? ""} ${d.getFullYear()}`.trim();
+  if (includeMonth) return `${w} ${day} ${months[d.getMonth()] ?? ""}`.trim();
+  return `${w} ${day}`.trim();
+}
+
 export function formatDetailTimestamp(iso: string) {
   const d = new Date(iso);
   const hh = String(d.getHours()).padStart(2, "0");
