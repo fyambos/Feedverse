@@ -4,6 +4,8 @@ import * as Sentry from "@sentry/node";
 import { nodeProfilingIntegration } from "@sentry/profiling-node";
 import { logger } from "../lib/logger";
 
+const nodeEnv = String(process.env.NODE_ENV ?? "").toLowerCase();
+
 export function initSentry() {
   const dsn = String(process.env.SENTRY_DSN ?? "").trim();
   const env = String(process.env.SENTRY_ENVIRONMENT ?? process.env.NODE_ENV ?? "").trim() || "development";
@@ -43,6 +45,11 @@ export const sentryErrorHandler: ErrorRequestHandler = (err: any, req: any, res:
 };
 
 export function createHttpLogger(): RequestHandler {
+  const logSuccess =
+    nodeEnv !== "production" || String(process.env.LOG_HTTP_SUCCESS ?? "").trim() === "1";
+  const logClientErrors = String(process.env.LOG_HTTP_4XX ?? "").trim() === "1";
+  const includeHeaders = String(process.env.LOG_HTTP_HEADERS ?? "").trim() === "1";
+
   return pinoHttp({
     logger,
     genReqId: (req, res) => {
@@ -52,19 +59,41 @@ export function createHttpLogger(): RequestHandler {
       const headerStr = Array.isArray(header) ? header[0] : header;
       return headerStr ? String(headerStr) : undefined;
     },
-    customProps: (req, res) => ({
+    // NOTE: Avoid binding `userId` via `customProps`.
+    // pino-http binds customProps at request start *and* again on response finish.
+    // If `req.user` is populated later (after auth middleware), pino can output
+    // duplicated keys (e.g. `userId:null` then `userId:"..."`) due to how it
+    // concatenates child logger bindings.
+    customProps: (req, _res) => ({
       requestId: (req as any).requestId ?? null,
-      userId: (req as any)?.user?.id ?? null,
     }),
     serializers: {
       req(req) {
-        return {
+        const userAgent =
+          typeof (req as any)?.headers?.["user-agent"] === "string"
+            ? String((req as any).headers["user-agent"])
+            : undefined;
+
+        const requestId = (req as any).requestId ?? null;
+        const userId = (req as any)?.user?.id ?? null;
+
+        const base: any = {
           id: (req as any).id,
           method: req.method,
           url: req.url,
-          headers: req.headers,
+          userAgent,
           remoteAddress: req.remoteAddress,
           remotePort: req.remotePort,
+          requestId,
+          userId,
+        };
+
+        if (includeHeaders) {
+          base.headers = req.headers;
+        }
+
+        return {
+          ...base,
         };
       },
       res(res) {
@@ -73,7 +102,8 @@ export function createHttpLogger(): RequestHandler {
     },
     customLogLevel: (_req, res, err) => {
       if (err || res.statusCode >= 500) return "error";
-      if (res.statusCode >= 400) return "warn";
+      if (res.statusCode >= 400) return logClientErrors ? "warn" : "silent";
+      if (!logSuccess) return "silent";
       return "info";
     },
   });

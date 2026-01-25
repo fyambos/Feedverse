@@ -74,7 +74,7 @@ export const AUTH = {
   // - Any value accepted by jsonwebtoken's `expiresIn` is valid (e.g. "30d", "12h").
   EXPIRATION_TIME: process.env.JWT_EXPIRES_IN || "365d",
   // Refresh token lifetime (used by /auth/refresh). Keep longer than access token.
-  REFRESH_TOKEN_DAYS: Number.parseInt(process.env.JWT_REFRESH_DAYS || "30", 10) || 30,
+  REFRESH_TOKEN_DAYS: Number.parseInt(process.env.JWT_REFRESH_DAYS || "365", 10) || 365,
   // Refresh tokens are random bytes encoded as base64url.
   REFRESH_TOKEN_BYTES: Number.parseInt(process.env.JWT_REFRESH_BYTES || "32", 10) || 32,
   SECRET_KEY: isTestEnv() ? (process.env.JWT_SECRET || "test-secret") : requireEnv("JWT_SECRET"),

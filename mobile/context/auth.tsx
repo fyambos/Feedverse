@@ -64,6 +64,10 @@ const DEV_USER_ID = "u14";
 
 const EXPO_PUSH_TOKEN_STORAGE_KEY = "feedverse.push.expoPushToken";
 
+// setTimeout uses a signed 32-bit integer delay; larger values overflow.
+// This matters when access tokens are long-lived (e.g. 365d).
+const MAX_TIMEOUT_MS = 2_147_483_647;
+
 const BCRYPT_ROUNDS = 10;
 
 async function secureGetItem(key: string): Promise<string | null> {
@@ -209,6 +213,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [refreshToken, setRefreshToken] = useState<string | null>(null);
   const [accessTokenExpiresAt, setAccessTokenExpiresAt] = useState<string | null>(null);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [refreshScheduleTick, setRefreshScheduleTick] = useState(0);
   const authInvalidatedRef = React.useRef(false);
   const refreshTokenRef = React.useRef<string | null>(null);
 
@@ -817,11 +822,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const expMs = new Date(accessTokenExpiresAt).valueOf();
     if (!Number.isFinite(expMs)) return;
 
-    const delay = Math.max(0, expMs - Date.now() - 60_000);
+    const delayRaw = expMs - Date.now() - 60_000;
+    const delay = Math.min(Math.max(0, delayRaw), MAX_TIMEOUT_MS);
     let cancelled = false;
     const timer = setTimeout(() => {
       if (cancelled) return;
       (async () => {
+        // If the token is still far from expiring, reschedule another check.
+        // This avoids setTimeout overflow for very long-lived tokens.
+        if (expMs - Date.now() > 60_000 + 5_000) {
+          setRefreshScheduleTick(Date.now());
+          return;
+        }
         const out = await refreshSession();
         if (!out.ok) {
           await signOut();
@@ -838,7 +850,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [authReady, token, refreshToken, accessTokenExpiresAt, refreshSession, signOut]);
+  }, [authReady, token, refreshToken, accessTokenExpiresAt, refreshSession, signOut, refreshScheduleTick]);
 
   const updateUserSettings = useCallback(
     async (settings: UserSettings) => {

@@ -1,8 +1,43 @@
 import path from "path";
+import fs from "fs";
 import dotenv from "dotenv";
 
+function candidateEnvDirs(): string[] {
+  const dirs = new Set<string>();
+
+  // 1) Most reliable: where the process was started from.
+  dirs.add(process.cwd());
+
+  // 2) If started from repo root, backend envs live in ./backend
+  dirs.add(path.join(process.cwd(), "backend"));
+
+  // 3) Relative to this file (works in src and in dist, depending on build output).
+  dirs.add(path.resolve(__dirname, "..", ".."));
+  dirs.add(path.resolve(__dirname, "..", "..", "..", ".."));
+
+  return Array.from(dirs);
+}
+
 function loadEnvFile(file: string) {
-  dotenv.config({ path: path.join(__dirname, "..", "..", file), override: false });
+  const dirs = candidateEnvDirs();
+  for (const dir of dirs) {
+    const fullPath = path.join(dir, file);
+    if (!fs.existsSync(fullPath)) continue;
+
+    const parsed = dotenv.parse(fs.readFileSync(fullPath));
+    for (const [key, value] of Object.entries(parsed)) {
+      const current = process.env[key];
+      const currentIsMissing = current == null || String(current).trim() === "";
+      const newIsMissing = String(value).trim() === "";
+
+      // Apply the first *non-empty* value we find across all files.
+      // This prevents `JWT_SECRET=` (empty) in a higher-precedence file from
+      // blocking a valid secret present in a fallback file.
+      if (currentIsMissing && !newIsMissing) {
+        process.env[key] = value;
+      }
+    }
+  }
 }
 
 /**
