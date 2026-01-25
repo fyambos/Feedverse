@@ -7111,54 +7111,63 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
           const optimisticCreatedAt = new Date().toISOString();
           const optimisticTextForPreview = body ? body : images.length > 0 ? "photo" : "";
 
-          try {
-            const optimisticDb = await updateDb((prev) => {
-              const conversations = { ...((prev as any).conversations ?? {}) } as Record<string, Conversation>;
-              const messages = { ...((prev as any).messages ?? {}) } as Record<string, Message>;
+          const applyOptimistic = (prevDb: any) => {
+            const conversations = { ...((prevDb as any).conversations ?? {}) } as Record<string, Conversation>;
+            const messages = { ...((prevDb as any).messages ?? {}) } as Record<string, Message>;
 
-              const existing = messages[optimisticId];
-              const base = existing ? { ...(existing as any) } : {};
-              messages[optimisticId] = {
-                ...base,
-                id: optimisticId,
-                scenarioId: sid,
-                conversationId: cid,
-                senderProfileId: from,
-                text: body,
-                kind: String(kindVal ?? (base as any)?.kind ?? "text"),
-                imageUrls: images,
-                createdAt: String((base as any)?.createdAt ?? optimisticCreatedAt),
+            const existing = messages[optimisticId];
+            const base = existing ? { ...(existing as any) } : {};
+            messages[optimisticId] = {
+              ...base,
+              id: optimisticId,
+              scenarioId: sid,
+              conversationId: cid,
+              senderProfileId: from,
+              text: body,
+              kind: String(kindVal ?? (base as any)?.kind ?? "text"),
+              imageUrls: images,
+              createdAt: String((base as any)?.createdAt ?? optimisticCreatedAt),
+              updatedAt: optimisticCreatedAt,
+              editedAt: undefined,
+              clientStatus: "sending",
+              clientError: undefined,
+            } as any;
+
+            const conv = conversations[cid];
+            if (conv && String((conv as any).scenarioId ?? "") === sid) {
+              const existingIds = Array.isArray((conv as any).messageIds)
+                ? (conv as any).messageIds.map(String).filter(Boolean)
+                : [];
+              if (!existingIds.includes(optimisticId)) existingIds.push(optimisticId);
+
+              conversations[cid] = {
+                ...conv,
+                lastMessageAt: optimisticCreatedAt,
                 updatedAt: optimisticCreatedAt,
-                editedAt: undefined,
-                clientStatus: "sending",
-                clientError: undefined,
+                messageIds: existingIds,
+                lastMessageText: optimisticTextForPreview,
+                lastMessageKind: String(kindVal ?? "text"),
+                lastMessageSenderProfileId: from,
               } as any;
+            }
 
-              const conv = conversations[cid];
-              if (conv && String((conv as any).scenarioId ?? "") === sid) {
-                const existingIds = Array.isArray((conv as any).messageIds)
-                  ? (conv as any).messageIds.map(String).filter(Boolean)
-                  : [];
-                if (!existingIds.includes(optimisticId)) existingIds.push(optimisticId);
+            return { ...(prevDb as any), conversations, messages } as any;
+          };
 
-                conversations[cid] = {
-                  ...conv,
-                  lastMessageAt: optimisticCreatedAt,
-                  updatedAt: optimisticCreatedAt,
-                  messageIds: existingIds,
-                  lastMessageText: optimisticTextForPreview,
-                  lastMessageKind: String(kindVal ?? "text"),
-                  lastMessageSenderProfileId: from,
-                } as any;
-              }
-
-              return { ...(prev as any), conversations, messages } as any;
+          // IMPORTANT: update UI state immediately (don't await sqlite/IO writes)
+          // so the bubble appears instantly.
+          try {
+            setState((prevState) => {
+              const curDb = (prevState as any)?.db;
+              if (!curDb) return prevState as any;
+              return { isReady: true, db: applyOptimistic(curDb) } as any;
             });
+          } catch {}
 
-            setState({ isReady: true, db: optimisticDb as any });
-          } catch {
-            // If optimistic insert fails for any reason, continue with the network send.
-          }
+          // Persist in background (AppDataProvider subscribes to db changes).
+          try {
+            void updateDb((prev) => applyOptimistic(prev as any));
+          } catch {}
 
           const hasLocalImages = images.some((u) => !/^https?:\/\//i.test(u));
 
@@ -7200,15 +7209,29 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
 
           if (!res.ok) {
             const err = (res.json as any)?.error ?? res.text ?? "Send failed";
+            const applyFailed = (prevDb: any) => {
+              const messages = { ...((prevDb as any).messages ?? {}) } as Record<string, Message>;
+              const existing = messages[optimisticId];
+              if (!existing) return prevDb as any;
+              messages[optimisticId] = {
+                ...(existing as any),
+                clientStatus: "failed",
+                clientError: String(err),
+                updatedAt: new Date().toISOString(),
+              } as any;
+              return { ...(prevDb as any), messages } as any;
+            };
+
             try {
-              const failedDb = await updateDb((prev) => {
-                const messages = { ...((prev as any).messages ?? {}) } as Record<string, Message>;
-                const existing = messages[optimisticId];
-                if (!existing) return prev as any;
-                messages[optimisticId] = { ...(existing as any), clientStatus: "failed", clientError: String(err), updatedAt: new Date().toISOString() } as any;
-                return { ...(prev as any), messages } as any;
+              setState((prevState) => {
+                const curDb = (prevState as any)?.db;
+                if (!curDb) return prevState as any;
+                return { isReady: true, db: applyFailed(curDb) } as any;
               });
-              setState({ isReady: true, db: failedDb as any });
+            } catch {}
+
+            try {
+              void updateDb((prev) => applyFailed(prev as any));
             } catch {}
             return { ok: false, error: err };
           }
@@ -7221,9 +7244,9 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
           const localPickedImages = images.filter((u) => !/^https?:\/\//i.test(u));
           const imageUrlsForDb = remoteImageUrls.length > 0 ? remoteImageUrls : localPickedImages;
 
-          const nextDb = await updateDb((prev) => {
-            const conversations = { ...((prev as any).conversations ?? {}) } as Record<string, Conversation>;
-            const messages = { ...((prev as any).messages ?? {}) } as Record<string, Message>;
+          const applyServerConfirm = (prevDb: any) => {
+            const conversations = { ...((prevDb as any).conversations ?? {}) } as Record<string, Conversation>;
+            const messages = { ...((prevDb as any).messages ?? {}) } as Record<string, Message>;
 
             // Remove optimistic placeholder (if still present).
             try {
@@ -7272,10 +7295,21 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
               } as any;
             }
 
-            return { ...(prev as any), conversations, messages } as any;
-          });
+            return { ...(prevDb as any), conversations, messages } as any;
+          };
 
-          setState({ isReady: true, db: nextDb as any });
+          try {
+            setState((prevState) => {
+              const curDb = (prevState as any)?.db;
+              if (!curDb) return prevState as any;
+              return { isReady: true, db: applyServerConfirm(curDb) } as any;
+            });
+          } catch {}
+
+          try {
+            void updateDb((prev) => applyServerConfirm(prev as any));
+          } catch {}
+
           return { ok: true, messageId: mid };
         }
 

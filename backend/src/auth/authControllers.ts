@@ -13,6 +13,8 @@ import { upload } from "../config/multer";
 import type { RegisterResponse } from "./authModels";
 import { UserRepository } from "../users/userRepositories";
 import { createUserSession, findUserSessionByRefreshTokenHash, hashTokenSha256Hex, revokeUserSessionById, rotateUserSessionRefreshToken } from "../sessions/sessionRepositories";
+import { z } from "zod";
+import { validateBody } from "../middleware/validationMiddleware";
 
 const userRepository = new UserRepository();
 
@@ -58,6 +60,18 @@ function signAuthToken(payload: unknown) {
 
 export const RegisterController = [
   upload.single("avatar"),
+  validateBody(
+    z
+      .object({
+        username: z.string().trim().min(3),
+        email: z.string().trim().min(3),
+        password_hash: z.string().min(8),
+        name: z.string().trim().min(1).optional(),
+        avatar_url: z.string().trim().optional(),
+      })
+      // In case older clients send extra keys.
+      .passthrough(),
+  ),
   async (req: Request, res: Response) => {
     if (req.method !== HTTP_METHODS.POST) {
       return res

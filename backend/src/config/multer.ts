@@ -1,4 +1,5 @@
 import multer from "multer";
+import { HttpError } from "../lib/httpErrors";
 
 export const upload = multer({
   storage: multer.memoryStorage(),
@@ -10,7 +11,7 @@ export const upload = multer({
     if (allowedMimes.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error("Format d'image non supporté"));
+      cb(new HttpError(400, "Unsupported image format"));
     }
   },
 });

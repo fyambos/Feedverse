@@ -1,6 +1,8 @@
 import type { ErrorRequestHandler, RequestHandler } from "express";
+import multer from "multer";
 import { ERROR_MESSAGES, HTTP_STATUS } from "../config/constants";
 import { logger } from "../lib/logger";
+import { HttpError } from "../lib/httpErrors";
 
 function isPgLikeError(err: unknown): err is { code?: unknown } {
   return (
@@ -35,8 +37,22 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, next) => {
   // Default: hide internal details.
   let status: number = HTTP_STATUS.INTERNAL_SERVER_ERROR;
   let errorMessage: string = ERROR_MESSAGES.INTERNAL_SERVER_ERROR;
+  let details: any = undefined;
 
-  if (isBodyParserSyntaxError(err)) {
+  if (err instanceof HttpError) {
+    status = err.statusCode;
+    errorMessage = err.message || ERROR_MESSAGES.INVALID_REQUEST;
+    details = err.details;
+  } else if (err instanceof multer.MulterError) {
+    status = HTTP_STATUS.BAD_REQUEST;
+    errorMessage = ERROR_MESSAGES.INVALID_REQUEST;
+    details = { code: err.code, field: (err as any).field };
+  } else if (typeof (err as any)?.name === "string" && (err as any).name === "MulterError") {
+    // Defensive: MulterError across module boundaries.
+    status = HTTP_STATUS.BAD_REQUEST;
+    errorMessage = ERROR_MESSAGES.INVALID_REQUEST;
+    details = { code: (err as any).code, field: (err as any).field };
+  } else if (isBodyParserSyntaxError(err)) {
     status = HTTP_STATUS.BAD_REQUEST;
     errorMessage = ERROR_MESSAGES.INVALID_REQUEST;
   } else if (isPgLikeError(err)) {
@@ -52,8 +68,11 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, next) => {
   // Log the full error server-side; never leak raw details to clients.
   logger.error({ err, method: req.method, path: req.originalUrl, status, requestId: req.requestId ?? null }, "Unhandled error");
 
-  res.status(status).json({
+  const payload: any = {
     error: errorMessage,
     requestId: req.requestId ?? null,
-  });
+  };
+  if (details != null) payload.details = details;
+
+  res.status(status).json(payload);
 };
