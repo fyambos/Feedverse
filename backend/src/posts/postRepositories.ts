@@ -231,11 +231,13 @@ export async function createPostForScenario(args: {
   const authorProfileId = String(args.input?.authorProfileId ?? "").trim();
   const text = String(args.input?.text ?? "");
   if (!authorProfileId) return { error: "authorProfileId is required", status: 400 };
-  if (!text.trim()) return { error: "text is required", status: 400 };
-
   const imageUrls = Array.isArray(args.input?.imageUrls)
     ? args.input!.imageUrls!.map(String).filter(Boolean)
     : [];
+
+  if (!text.trim() && imageUrls.length === 0) {
+    return { error: "Text or images required", status: 400 };
+  }
 
   const parentPostId = args.input?.parentPostId ? String(args.input.parentPostId) : null;
   const quotedPostId = args.input?.quotedPostId ? String(args.input.quotedPostId) : null;

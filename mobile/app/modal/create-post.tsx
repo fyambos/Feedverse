@@ -829,12 +829,20 @@ export default function CreatePostModal() {
     setSelectedProfileId(sid, String(authorProfileId)).catch(() => {});
   }, [isReady, isEdit, sid, authorProfileId, selectedId, setSelectedProfileId]);
 
-  const canPost =
-    !posting &&
-    !picking &&
-    Boolean(authorProfileId) &&
-    threadTexts.length > 0 &&
-    threadTexts.every((t) => isTruthyText(t));
+  const canPost = (() => {
+    if (posting) return false;
+    if (picking) return false;
+    if (!authorProfileId) return false;
+    if (threadTexts.length === 0) return false;
+
+    const hasMedia = (imageUrls?.length ?? 0) > 0 || Boolean(videoThumbUri);
+    const firstOk = isTruthyText(threadTexts[0]);
+    const restOk = threadTexts.slice(1).every((t) => isTruthyText(t));
+
+    // Allow: text-only, image-only (first item empty), or mixed.
+    // For threads: subsequent items must still have text.
+    return (firstOk || hasMedia) && restOk;
+  })();
 
   const buildSafeCounts = useCallback(() => {
     return {
