@@ -171,7 +171,7 @@ export async function upsertScenarioNotificationPrefs(
       quotes_enabled,
       ignored_profile_ids,
       updated_at
-    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::uuid[], now())
+    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::uuid[], now())
     ON CONFLICT (scenario_id, user_id)
     DO UPDATE SET
       mentions_enabled = EXCLUDED.mentions_enabled,
