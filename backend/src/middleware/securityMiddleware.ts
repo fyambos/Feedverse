@@ -1,6 +1,6 @@
 import cors from "cors";
 import helmet from "helmet";
-import rateLimit from "express-rate-limit";
+import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 import type { RequestHandler } from "express";
 import { APP_CONFIG, HTTP_STATUS } from "../config/constants";
 
@@ -65,7 +65,7 @@ export function createRateLimitMiddleware(): RequestHandler {
       // Also partition by endpoint group so one noisy endpoint doesn't block others.
       const userId = (req as any)?.user?.id ? String((req as any).user.id) : "";
       const ip = String((req as any).ip ?? "");
-      const principal = userId || ip;
+      const principal = userId ? `u:${userId}` : `ip:${ipKeyGenerator(ip)}`;
 
       // At app-level middleware, baseUrl is usually empty, so derive group from the URL path.
       const rawUrl = String((req as any).originalUrl ?? req.url ?? req.path ?? "");
