@@ -14,6 +14,29 @@ export const DATABASE_PASSWORD = process.env.DB_PASSWORD;
 export const DATABASE_NAME = process.env.DB_NAME;
 export const DATABASE_SSL_MODE = Boolean(process.env.DB_SSLMODE);
 
+// Postgres pool tuning (pg.Pool options)
+export const DB_POOL_MAX: number =
+  Number.parseInt(process.env.DB_POOL_MAX ?? "10", 10) || 10;
+export const DB_POOL_IDLE_TIMEOUT_MS: number =
+  Number.parseInt(process.env.DB_POOL_IDLE_TIMEOUT_MS ?? "30000", 10) || 30000;
+export const DB_POOL_CONNECTION_TIMEOUT_MS: number =
+  Number.parseInt(process.env.DB_POOL_CONNECTION_TIMEOUT_MS ?? "10000", 10) || 10000;
+export const DB_POOL_MAX_USES: number | undefined = (() => {
+  const raw = String(process.env.DB_POOL_MAX_USES ?? "").trim();
+  if (!raw) return undefined;
+  const n = Number.parseInt(raw, 10);
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+})();
+
+// Startup DB retry/backoff
+export const DB_STARTUP_CHECK_ENABLED: boolean = String(process.env.DB_STARTUP_CHECK ?? "1").trim() !== "0";
+export const DB_STARTUP_RETRY_ATTEMPTS: number =
+  Number.parseInt(process.env.DB_STARTUP_RETRY_ATTEMPTS ?? "8", 10) || 8;
+export const DB_STARTUP_RETRY_BASE_DELAY_MS: number =
+  Number.parseInt(process.env.DB_STARTUP_RETRY_BASE_DELAY_MS ?? "250", 10) || 250;
+export const DB_STARTUP_RETRY_MAX_DELAY_MS: number =
+  Number.parseInt(process.env.DB_STARTUP_RETRY_MAX_DELAY_MS ?? "5000", 10) || 5000;
+
 // ============================================================================
 // CLOUDFLARE / R2
 // ============================================================================

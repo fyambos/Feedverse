@@ -26,6 +26,8 @@ import {
   tagSentryContext,
 } from "./middleware/observabilityMiddleware";
 import { logger } from "./lib/logger";
+import { dbPing, waitForDatabaseReady } from "./config/database";
+import { attachWebSocketServer } from "./realtime/websocketService";
 
 process.on("unhandledRejection", (reason) => {
   logger.error({ reason }, "Unhandled promise rejection");
@@ -64,6 +66,25 @@ app.use(bodyParser.urlencoded({ extended: true, limit: bodyLimit }));
 // Structured request/response logging
 app.use(createHttpLogger());
 
+// Health checks (no auth)
+app.get("/healthz", async (_req, res) => {
+  const db = await dbPing({ timeoutMs: 1500 });
+  return res.status(200).json({
+    ok: true,
+    uptimeSec: Math.round(process.uptime()),
+    db,
+  });
+});
+
+// Readiness: return 503 if DB is unavailable
+app.get("/readyz", async (_req, res) => {
+  const db = await dbPing({ timeoutMs: 1500 });
+  if (!db.ok) {
+    return res.status(503).json({ ok: false, uptimeSec: Math.round(process.uptime()), db });
+  }
+  return res.status(200).json({ ok: true, uptimeSec: Math.round(process.uptime()), db });
+});
+
 app.use(ROUTES_AUTH.BASE, authRouter);
 app.use(ROUTES_USERS.BASE, userRouter);
 app.use("/scenarios", scenarioRouter);
@@ -82,22 +103,29 @@ app.use(notFoundHandler);
 app.use(sentryErrorHandler);
 app.use(errorHandler);
 
-const AppStart = async () => {
-  logger.info(
-    { env: APP_CONFIG.ENVIRONMENT, port: APP_CONFIG.SERVER_PORT },
-    "Backend listening",
-  );
+const startServer = async () => {
+  const dbReady = await waitForDatabaseReady();
+  if (!dbReady.ok) {
+    logger.error({ dbReady }, "Database not ready after retries");
+  }
+
+  const server = http.createServer(app);
+  server.listen(APP_CONFIG.SERVER_PORT, () => {
+    logger.info(
+      { env: APP_CONFIG.ENVIRONMENT, port: APP_CONFIG.SERVER_PORT, dbReady },
+      "Backend listening",
+    );
+  });
+
+  // Attach WebSocket server for realtime in production.
+  // (Attach after HTTP server exists.)
+  try {
+    attachWebSocketServer(server);
+  } catch (e) {
+    logger.warn({ err: e }, "Failed to attach websocket server");
+  }
 };
 
-const server = http.createServer(app);
-server.listen(APP_CONFIG.SERVER_PORT, AppStart);
-
-// Attach WebSocket server for realtime in production.
-import websocketService from "./realtime/websocketService";
-try {
-  websocketService.attachWebSocketServer(server as any);
-} catch (e) {
-  logger.warn({ err: e }, "Failed to attach websocket server");
-}
+void startServer();
 
 export default app;

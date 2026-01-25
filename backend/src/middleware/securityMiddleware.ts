@@ -56,6 +56,11 @@ export function createRateLimitMiddleware(): RequestHandler {
   const max = Number(process.env.RATE_LIMIT_MAX_REQUESTS ?? APP_CONFIG.RATE_LIMIT_MAX_REQUESTS);
 
   return rateLimit({
+    // Keep health/readiness probes reliable.
+    skip: (req) => {
+      const path = String((req as any).path ?? "");
+      return path === "/healthz" || path === "/readyz";
+    },
     windowMs: Number.isFinite(windowMs) ? windowMs : APP_CONFIG.RATE_LIMIT_WINDOW_MS,
     max: Number.isFinite(max) ? max : APP_CONFIG.RATE_LIMIT_MAX_REQUESTS,
     standardHeaders: "draft-7",
