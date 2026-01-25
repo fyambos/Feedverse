@@ -825,7 +825,11 @@ export default function CreatePostModal() {
     !picking &&
     Boolean(authorProfileId) &&
     threadTexts.length > 0 &&
-    threadTexts.every((t) => isTruthyText(t));
+    threadTexts.every((t, i) => {
+      if (isTruthyText(t)) return true;
+      if (i !== 0) return false;
+      return (Array.isArray(imageUrls) && imageUrls.length > 0) || Boolean(videoThumbUri);
+    });
 
   const buildSafeCounts = useCallback(() => {
     return {
@@ -1110,6 +1114,8 @@ export default function CreatePostModal() {
                   parentId={parentId}
                   quoteId={quoteId}
                   threadTexts={threadTexts}
+                  imageUrls={imageUrls}
+                  videoThumbUri={videoThumbUri}
                   focusedThreadIndex={focusedThreadIndex}
                   setFocusedThreadIndex={setFocusedThreadIndex}
                   onChangeThreadTextAt={setThreadTextAt}
