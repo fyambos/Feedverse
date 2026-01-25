@@ -1,6 +1,6 @@
 // mobile/app/index.tsx
 import React, { useMemo, useRef, useState, useCallback } from "react";
-import { StyleSheet, FlatList, Pressable, Image, View, Modal } from "react-native";
+import { StyleSheet, FlatList, Pressable, Image, View, Modal, Linking } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router, Stack } from "expo-router";
@@ -22,6 +22,9 @@ import { formatErrorMessage } from "@/lib/utils/format";
 import { MAX_TOTAL_PLAYERS_PER_SCENARIO } from "@/lib/scenario/rules";
 
 const MAX_PLAYERS = MAX_TOTAL_PLAYERS_PER_SCENARIO;
+
+const DISCORD_INVITE_URL = "https://discord.gg/pR8HbSDQdn";
+const DISCORD_LOGO = require("../assets/images/DiscordLogo.png");
 
 type ScenarioMenuState = {
   open: boolean;
@@ -84,6 +87,12 @@ export default function ScenarioListScreen() {
     inviteCode: null,
     scenarioName: null,
   });
+
+  const openDiscord = useCallback(() => {
+    void Linking.openURL(DISCORD_INVITE_URL).catch(() => {
+      Alert.alert("Can't open link", "Please try again later.");
+    });
+  }, []);
 
   const [transfer, setTransfer] = useState<TransferSheetState>({
     open: false,
@@ -777,7 +786,22 @@ export default function ScenarioListScreen() {
         ]}
       >
         <View style={styles.topBarRow}>
-          <View style={styles.topBarSide} />
+          <View style={[styles.topBarSide, { justifyContent: "flex-start" }]}>
+            <Pressable
+              onPress={openDiscord}
+              hitSlop={10}
+              style={({ pressed }) => [
+                styles.discordBtn,
+                { backgroundColor: colors.card, borderColor: colors.border },
+                pressed && { opacity: 0.7 },
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel="Join Discord"
+              accessibilityHint="Opens the Discord invite link"
+            >
+              <Image source={DISCORD_LOGO} style={styles.discordIcon} />
+            </Pressable>
+          </View>
 
           <ThemedText type="defaultSemiBold" style={styles.topBarTitle}>
             Scenarios
@@ -1088,6 +1112,22 @@ export default function ScenarioListScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, paddingHorizontal: 16, paddingTop: 16 },
   headerIconBtn: { padding: 6, backgroundColor: "transparent" },
+
+  discordBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    borderWidth: StyleSheet.hairlineWidth,
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+  },
+  discordIcon: {
+    width: "100%",
+    height: "100%",
+    borderRadius: 21,
+    resizeMode: "cover",
+  },
 
   ctaRow: {
     flexDirection: "row",
