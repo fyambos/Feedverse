@@ -16,6 +16,7 @@ import { APP_CONFIG } from "./config/constants";
 import { ROUTES_AUTH, ROUTES_USERS } from "./config/constants";
 import { errorHandler, notFoundHandler } from "./middleware/errorMiddleware";
 import { requestContextMiddleware, requestLoggerMiddleware } from "./middleware/requestMiddleware";
+import { createCorsMiddleware, createRateLimitMiddleware, helmetMiddleware } from "./middleware/securityMiddleware";
 
 process.on("unhandledRejection", (reason) => {
   console.error("Unhandled promise rejection", reason);
@@ -26,9 +27,24 @@ process.on("uncaughtException", (err) => {
 });
 
 const app = express();
+
+// If behind a proxy (Railway/Render/Nginx), set TRUST_PROXY=1 so rate limiting uses real client IPs.
+if (String(process.env.TRUST_PROXY ?? "").trim()) {
+  app.set("trust proxy", process.env.TRUST_PROXY);
+}
+
 app.use(requestContextMiddleware);
-app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({ extended: true }));
+
+// Security middleware
+app.use(helmetMiddleware);
+app.use(createCorsMiddleware());
+app.use(createRateLimitMiddleware());
+
+// Request size limits (JSON + urlencoded)
+const bodyLimit = String(process.env.BODY_SIZE_LIMIT ?? "1mb");
+app.use(bodyParser.json({ limit: bodyLimit }));
+app.use(bodyParser.urlencoded({ extended: true, limit: bodyLimit }));
+
 app.use(requestLoggerMiddleware);
 
 app.use(ROUTES_AUTH.BASE, authRouter);

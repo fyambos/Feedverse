@@ -27,6 +27,23 @@ export const requestContextMiddleware: RequestHandler = (req, res, next) => {
   res.setHeader("x-request-id", requestId);
 
   const originalJson = res.json.bind(res);
+  const originalSend = res.send.bind(res);
+
+  res.send = ((body: any) => {
+    try {
+      const status = res.statusCode;
+      if (status >= 400 && isPlainObject(body)) {
+        if (body.requestId == null) body.requestId = requestId;
+        if (body.error == null && typeof body.message === "string" && body.message.trim()) {
+          body.error = body.message;
+        }
+      }
+    } catch {
+      // ignore
+    }
+    return originalSend(body);
+  }) as any;
+
   res.json = ((body: any) => {
     try {
       const status = res.statusCode;
