@@ -9,8 +9,7 @@ This document explains how to install, build and run the beta of Feedverse local
 - **Expo CLI** (open a terminal and do `npm install -g expo-cli`)
 - A working **PostgreSQL-compatible database** (Neon, local Postgres, etc.) if you plan to run the backend against a DB.
 - **Android Studio** (if you want to test on an emulator)
-- **xcODE** (if you're on mac and want to test on an emulator)
-- 
+- **Xcode** (if you're on mac and want to test on an emulator)
 ### Repository layout
 - `backend/` — Node + TypeScript API server
 - `mobile/` — Expo (React Native) app
@@ -91,6 +90,14 @@ EXPO_PUBLIC_API_BASE_URL=[your address ip]:8080 npx expo start -c
 - Native modules: some features (push notifications, device-specific native modules) require a dev client or production builds. Expo Go may not contain all native modules; the app handles many modules with runtime guards.
 - Ports: backend uses port `8080` by default. Ensure nothing else uses that port or change `backend/.env` accordingly.
 - Branch rules: do not merge the `beta`or `testing` branches into `main` or `dev` — `testing` is the Beta publish branch. `beta`is the dev branch of the Beta, merges into `testing`.
+
+### Health checks (local)
+Once the backend is running on port 8080:
+
+```bash
+curl -sS http://localhost:8080/healthz
+curl -i  http://localhost:8080/readyz
+```
 
 ### Troubleshooting
 - If backend TypeScript build fails, check `tsconfig.*.json` and run `npm run build:cjs` to surface errors.

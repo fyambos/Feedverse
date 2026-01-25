@@ -15,6 +15,13 @@ If an endpoint is not listed here, it should be treated as **authenticated** by 
   - Readiness check.
   - Returns `200` only when the DB ping succeeds, otherwise `503`.
 
+Examples:
+
+```bash
+curl -sS http://localhost:8080/healthz
+curl -i  http://localhost:8080/readyz
+```
+
 Notes:
 - These endpoints are unauthenticated to support load balancers / orchestrators.
 - They are excluded from rate limiting.

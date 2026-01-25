@@ -901,6 +901,14 @@ export default function ConversationThreadScreen() {
       if (!isReady) return () => void 0;
       if (!sid || !cid) return () => void 0;
 
+      // Ensure realtime WebSocket is established for this scenario.
+      // Conversations sync is throttled and is also where WS is opened.
+      try {
+        void app?.syncConversationsForScenario?.(sid);
+      } catch {
+        // ignore
+      }
+
       let cancelled = false;
 
       const tick = async () => {
