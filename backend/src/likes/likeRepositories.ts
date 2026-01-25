@@ -312,8 +312,8 @@ export async function setLikeState(args: {
     } catch {
       // ignore
     }
-    const msg = e instanceof Error ? e.message : "";
-    return { error: msg || "Set like failed", status: 400 };
+    console.error("setLike failed", e);
+    return { error: "Set like failed", status: 400 };
   } finally {
     client.release();
   }

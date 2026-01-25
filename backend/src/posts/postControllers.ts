@@ -83,8 +83,8 @@ export const CreateScenarioPostController = async (req: Request, res: Response) 
 
     return res.status(HTTP_STATUS.CREATED).json({ post: result.post });
   } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : "";
-    return res.status(HTTP_STATUS.BAD_REQUEST).json({ error: msg || ERROR_MESSAGES.INTERNAL_SERVER_ERROR });
+    console.error("CreateScenarioPostController failed", error);
+    return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ error: ERROR_MESSAGES.INTERNAL_SERVER_ERROR });
   }
 };
 

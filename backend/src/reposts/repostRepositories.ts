@@ -302,8 +302,8 @@ export async function toggleRepost(args: {
     } catch {
       // ignore
     }
-    const msg = e instanceof Error ? e.message : "";
-    return { error: msg || "Toggle repost failed", status: 400 };
+    console.error("toggleRepost failed", e);
+    return { error: "Toggle repost failed", status: 400 };
   } finally {
     client.release();
   }

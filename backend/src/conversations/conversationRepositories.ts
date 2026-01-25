@@ -349,8 +349,8 @@ export async function getOrCreateConversation(args: {
     } catch {
       // ignore
     }
-    const msg = e instanceof Error ? e.message : "";
-    return { error: msg || "Create failed", status: 400 };
+    console.error("createConversation failed", e);
+    return { error: "Create failed", status: 400 };
   } finally {
     client.release();
   }
@@ -454,8 +454,8 @@ export async function updateConversationMeta(args: {
     } catch {
       // ignore
     }
-    const msg = e instanceof Error ? e.message : "";
-    return { error: msg || "Update failed", status: 400 };
+    console.error("updateConversationMeta failed", e);
+    return { error: "Update failed", status: 400 };
   } finally {
     client.release();
   }
@@ -556,8 +556,8 @@ export async function uploadConversationAvatar(args: {
       }
     }
 
-    const msg = e instanceof Error ? e.message : "";
-    return { error: msg || "Upload failed", status: 400 };
+    console.error("uploadConversationAvatar failed", e);
+    return { error: "Upload failed", status: 400 };
   } finally {
     client.release();
   }
@@ -674,8 +674,8 @@ export async function updateConversationParticipants(args: {
     } catch {
       // ignore
     }
-    const msg = e instanceof Error ? e.message : "";
-    return { error: msg || "Update failed", status: 400 };
+    console.error("updateConversationParticipants failed", e);
+    return { error: "Update failed", status: 400 };
   } finally {
     client.release();
   }
@@ -724,8 +724,8 @@ export async function deleteConversation(args: {
     } catch {
       // ignore
     }
-    const msg = e instanceof Error ? e.message : "";
-    return { error: msg || "Delete failed", status: 400 };
+    console.error("deleteConversation failed", e);
+    return { error: "Delete failed", status: 400 };
   } finally {
     client.release();
   }

@@ -14,6 +14,15 @@ import { messageRouter } from "./messages/messageRoutes";
 import { realtimeRouter } from "./realtime/realtimeRoutes";
 import { APP_CONFIG } from "./config/constants";
 import { ROUTES_AUTH, ROUTES_USERS } from "./config/constants";
+import { errorHandler, notFoundHandler } from "./middleware/errorMiddleware";
+
+process.on("unhandledRejection", (reason) => {
+  console.error("Unhandled promise rejection", reason);
+});
+
+process.on("uncaughtException", (err) => {
+  console.error("Uncaught exception", err);
+});
 
 const app = express();
 app.use(bodyParser.json());
@@ -30,6 +39,10 @@ app.use("/global-tags", globalTagRouter);
 app.use(conversationRouter);
 app.use(messageRouter);
 app.use(realtimeRouter);
+
+// Final handlers
+app.use(notFoundHandler);
+app.use(errorHandler);
 
 const AppStart = async () => {
   console.log(

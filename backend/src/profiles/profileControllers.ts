@@ -69,8 +69,8 @@ export const CreateScenarioProfileController = async (req: Request, res: Respons
 
     return res.status(HTTP_STATUS.CREATED).json({ profile: result.profile });
   } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : "";
-    return res.status(HTTP_STATUS.BAD_REQUEST).json({ error: msg || ERROR_MESSAGES.INTERNAL_SERVER_ERROR });
+    console.error("CreateScenarioProfileController failed", error);
+    return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ error: ERROR_MESSAGES.INTERNAL_SERVER_ERROR });
   }
 };
 
@@ -208,8 +208,8 @@ export const UpdateProfileAvatarController = async (req: Request, res: Response)
 
     return res.status(HTTP_STATUS.OK).json({ avatarUrl, profile: result.profile });
   } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : "";
-    return res.status(HTTP_STATUS.BAD_REQUEST).json({ error: msg || ERROR_MESSAGES.INTERNAL_SERVER_ERROR });
+    console.error("UpdateProfileAvatarController failed", error);
+    return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ error: ERROR_MESSAGES.INTERNAL_SERVER_ERROR });
   }
 };
 
@@ -257,8 +257,8 @@ export const UpdateProfileHeaderController = async (req: Request, res: Response)
 
     return res.status(HTTP_STATUS.OK).json({ headerUrl, profile: result.profile });
   } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : "";
-    return res.status(HTTP_STATUS.BAD_REQUEST).json({ error: msg || ERROR_MESSAGES.INTERNAL_SERVER_ERROR });
+    console.error("UpdateProfileHeaderController failed", error);
+    return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ error: ERROR_MESSAGES.INTERNAL_SERVER_ERROR });
   }
 };
 

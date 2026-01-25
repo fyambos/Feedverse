@@ -108,10 +108,8 @@ export const CreateScenarioController = async (req: Request, res: Response) => {
 
     return res.status(HTTP_STATUS.CREATED).json({ scenario: created });
   } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : "";
-    return res
-      .status(HTTP_STATUS.BAD_REQUEST)
-      .json({ error: msg || ERROR_MESSAGES.INTERNAL_SERVER_ERROR });
+    console.error("CreateScenarioController failed", error);
+    return res.status(HTTP_STATUS.BAD_REQUEST).json({ error: ERROR_MESSAGES.INVALID_REQUEST });
   }
 };
 
@@ -202,10 +200,8 @@ export const LeaveScenarioController = async (req: Request, res: Response) => {
     const result = await LeaveScenarioService({ userId, scenarioId });
     return res.status(HTTP_STATUS.OK).json(result);
   } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : "";
-    return res
-      .status(HTTP_STATUS.BAD_REQUEST)
-      .json({ error: msg || ERROR_MESSAGES.INTERNAL_SERVER_ERROR });
+    console.error("LeaveScenarioController failed", error);
+    return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ error: ERROR_MESSAGES.INTERNAL_SERVER_ERROR });
   }
 };
 
@@ -262,7 +258,8 @@ export const TransferScenarioOwnershipController = async (req: Request, res: Res
       const repo = new ScenarioRepository();
       await repo.updateCover(scenarioId, coverUrl);
       return res.status(200).json({ coverUrl });
-    } catch (error: any) {
-      return res.status(500).json({ error: error?.message || "Failed to upload cover" });
+    } catch (error: unknown) {
+      console.error("UploadScenarioCoverController failed", error);
+      return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ error: ERROR_MESSAGES.INTERNAL_SERVER_ERROR });
     }
   };

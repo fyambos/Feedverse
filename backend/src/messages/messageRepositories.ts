@@ -418,8 +418,8 @@ export async function sendMessage(args: {
     } catch {
       // ignore
     }
-    const msg = e instanceof Error ? e.message : "";
-    return { error: msg || "Send failed", status: 400 };
+    console.error("sendMessage failed", e);
+    return { error: "Send failed", status: 400 };
   } finally {
     client.release();
   }
@@ -655,8 +655,8 @@ export async function sendMessageWithImages(args: {
       await Promise.all(uploadedUrls.map((u) => r2Service.deleteByPublicUrl(String(u)).catch(() => false)));
     }
 
-    const msg = e instanceof Error ? e.message : "";
-    return { error: msg || "Send failed", status: 400 };
+    console.error("sendMessageWithImages failed", e);
+    return { error: "Send failed", status: 400 };
   } finally {
     client.release();
   }
@@ -796,8 +796,8 @@ export async function updateMessage(args: {
     } catch {
       // ignore
     }
-    const msg = e instanceof Error ? e.message : "";
-    return { error: msg || "Update failed", status: 400 };
+    console.error("updateMessage failed", e);
+    return { error: "Update failed", status: 400 };
   } finally {
     client.release();
   }
@@ -876,8 +876,8 @@ export async function deleteMessage(args: {
     } catch {
       // ignore
     }
-    const msg = e instanceof Error ? e.message : "";
-    return { error: msg || "Delete failed", status: 400 };
+    console.error("deleteMessage failed", e);
+    return { error: "Delete failed", status: 400 };
   } finally {
     client.release();
   }

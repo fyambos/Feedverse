@@ -725,8 +725,8 @@ export async function createPostForScenario(args: {
     } catch {
       // ignore
     }
-    const msg = e instanceof Error ? e.message : "";
-    return { error: msg || "Insert failed", status: 400 };
+    console.error("createPost failed", e);
+    return { error: "Insert failed", status: 400 };
   } finally {
     client.release();
   }
@@ -844,8 +844,8 @@ export async function updatePost(args: {
     } catch {
       // ignore
     }
-    const msg = e instanceof Error ? e.message : "";
-    return { error: msg || "Update failed", status: 400 };
+    console.error("updatePost failed", e);
+    return { error: "Update failed", status: 400 };
   } finally {
     client.release();
   }
@@ -951,8 +951,8 @@ export async function uploadPostImages(args: {
       // ignore
     }
 
-    const msg = e instanceof Error ? e.message : "";
-    return { error: msg || "Upload failed", status: 400 };
+    console.error("uploadPostImages failed", e);
+    return { error: "Upload failed", status: 400 };
   } finally {
     client.release();
   }
@@ -1035,8 +1035,8 @@ export async function deletePost(args: {
     } catch {
       // ignore
     }
-    const msg = e instanceof Error ? e.message : "";
-    return { error: msg || "Delete failed", status: 400 };
+    console.error("deletePost failed", e);
+    return { error: "Delete failed", status: 400 };
   } finally {
     client.release();
   }

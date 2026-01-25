@@ -73,7 +73,7 @@ export const PutProfileCharacterSheetController = async (req: Request, res: Resp
 
     return res.status(HTTP_STATUS.OK).json({ sheet: result.sheet });
   } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : "";
-    return res.status(HTTP_STATUS.BAD_REQUEST).json({ error: msg || ERROR_MESSAGES.INTERNAL_SERVER_ERROR });
+    console.error("PutProfileCharacterSheetController failed", error);
+    return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ error: ERROR_MESSAGES.INTERNAL_SERVER_ERROR });
   }
 };
