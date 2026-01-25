@@ -699,14 +699,13 @@ export class ScenarioRepository {
         [to, sid],
       );
 
-      // ensure GM list includes new owner if gm_user_ids exists
+      // Transfer GM as well: when ownership changes, make the new owner the ONLY GM.
       const cols = await getColumns("scenarios");
       const gmCol = cols.find((c) => c.column_name === "gm_user_ids");
       if (gmCol?.data_type === "ARRAY") {
-        await client.query(
-          "UPDATE scenarios SET gm_user_ids = (SELECT ARRAY(SELECT DISTINCT x FROM unnest(COALESCE(gm_user_ids, '{}'::uuid[])) x UNION SELECT $1::uuid)) WHERE id = $2",
-          [to, sid],
-        );
+        const isUuidArray = gmCol.udt_name === "_uuid";
+        const arrayExpr = isUuidArray ? "ARRAY[$1::uuid]" : "ARRAY[$1]";
+        await client.query(`UPDATE scenarios SET gm_user_ids = ${arrayExpr} WHERE id = $2`, [to, sid]);
       }
 
       await client.query("COMMIT");
