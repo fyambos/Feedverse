@@ -9,6 +9,8 @@ import realtimeService from "../realtime/realtimeService";
 import websocketService from "../realtime/websocketService";
 import { sendExpoPush } from "../push/expoPush";
 import { UserRepository } from "../users/userRepositories";
+import { listScenarioNotificationPrefsByUserIds } from "../notifications/scenarioNotificationPrefs";
+import { getScenarioNotificationPrefs } from "../notifications/scenarioNotificationPrefs";
 
 async function scenarioAccess(client: PoolClient, scenarioId: string, userId: string): Promise<boolean> {
   const res = await client.query(
@@ -464,6 +466,24 @@ export async function createPostForScenario(args: {
 
               if (ownerIds.size === 0) return;
 
+              // Apply per-scenario notification prefs (mentions toggle + ignored profiles).
+              const prefsByUserId = await listScenarioNotificationPrefsByUserIds(client2, sid, Array.from(ownerIds));
+
+              const ownerToAllowedMentionProfileIds = new Map<string, string[]>();
+              for (const r of resProfiles.rows) {
+                const owner = String(r?.owner_user_id ?? "").trim();
+                const pid = String(r?.id ?? "").trim();
+                if (!owner || !pid) continue;
+
+                const prefs = prefsByUserId.get(owner);
+                const mentionsEnabled = prefs?.mentionsEnabled ?? true;
+                if (!mentionsEnabled) continue;
+                if (prefs?.ignoredProfileIds?.includes(pid)) continue;
+
+                if (!ownerToAllowedMentionProfileIds.has(owner)) ownerToAllowedMentionProfileIds.set(owner, []);
+                ownerToAllowedMentionProfileIds.get(owner)!.push(pid);
+              }
+
               // Remove sender's owner (if sender profile is owned) so sender doesn't get a push.
               let senderOwner = "";
               try {
@@ -476,9 +496,15 @@ export async function createPostForScenario(args: {
                   [authorProfileId],
                 );
                 senderOwner = String(resSender.rows?.[0]?.owner_user_id ?? "").trim();
-                if (senderOwner) ownerIds.delete(senderOwner);
+                if (senderOwner) {
+                  ownerIds.delete(senderOwner);
+                  ownerToAllowedMentionProfileIds.delete(senderOwner);
+                }
               } catch {}
 
+              // Rebuild recipient set after prefs filtering.
+              ownerIds.clear();
+              for (const owner of ownerToAllowedMentionProfileIds.keys()) ownerIds.add(owner);
               if (ownerIds.size === 0) return;
 
               // Build push title/body.
@@ -526,16 +552,11 @@ export async function createPostForScenario(args: {
               // We intentionally include profile ids (not user ids) so clients can decide if they own
               // the mentioned profile(s) without leaking extra user identifiers.
               try {
-                const mentionedProfileIds = resProfiles.rows
-                  .filter((r) => {
-                    const owner = String(r?.owner_user_id ?? "").trim();
-                    if (!owner) return false;
-                    if (!ownerIds.has(owner)) return false;
-                    if (senderOwner && owner === senderOwner) return false;
-                    return true;
-                  })
-                  .map((r) => String(r.id ?? "").trim())
-                  .filter(Boolean);
+                const mentionedProfileIds: string[] = [];
+                for (const [owner, pids] of ownerToAllowedMentionProfileIds.entries()) {
+                  if (!ownerIds.has(owner)) continue;
+                  for (const pid of pids) mentionedProfileIds.push(pid);
+                }
 
                 if (mentionedProfileIds.length > 0) {
                   const payload = {
@@ -562,13 +583,9 @@ export async function createPostForScenario(args: {
                 // Pick a stable recipient profileId for each owner so mobile can
                 // switch selection correctly when multiple mentioned profiles exist.
                 const ownerToProfileId = new Map<string, string>();
-                for (const r of resProfiles.rows) {
-                  const owner = String((r as any)?.owner_user_id ?? "").trim();
-                  const pid = String((r as any)?.id ?? "").trim();
-                  if (!owner || !pid) continue;
+                for (const [owner, pids] of ownerToAllowedMentionProfileIds.entries()) {
                   if (!ownerIds.has(owner)) continue;
-                  if (senderOwner && owner === senderOwner) continue;
-                  if (!ownerToProfileId.has(owner)) ownerToProfileId.set(owner, pid);
+                  if (!ownerToProfileId.has(owner)) ownerToProfileId.set(owner, String(pids?.[0] ?? "").trim());
                 }
 
                 const expoMessages = tokenRows
@@ -657,6 +674,15 @@ export async function createPostForScenario(args: {
 
             if (!recipientOwnerId) return;
             if (senderOwnerId && senderOwnerId === recipientOwnerId) return;
+
+            // Respect per-scenario prefs (replies toggle + ignored recipient profile).
+            try {
+              const prefs = await getScenarioNotificationPrefs(client2, sid, recipientOwnerId);
+              if (prefs && prefs.repliesEnabled === false) return;
+              if (prefs?.ignoredProfileIds?.includes(parentAuthorProfileId)) return;
+            } catch {
+              // best-effort; default is enabled
+            }
 
             const title = `${senderLabel} replied to your ${parentIsReply ? "reply" : "post"}`;
             const bodyRaw = String(text ?? "").trim();
@@ -770,6 +796,15 @@ export async function createPostForScenario(args: {
 
             if (!recipientOwnerId) return;
             if (senderOwnerId && senderOwnerId === recipientOwnerId) return;
+
+            // Respect per-scenario prefs (quotes toggle + ignored recipient profile).
+            try {
+              const prefs = await getScenarioNotificationPrefs(client2, sid, recipientOwnerId);
+              if (prefs && prefs.quotesEnabled === false) return;
+              if (prefs?.ignoredProfileIds?.includes(quotedAuthorProfileId)) return;
+            } catch {
+              // best-effort; default is enabled
+            }
 
             const title = `${senderLabel} quoted your ${quotedIsReply ? "reply" : "post"}`;
             const bodyRaw = String(text ?? "").trim();

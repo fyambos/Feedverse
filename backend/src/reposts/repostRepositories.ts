@@ -6,6 +6,7 @@ import type { PostApi, PostRow } from "../posts/postModels";
 import { mapPostRowToApi } from "../posts/postModels";
 import { sendExpoPush } from "../push/expoPush";
 import { UserRepository } from "../users/userRepositories";
+import { getScenarioNotificationPrefs } from "../notifications/scenarioNotificationPrefs";
 
 async function scenarioAccess(client: PoolClient, scenarioId: string, userId: string): Promise<boolean> {
   const res = await client.query(
@@ -230,6 +231,15 @@ export async function toggleRepost(args: {
 
               if (!recipientOwnerId) return;
               if (senderOwnerId && senderOwnerId === recipientOwnerId) return;
+
+              // Respect per-scenario prefs (reposts toggle + ignored recipient profile).
+              try {
+                const prefs = await getScenarioNotificationPrefs(client2, sid, recipientOwnerId);
+                if (prefs && prefs.repostsEnabled === false) return;
+                if (prefs?.ignoredProfileIds?.includes(recipientProfileId)) return;
+              } catch {
+                // best-effort
+              }
 
               const title = `${senderLabel} reposted your ${parentPostId ? "reply" : "post"}`;
               const body = postText ? (postText.length > 140 ? postText.slice(0, 137) + "…" : postText) : undefined;

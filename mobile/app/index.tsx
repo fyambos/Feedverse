@@ -56,6 +56,9 @@ export default function ScenarioListScreen() {
     leaveScenario: leaveScenarioApi,
     deleteScenario: deleteScenarioApi,
 
+    // notification prefs
+    updateScenarioNotificationPrefs,
+
     // import/export APIs
     exportScenarioToFile,
   } = useAppData() as any;
@@ -489,6 +492,43 @@ export default function ScenarioListScreen() {
     }, 0);
   };
 
+  const openNotificationSettingsForMenuScenario = () => {
+    const sid = String(menu.scenarioId ?? "").trim();
+    if (!sid) return;
+    closeScenarioMenu();
+    setTimeout(() => {
+      router.push(`/(scenario)/${sid}/notifications-settings` as any);
+    }, 0);
+  };
+
+  const muteAllNotificationsForMenuScenario = () => {
+    const sid = String(menu.scenarioId ?? "").trim();
+    if (!sid) return;
+
+    closeScenarioMenu();
+
+    if (!isBackendMode) {
+      Alert.alert("Not available", "Mute all is only available in backend mode.");
+      return;
+    }
+
+    Alert.alert("Mute all notifications?", "This disables all notifications for this scenario.", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Mute all",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await updateScenarioNotificationPrefs?.(sid, { muteAll: true });
+            Alert.alert("Muted", "All notifications for this scenario are now off.");
+          } catch (e: any) {
+            Alert.alert("Mute failed", formatErrorMessage(e, "Could not mute notifications"));
+          }
+        },
+      },
+    ]);
+  };
+
   const ScenarioMenuSheet = () => (
     <Modal transparent visible={menu.open} animationType="fade" onRequestClose={closeScenarioMenu}>
       <Pressable style={[styles.menuBackdrop, { backgroundColor: colors.modalBackdrop }]} onPress={closeScenarioMenu}>
@@ -535,6 +575,27 @@ export default function ScenarioListScreen() {
             <Ionicons name="download-outline" size={18} color={colors.text} />
             <ThemedText style={{ color: colors.text, fontSize: 15, fontWeight: "700" }}>
               Export
+            </ThemedText>
+          </Pressable>
+
+          {/* Notifications */}
+          <Pressable
+            onPress={openNotificationSettingsForMenuScenario}
+            style={({ pressed }) => [styles.menuItem, { backgroundColor: pressed ? colors.pressed : "transparent" }]}
+          >
+            <Ionicons name="notifications-outline" size={18} color={colors.text} />
+            <ThemedText style={{ color: colors.text, fontSize: 15, fontWeight: "700" }}>
+              Notification settings
+            </ThemedText>
+          </Pressable>
+
+          <Pressable
+            onPress={muteAllNotificationsForMenuScenario}
+            style={({ pressed }) => [styles.menuItem, { backgroundColor: pressed ? colors.pressed : "transparent" }]}
+          >
+            <Ionicons name="notifications-off-outline" size={18} color="#ff3b30" />
+            <ThemedText style={{ color: "#ff3b30", fontSize: 15, fontWeight: "700" }}>
+              Mute all notifications
             </ThemedText>
           </Pressable>
           

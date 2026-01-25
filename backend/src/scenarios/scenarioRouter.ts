@@ -26,6 +26,10 @@ import { ListScenarioProfilePinsController } from "../profilePins/profilePinCont
 import { z } from "zod";
 import { validateBody, validateParams, validateQuery } from "../middleware/validationMiddleware";
 import { requireScenarioMember, requireScenarioOwner } from "../middleware/scenarioScopeMiddleware";
+import {
+	GetScenarioNotificationPrefsController,
+	PutScenarioNotificationPrefsController,
+} from "../notifications/scenarioNotificationPrefsControllers";
 
 const scenarioRouter = Router();
 
@@ -154,6 +158,23 @@ scenarioRouter.get(
 	validateParams(idParamSchema),
 	requireScenarioMember(),
 	ListScenarioProfilePinsController,
+);
+
+// Per-user notification preferences for this scenario
+scenarioRouter.get(
+	"/:id/notification-prefs",
+	authMiddleware,
+	validateParams(idParamSchema),
+	requireScenarioMember(),
+	GetScenarioNotificationPrefsController,
+);
+scenarioRouter.put(
+	"/:id/notification-prefs",
+	authMiddleware,
+	validateParams(idParamSchema),
+	requireScenarioMember(),
+	validateBody(z.object({}).passthrough()),
+	PutScenarioNotificationPrefsController,
 );
 scenarioRouter.patch(
 	"/:id",

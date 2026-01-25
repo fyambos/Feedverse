@@ -44,6 +44,7 @@ import realtimeService from "../realtime/realtimeService";
 import websocketService from "../realtime/websocketService";
 import { sendExpoPush } from "../push/expoPush";
 import { UserRepository } from "../users/userRepositories";
+import { listScenarioNotificationPrefsByUserIds } from "../notifications/scenarioNotificationPrefs";
 
 async function scenarioAccess(client: PoolClient, scenarioId: string, userId: string): Promise<boolean> {
   const res = await client.query(
@@ -402,6 +403,43 @@ export async function sendMessage(args: {
               ownerToProfileIds.delete(senderOwner);
             }
           } catch {}
+
+          if (ownerIds.size === 0) return;
+
+          // Apply per-scenario notification prefs (messages toggle + group toggle + ignored profiles).
+          try {
+            const isGroupChat = (parts.rows?.length ?? 0) > 2;
+            const prefsByUserId = await listScenarioNotificationPrefsByUserIds(client2, sid, Array.from(ownerIds));
+
+            for (const ownerId of Array.from(ownerIds)) {
+              const prefs = prefsByUserId.get(ownerId);
+              const messagesEnabled = prefs?.messagesEnabled ?? true;
+              const groupEnabled = prefs?.groupMessagesEnabled ?? true;
+
+              if (!messagesEnabled) {
+                ownerIds.delete(ownerId);
+                ownerToProfileIds.delete(ownerId);
+                continue;
+              }
+              if (isGroupChat && !groupEnabled) {
+                ownerIds.delete(ownerId);
+                ownerToProfileIds.delete(ownerId);
+                continue;
+              }
+
+              const ignored = new Set<string>((prefs?.ignoredProfileIds ?? []).map(String));
+              const pids = (ownerToProfileIds.get(ownerId) ?? []).map(String).filter(Boolean);
+              const allowedPids = pids.filter((pid) => !ignored.has(String(pid)));
+              if (allowedPids.length === 0) {
+                ownerIds.delete(ownerId);
+                ownerToProfileIds.delete(ownerId);
+                continue;
+              }
+              ownerToProfileIds.set(ownerId, allowedPids);
+            }
+          } catch {
+            // best-effort
+          }
 
           if (ownerIds.size === 0) return;
 

@@ -55,6 +55,46 @@ import { buildScenarioExportBundleV1 } from "@/lib/importExport/exportScenarioBu
 import { saveAndShareScenarioExport } from "@/lib/importExport/exportScenario";
 import BootSplash from "@/components/ui/BootSplash";
 
+type ScenarioNotificationPrefs = {
+  scenarioId: string;
+  userId: string;
+  mentionsEnabled: boolean;
+  repliesEnabled: boolean;
+  messagesEnabled: boolean;
+  groupMessagesEnabled: boolean;
+  likesEnabled: boolean;
+  repostsEnabled: boolean;
+  quotesEnabled: boolean;
+  ignoredProfileIds: string[];
+};
+
+function getScenarioNotificationPrefsFromDb(db: any, scenarioId: string): ScenarioNotificationPrefs | null {
+  try {
+    const sid = String(scenarioId ?? "").trim();
+    if (!sid) return null;
+    const map = (db as any)?.scenarioNotificationPrefsByScenarioId ?? null;
+    const prefs = map?.[sid] ?? null;
+    return prefs ? (prefs as any) : null;
+  } catch {
+    return null;
+  }
+}
+
+function defaultScenarioNotificationPrefsMobile(scenarioId: string, userId: string): ScenarioNotificationPrefs {
+  return {
+    scenarioId: String(scenarioId),
+    userId: String(userId),
+    mentionsEnabled: true,
+    repliesEnabled: true,
+    messagesEnabled: true,
+    groupMessagesEnabled: true,
+    likesEnabled: true,
+    repostsEnabled: true,
+    quotesEnabled: true,
+    ignoredProfileIds: [],
+  };
+}
+
 // Non-reactive tracker for which conversation is currently being viewed.
 // Using a module-level map avoids React state update loops and stays
 // consistent across iOS/Android timings.
@@ -326,6 +366,10 @@ type AppDataApi = {
   // scenario settings
   getScenarioSettings: (scenarioId: string) => any;
   updateScenarioSettings: (scenarioId: string, patch: any) => Promise<void>;
+
+  // scenario notification prefs (backend mode)
+  getScenarioNotificationPrefs: (scenarioId: string) => Promise<ScenarioNotificationPrefs | null>;
+  updateScenarioNotificationPrefs: (scenarioId: string, patch: any) => Promise<ScenarioNotificationPrefs | null>;
 
   // ===== DMs =====
   // backend-mode helpers (no-op in local mode)
@@ -1497,7 +1541,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       profilesSyncRef.current.lastSyncAtByScenario[sid] = nowMs;
 
       try {
-        const [profilesRes, sheetsRes, pinsRes] = await Promise.all([
+        const [profilesRes, sheetsRes, pinsRes, notifPrefsRes] = await Promise.all([
           apiFetch({
             path: `/scenarios/${encodeURIComponent(sid)}/profiles`,
             token,
@@ -1508,6 +1552,10 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
           }),
           apiFetch({
             path: `/scenarios/${encodeURIComponent(sid)}/profile-pins`,
+            token,
+          }),
+          apiFetch({
+            path: `/scenarios/${encodeURIComponent(sid)}/notification-prefs`,
             token,
           }),
         ]);
@@ -1523,6 +1571,9 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
           const users = { ...((prev as any).users ?? {}) } as any;
           const sheets = { ...((prev as any).sheets ?? {}) } as Record<string, CharacterSheet>;
           const profilePins = { ...((prev as any).profilePins ?? {}) } as Record<string, ProfilePin>;
+          const scenarioNotificationPrefsByScenarioId = {
+            ...(((prev as any).scenarioNotificationPrefsByScenarioId ?? {}) as any),
+          };
 
           const seen = new Set<string>();
 
@@ -1705,7 +1756,30 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
             } as any;
           }
 
-          return { ...(prev as any), profiles, sheets, users } as any;
+          // Cache server-side notification prefs for this scenario (best-effort).
+          try {
+            const uid = String(auth.userId ?? "").trim();
+            const prefs = notifPrefsRes?.ok ? (notifPrefsRes as any)?.json?.prefs ?? null : null;
+            if (uid) {
+              scenarioNotificationPrefsByScenarioId[sid] = prefs
+                ? {
+                    ...defaultScenarioNotificationPrefsMobile(sid, uid),
+                    ...(prefs as any),
+                    scenarioId: sid,
+                    userId: uid,
+                    ignoredProfileIds: Array.isArray((prefs as any)?.ignoredProfileIds)
+                      ? (prefs as any).ignoredProfileIds.map(String).filter(Boolean)
+                      : Array.isArray((prefs as any)?.ignored_profile_ids)
+                        ? (prefs as any).ignored_profile_ids.map(String).filter(Boolean)
+                        : [],
+                  }
+                : defaultScenarioNotificationPrefsMobile(sid, uid);
+            }
+          } catch {
+            // ignore
+          }
+
+          return { ...(prev as any), profiles, sheets, users, profilePins, scenarioNotificationPrefsByScenarioId } as any;
         });
 
         setState({ isReady: true, db: nextDb as any });
@@ -2054,6 +2128,12 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                             const senderProfile = profiles?.[senderPid] as any;
                             const sendingUserId = String((payload as any)?.senderUserId ?? m?.senderUserId ?? m?.sender_user_id ?? "").trim();
 
+                            // Per-scenario notification prefs (messages/group + ignored profiles)
+                            const prefs = getScenarioNotificationPrefsFromDb(dbNow as any, sid) ?? null;
+                            const messagesEnabled = prefs?.messagesEnabled ?? true;
+                            const groupMessagesEnabled = prefs?.groupMessagesEnabled ?? true;
+                            const ignored = new Set<string>((prefs?.ignoredProfileIds ?? []).map(String));
+
                             // If the sender profile is owned by the current user, skip notification
                             if (String(senderProfile?.ownerUserId ?? "") === String(currentUserId ?? "")) {
                               // skip notifications for messages that originate from profiles owned by current user
@@ -2064,20 +2144,32 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                                 ? (conv as any).participantProfileIds.map(String).filter(Boolean)
                                 : [];
 
+                              const isGroupChat = participantIds.length > 2;
+                              if (!messagesEnabled) {
+                                // user muted all messages for this scenario
+                                return;
+                              }
+                              if (isGroupChat && !groupMessagesEnabled) {
+                                // user muted group chat messages for this scenario
+                                return;
+                              }
+
                               // Only notify for conversations that include at least one profile owned by the current user.
                               const ownedParticipantIds = participantIds.filter(
                                 (pid) => String((profiles?.[pid] as any)?.ownerUserId ?? "") === String(currentUserId ?? "")
                               );
 
+                              const ownedUnignored = ownedParticipantIds.filter((pid) => !ignored.has(String(pid)));
+
                               // If the user is currently viewing this conversation, skip notification.
                               if (viewingConvId && String(viewingConvId) === String(convId)) {
                                 // skip notification when conversation is open
-                              } else if (ownedParticipantIds.length > 0) {
+                              } else if (ownedUnignored.length > 0) {
                                 // Pick the best target profile for navigation (prefer selected profile if it's owned and a participant).
                                 const preferred =
-                                  selectedProfileId && ownedParticipantIds.includes(String(selectedProfileId))
+                                  selectedProfileId && ownedUnignored.includes(String(selectedProfileId))
                                     ? String(selectedProfileId)
-                                    : String(ownedParticipantIds[0]);
+                                    : String(ownedUnignored[0]);
 
                                 const title = senderProfile?.displayName ? `DM from ${senderProfile.displayName}` : "New message";
                                 const body = String(m.text ?? "");
@@ -2121,12 +2213,19 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                         const ownedMentioned = mentionedProfileIds.filter(
                           (pid) => String((profiles?.[pid] as any)?.ownerUserId ?? "") === String(currentUserId ?? ""),
                         );
-                        if (ownedMentioned.length === 0) return;
+
+                        const prefs = getScenarioNotificationPrefsFromDb(dbNow as any, sid2) ?? null;
+                        const mentionsEnabled = prefs?.mentionsEnabled ?? true;
+                        if (!mentionsEnabled) return;
+
+                        const ignored = new Set<string>((prefs?.ignoredProfileIds ?? []).map(String));
+                        const ownedUnignored = ownedMentioned.filter((pid) => !ignored.has(String(pid)));
+                        if (ownedUnignored.length === 0) return;
 
                         const targetProfileId =
-                          selectedProfileId && ownedMentioned.includes(selectedProfileId)
+                          selectedProfileId && ownedUnignored.includes(selectedProfileId)
                             ? selectedProfileId
-                            : String(ownedMentioned[0]);
+                            : String(ownedUnignored[0]);
 
                         const title = String(payload?.title ?? "You were mentioned").trim() || "You were mentioned";
                         const body = String(payload?.body ?? "").trim();
@@ -6701,6 +6800,108 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         });
 
         setState({ isReady: true, db: nextDb as any });
+      },
+
+      getScenarioNotificationPrefs: async (scenarioId: string) => {
+        const sid = String(scenarioId ?? "").trim();
+        if (!backendEnabled) return null;
+        if (!sid || !isUuidLike(sid)) return null;
+
+        const token = String(auth.token ?? "").trim();
+        const uid = String(auth.userId ?? "").trim();
+        if (!token || !uid) return null;
+
+        const res = await apiFetch({
+          path: `/scenarios/${encodeURIComponent(sid)}/notification-prefs`,
+          token,
+        });
+        if (!res.ok) return null;
+
+        const prefs = (res.json as any)?.prefs ?? null;
+
+        try {
+          const normalized: ScenarioNotificationPrefs = prefs
+            ? {
+                ...defaultScenarioNotificationPrefsMobile(sid, uid),
+                ...(prefs as any),
+                scenarioId: sid,
+                userId: uid,
+                ignoredProfileIds: Array.isArray((prefs as any)?.ignoredProfileIds)
+                  ? (prefs as any).ignoredProfileIds.map(String).filter(Boolean)
+                  : Array.isArray((prefs as any)?.ignored_profile_ids)
+                    ? (prefs as any).ignored_profile_ids.map(String).filter(Boolean)
+                    : [],
+              }
+            : defaultScenarioNotificationPrefsMobile(sid, uid);
+
+          const nextDb = await updateDb((prev) => {
+            const scenarioNotificationPrefsByScenarioId = {
+              ...(((prev as any).scenarioNotificationPrefsByScenarioId ?? {}) as any),
+              [sid]: normalized,
+            };
+            return { ...(prev as any), scenarioNotificationPrefsByScenarioId } as any;
+          });
+          setState({ isReady: true, db: nextDb as any });
+        } catch {
+          // ignore caching failures
+        }
+
+        return prefs as any;
+      },
+
+      updateScenarioNotificationPrefs: async (scenarioId: string, patch: any) => {
+        const sid = String(scenarioId ?? "").trim();
+        if (!backendEnabled) throw new Error("Not in backend mode");
+        if (!sid || !isUuidLike(sid)) throw new Error("Invalid scenarioId");
+
+        const token = String(auth.token ?? "").trim();
+        const uid = String(auth.userId ?? "").trim();
+        if (!token || !uid) throw new Error("Not signed in");
+
+        const res = await apiFetch({
+          path: `/scenarios/${encodeURIComponent(sid)}/notification-prefs`,
+          token,
+          init: {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(patch ?? {}),
+          },
+        });
+
+        if (!res.ok) {
+          throw new Error(String((res.json as any)?.error ?? "Update failed"));
+        }
+
+        const prefs = (res.json as any)?.prefs ?? null;
+
+        try {
+          const normalized: ScenarioNotificationPrefs = prefs
+            ? {
+                ...defaultScenarioNotificationPrefsMobile(sid, uid),
+                ...(prefs as any),
+                scenarioId: sid,
+                userId: uid,
+                ignoredProfileIds: Array.isArray((prefs as any)?.ignoredProfileIds)
+                  ? (prefs as any).ignoredProfileIds.map(String).filter(Boolean)
+                  : Array.isArray((prefs as any)?.ignored_profile_ids)
+                    ? (prefs as any).ignored_profile_ids.map(String).filter(Boolean)
+                    : [],
+              }
+            : defaultScenarioNotificationPrefsMobile(sid, uid);
+
+          const nextDb = await updateDb((prev) => {
+            const scenarioNotificationPrefsByScenarioId = {
+              ...(((prev as any).scenarioNotificationPrefsByScenarioId ?? {}) as any),
+              [sid]: normalized,
+            };
+            return { ...(prev as any), scenarioNotificationPrefsByScenarioId } as any;
+          });
+          setState({ isReady: true, db: nextDb as any });
+        } catch {
+          // ignore caching failures
+        }
+
+        return prefs as any;
       },
 
       // ===== DMs =====
