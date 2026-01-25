@@ -1,6 +1,6 @@
 // mobile/app/modal/select-profile.tsx
 import React from "react";
-import { FlatList, Image, Pressable, StyleSheet, View, Modal, Platform } from "react-native";
+import { FlatList, Image, Pressable, StyleSheet, View, Modal, Platform, Alert as RNAlert, InteractionManager } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -115,6 +115,9 @@ export default function SelectProfileModal() {
     toUserId: string | null;
   }>(() => ({ open: false, toUserId: null }));
 
+  const [pendingTransferSuccessAlert, setPendingTransferSuccessAlert] = React.useState(false);
+  const transferSuccessAlertTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
   // state for adopting a shared profile
   const [adopt, setAdopt] = React.useState<{ open: boolean; profileId: string | null }>(() => ({
     open: false,
@@ -139,6 +142,36 @@ export default function SelectProfileModal() {
     setTransferBusy(false);
     setConfirmTransfer({ open: false, toUserId: null });
   };
+
+  React.useEffect(() => {
+    return () => {
+      if (transferSuccessAlertTimeoutRef.current) {
+        clearTimeout(transferSuccessAlertTimeoutRef.current);
+        transferSuccessAlertTimeoutRef.current = null;
+      }
+    };
+  }, []);
+
+  React.useEffect(() => {
+    if (!pendingTransferSuccessAlert) return;
+    if (transfer.open || confirmTransfer.open) return;
+
+    // Give iOS time to fully dismiss/unmount transparent Modals before showing a native alert;
+    // otherwise an invisible backdrop can keep capturing touches and feel like a freeze.
+    if (transferSuccessAlertTimeoutRef.current) {
+      clearTimeout(transferSuccessAlertTimeoutRef.current);
+      transferSuccessAlertTimeoutRef.current = null;
+    }
+
+    transferSuccessAlertTimeoutRef.current = setTimeout(() => {
+      transferSuccessAlertTimeoutRef.current = null;
+      InteractionManager.runAfterInteractions(() => {
+        RNAlert.alert("Done", "Profiles transferred.");
+      });
+    }, 250);
+
+    setPendingTransferSuccessAlert(false);
+  }, [pendingTransferSuccessAlert, transfer.open, confirmTransfer.open]);
 
   const scenario = React.useMemo(() => {
     if (!isReady) return null;
@@ -725,7 +758,10 @@ const allProfiles = React.useMemo<Profile[]>(() => {
 
                   return (
                     <Pressable
-                      onPress={() => setConfirmTransfer({ open: true, toUserId: String(item.id) })}
+                      onPress={() => {
+                        closeTransfer();
+                        setConfirmTransfer({ open: true, toUserId: String(item.id) });
+                      }}
                       style={({ pressed }) => [
                         styles.transferRow,
                         { backgroundColor: pressed ? colors.pressed : "transparent", borderColor: colors.border },
@@ -845,7 +881,9 @@ const allProfiles = React.useMemo<Profile[]>(() => {
           void fixSelectionAfterTransfer();
         }, 0);
 
-        Alert.alert("Done", "Profiles transferred.");
+        // Use a native system alert for the success confirmation, but only after the
+        // transfer modals are fully closed/unmounted.
+        setPendingTransferSuccessAlert(true);
       } catch (e: any) {
         Alert.alert("Transfer failed", formatErrorMessage(e, "Could not transfer profiles."));
       } finally {

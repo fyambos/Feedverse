@@ -13,6 +13,8 @@ export function ThreadComposer({
   parentId,
   quoteId,
   threadTexts,
+  imageUrls,
+  videoThumbUri,
   focusedThreadIndex,
   setFocusedThreadIndex,
   onChangeThreadTextAt,
@@ -25,6 +27,8 @@ export function ThreadComposer({
   quoteId?: string;
 
   threadTexts: string[];
+  imageUrls?: string[];
+  videoThumbUri?: string | null;
   focusedThreadIndex: number;
   setFocusedThreadIndex: (idx: number) => void;
 
@@ -37,6 +41,12 @@ export function ThreadComposer({
       {threadTexts.map((value, idx) => {
         const isLast = idx === threadTexts.length - 1;
         const canRemove = !isEdit && !parentId && !quoteId && threadTexts.length > 1;
+
+        const lastIdx = Math.max(0, threadTexts.length - 1);
+        const lastHasText = isTruthyText(threadTexts[lastIdx] ?? "");
+        const lastHasMedia =
+          lastIdx === 0 && ((Array.isArray(imageUrls) && imageUrls.length > 0) || Boolean(videoThumbUri));
+        const lastIsReady = lastHasText || lastHasMedia;
 
         return (
           <View key={`thread_${idx}`} style={styles.threadItemWrap}>
@@ -86,16 +96,12 @@ export function ThreadComposer({
               {!isEdit && !parentId && !quoteId && isLast ? (
                 <Pressable
                   onPress={onAddThreadItem}
-                  disabled={!isTruthyText(threadTexts[threadTexts.length - 1] ?? "")}
+                  disabled={!lastIsReady}
                   hitSlop={10}
                   style={({ pressed }) => [
                     styles.threadPlusTiny,
                     {
-                      opacity: !isTruthyText(threadTexts[threadTexts.length - 1] ?? "")
-                        ? 0.35
-                        : pressed
-                        ? 0.8
-                        : 1,
+                      opacity: !lastIsReady ? 0.35 : pressed ? 0.8 : 1,
                     },
                   ]}
                 >
