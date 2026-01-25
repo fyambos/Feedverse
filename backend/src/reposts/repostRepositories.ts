@@ -231,7 +231,7 @@ export async function toggleRepost(args: {
               if (!recipientOwnerId) return;
               if (senderOwnerId && senderOwnerId === recipientOwnerId) return;
 
-              const title = `${senderLabel} reposted your post`;
+              const title = `${senderLabel} reposted your ${parentPostId ? "reply" : "post"}`;
               const body = postText ? (postText.length > 140 ? postText.slice(0, 137) + "…" : postText) : undefined;
 
               // If the reposted post is a reply, compute the thread root (best-effort)

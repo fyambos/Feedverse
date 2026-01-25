@@ -240,7 +240,7 @@ export async function setLikeState(args: {
               if (!recipientOwnerId) return;
               if (senderOwnerId && senderOwnerId === recipientOwnerId) return;
 
-              const title = `${senderLabel} liked your post`;
+              const title = `${senderLabel} liked your ${parentPostId ? "reply" : "post"}`;
               const body = postText ? (postText.length > 140 ? postText.slice(0, 137) + "…" : postText) : undefined;
 
               // If the liked post is a reply, compute the thread root (best-effort)

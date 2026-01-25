@@ -615,13 +615,15 @@ export async function createPostForScenario(args: {
         try {
           const client2 = await pool.connect();
           try {
-            // Find parent post author profile.
-            const parentRes = await client2.query<{ author_profile_id: string | null }>(
-              "SELECT author_profile_id FROM posts WHERE id = $1 LIMIT 1",
+            // Find parent post author profile (+ whether it's itself a reply).
+            const parentRes = await client2.query<{ author_profile_id: string | null; parent_post_id: string | null }>(
+              "SELECT author_profile_id, parent_post_id FROM posts WHERE id = $1 LIMIT 1",
               [parentPostId],
             );
             const parentAuthorProfileId = String(parentRes.rows?.[0]?.author_profile_id ?? "").trim();
             if (!parentAuthorProfileId) return;
+
+            const parentIsReply = Boolean(String(parentRes.rows?.[0]?.parent_post_id ?? "").trim());
 
             // Resolve recipient owner and sender label/owner (skip self-notifies).
             const profRes = await client2.query<{
@@ -656,7 +658,7 @@ export async function createPostForScenario(args: {
             if (!recipientOwnerId) return;
             if (senderOwnerId && senderOwnerId === recipientOwnerId) return;
 
-            const title = `${senderLabel} replied to your post`;
+            const title = `${senderLabel} replied to your ${parentIsReply ? "reply" : "post"}`;
             const bodyRaw = String(text ?? "").trim();
             const body = bodyRaw ? (bodyRaw.length > 140 ? bodyRaw.slice(0, 137) + "…" : bodyRaw) : undefined;
 
@@ -716,6 +718,126 @@ export async function createPostForScenario(args: {
           }
         } catch (e) {
           console.warn("Error while attempting reply push send:", (e as Error)?.message ?? e);
+        }
+      })();
+    }
+
+    // Quote notifications (best-effort) for new quotes.
+    if (isNewInsert && quotedPostId && postId) {
+      (async () => {
+        try {
+          const client2 = await pool.connect();
+          try {
+            // Find quoted post author profile (+ whether the quoted post is itself a reply).
+            const quotedRes = await client2.query<{ author_profile_id: string | null; parent_post_id: string | null }>(
+              "SELECT author_profile_id, parent_post_id FROM posts WHERE id = $1 LIMIT 1",
+              [quotedPostId],
+            );
+            const quotedAuthorProfileId = String(quotedRes.rows?.[0]?.author_profile_id ?? "").trim();
+            if (!quotedAuthorProfileId) return;
+
+            const quotedIsReply = Boolean(String(quotedRes.rows?.[0]?.parent_post_id ?? "").trim());
+
+            // Resolve recipient owner and sender label/owner (skip self-notifies).
+            const profRes = await client2.query<{
+              id: string;
+              owner_user_id: string | null;
+              handle: string | null;
+              display_name: string | null;
+            }>(
+              "SELECT id, owner_user_id, handle, display_name FROM profiles WHERE id = ANY($1::uuid[])",
+              [[quotedAuthorProfileId, authorProfileId]],
+            );
+
+            let recipientOwnerId = "";
+            let senderOwnerId = "";
+            let senderLabel = "Someone";
+
+            for (const r of profRes.rows) {
+              const pid = String(r?.id ?? "").trim();
+              const owner = String(r?.owner_user_id ?? "").trim();
+
+              if (pid === quotedAuthorProfileId) {
+                recipientOwnerId = owner;
+              }
+              if (pid === authorProfileId) {
+                senderOwnerId = owner;
+                const h = String(r?.handle ?? "").trim();
+                const dn = String(r?.display_name ?? "").trim();
+                senderLabel = h ? `@${h}` : dn || senderLabel;
+              }
+            }
+
+            if (!recipientOwnerId) return;
+            if (senderOwnerId && senderOwnerId === recipientOwnerId) return;
+
+            const title = `${senderLabel} quoted your ${quotedIsReply ? "reply" : "post"}`;
+            const bodyRaw = String(text ?? "").trim();
+            const body = bodyRaw ? (bodyRaw.length > 140 ? bodyRaw.slice(0, 137) + "…" : bodyRaw) : undefined;
+
+            // If the quoting post is a reply, compute the thread root (best-effort)
+            // so clients can open the first-line parent post and highlight the reply.
+            const parentPid = String(parentPostId ?? "").trim();
+            let rootPostId = postId;
+            if (parentPid) {
+              rootPostId = parentPid;
+              try {
+                let cur = rootPostId;
+                const seen = new Set<string>();
+                for (let i = 0; i < 25; i++) {
+                  if (!cur || seen.has(cur)) break;
+                  seen.add(cur);
+
+                  const r = await client2.query<{ parent_post_id: string | null }>(
+                    "SELECT parent_post_id FROM posts WHERE id = $1 LIMIT 1",
+                    [cur],
+                  );
+                  const ppid = String(r.rows?.[0]?.parent_post_id ?? "").trim();
+                  if (!ppid) {
+                    rootPostId = cur;
+                    break;
+                  }
+                  cur = ppid;
+                }
+              } catch {
+                // ignore; fall back to parentPostId
+                rootPostId = parentPid;
+              }
+            }
+
+            try {
+              const repo = new UserRepository();
+              const tokenRows = await repo.listExpoPushTokensForUserIds([recipientOwnerId]);
+              const expoMessages = tokenRows
+                .map((r) => String((r as any)?.expo_push_token ?? (r as any)?.expoPushToken ?? "").trim())
+                .filter(Boolean)
+                .map((to) => ({
+                  to,
+                  title,
+                  body,
+                  channelId: "default",
+                  priority: "high" as const,
+                  data: {
+                    scenarioId: sid,
+                    postId,
+                    parentPostId: parentPid || undefined,
+                    rootPostId: (parentPid ? rootPostId : undefined) || undefined,
+                    kind: "quote",
+                    authorProfileId,
+                    profileId: quotedAuthorProfileId,
+                    quotedPostId,
+                  },
+                }));
+
+              await sendExpoPush(expoMessages);
+            } catch (e: any) {
+              console.warn("Expo push send failed", e?.message ?? e);
+            }
+          } finally {
+            client2.release();
+          }
+        } catch (e) {
+          console.warn("Error while attempting quote push send:", (e as Error)?.message ?? e);
         }
       })();
     }
