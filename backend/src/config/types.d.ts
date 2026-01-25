@@ -10,6 +10,7 @@ declare global {
     interface Request {
       user?: User;
       authTokenHash?: string;
+      authSessionId?: string;
       requestId?: string;
     }
   }

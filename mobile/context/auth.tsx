@@ -8,12 +8,13 @@ import React, {
   useCallback,
 } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as SecureStore from "expo-secure-store";
 import * as bcrypt from "bcryptjs";
 
 import type { User, UserSettings } from "@/data/db/schema";
 import { readDb, updateDb } from "@/data/db/storage"; 
 import { seedDbIfNeeded } from "@/data/db/seed";
-import { apiFetch, setAuthInvalidationHandler } from "@/lib/api/apiClient";
+import { apiFetch, setAuthInvalidationHandler, setTokenRefreshHandler } from "@/lib/api/apiClient";
 import { Alert } from "@/context/dialog";
 import { setCustomTintColor } from "@/constants/theme";
 import {
@@ -55,12 +56,39 @@ type AuthState = {
 const AuthContext = createContext<AuthState | null>(null);
 
 const KEY = "feedverse.auth.userId";
-const TOKEN_KEY = "feedverse.auth.token";
+const ACCESS_TOKEN_KEY = "feedverse.auth.accessToken";
+const REFRESH_TOKEN_KEY = "feedverse.auth.refreshToken";
+const ACCESS_TOKEN_EXPIRES_AT_KEY = "feedverse.auth.accessTokenExpiresAt";
+const LEGACY_ASYNC_TOKEN_KEY = "feedverse.auth.token";
 const DEV_USER_ID = "u14";
 
 const EXPO_PUSH_TOKEN_STORAGE_KEY = "feedverse.push.expoPushToken";
 
 const BCRYPT_ROUNDS = 10;
+
+async function secureGetItem(key: string): Promise<string | null> {
+  try {
+    return await SecureStore.getItemAsync(key);
+  } catch {
+    return null;
+  }
+}
+
+async function secureSetItem(key: string, value: string): Promise<void> {
+  try {
+    await SecureStore.setItemAsync(key, value);
+  } catch {
+    // ignore
+  }
+}
+
+async function secureDeleteItem(key: string): Promise<void> {
+  try {
+    await SecureStore.deleteItemAsync(key);
+  } catch {
+    // ignore
+  }
+}
 
 // React Native doesn't always provide WebCrypto/Node crypto.
 // bcryptjs needs a source of random bytes to generate salts.
@@ -178,14 +206,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [authReady, setAuthReady] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const [token, setToken] = useState<string | null>(null);
+  const [refreshToken, setRefreshToken] = useState<string | null>(null);
+  const [accessTokenExpiresAt, setAccessTokenExpiresAt] = useState<string | null>(null);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const authInvalidatedRef = React.useRef(false);
+  const refreshTokenRef = React.useRef<string | null>(null);
+
+  useEffect(() => {
+    refreshTokenRef.current = refreshToken;
+  }, [refreshToken]);
 
   // hydrate stored auth id once
   useEffect(() => {
     (async () => {
       const storedUserId = await AsyncStorage.getItem(KEY);
-      const storedToken = await AsyncStorage.getItem(TOKEN_KEY);
+      let storedToken = await secureGetItem(ACCESS_TOKEN_KEY);
+      const storedRefreshToken = await secureGetItem(REFRESH_TOKEN_KEY);
+      const storedExpiresAt = await AsyncStorage.getItem(ACCESS_TOKEN_EXPIRES_AT_KEY);
+
+      // One-time migration: move legacy AsyncStorage token into SecureStore.
+      if (!storedToken) {
+        const legacy = await AsyncStorage.getItem(LEGACY_ASYNC_TOKEN_KEY);
+        if (legacy) {
+          storedToken = legacy;
+          await secureSetItem(ACCESS_TOKEN_KEY, legacy);
+          await AsyncStorage.removeItem(LEGACY_ASYNC_TOKEN_KEY);
+        }
+      }
 
       const baseUrl = apiBaseUrl();
 
@@ -195,6 +242,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         await AsyncStorage.removeItem(KEY);
         setUserId(null);
         setToken(null);
+        setRefreshToken(null);
+        setAccessTokenExpiresAt(null);
         setAuthReady(true);
         try {
           Alert.alert("Session expired", "Please sign in again.");
@@ -206,6 +255,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       setUserId(storedUserId);
       setToken(storedToken);
+      setRefreshToken(storedRefreshToken);
+      setAccessTokenExpiresAt(storedExpiresAt);
       setAuthReady(true);
     })();
   }, []);
@@ -256,11 +307,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const setSessionToken = useCallback(async (nextToken: string | null) => {
     setToken(nextToken);
-    if (nextToken) await AsyncStorage.setItem(TOKEN_KEY, nextToken);
-    else await AsyncStorage.removeItem(TOKEN_KEY);
+    if (nextToken) await secureSetItem(ACCESS_TOKEN_KEY, nextToken);
+    else await secureDeleteItem(ACCESS_TOKEN_KEY);
 
     // New token means we can show session-expired again next time.
     authInvalidatedRef.current = false;
+  }, []);
+
+  const setSessionRefreshToken = useCallback(async (nextRefreshToken: string | null) => {
+    setRefreshToken(nextRefreshToken);
+    if (nextRefreshToken) await secureSetItem(REFRESH_TOKEN_KEY, nextRefreshToken);
+    else await secureDeleteItem(REFRESH_TOKEN_KEY);
+  }, []);
+
+  const setSessionAccessTokenExpiresAt = useCallback(async (nextExpiresAt: string | null) => {
+    setAccessTokenExpiresAt(nextExpiresAt);
+    if (nextExpiresAt) await AsyncStorage.setItem(ACCESS_TOKEN_EXPIRES_AT_KEY, nextExpiresAt);
+    else await AsyncStorage.removeItem(ACCESS_TOKEN_EXPIRES_AT_KEY);
   }, []);
 
   const fetchWithAuth = useCallback(
@@ -270,6 +333,39 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     },
     [token]
   );
+
+  const refreshSession = useCallback(async (): Promise<{ ok: true; token: string } | { ok: false }> => {
+    const rt = String(refreshTokenRef.current ?? "").trim();
+    if (!rt) return { ok: false };
+
+    try {
+      const res = await apiFetch({
+        path: "/auth/refresh",
+        init: {
+          method: "POST",
+          body: JSON.stringify({ refreshToken: rt }),
+        },
+      });
+
+      if (!res.ok) return { ok: false };
+
+      const nextToken = String((res.json as any)?.token ?? "").trim();
+      const nextRefreshToken = String((res.json as any)?.refreshToken ?? "").trim();
+      const nextExpiresAt = (res.json as any)?.accessTokenExpiresAt
+        ? String((res.json as any).accessTokenExpiresAt)
+        : null;
+
+      if (!nextToken || !nextRefreshToken) return { ok: false };
+
+      await setSessionToken(nextToken);
+      await setSessionRefreshToken(nextRefreshToken);
+      await setSessionAccessTokenExpiresAt(nextExpiresAt);
+
+      return { ok: true, token: nextToken };
+    } catch {
+      return { ok: false };
+    }
+  }, [setSessionToken, setSessionRefreshToken, setSessionAccessTokenExpiresAt]);
 
   // If backend auth is enabled, refresh /users/profile and keep local user record in sync.
   useEffect(() => {
@@ -294,9 +390,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // If the token is no longer valid, force re-login.
       if (res && (res.status === 401 || (res.status === 403 && /token de connexion invalide|invalide ou expir/i.test(String(res.text ?? ""))))) {
         await AsyncStorage.removeItem(KEY);
-        await AsyncStorage.removeItem(TOKEN_KEY);
+        await secureDeleteItem(ACCESS_TOKEN_KEY);
+        await secureDeleteItem(REFRESH_TOKEN_KEY);
+        await AsyncStorage.removeItem(ACCESS_TOKEN_EXPIRES_AT_KEY);
         setUserId(null);
         setToken(null);
+        setRefreshToken(null);
+        setAccessTokenExpiresAt(null);
         setCurrentUser(null);
         return;
       }
@@ -386,10 +486,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           if (!res.ok) return { ok: false as const, error: String(json?.message ?? "Login failed.") };
 
           const nextToken = String(json?.token ?? "").trim();
+          const nextRefreshToken = String(json?.refreshToken ?? "").trim();
+          const nextExpiresAt = json?.accessTokenExpiresAt ? String(json.accessTokenExpiresAt) : null;
           const user = json?.user;
           const uid = String(user?.id ?? "").trim();
           if (!nextToken || !uid) {
             return { ok: false as const, error: "Login response missing token or user." };
+          }
+          if (!nextRefreshToken) {
+            return { ok: false as const, error: "Login response missing refresh token." };
           }
 
           await ensureDbReady();
@@ -410,6 +515,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           });
 
           await setSessionToken(nextToken);
+          await setSessionRefreshToken(nextRefreshToken);
+          await setSessionAccessTokenExpiresAt(nextExpiresAt);
           await setSessionUserId(uid);
           try {
             setCustomTintColor(localUser?.settings?.customTheme);
@@ -474,7 +581,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await setSessionUserId(String(matched.id));
       return { ok: true as const };
     },
-    [ensureDbReady, setSessionUserId, setSessionToken]
+    [ensureDbReady, setSessionUserId, setSessionToken, setSessionRefreshToken, setSessionAccessTokenExpiresAt]
   );
 
   const signUp = useCallback(
@@ -536,6 +643,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
             // server returns token+user; if not, fall back to login
             const nextToken = String(json?.token ?? "").trim();
+            const nextRefreshToken = String(json?.refreshToken ?? "").trim();
+            const nextExpiresAt = json?.accessTokenExpiresAt ? String(json.accessTokenExpiresAt) : null;
             const user = json?.user;
             const uid = String(user?.id ?? "").trim();
 
@@ -557,7 +666,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 };
               });
 
+              if (!nextRefreshToken) {
+                return { ok: false as const, error: "Sign up response missing refresh token." };
+              }
+
               await setSessionToken(nextToken);
+              await setSessionRefreshToken(nextRefreshToken);
+              await setSessionAccessTokenExpiresAt(nextExpiresAt);
               await setSessionUserId(uid);
               try {
                 setCustomTintColor(localUser?.settings?.customTheme);
@@ -629,7 +744,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await setSessionUserId(id);
       return { ok: true as const };
     },
-    [ensureDbReady, setSessionUserId, setSessionToken, signIn]
+    [ensureDbReady, setSessionUserId, setSessionToken, setSessionRefreshToken, setSessionAccessTokenExpiresAt, signIn]
   );
 
   const signOut = useCallback(async () => {
@@ -661,10 +776,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     setUserId(null);
     setToken(null);
+    setRefreshToken(null);
+    setAccessTokenExpiresAt(null);
     setCurrentUser(null);
     setCustomTintColor(null);
     await AsyncStorage.removeItem(KEY);
-    await AsyncStorage.removeItem(TOKEN_KEY);
+    await secureDeleteItem(ACCESS_TOKEN_KEY);
+    await secureDeleteItem(REFRESH_TOKEN_KEY);
+    await AsyncStorage.removeItem(ACCESS_TOKEN_EXPIRES_AT_KEY);
     authInvalidatedRef.current = false;
   }, [token]);
 
@@ -677,10 +796,49 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       Alert.alert("Session expired", "Please sign in again.");
     });
 
+    // Let apiFetch attempt a refresh before falling back to invalidation.
+    setTokenRefreshHandler(async () => {
+      const out = await refreshSession();
+      if (!out.ok) return null;
+      return { token: out.token };
+    });
+
     return () => {
       setAuthInvalidationHandler(null);
+      setTokenRefreshHandler(null);
     };
-  }, [signOut]);
+  }, [signOut, refreshSession]);
+
+  // Proactive refresh ~60s before expiry (best-effort).
+  useEffect(() => {
+    if (!authReady) return;
+    if (!token || !refreshToken || !accessTokenExpiresAt) return;
+
+    const expMs = new Date(accessTokenExpiresAt).valueOf();
+    if (!Number.isFinite(expMs)) return;
+
+    const delay = Math.max(0, expMs - Date.now() - 60_000);
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      if (cancelled) return;
+      (async () => {
+        const out = await refreshSession();
+        if (!out.ok) {
+          await signOut();
+          try {
+            Alert.alert("Session expired", "Please sign in again.");
+          } catch {
+            // ignore
+          }
+        }
+      })();
+    }, delay);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [authReady, token, refreshToken, accessTokenExpiresAt, refreshSession, signOut]);
 
   const updateUserSettings = useCallback(
     async (settings: UserSettings) => {

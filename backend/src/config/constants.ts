@@ -1,5 +1,5 @@
-import dotenv from "dotenv";
-dotenv.config();
+import { isTestEnv, loadEnv, requireEnv } from "./env";
+loadEnv();
 
 // ============================================================================
 // DATABASE
@@ -73,7 +73,11 @@ export const AUTH = {
   // - Set JWT_EXPIRES_IN=none to create tokens without an exp claim (no expiry).
   // - Any value accepted by jsonwebtoken's `expiresIn` is valid (e.g. "30d", "12h").
   EXPIRATION_TIME: process.env.JWT_EXPIRES_IN || "365d",
-  SECRET_KEY: process.env.JWT_SECRET || "dev-secret",
+  // Refresh token lifetime (used by /auth/refresh). Keep longer than access token.
+  REFRESH_TOKEN_DAYS: Number.parseInt(process.env.JWT_REFRESH_DAYS || "30", 10) || 30,
+  // Refresh tokens are random bytes encoded as base64url.
+  REFRESH_TOKEN_BYTES: Number.parseInt(process.env.JWT_REFRESH_BYTES || "32", 10) || 32,
+  SECRET_KEY: isTestEnv() ? (process.env.JWT_SECRET || "test-secret") : requireEnv("JWT_SECRET"),
 } as const;
 
 // ============================================================================

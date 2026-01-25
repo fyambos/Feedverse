@@ -2,7 +2,7 @@ import { NextFunction, Request, Response } from "express";
 import jwt from "jsonwebtoken";
 import { User } from "../users/userModels";
 import { AUTH, HTTP_STATUS } from "../config/constants";
-import { hashTokenSha256Hex, touchUserSession } from "../sessions/sessionRepositories";
+import { hashTokenSha256Hex, touchUserSession, touchUserSessionById } from "../sessions/sessionRepositories";
 
 export const authMiddleware = async (
   req: Request,
@@ -28,19 +28,39 @@ export const authMiddleware = async (
 
     req.user = payload.user;
 
-    // Sessions (best-effort):
-    // - Hash the token and upsert last_seen_at.
-    // - If the session is revoked, treat the token as invalid.
+    // Always compute token hash for sessions UX ("isCurrent" marking).
     try {
       const tokenHash = hashTokenSha256Hex(token);
       req.authTokenHash = tokenHash;
+    } catch {
+      // ignore
+    }
 
-      const touched = await touchUserSession({
-        userId: String(payload.user.id),
-        tokenHash,
-        userAgent: req.get?.("User-Agent") ?? null,
-        ip: req.headers?.["x-forwarded-for"] ?? req.ip,
-      });
+    const sessionId = String((decoded as any)?.sid ?? "").trim();
+    if (sessionId) req.authSessionId = sessionId;
+
+    // Sessions (best-effort):
+    // - Preferred: if token includes a session id (sid), require an existing session row.
+    // - Back-compat: if sid is missing, fall back to token-hash upsert.
+    // - If the session is revoked, treat the token as invalid.
+    try {
+      const uid = String(payload.user.id);
+      const tokenHash = String(req.authTokenHash ?? "").trim();
+
+      const touched = sessionId
+        ? await touchUserSessionById({
+            sessionId,
+            userId: uid,
+            tokenHash,
+            userAgent: req.get?.("User-Agent") ?? null,
+            ip: req.headers?.["x-forwarded-for"] ?? req.ip,
+          })
+        : await touchUserSession({
+            userId: uid,
+            tokenHash,
+            userAgent: req.get?.("User-Agent") ?? null,
+            ip: req.headers?.["x-forwarded-for"] ?? req.ip,
+          });
 
       if (touched?.sessionUserId && String(touched.sessionUserId) !== String(payload.user.id)) {
         return res.status(HTTP_STATUS.FORBIDDEN).send(AUTH.INVALID_TOKEN);

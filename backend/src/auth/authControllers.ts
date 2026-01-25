@@ -1,4 +1,5 @@
 import { Request, Response } from "express";
+import crypto from "crypto";
 import jwt from "jsonwebtoken";
 import {
   AUTH,
@@ -10,7 +11,40 @@ import {
 import { LoginUserService, RegisterUserService } from "./authServices";
 import { upload } from "../config/multer";
 import type { RegisterResponse } from "./authModels";
-import { hashTokenSha256Hex, touchUserSession } from "../sessions/sessionRepositories";
+import { UserRepository } from "../users/userRepositories";
+import { createUserSession, findUserSessionByRefreshTokenHash, hashTokenSha256Hex, revokeUserSessionById, rotateUserSessionRefreshToken } from "../sessions/sessionRepositories";
+
+const userRepository = new UserRepository();
+
+function tokenExpiresAtIso(token: string): string | null {
+  try {
+    const decoded: any = jwt.decode(token);
+    const exp = typeof decoded?.exp === "number" ? decoded.exp : null;
+    if (!exp) return null;
+    return new Date(exp * 1000).toISOString();
+  } catch {
+    return null;
+  }
+}
+
+function randomBase64Url(bytes: number): string {
+  // Node supports base64url; keep fallback for older runtimes.
+  try {
+    return crypto.randomBytes(bytes).toString("base64url");
+  } catch {
+    return crypto
+      .randomBytes(bytes)
+      .toString("base64")
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=+$/g, "");
+  }
+}
+
+function refreshExpiresAtFromNow(): Date {
+  const days = Number(AUTH.REFRESH_TOKEN_DAYS) || 30;
+  return new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+}
 
 function signAuthToken(payload: unknown) {
   const expiresIn = String(AUTH.EXPIRATION_TIME ?? "").trim();
@@ -59,24 +93,36 @@ export const RegisterController = [
           .json({ error: ERROR_MESSAGES.INTERNAL_SERVER_ERROR });
       }
 
-      const token = signAuthToken({ user: createdUser });
+      const sessionId = crypto.randomUUID();
+      const token = signAuthToken({ user: createdUser, sid: sessionId });
+      const refreshToken = randomBase64Url(Number(AUTH.REFRESH_TOKEN_BYTES) || 32);
+      const refreshTokenHash = hashTokenSha256Hex(refreshToken);
 
-      // Best-effort: record a new session.
-      try {
+      // Create a session row that binds refresh tokens to a specific device session.
+      // If this fails, do not issue refresh tokens (client would be unable to refresh).
+      {
         const tokenHash = hashTokenSha256Hex(token);
-        await touchUserSession({
+        const created = await createUserSession({
+          sessionId,
           userId: String(createdUser.id),
           tokenHash,
+          refreshTokenHash,
+          refreshExpiresAt: refreshExpiresAtFromNow(),
           userAgent: req.get?.("User-Agent") ?? null,
           ip: req.headers?.["x-forwarded-for"] ?? req.ip,
         });
-      } catch {
-        // ignore
+        if (!created) {
+          return res
+            .status(HTTP_STATUS.INTERNAL_SERVER_ERROR)
+            .json({ error: ERROR_MESSAGES.INTERNAL_SERVER_ERROR });
+        }
       }
 
       res.status(HTTP_STATUS.CREATED).json({
         message: USER_MESSAGES.CREATION_SUCCESS,
         token,
+        refreshToken,
+        accessTokenExpiresAt: tokenExpiresAtIso(token),
         user: createdUser,
       });
     } catch (error: unknown) {
@@ -111,27 +157,35 @@ export const LoginController = async (req: Request, res: Response) => {
       });
     }
 
-    const signed = signAuthToken({ user: result?.user });
+    const uid = String((result?.user as any)?.id ?? "").trim();
+    const sessionId = crypto.randomUUID();
+    const signed = signAuthToken({ user: result?.user, sid: sessionId });
+    const refreshToken = randomBase64Url(Number(AUTH.REFRESH_TOKEN_BYTES) || 32);
+    const refreshTokenHash = hashTokenSha256Hex(refreshToken);
 
-    // Best-effort: record a new session.
-    try {
-      const uid = String((result?.user as any)?.id ?? "").trim();
-      if (uid) {
-        const tokenHash = hashTokenSha256Hex(signed);
-        await touchUserSession({
-          userId: uid,
-          tokenHash,
-          userAgent: req.get?.("User-Agent") ?? null,
-          ip: req.headers?.["x-forwarded-for"] ?? req.ip,
-        });
+    if (uid) {
+      const tokenHash = hashTokenSha256Hex(signed);
+      const created = await createUserSession({
+        sessionId,
+        userId: uid,
+        tokenHash,
+        refreshTokenHash,
+        refreshExpiresAt: refreshExpiresAtFromNow(),
+        userAgent: req.get?.("User-Agent") ?? null,
+        ip: req.headers?.["x-forwarded-for"] ?? req.ip,
+      });
+      if (!created) {
+        return res
+          .status(HTTP_STATUS.INTERNAL_SERVER_ERROR)
+          .json({ error: ERROR_MESSAGES.INTERNAL_SERVER_ERROR });
       }
-    } catch {
-      // ignore
     }
 
     res.status(HTTP_STATUS.OK).json({
       message: USER_MESSAGES.LOGIN_SUCCESS,
       token: signed,
+      refreshToken,
+      accessTokenExpiresAt: tokenExpiresAtIso(signed),
       user: result?.user,
     });
   } catch (error: unknown) {
@@ -140,6 +194,86 @@ export const LoginController = async (req: Request, res: Response) => {
       .status(HTTP_STATUS.INTERNAL_SERVER_ERROR)
       .json({ error: ERROR_MESSAGES.INTERNAL_SERVER_ERROR });
   }
+};
+
+export const RefreshTokenController = async (req: Request, res: Response) => {
+  if (req.method !== HTTP_METHODS.POST) {
+    return res.status(HTTP_STATUS.BAD_REQUEST).send(ERROR_MESSAGES.METHOD_NOT_ALLOWED);
+  }
+
+  try {
+    const rawRefresh = String(req.body?.refreshToken ?? "").trim();
+    if (!rawRefresh) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({ error: "Missing refreshToken" });
+    }
+
+    const refreshTokenHash = hashTokenSha256Hex(rawRefresh);
+    const session = await findUserSessionByRefreshTokenHash({ refreshTokenHash });
+    if (!session?.id || !session?.user_id) {
+      return res.status(HTTP_STATUS.FORBIDDEN).send(AUTH.INVALID_TOKEN);
+    }
+
+    if ((session as any).revoked_at) {
+      return res.status(HTTP_STATUS.FORBIDDEN).send(AUTH.INVALID_TOKEN);
+    }
+
+    const expiresAt: Date | null = (session as any).refresh_expires_at ?? null;
+    if (!expiresAt || new Date(expiresAt).valueOf() <= Date.now()) {
+      return res.status(HTTP_STATUS.FORBIDDEN).send(AUTH.INVALID_TOKEN);
+    }
+
+    const userId = String((session as any).user_id);
+    const user = await userRepository.findById(userId);
+    if (!user) {
+      return res.status(HTTP_STATUS.FORBIDDEN).send(AUTH.INVALID_TOKEN);
+    }
+
+    const signed = signAuthToken({ user, sid: String((session as any).id) });
+    const nextRefreshToken = randomBase64Url(Number(AUTH.REFRESH_TOKEN_BYTES) || 32);
+    const nextRefreshHash = hashTokenSha256Hex(nextRefreshToken);
+    const nextAccessHash = hashTokenSha256Hex(signed);
+
+    // Best-effort rotate; if it fails, treat as invalid to be safe.
+    const ok = await rotateUserSessionRefreshToken({
+      sessionId: String((session as any).id),
+      userId,
+      nextRefreshTokenHash: nextRefreshHash,
+      nextRefreshExpiresAt: refreshExpiresAtFromNow(),
+      nextTokenHash: nextAccessHash,
+    });
+
+    if (!ok) {
+      return res.status(HTTP_STATUS.FORBIDDEN).send(AUTH.INVALID_TOKEN);
+    }
+
+    return res.status(HTTP_STATUS.OK).json({
+      token: signed,
+      refreshToken: nextRefreshToken,
+      accessTokenExpiresAt: tokenExpiresAtIso(signed),
+      user,
+    });
+  } catch (error: unknown) {
+    console.error("Refresh token failed:", error);
+    return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ error: ERROR_MESSAGES.INTERNAL_SERVER_ERROR });
+  }
+};
+
+export const LogoutController = async (req: Request, res: Response) => {
+  if (req.method !== HTTP_METHODS.POST) {
+    return res.status(HTTP_STATUS.BAD_REQUEST).send(ERROR_MESSAGES.METHOD_NOT_ALLOWED);
+  }
+
+  try {
+    const userId = String(req.user?.id ?? "").trim();
+    const sessionId = String((req as any).authSessionId ?? "").trim();
+    if (userId && sessionId) {
+      await revokeUserSessionById({ sessionId, userId, reason: "logout" });
+    }
+  } catch {
+    // best-effort
+  }
+
+  return res.status(HTTP_STATUS.OK).json({ message: USER_MESSAGES.LOGOUT_SUCCESS });
 };
 
 export const ProtectedController = async (_req: Request, res: Response) => {
