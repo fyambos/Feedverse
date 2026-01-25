@@ -1580,20 +1580,44 @@ export default function ConversationThreadScreen() {
             ) : null}
 
             {showSending && isRight ? (
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginTop: 6 }}>
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 8,
+                  marginTop: 6,
+                  alignSelf: isRight ? "flex-end" : "flex-start",
+                }}
+              >
                 <ActivityIndicator size="small" color={colors.textSecondary} />
                 <ThemedText style={{ fontSize: 12, color: colors.textSecondary }}>Sending…</ThemedText>
               </View>
             ) : null}
 
             {showFailed ? (
-              <ThemedText style={{ marginTop: 6, fontSize: 12, color: scheme === "dark" ? "#FF7B7B" : "#D73A49" }}>
+              <ThemedText
+                style={{
+                  marginTop: 6,
+                  fontSize: 12,
+                  color: scheme === "dark" ? "#FF7B7B" : "#D73A49",
+                  alignSelf: isRight ? "flex-end" : "flex-start",
+                }}
+              >
                 Failed to send • tap to retry
               </ThemedText>
             ) : null}
 
             {showDelivered ? (
-              <ThemedText style={{ marginTop: 6, fontSize: 12, color: colors.textSecondary }}>Delivered</ThemedText>
+              <ThemedText
+                style={{
+                  marginTop: 6,
+                  fontSize: 12,
+                  color: colors.textSecondary,
+                  alignSelf: isRight ? "flex-end" : "flex-start",
+                }}
+              >
+                Delivered
+              </ThemedText>
             ) : null}
           </View>
         </View>
