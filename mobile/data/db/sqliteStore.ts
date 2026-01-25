@@ -200,6 +200,13 @@ function ensureSchemaSync(): void {
 		CREATE INDEX IF NOT EXISTS idx_seen_posts_scenario_post ON seen_posts (scenarioId, postId);
 	`);
 
+	// Best-effort: let SQLite update internal stats/plans.
+	try {
+		db.execSync("PRAGMA optimize;");
+	} catch {
+		// ignore
+	}
+
 	schemaInitSync = true;
 }
 
@@ -282,6 +289,12 @@ async function ensureSchemaAsync(): Promise<void> {
 
 			CREATE INDEX IF NOT EXISTS idx_seen_posts_scenario_post ON seen_posts (scenarioId, postId);
 		`);
+
+		try {
+			await db.execAsync("PRAGMA optimize;");
+		} catch {
+			// ignore
+		}
 	})();
 	return schemaInitAsync;
 }

@@ -15,7 +15,7 @@ import { useAppData } from "@/context/appData";
 import { useAuth } from "@/context/auth";
 
 import { Avatar } from "@/components/ui/Avatar";
-import { Post as PostCard } from "@/components/post/Post";
+import { MemoPost as PostCard } from "@/components/post/Post";
 
 import { Alert } from "@/context/dialog";
 import { formatErrorMessage } from "@/lib/utils/format";

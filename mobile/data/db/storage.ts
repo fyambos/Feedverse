@@ -166,6 +166,13 @@ async function ensureSqliteInit(): Promise<void> {
       );
       CREATE INDEX IF NOT EXISTS idx_message_images_msg ON message_images (messageId, idx);
     `);
+
+    // Best-effort: let SQLite update internal stats/plans.
+    try {
+      await db.execAsync("PRAGMA optimize;");
+    } catch {
+      // ignore
+    }
   })();
   return sqliteInitPromise;
 }

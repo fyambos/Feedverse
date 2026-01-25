@@ -10,7 +10,7 @@ import { ThemedView } from "@/components/themed-view";
 import { ThemedText } from "@/components/themed-text";
 import { Colors } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
-import { Post as PostCard } from "@/components/post/Post";
+import { MemoPost as PostCard } from "@/components/post/Post";
 
 import { SwipeableRow } from "@/components/ui/SwipeableRow";
 

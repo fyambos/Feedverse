@@ -42,10 +42,18 @@ import { ComposerToolbar } from "@/components/postComposer/ComposerToolbar";
 import { DiceRollOverlay } from "@/components/postComposer/DiceRollOverlay";
 
 import { RowCard } from "@/components/ui/RowCard";
-import { PostTypePicker } from "@/components/postComposer/PostTypePicker";
 import type { PostType } from "@/lib/campaign/postTypes";
+import type { SheetListItem } from "@/components/postComposer/UseSheetListPicker";
 
-import { UseSheetListPicker, type SheetListItem } from "@/components/postComposer/UseSheetListPicker";
+const LazyPostTypePicker = React.lazy(async () => {
+  const mod = await import("@/components/postComposer/PostTypePicker");
+  return { default: mod.PostTypePicker };
+});
+
+const LazyUseSheetListPicker = React.lazy(async () => {
+  const mod = await import("@/components/postComposer/UseSheetListPicker");
+  return { default: mod.UseSheetListPicker };
+});
 
 type Params = {
   scenarioId: string;
@@ -1149,55 +1157,63 @@ export default function CreatePostModal() {
               onPickVideoThumb={pickVideoThumb}
               leftTools={
                 isCampaign ? (
-                  <>
-                    <UseSheetListPicker
-                      colors={colors as any}
-                      title="use items"
-                      subtitle="pick what you’re using this post."
-                      items={inventory}
-                      disabled={!canUseItems}
-                      onConfirm={applyUsedItems}
-                      variant="icon"
-                      icon="🎒"
-                      accessibilityLabel="Use item"
-                    />
+                  <React.Suspense
+                    fallback={
+                      <View style={{ padding: 8 }}>
+                        <ActivityIndicator />
+                      </View>
+                    }
+                  >
+                    <>
+                      <LazyUseSheetListPicker
+                        colors={colors as any}
+                        title="use items"
+                        subtitle="pick what you’re using this post."
+                        items={inventory}
+                        disabled={!canUseItems}
+                        onConfirm={applyUsedItems}
+                        variant="icon"
+                        icon="🎒"
+                        accessibilityLabel="Use item"
+                      />
 
-                    <UseSheetListPicker
-                      colors={colors as any}
-                      title="use equipment"
-                      subtitle="pick what you’re using this post."
-                      items={equipment}
-                      disabled={!canUseEquipment}
-                      onConfirm={applyUsedEquipment}
-                      variant="icon"
-                      icon="🛡️"
-                      accessibilityLabel="Use equipment"
-                    />
+                      <LazyUseSheetListPicker
+                        colors={colors as any}
+                        title="use equipment"
+                        subtitle="pick what you’re using this post."
+                        items={equipment}
+                        disabled={!canUseEquipment}
+                        onConfirm={applyUsedEquipment}
+                        variant="icon"
+                        icon="🛡️"
+                        accessibilityLabel="Use equipment"
+                      />
 
-                    <UseSheetListPicker
-                      colors={colors as any}
-                      title="use spells"
-                      subtitle="pick what you’re using this post."
-                      items={spells}
-                      disabled={!canUseSpells}
-                      onConfirm={applyUsedSpells}
-                      variant="icon"
-                      icon="✨"
-                      accessibilityLabel="Use spells"
-                    />
+                      <LazyUseSheetListPicker
+                        colors={colors as any}
+                        title="use spells"
+                        subtitle="pick what you’re using this post."
+                        items={spells}
+                        disabled={!canUseSpells}
+                        onConfirm={applyUsedSpells}
+                        variant="icon"
+                        icon="✨"
+                        accessibilityLabel="Use spells"
+                      />
 
-                    <UseSheetListPicker
-                      colors={colors as any}
-                      title="use abilities"
-                      subtitle="pick what you’re using this post."
-                      items={abilities}
-                      disabled={!canUseAbilities}
-                      onConfirm={applyUsedAbilities}
-                      variant="icon"
-                      icon="🧠"
-                      accessibilityLabel="Use abilities"
-                    />
-                  </>
+                      <LazyUseSheetListPicker
+                        colors={colors as any}
+                        title="use abilities"
+                        subtitle="pick what you’re using this post."
+                        items={abilities}
+                        disabled={!canUseAbilities}
+                        onConfirm={applyUsedAbilities}
+                        variant="icon"
+                        icon="🧠"
+                        accessibilityLabel="Use abilities"
+                      />
+                    </>
+                  </React.Suspense>
                 ) : null
               }
             />
@@ -1206,14 +1222,16 @@ export default function CreatePostModal() {
             {isCampaign ? (
               <View style={{ marginLeft: 20, marginRight: 20, gap: 10 }}>
                 <RowCard label="Post type" colors={colors}>
-                  <PostTypePicker
-                    colors={colors}
-                    value={postType}
-                    onChange={(t) => {
-                      setPostType(t);
-                      setMeta(undefined);
-                    }}
-                  />
+                  <React.Suspense fallback={<ActivityIndicator />}>
+                    <LazyPostTypePicker
+                      colors={colors}
+                      value={postType}
+                      onChange={(t) => {
+                        setPostType(t);
+                        setMeta(undefined);
+                      }}
+                    />
+                  </React.Suspense>
                 </RowCard>
               </View>
             ) : null}

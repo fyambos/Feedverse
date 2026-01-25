@@ -26,7 +26,7 @@ import { ProfileTabsBar, type ProfileTab } from "@/components/profile/ProfileTab
 import { ProfilePostsList } from "@/components/profile/ProfilePostsList";
 import { ProfileStatusOverlay } from "@/components/profile/ProfileStatusOverlay";
 import { CreatePostFab } from "@/components/post/CreatePostFab";
-import { Post as PostCard } from "@/components/post/Post";
+import { MemoPost as PostCard } from "@/components/post/Post";
 import type { ProfileOverlayConfig, ProfileViewState } from "@/components/profile/profileTypes";
 import { formatErrorMessage } from "@/lib/utils/format";
 

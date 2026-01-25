@@ -11,7 +11,7 @@ import {
 } from "react-native";
 
 import { ThemedText } from "@/components/themed-text";
-import { Post as PostCard } from "@/components/post/Post";
+import { MemoPost as PostCard } from "@/components/post/Post";
 import { SwipeableRow } from "@/components/ui/SwipeableRow";
 
 import { router } from "expo-router";
