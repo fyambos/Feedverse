@@ -17,6 +17,8 @@
   - [Récupérer les scénarios d'un utilisateur](#récupérer-les-scénarios-dun-utilisateur)
   - [Supprimer un compte utilisateur](#supprimer-un-compte-utilisateur)
   - [Récupérer les scénarios d'un utilisateur spécifique](#récupérer-les-scénarios-dun-utilisateur-spécifique)
+  - [Récupérer plusieurs utilisateurs en batch](#récupérer-plusieurs-utilisateurs-en-batch)
+  - [Lister les sessions actives](#lister-les-sessions-actives)
 - [Endpoints scénarios](#endpoints-scénarios)
   - [Créer un scénario](#créer-un-scénario)
   - [Récupérer un scénario](#récupérer-un-scénario)
@@ -853,6 +855,358 @@ curl -X GET https://api.feedverse.com/v1/users/550e8400-e29b-41d4-a716-446655440
 | **Utilisateur ciblé** | Spécifié dans l'URL | Utilisateur connecté |
 | **Validation UUID** | Requise | Non (extrait du JWT) |
 | **Cas d'usage** | Voir les scénarios d'un autre utilisateur | Voir ses propres scénarios |
+
+---
+
+### Récupérer plusieurs utilisateurs en batch
+
+**Endpoint :** `GET /users?ids=uuid1,uuid2,uuid3`
+
+**Description :** Récupère les informations publiques de plusieurs utilisateurs en une seule requête. Cet endpoint optimise les performances en évitant les requêtes multiples pour charger plusieurs profils simultanément. Utile pour afficher des listes de participants, des mentions ou des auteurs de posts.
+
+**Authentification :** Requise
+
+#### Paramètres de requête
+
+| Paramètre | Type | Requis | Description |
+|-----------|------|--------|-------------|
+| `ids` | `string` | Oui | Liste d'identifiants UUID séparés par des virgules. Maximum 100 identifiants par requête. |
+
+**Format accepté :**
+
+- Query string : `?ids=uuid1,uuid2,uuid3`
+- Les espaces autour des virgules sont automatiquement supprimés
+
+#### Validation
+
+- Les identifiants doivent être des UUID valides au format v4
+- Minimum : 1 identifiant
+- Maximum : 100 identifiants par requête
+- Les identifiants invalides sont rejetés avec un message d'erreur explicite
+
+#### Réponse de succès
+
+**Code :** `200 OK`
+
+**Structure :**
+
+```json
+{
+  "message": "string",
+  "users": [
+    {
+      "id": "uuid",
+      "username": "string",
+      "name": "string",
+      "avatar_url": "string",
+      "created_at": "timestamp"
+    }
+  ],
+  "count": "integer",
+  "not_found": ["uuid"]
+}
+```
+
+**Champs de la réponse :**
+
+- `message` : Message de confirmation
+- `users` : Tableau des utilisateurs trouvés, trié par ordre alphabétique de `username`
+- `count` : Nombre d'utilisateurs retournés
+- `not_found` : (Optionnel) Liste des identifiants demandés mais non trouvés en base de données
+
+**Notes importantes :**
+
+- Seules les données **publiques** sont exposées (pas d'email, pas de password_hash)
+- Les utilisateurs supprimés (`is_deleted = true`) ne sont pas retournés
+- L'ordre des résultats est alphabétique par `username`, pas l'ordre des identifiants demandés
+
+#### Exemple de réponse
+
+```json
+{
+  "message": "Utilisateurs récupérés avec succès",
+  "users": [
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440000",
+      "username": "jiniret",
+      "name": "Hyunjin",
+      "avatar_url": "https://cdn.feedverse.com/avatars/550e8400.jpg",
+      "created_at": "2024-01-15T10:30:00Z"
+    },
+    {
+      "id": "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
+      "username": "leeknow",
+      "name": "Minho",
+      "avatar_url": "https://cdn.feedverse.com/avatars/6ba7b810.jpg",
+      "created_at": "2024-01-20T14:00:00Z"
+    }
+  ],
+  "count": 2,
+  "not_found": ["123e4567-e89b-12d3-a456-426614174999"]
+}
+```
+
+#### Exemple de code
+
+**JavaScript (Fetch API) :**
+
+```javascript
+const userIds = [
+  '550e8400-e29b-41d4-a716-446655440000',
+  '6ba7b810-9dad-11d1-80b4-00c04fd430c8',
+  '123e4567-e89b-12d3-a456-426614174999'
+];
+
+const queryString = userIds.join(',');
+
+const response = await fetch(
+  `https://api.feedverse.com/v1/users?ids=${queryString}`,
+  {
+    method: 'GET',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    }
+  }
+);
+
+const data = await response.json();
+console.log(`${data.count} utilisateurs trouvés`);
+console.log(`${data.not_found?.length || 0} utilisateurs non trouvés`);
+```
+
+**cURL :**
+
+```bash
+curl -X GET "https://api.feedverse.com/v1/users?ids=550e8400-e29b-41d4-a716-446655440000,6ba7b810-9dad-11d1-80b4-00c04fd430c8" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json"
+```
+
+#### Codes de statut
+
+| Code | Description |
+|------|-------------|
+| `200` | Succès - Utilisateurs récupérés |
+| `400` | Requête invalide - Paramètres incorrects ou identifiants invalides |
+| `401` | Non autorisé - Token invalide ou expiré |
+| `500` | Erreur serveur interne |
+
+#### Erreurs possibles
+
+**400 Bad Request - Paramètre manquant :**
+
+```json
+{
+  "message": "Erreur de validation",
+  "errors": [
+    {
+      "fields": "ids",
+      "message": "Le paramètre 'ids' est requis"
+    }
+  ]
+}
+```
+
+**400 Bad Request - Identifiants invalides :**
+
+```json
+{
+  "message": "Erreur de validation",
+  "errors": [
+    {
+      "fields": "ids",
+      "message": "Identifiants invalides: invalid-uuid-1, abc123"
+    }
+  ]
+}
+```
+
+**400 Bad Request - Trop d'identifiants :**
+
+```json
+{
+  "message": "Erreur de validation",
+  "errors": [
+    {
+      "fields": "ids",
+      "message": "Maximum 100 identifiants autorisés par requête"
+    }
+  ]
+}
+```
+
+**401 Unauthorized :**
+
+```json
+{
+  "message": "Token invalide ou expiré"
+}
+```
+
+---
+
+### Lister les sessions actives
+
+**Endpoint :** `GET /users/sessions`
+
+**Description :** Récupère la liste de toutes les sessions (connexions actives et révoquées) de l'utilisateur authentifié. Cet endpoint permet de visualiser les différents appareils et navigateurs connectés au compte, d'identifier la session actuelle, et de détecter les connexions suspectes.
+
+**Authentification :** Requise
+
+#### Paramètres de requête
+
+Aucun paramètre requis.
+
+#### Réponse de succès
+
+**Code :** `200 OK`
+
+**Structure :**
+
+```json
+{
+  "message": "string",
+  "sessions": [
+    {
+      "id": "uuid",
+      "user_agent": "string | null",
+      "ip": "string | null",
+      "created_at": "timestamp",
+      "last_seen_at": "timestamp",
+      "is_current": "boolean",
+      "is_revoked": "boolean"
+    }
+  ],
+  "count": "integer"
+}
+```
+
+**Champs de la réponse :**
+
+- `message` : Message de confirmation
+- `sessions` : Tableau des sessions, triées par `last_seen_at` décroissant (les plus récentes en premier)
+- `count` : Nombre total de sessions (actives + révoquées)
+
+**Champs d'une session :**
+
+- `id` : Identifiant unique de la session
+- `user_agent` : User-Agent du navigateur ou de l'application (peut être `null`)
+- `ip` : Adresse IP de connexion (peut être `null`)
+- `created_at` : Date de création de la session (première connexion)
+- `last_seen_at` : Dernière activité détectée sur cette session
+- `is_current` : **`true`** si c'est la session utilisée pour cette requête, **`false`** sinon
+- `is_revoked` : **`true`** si la session a été révoquée (déconnectée), **`false`** si active
+
+**Notes importantes :**
+
+- Le hash du token (SHA-256) n'est jamais exposé dans la réponse
+- Les sessions révoquées restent visibles dans l'historique
+- La session courante est identifiée via le token JWT utilisé dans le header `Authorization`
+
+#### Exemple de réponse
+
+```json
+{
+  "message": "Sessions récupérées avec succès",
+  "sessions": [
+    {
+      "id": "a1b2c3d4-e5f6-4a5b-8c9d-0e1f2a3b4c5d",
+      "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+      "ip": "192.168.1.100",
+      "created_at": "2024-01-20T08:00:00Z",
+      "last_seen_at": "2024-01-25T14:30:00Z",
+      "is_current": true,
+      "is_revoked": false
+    },
+    {
+      "id": "b2c3d4e5-f6a7-5b6c-9d0e-1f2a3b4c5d6e",
+      "user_agent": "Feedverse/1.0 (iPhone; iOS 17.2)",
+      "ip": "192.168.1.101",
+      "created_at": "2024-01-18T12:00:00Z",
+      "last_seen_at": "2024-01-24T22:00:00Z",
+      "is_current": false,
+      "is_revoked": false
+    },
+    {
+      "id": "c3d4e5f6-a7b8-6c7d-0e1f-2a3b4c5d6e7f",
+      "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0",
+      "ip": "203.0.113.45",
+      "created_at": "2024-01-10T15:30:00Z",
+      "last_seen_at": "2024-01-15T18:00:00Z",
+      "is_current": false,
+      "is_revoked": true
+    }
+  ],
+  "count": 3
+}
+```
+
+#### Exemple de code
+
+**JavaScript (Fetch API) :**
+
+```javascript
+const response = await fetch('https://api.feedverse.com/v1/users/sessions', {
+  method: 'GET',
+  headers: {
+    'Authorization': `Bearer ${token}`,
+    'Content-Type': 'application/json'
+  }
+});
+
+const data = await response.json();
+
+const activeSessions = data.sessions.filter(s => !s.is_revoked);
+const currentSession = data.sessions.find(s => s.is_current);
+
+console.log(`${activeSessions.length} sessions actives`);
+console.log(`Session actuelle : ${currentSession.user_agent}`);
+```
+
+**cURL :**
+
+```bash
+curl -X GET https://api.feedverse.com/v1/users/sessions \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json"
+```
+
+#### Codes de statut
+
+| Code | Description |
+|------|-------------|
+| `200` | Succès - Sessions récupérées |
+| `401` | Non autorisé - Token invalide ou expiré |
+| `500` | Erreur serveur interne |
+
+#### Erreurs possibles
+
+**401 Unauthorized :**
+
+```json
+{
+  "message": "Token invalide ou expiré"
+}
+```
+
+#### Cas d'usage
+
+**Affichage des appareils connectés :**
+
+Permet à l'utilisateur de voir tous les appareils où il est connecté (navigateur web, application mobile, tablette).
+
+**Détection de connexions suspectes :**
+
+L'utilisateur peut identifier des sessions avec des adresses IP ou User-Agents inhabituels.
+
+**Gestion de la sécurité :**
+
+Base pour implémenter une fonctionnalité de déconnexion des autres appareils (voir endpoint `POST /users/sessions/logout-others`).
+
+**Audit de sécurité :**
+
+Historique complet des connexions avec dates de création et dernière activité.
 
 ---
 
