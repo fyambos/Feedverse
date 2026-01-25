@@ -15,18 +15,29 @@ import { realtimeRouter } from "./realtime/realtimeRoutes";
 import { APP_CONFIG } from "./config/constants";
 import { ROUTES_AUTH, ROUTES_USERS } from "./config/constants";
 import { errorHandler, notFoundHandler } from "./middleware/errorMiddleware";
-import { requestContextMiddleware, requestLoggerMiddleware } from "./middleware/requestMiddleware";
+import { requestContextMiddleware } from "./middleware/requestMiddleware";
 import { createCorsMiddleware, createRateLimitMiddleware, helmetMiddleware } from "./middleware/securityMiddleware";
+import {
+  createHttpLogger,
+  initSentry,
+  sentryErrorHandler,
+  sentryRequestHandler,
+  sentryTracingHandler,
+  tagSentryContext,
+} from "./middleware/observabilityMiddleware";
+import { logger } from "./lib/logger";
 
 process.on("unhandledRejection", (reason) => {
-  console.error("Unhandled promise rejection", reason);
+  logger.error({ reason }, "Unhandled promise rejection");
 });
 
 process.on("uncaughtException", (err) => {
-  console.error("Uncaught exception", err);
+  logger.fatal({ err }, "Uncaught exception");
 });
 
 const app = express();
+
+initSentry();
 
 // If behind a proxy (Railway/Render/Nginx), set TRUST_PROXY=1 so rate limiting uses real client IPs.
 if (String(process.env.TRUST_PROXY ?? "").trim()) {
@@ -34,6 +45,11 @@ if (String(process.env.TRUST_PROXY ?? "").trim()) {
 }
 
 app.use(requestContextMiddleware);
+
+// Sentry request + performance tracing
+app.use(sentryRequestHandler);
+app.use(sentryTracingHandler);
+app.use(tagSentryContext());
 
 // Security middleware
 app.use(helmetMiddleware);
@@ -45,7 +61,8 @@ const bodyLimit = String(process.env.BODY_SIZE_LIMIT ?? "1mb");
 app.use(bodyParser.json({ limit: bodyLimit }));
 app.use(bodyParser.urlencoded({ extended: true, limit: bodyLimit }));
 
-app.use(requestLoggerMiddleware);
+// Structured request/response logging
+app.use(createHttpLogger());
 
 app.use(ROUTES_AUTH.BASE, authRouter);
 app.use(ROUTES_USERS.BASE, userRouter);
@@ -61,11 +78,14 @@ app.use(realtimeRouter);
 
 // Final handlers
 app.use(notFoundHandler);
+// Sentry error capture must run before our final error formatter.
+app.use(sentryErrorHandler);
 app.use(errorHandler);
 
 const AppStart = async () => {
-  console.log(
-    `L'application est lançée à l'adresse : ${APP_CONFIG.ENVIRONMENT}:${APP_CONFIG.SERVER_PORT}`,
+  logger.info(
+    { env: APP_CONFIG.ENVIRONMENT, port: APP_CONFIG.SERVER_PORT },
+    "Backend listening",
   );
 };
 
@@ -77,7 +97,7 @@ import websocketService from "./realtime/websocketService";
 try {
   websocketService.attachWebSocketServer(server as any);
 } catch (e) {
-  console.log("Failed to attach websocket server", e);
+  logger.warn({ err: e }, "Failed to attach websocket server");
 }
 
 export default app;

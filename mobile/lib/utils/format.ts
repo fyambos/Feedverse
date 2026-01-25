@@ -183,12 +183,27 @@ export function formatErrorMessage(e: unknown, fallback: string) {
 
     const raw = String(e).trim();
     if (!raw) return fallback;
+
+     // Rate limiting should be shown as a friendly UX hint.
+    if (/too\s+many\s+requests/i.test(raw)) {
+      return "Slow down — too many requests. Try again in a few seconds.";
+    }
     if (isProbablyTechnicalErrorMessage(raw)) return fallback;
     return raw;
   }
 
   if (typeof e === "object") {
     const anyE = e as any;
+
+    const status =
+      typeof anyE?.status === "number"
+        ? anyE.status
+        : typeof anyE?.response?.status === "number"
+          ? anyE.response.status
+          : null;
+    if (status === 429) {
+      return "Slow down — too many requests. Try again in a few seconds.";
+    }
 
     // Common shapes we use in the app
     const candidateStrings = [
@@ -205,6 +220,10 @@ export function formatErrorMessage(e: unknown, fallback: string) {
 
       const normalized = normalizePgUniqueConstraintMessage(trimmed);
       if (normalized) return normalized;
+
+      if (/too\s+many\s+requests/i.test(trimmed)) {
+        return "Slow down — too many requests. Try again in a few seconds.";
+      }
       if (isProbablyTechnicalErrorMessage(trimmed)) return fallback;
       return trimmed;
     }

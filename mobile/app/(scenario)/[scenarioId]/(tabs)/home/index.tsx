@@ -705,9 +705,17 @@ export default function HomeScreen() {
                 variant="feed"
                 showActions
                 isLiked={liked}
-                onLike={() => toggleLike(sid, postId)}
+                onLike={() => {
+                  void toggleLike(sid, postId).catch((e: unknown) => {
+                    Alert.alert("Could not like", formatErrorMessage(e, "Please try again."));
+                  });
+                }}
                 isReposted={reposted}
-                onRepost={() => toggleRepost(sid, postId)}
+                onRepost={() => {
+                  void toggleRepost(sid, postId).catch((e: unknown) => {
+                    Alert.alert("Could not repost", formatErrorMessage(e, "Please try again."));
+                  });
+                }}
               />
             </Pressable>
           );

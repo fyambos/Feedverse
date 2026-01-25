@@ -61,27 +61,3 @@ export const requestContextMiddleware: RequestHandler = (req, res, next) => {
 
   next();
 };
-
-export const requestLoggerMiddleware: RequestHandler = (req, res, next) => {
-  const start = process.hrtime.bigint();
-
-  res.on("finish", () => {
-    const durationMs = Number(process.hrtime.bigint() - start) / 1_000_000;
-
-    // eslint-disable-next-line no-console
-    console.log(
-      JSON.stringify({
-        level: "info",
-        ts: new Date().toISOString(),
-        requestId: req.requestId ?? null,
-        method: req.method,
-        path: req.originalUrl,
-        status: res.statusCode,
-        durationMs: Math.round(durationMs * 100) / 100,
-        userId: (req as any)?.user?.id ?? null,
-      }),
-    );
-  });
-
-  next();
-};

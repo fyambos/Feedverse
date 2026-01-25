@@ -1,5 +1,6 @@
 import type { ErrorRequestHandler, RequestHandler } from "express";
 import { ERROR_MESSAGES, HTTP_STATUS } from "../config/constants";
+import { logger } from "../lib/logger";
 
 function isPgLikeError(err: unknown): err is { code?: unknown } {
   return (
@@ -49,13 +50,7 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, next) => {
   }
 
   // Log the full error server-side; never leak raw details to clients.
-  // eslint-disable-next-line no-console
-  console.error("Unhandled error", {
-    method: req.method,
-    path: req.originalUrl,
-    status,
-    err,
-  });
+  logger.error({ err, method: req.method, path: req.originalUrl, status, requestId: req.requestId ?? null }, "Unhandled error");
 
   res.status(status).json({
     error: errorMessage,

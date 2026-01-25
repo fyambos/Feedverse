@@ -329,9 +329,17 @@ export default function PostScreen() {
                   showThreadLine={showThreadLine}
                   highlighted={String(itemId) === String(highlightPostId)}
                   isLiked={liked}
-                  onLike={() => toggleLike(sid, itemId)}
+                  onLike={() => {
+                    void toggleLike(sid, itemId).catch((e: unknown) => {
+                      Alert.alert("Could not like", formatErrorMessage(e, "Please try again."));
+                    });
+                  }}
                   isReposted={reposted}
-                  onRepost={() => toggleRepost(sid, itemId)}
+                  onRepost={() => {
+                    void toggleRepost(sid, itemId).catch((e: unknown) => {
+                      Alert.alert("Could not repost", formatErrorMessage(e, "Please try again."));
+                    });
+                  }}
                   onShare={onShare}
                 />
               );
