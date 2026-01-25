@@ -219,6 +219,11 @@ async function ensureSchemaAsync(): Promise<void> {
 		} catch {
 			// ignore
 		}
+		try {
+			await db.execAsync("PRAGMA busy_timeout = 5000;");
+		} catch {
+			// ignore
+		}
 		await db.execAsync(`
 			CREATE TABLE IF NOT EXISTS kv (
 				key TEXT PRIMARY KEY NOT NULL,

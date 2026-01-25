@@ -35,6 +35,13 @@ async function ensureSqliteInit(): Promise<void> {
       // ignore
     }
 
+    // Avoid transient SQLITE_BUSY errors during short write bursts.
+    try {
+      await db.execAsync("PRAGMA busy_timeout = 5000;");
+    } catch {
+      // ignore
+    }
+
     await db.execAsync(
       `CREATE TABLE IF NOT EXISTS ${SQLITE_TABLE} (
         key TEXT PRIMARY KEY NOT NULL,
@@ -812,6 +819,28 @@ let cacheLoaded = false;
 let flushTimer: any = null;
 let flushInFlight: Promise<void> | null = null;
 
+function isSqliteLockedError(e: unknown): boolean {
+  const msg = String((e as any)?.message ?? e ?? "").toLowerCase();
+  return msg.includes("database is locked") || msg.includes("sqlite_busy") || msg.includes("sqlite_locked");
+}
+
+async function withSqliteRetry<T>(op: () => Promise<T>, retries = 3): Promise<T> {
+  let attempt = 0;
+  // small bounded backoff: 50ms, 120ms, 250ms
+  const delays = [50, 120, 250];
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    try {
+      return await op();
+    } catch (e) {
+      if (!isSqliteLockedError(e) || attempt >= retries) throw e;
+      const delay = delays[Math.min(attempt, delays.length - 1)];
+      attempt++;
+      await new Promise<void>((r) => setTimeout(r, delay));
+    }
+  }
+}
+
 function scheduleFlush() {
   if (!cacheLoaded || !cachedDb) return;
 
@@ -830,9 +859,15 @@ function scheduleFlush() {
       });
 
       // Persist core collections into real tables first, then write the stripped KV snapshot.
-      await persistCoreTablesFromDbSnapshot(snapshot);
-      await sqliteSet(DB_KEY, JSON.stringify(stripFeedCollectionsForKv(snapshot)));
-    }).finally(() => {
+      // Retry on transient SQLITE_BUSY/locked errors.
+      await withSqliteRetry(async () => {
+        await persistCoreTablesFromDbSnapshot(snapshot);
+        await sqliteSet(DB_KEY, JSON.stringify(stripFeedCollectionsForKv(snapshot)));
+      });
+    })
+      // Never surface async flush errors as unhandled promise rejections.
+      .catch(() => {})
+      .finally(() => {
       flushInFlight = null;
     });
   }, 800);

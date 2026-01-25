@@ -257,10 +257,16 @@ export default function ConversationThreadScreen() {
   const [ownedOpen, setOwnedOpen] = useState(true);
   const [publicOpen, setPublicOpen] = useState(false);
 
-  const sendingRef = useRef(false);
-  const [sending, setSending] = useState(false);
-
   const deleteMessageRef = useRef(false);
+
+  const pendingSendRef = useRef<{
+    scenarioId: string;
+    conversationId: string;
+    senderProfileId: string;
+    text: string;
+    imageUris: string[];
+  } | null>(null);
+  const didLongPressSendRef = useRef(false);
 
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxUrls, setLightboxUrls] = useState<string[]>([]);
@@ -1280,46 +1286,50 @@ export default function ConversationThreadScreen() {
     [closePicker]
   );
 
-  const onSend = useCallback(() => {
+  const stageSendAndClear = useCallback(() => {
     if (!sid || !cid) return;
     if (!sendAsId) return;
+    if (!sendAsAllowedIds.has(String(sendAsId))) return;
 
     const body = String(text ?? "").trim();
     const imgs = Array.isArray(imageUris) ? imageUris.map(String).filter(Boolean) : [];
     if (!body && imgs.length === 0) return;
 
-    // Keep the draft stable during send (composer clears immediately).
-    if (activeDraftKey) {
-      draftPausedRef.current = true;
-      const payload: MessageDraftV1 = {
-        version: 1,
-        scenarioId: sid,
-        conversationId: cid,
-        text: body,
-        imageUris: imgs,
-        sendAsId: String(sendAsId),
-        savedAt: new Date().toISOString(),
-      };
-      void saveDraft(activeDraftKey, payload).catch(() => {});
-    }
-
-    if (sendingRef.current) return;
-    sendingRef.current = true;
-    setSending(true);
+    pendingSendRef.current = {
+      scenarioId: sid,
+      conversationId: cid,
+      senderProfileId: String(sendAsId),
+      text: body,
+      imageUris: imgs,
+    };
 
     bumpSendBtn();
-    // Clear composer immediately so send feels instant.
+    // Clear composer as soon as the user presses the button.
     setText("");
     setImageUris([]);
-    try { scrollToBottom(true); } catch {}
+    try {
+      scrollToBottom(true);
+    } catch {}
+    draftPausedRef.current = false;
+  }, [sid, cid, sendAsId, sendAsAllowedIds, text, imageUris, bumpSendBtn, scrollToBottom]);
+
+  const flushPendingSend = useCallback(() => {
+    if (didLongPressSendRef.current) {
+      didLongPressSendRef.current = false;
+      return;
+    }
+
+    const payload = pendingSendRef.current;
+    pendingSendRef.current = null;
+    if (!payload) return;
 
     const p = Promise.resolve(
       sendMessage?.({
-        scenarioId: sid,
-        conversationId: cid,
-        senderProfileId: String(sendAsId),
-        text: body,
-        imageUris: imgs,
+        scenarioId: payload.scenarioId,
+        conversationId: payload.conversationId,
+        senderProfileId: payload.senderProfileId,
+        text: payload.text,
+        imageUris: payload.imageUris,
       })
     );
 
@@ -1371,43 +1381,15 @@ export default function ConversationThreadScreen() {
           return;
         }
 
-        const msg = String((res as any)?.error ?? "Send failed");
-        Alert.alert("Could not send", msg);
-
-        // Restore the draft if we cleared the composer and send failed.
-        if (activeDraftKey) {
-          try {
-            if (String(text ?? "").trim().length === 0 && (imageUris?.length ?? 0) === 0) {
-              setText(body);
-              setImageUris(imgs);
-            }
-          } catch {}
-        }
-
         // If user accidentally picked/toggled to an invalid sender, snap back to the selected profile.
         if (selectedProfileId && String(sendAsId) !== String(selectedProfileId)) {
           setSendAsId(String(selectedProfileId));
         }
       })
-      .catch((e) => {
-        Alert.alert("Could not send", formatErrorMessage(e, "Send failed"));
-
-        // Restore the draft on exception too.
-        if (activeDraftKey) {
-          try {
-            if (String(text ?? "").trim().length === 0 && (imageUris?.length ?? 0) === 0) {
-              setText(body);
-              setImageUris(imgs);
-            }
-          } catch {}
-        }
-      })
-      .finally(() => {
-        sendingRef.current = false;
-        setSending(false);
-        draftPausedRef.current = false;
+      .catch(() => {
+        // sendMessage marks the message failed; UI shows tap-to-retry.
       });
-  }, [sid, cid, sendAsId, text, imageUris, sendMessage, selectedProfileId, scrollToBottom, bumpSendBtn, activeDraftKey, autosaveDraftKey]);
+  }, [sendMessage, activeDraftKey, autosaveDraftKey, selectedProfileId, sendAsId]);
 
   const onPickImages = useCallback(async () => {
     const remaining = Math.max(0, 4 - (imageUris?.length ?? 0));
@@ -1454,6 +1436,22 @@ export default function ConversationThreadScreen() {
     [sid, cid, sendMessage, sendAsId, selectedProfileId]
   );
 
+  const lastMineMessageId = useMemo(() => {
+    const mineId = String(selectedProfileId ?? "").trim();
+    if (!mineId) return "";
+    const list = reorderMode ? reorderDraft ?? messages : visibleMessages;
+    for (let i = (list?.length ?? 0) - 1; i >= 0; i--) {
+      const m = list[i] as any;
+      const kind = String(m?.kind ?? "text").trim();
+      if (kind === "separator") continue;
+      const senderId = String(m?.senderProfileId ?? "").trim();
+      if (senderId !== mineId) continue;
+      const id = String(m?.id ?? "").trim();
+      if (id) return id;
+    }
+    return "";
+  }, [selectedProfileId, reorderMode, reorderDraft, messages, visibleMessages]);
+
   const renderBubbleRow = (
     item: Message,
     opts?: {
@@ -1475,6 +1473,18 @@ export default function ConversationThreadScreen() {
 
     const clientStatus = String((item as any).clientStatus ?? "").trim();
     const canRetry = clientStatus === "failed";
+    const showSending = clientStatus === "sending";
+    const showFailed = clientStatus === "failed";
+    const isLastMine = isRight && String((item as any).id ?? "") === lastMineMessageId;
+    const hasClientMessageId = Boolean(
+      String((item as any).clientMessageId ?? (item as any).client_message_id ?? "").trim()
+    );
+    const showDelivered =
+      isLastMine &&
+      hasClientMessageId &&
+      !showSending &&
+      !showFailed &&
+      !String((item as any).id ?? "").startsWith("client_");
 
     const canSwipeEdit = !reorderMode && editAllowedIds.has(senderId);
 
@@ -1625,10 +1635,21 @@ export default function ConversationThreadScreen() {
               </View>
             ) : null}
 
-            {clientStatus === "failed" ? (
+            {showSending && isRight ? (
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginTop: 6 }}>
+                <ActivityIndicator size="small" color={colors.textSecondary} />
+                <ThemedText style={{ fontSize: 12, color: colors.textSecondary }}>Sending…</ThemedText>
+              </View>
+            ) : null}
+
+            {showFailed ? (
               <ThemedText style={{ marginTop: 6, fontSize: 12, color: scheme === "dark" ? "#FF7B7B" : "#D73A49" }}>
                 Failed to send • tap to retry
               </ThemedText>
+            ) : null}
+
+            {showDelivered ? (
+              <ThemedText style={{ marginTop: 6, fontSize: 12, color: colors.textSecondary }}>Delivered</ThemedText>
             ) : null}
           </View>
         </View>
@@ -1916,9 +1937,9 @@ export default function ConversationThreadScreen() {
 
             <Animated.View style={{ transform: [{ scale: sendBtnScale }] }}>
               <Pressable
-                onPress={onSend}
+                onPressIn={stageSendAndClear}
+                onPress={flushPendingSend}
                 disabled={
-                  sending ||
                   !sendAsId ||
                   (!String(text ?? "").trim() && (imageUris?.length ?? 0) === 0) ||
                   !sendAsAllowedIds.has(String(sendAsId))
@@ -1928,7 +1949,6 @@ export default function ConversationThreadScreen() {
                   {
                     backgroundColor: colors.tint,
                     opacity:
-                      sending ||
                       !sendAsId ||
                       (!String(text ?? "").trim() && (imageUris?.length ?? 0) === 0) ||
                       !sendAsAllowedIds.has(String(sendAsId))
@@ -1940,20 +1960,21 @@ export default function ConversationThreadScreen() {
                 ]}
                 onLongPress={async () => {
                 // long-press send: if there is text, send as a centered small 'separator' message
-                const body = String(text ?? "").trim();
+                didLongPressSendRef.current = true;
+                const staged = pendingSendRef.current;
+                pendingSendRef.current = null;
+
+                const body = String(staged?.text ?? text ?? "").trim();
                 if (!sendAsId || !sendAsAllowedIds.has(String(sendAsId))) return;
                 if (!body) {
                   Alert.alert("Separator text required", "Type separator text then long-press send to create it.");
                   return;
                 }
 
-                if (sendingRef.current) return;
-                sendingRef.current = true;
-                setSending(true);
-
                 bumpSendBtn();
-                // Clear message box immediately (keep attachments).
+                // Already cleared onPressIn; keep attachments cleared too.
                 setText("");
+                setImageUris([]);
                 try { scrollToBottom(true); } catch {}
 
                 let res: any;
@@ -1969,9 +1990,6 @@ export default function ConversationThreadScreen() {
                 } catch (e) {
                   Alert.alert("Could not send", formatErrorMessage(e, "Send failed"));
                   return;
-                } finally {
-                  sendingRef.current = false;
-                  setSending(false);
                 }
 
                 const isSuccess = !!(res && (res.ok === true || (res as any).messageId || (res as any).message));
@@ -1984,11 +2002,7 @@ export default function ConversationThreadScreen() {
                 accessibilityRole="button"
                 accessibilityLabel="Send"
               >
-                {sending ? (
-                  <ActivityIndicator size="small" color={colors.background} />
-                ) : (
-                  <Ionicons name="arrow-up" size={18} color={colors.background} />
-                )}
+                <Ionicons name="arrow-up" size={18} color={colors.background} />
               </Pressable>
             </Animated.View>
           </View>
