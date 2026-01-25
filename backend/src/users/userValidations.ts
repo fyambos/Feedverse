@@ -69,3 +69,64 @@ export const validateSettings = (
 
   return null;
 };
+
+export const validateUUIDs = (
+  ids: string[],
+): { valid: string[]; invalid: string[] } => {
+  const uuidRegex =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+  const valid: string[] = [];
+  const invalid: string[] = [];
+
+  ids.forEach((id) => {
+    if (uuidRegex.test(id)) {
+      valid.push(id);
+    } else {
+      invalid.push(id);
+    }
+  });
+
+  return { valid, invalid };
+};
+
+export const validateBatchUsersQuery = (
+  queryIds: string | string[] | undefined,
+): ValidationError | null => {
+  if (!queryIds) {
+    return {
+      fields: "ids",
+      message: "Le paramètre 'ids' est requis",
+    };
+  }
+
+  const idsArray = Array.isArray(queryIds)
+    ? queryIds
+    : queryIds.split(",").map((id) => id.trim());
+
+  if (idsArray.length === 0) {
+    return {
+      fields: "ids",
+      message: "Au moins un identifiant est requis",
+    };
+  }
+
+  const MAX_IDS = 100;
+  if (idsArray.length > MAX_IDS) {
+    return {
+      fields: "ids",
+      message: `Maximum ${MAX_IDS} identifiants autorisés par requête`,
+    };
+  }
+
+  const { invalid } = validateUUIDs(idsArray);
+
+  if (invalid.length > 0) {
+    return {
+      fields: "ids",
+      message: `Identifiants invalides: ${invalid.join(", ")}`,
+    };
+  }
+
+  return null;
+};

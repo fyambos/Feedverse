@@ -93,6 +93,8 @@ export const USER_MESSAGES = {
   UNAUTHORIZED: "Votre email Google n'est pas vérifié",
   SCENARIOS_FETCH_SUCCESS: "Scénarios récupérés avec succès",
   ALREADY_DELETED: "Ce compte a déjà été supprimé",
+  BATCH_FETCH_SUCCESS: "Utilisateurs récupérés avec succès",
+  SESSIONS_FETCH_SUCCESS: "Sessions récupérées avec succès",
 } as const;
 
 // ============================================================================
@@ -187,6 +189,7 @@ export const ERROR_MESSAGES = {
   INVALID_SESSION: "État de session invalide (protection CSRF)",
   INVALID_CODE: "Code d'autorisation manquant",
   EXCHANGE_CODE_FAILED: "Échec de l'échange du code d'autorisation",
+  VALIDATION_ERROR: "Erreur de validation",
 } as const;
 
 // ============================================================================
@@ -214,6 +217,7 @@ export const ROUTES_USERS = {
   SETTINGS: "/settings",
   SCENARIOS: "/scenarios",
   USER_ID: "/:userId",
+  SESSIONS: "/sessions",
 } as const;
 
 export const ASSETS = {

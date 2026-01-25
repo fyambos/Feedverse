@@ -2,7 +2,14 @@ import { CreateUserData } from "../auth/authModels";
 import { r2Service } from "../config/cloudflare/r2Service";
 import { APP_CONFIG } from "../config/constants";
 import { pool } from "../config/database";
-import { UpdateUserData, User, UserScenario, UserSettings } from "./userModels";
+import {
+  UpdateUserData,
+  User,
+  UserScenario,
+  UserSettings,
+  PublicUser,
+  UserSession,
+} from "./userModels";
 
 export class UserRepository {
   async findById(id: string): Promise<User | null> {
@@ -14,6 +21,75 @@ export class UserRepository {
   async findByEmail(email: string): Promise<User | null> {
     const query = "SELECT * FROM users WHERE email = $1 AND is_deleted = false";
     const result = await pool.query(query, [email]);
+    return result.rows[0] || null;
+  }
+
+  async findByIds(ids: string[]): Promise<PublicUser[]> {
+    if (ids.length === 0) {
+      return [];
+    }
+
+    const query = `
+      SELECT 
+        id,
+        username,
+        name,
+        avatar_url,
+        created_at
+      FROM users
+      WHERE id = ANY($1::uuid[])
+        AND is_deleted = false
+      ORDER BY username ASC
+    `;
+
+    const result = await pool.query(query, [ids]);
+    return result.rows;
+  }
+
+  async findMissingIds(
+    requestedIds: string[],
+    foundUsers: PublicUser[],
+  ): Promise<string[]> {
+    const foundIds = new Set(foundUsers.map((user) => user.id));
+    return requestedIds.filter((id) => !foundIds.has(id));
+  }
+
+  async findSessionsByUserId(userId: string): Promise<UserSession[]> {
+    const query = `
+      SELECT 
+        id,
+        user_id,
+        user_agent,
+        ip,
+        created_at,
+        last_seen_at,
+        revoked_at,
+        revoked_reason
+      FROM user_sessions
+      WHERE user_id = $1
+      ORDER BY last_seen_at DESC, id DESC
+    `;
+
+    const result = await pool.query(query, [userId]);
+    return result.rows;
+  }
+
+  async findSessionByTokenHash(tokenHash: string): Promise<UserSession | null> {
+    const query = `
+      SELECT 
+        id,
+        user_id,
+        user_agent,
+        ip,
+        created_at,
+        last_seen_at,
+        revoked_at,
+        revoked_reason
+      FROM user_sessions
+      WHERE token_hash = $1
+    `;
+
+    const result = await pool.query(query, [tokenHash]);
     return result.rows[0] || null;
   }
 

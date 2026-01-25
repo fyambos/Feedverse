@@ -58,3 +58,47 @@ export interface UpdateUserResponse {
   message: string;
   user: User;
 }
+
+export interface BatchUsersQuery {
+  ids: string[];
+}
+
+export interface PublicUser {
+  id: string;
+  username: string;
+  name: string;
+  avatar_url: string;
+  created_at: Date;
+}
+
+export interface GetBatchUsersResponse {
+  users: PublicUser[];
+  count: number;
+  not_found?: string[];
+}
+
+export interface UserSession {
+  id: string;
+  user_id: string;
+  user_agent: string | null;
+  ip: string | null;
+  created_at: Date;
+  last_seen_at: Date;
+  revoked_at: Date | null;
+  revoked_reason: string | null;
+}
+
+export interface PublicSession {
+  id: string;
+  user_agent: string | null;
+  ip: string | null;
+  created_at: Date;
+  last_seen_at: Date;
+  is_current: boolean;
+  is_revoked: boolean;
+}
+
+export interface GetUserSessionsResponse {
+  sessions: PublicSession[];
+  count: number;
+}

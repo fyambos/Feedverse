@@ -1,13 +1,22 @@
 import { UserRepository } from "./userRepositories";
 import {
+  GetBatchUsersResponse,
   GetUserScenariosResponse,
+  GetUserSessionsResponse,
+  PublicSession,
   UpdateUserData,
   UpdateUserRequest,
   UpdateUserResponse,
 } from "./userModels";
 import { ValidationError } from "../utils/models";
 import { USER_MESSAGES, VALIDATION } from "../config/constants";
-import { validateUsername, validateSettings } from "./userValidations";
+import {
+  validateUsername,
+  validateSettings,
+  validateBatchUsersQuery,
+  validateUUIDs,
+} from "./userValidations";
+import { createHash } from "crypto";
 
 const userRepository = new UserRepository();
 
@@ -194,5 +203,84 @@ export const GetUserScenariosByUserIdService = async (
       scenarios,
       count: scenarios.length,
     },
+  };
+};
+
+export const GetBatchUsersService = async (
+  queryIds: string | string[] | undefined,
+): Promise<{
+  data?: GetBatchUsersResponse;
+  errors?: ValidationError[];
+}> => {
+  const validationError = validateBatchUsersQuery(queryIds);
+  if (validationError) {
+    return { errors: [validationError] };
+  }
+
+  const idsArray = Array.isArray(queryIds)
+    ? queryIds
+    : (queryIds as string).split(",").map((id) => id.trim());
+
+  const { valid: validIds, invalid: invalidIds } = validateUUIDs(idsArray);
+
+  if (invalidIds.length > 0) {
+    return {
+      errors: [
+        {
+          fields: "ids",
+          message: `Identifiants invalides: ${invalidIds.join(", ")}`,
+        },
+      ],
+    };
+  }
+
+  const users = await userRepository.findByIds(validIds);
+
+  const notFound = await userRepository.findMissingIds(validIds, users);
+
+  return {
+    data: {
+      users,
+      count: users.length,
+      ...(notFound.length > 0 && { not_found: notFound }),
+    },
+  };
+};
+
+export const GetUserSessionsService = async (
+  userId: string,
+  currentToken: string,
+): Promise<GetUserSessionsResponse> => {
+  const sessions = await userRepository.findSessionsByUserId(userId);
+
+  const currentTokenHash = createHash("sha256")
+    .update(currentToken)
+    .digest("hex");
+
+  const publicSessions: PublicSession[] = sessions.map((session) => ({
+    id: session.id,
+    user_agent: session.user_agent,
+    ip: session.ip,
+    created_at: session.created_at,
+    last_seen_at: session.last_seen_at,
+    is_current: false,
+    is_revoked: session.revoked_at !== null,
+  }));
+
+  const currentSession =
+    await userRepository.findSessionByTokenHash(currentTokenHash);
+
+  if (currentSession) {
+    const currentSessionIndex = publicSessions.findIndex(
+      (s) => s.id === currentSession.id,
+    );
+    if (currentSessionIndex !== -1) {
+      publicSessions[currentSessionIndex].is_current = true;
+    }
+  }
+
+  return {
+    sessions: publicSessions,
+    count: publicSessions.length,
   };
 };

@@ -7,6 +7,8 @@ import {
   DeleteUserController,
   UpdateUserController,
   GetUserScenariosByUserIdController,
+  GetBatchUsersController,
+  GetUserSessionsController,
 } from "./userControllers";
 import { authMiddleware } from "../auth/authMiddleware";
 import { ROUTES_USERS } from "../config/constants";
@@ -23,6 +25,12 @@ userRouter.get(
   ROUTES_USERS.USER_ID + ROUTES_USERS.SCENARIOS,
   authMiddleware,
   GetUserScenariosByUserIdController,
+);
+userRouter.get(ROUTES_USERS.BASE, authMiddleware, GetBatchUsersController);
+userRouter.get(
+  ROUTES_USERS.SESSIONS,
+  authMiddleware,
+  GetUserSessionsController,
 );
 
 export default userRouter;

@@ -9,8 +9,10 @@ import {
 } from "../config/constants";
 import {
   DeleteUserService,
+  GetBatchUsersService,
   GetUserScenariosByUserIdService,
   GetUserScenariosService,
+  GetUserSessionsService,
   UpdateUserService,
 } from "./userServices";
 import { upload } from "../config/multer";
@@ -209,5 +211,104 @@ export const GetUserScenariosByUserIdController = async (
     res
       .status(HTTP_STATUS.INTERNAL_SERVER_ERROR)
       .json({ error: ERROR_MESSAGES.INTERNAL_SERVER_ERROR });
+  }
+};
+
+export const GetBatchUsersController = async (req: Request, res: Response) => {
+  if (req.method !== HTTP_METHODS.GET) {
+    return res
+      .status(HTTP_STATUS.BAD_REQUEST)
+      .send(ERROR_MESSAGES.METHOD_NOT_ALLOWED);
+  }
+
+  try {
+    const idsQuery = req.query.ids;
+
+    let ids: string | string[] | undefined;
+    if (Array.isArray(idsQuery)) {
+      ids = idsQuery as string[];
+    } else if (typeof idsQuery === "string") {
+      ids = idsQuery;
+    } else {
+      ids = undefined;
+    }
+
+    if (!ids) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        message: ERROR_MESSAGES.VALIDATION_ERROR,
+        errors: [
+          {
+            fields: "ids",
+            message: "Paramètre 'ids' manquant ou invalide",
+          },
+        ],
+      });
+    }
+
+    const result = await GetBatchUsersService(ids);
+
+    if (result.errors) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        message: ERROR_MESSAGES.VALIDATION_ERROR,
+        errors: result.errors,
+      });
+    }
+
+    res.status(HTTP_STATUS.OK).json({
+      message: USER_MESSAGES.BATCH_FETCH_SUCCESS,
+      users: result.data?.users,
+      count: result.data?.count,
+      ...(result.data?.not_found &&
+        result.data.not_found.length > 0 && {
+          not_found: result.data.not_found,
+        }),
+    });
+  } catch (error: unknown) {
+    console.error(
+      "Erreur lors de la récupération batch des utilisateurs:",
+      error,
+    );
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      message: ERROR_MESSAGES.INTERNAL_SERVER_ERROR,
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
+};
+
+export const GetUserSessionsController = async (
+  req: Request,
+  res: Response,
+) => {
+  if (req.method !== HTTP_METHODS.GET) {
+    return res
+      .status(HTTP_STATUS.BAD_REQUEST)
+      .send(ERROR_MESSAGES.METHOD_NOT_ALLOWED);
+  }
+
+  try {
+    const userId = req.user.id;
+
+    const authHeader = req.headers[AUTH.HEADER_NAME.toLowerCase()];
+    if (!authHeader || typeof authHeader !== "string") {
+      return res.status(HTTP_STATUS.UNAUTHORIZED).json({
+        message: AUTH.MISSING_TOKEN,
+      });
+    }
+
+    const token = authHeader.replace(AUTH.BEARER_PREFIX, "");
+
+    const result = await GetUserSessionsService(userId, token);
+
+    res.status(HTTP_STATUS.OK).json({
+      message: USER_MESSAGES.SESSIONS_FETCH_SUCCESS,
+      sessions: result.sessions,
+      count: result.count,
+    });
+  } catch (error: unknown) {
+    console.error("Erreur lors de la récupération des sessions:", error);
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      message: ERROR_MESSAGES.INTERNAL_SERVER_ERROR,
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
   }
 };
