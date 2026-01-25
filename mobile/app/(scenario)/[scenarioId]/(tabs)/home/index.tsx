@@ -175,6 +175,24 @@ export default function HomeScreen() {
           } as any);
         },
       },
+      {
+        text: "Notification settings",
+        onPress: () => {
+          router.push(`/(scenario)/${sid}/notifications-settings` as any);
+        },
+      },
+      {
+        text: "Mute all notifications",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await app?.updateScenarioNotificationPrefs?.(sid, { muteAll: true });
+            Alert.alert("Muted", "All notifications for this scenario are now off.");
+          } catch (e: any) {
+            Alert.alert("Mute failed", formatErrorMessage(e, "Could not mute notifications"));
+          }
+        },
+      },
       { text: "Export…", onPress: exportThisScenario },
       {
         text: "Back to home",
