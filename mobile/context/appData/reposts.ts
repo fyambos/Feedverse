@@ -1,0 +1,364 @@
+import type { Dispatch, SetStateAction } from "react";
+import type { DbV5, Repost } from "@/data/db/schema";
+import { updateDb } from "@/data/db/storage";
+import { apiFetch } from "@/lib/api/apiClient";
+import { upsertPostsAsync, upsertRepostsAsync, deleteRepostAsync } from "@/data/db/sqliteStore";
+
+type AuthLike = {
+  token?: string | null;
+};
+
+type Deps = {
+  getDb: () => DbV5 | null;
+  setState: Dispatch<SetStateAction<any>>;
+  auth: AuthLike;
+};
+
+export function createRepostsApi(deps: Deps) {
+  const getRepostEventForProfile = (profileId: string, postId: string): Repost | null => {
+    const db = deps.getDb();
+    if (!db) return null;
+    const id = `${String(profileId)}|${String(postId)}`;
+    return (db as any).reposts?.[id] ?? null;
+  };
+
+  const isPostRepostedByProfileId = (profileId: string, postId: string): boolean => {
+    const db = deps.getDb();
+    if (!db) return false;
+    const id = `${String(profileId)}|${String(postId)}`;
+    return !!(db as any).reposts?.[id];
+  };
+
+  const isPostRepostedBySelectedProfile = (scenarioId: string, postId: string): boolean => {
+    const db = deps.getDb();
+    if (!db) return false;
+    const sel = (db as any).selectedProfileByScenario?.[String(scenarioId)];
+    if (!sel) return false;
+    const id = `${String(sel)}|${String(postId)}`;
+    return !!(db as any).reposts?.[id];
+  };
+
+  const toggleRepost = async (scenarioId: string, postId: string): Promise<void> => {
+    const db = deps.getDb();
+    if (!db) return;
+
+    const sid = String(scenarioId);
+    const pid = String(postId);
+
+    const token = String(deps.auth.token ?? "").trim();
+    const baseUrl = String(process.env.EXPO_PUBLIC_API_BASE_URL ?? "").trim();
+    if (token && baseUrl) {
+      // backend mode: require selected profile
+      const selRaw = (db as any)?.selectedProfileByScenario?.[sid];
+      const reposterId = selRaw == null ? "" : String(selRaw);
+      if (!reposterId) return;
+
+      const key = `${reposterId}|${pid}`;
+      const already = Boolean((db as any)?.reposts?.[key]);
+
+      // Optimistic UI: update local DB immediately so the icon tint + count update instantly.
+      // If the backend request fails, we roll back this local change.
+      const optimisticNow = new Date().toISOString();
+      const optimisticDb = await updateDb((prev) => {
+        const reposts = { ...((prev as any).reposts ?? {}) } as any;
+        const posts = { ...(prev as any).posts } as any;
+
+        const post = posts[pid];
+        const nextDelta = already ? -1 : 1;
+
+        if (already) {
+          delete reposts[key];
+        } else {
+          reposts[key] = {
+            id: key,
+            scenarioId: sid,
+            profileId: reposterId,
+            postId: pid,
+            createdAt: optimisticNow,
+          } as any;
+        }
+
+        if (post) {
+          posts[pid] = {
+            ...post,
+            repostCount: Math.max(0, Number((post as any).repostCount ?? 0) + nextDelta),
+            updatedAt: optimisticNow,
+          } as any;
+        }
+
+        return { ...prev, reposts, posts };
+      });
+
+      // Keep SQL index in sync for optimistic state BEFORE setState.
+      try {
+        const postRow = (optimisticDb as any)?.posts?.[pid] ?? null;
+        if (postRow) await upsertPostsAsync([postRow]);
+
+        if (!already) {
+          await upsertRepostsAsync([
+            {
+              id: key,
+              scenarioId: sid,
+              profileId: reposterId,
+              postId: pid,
+              createdAt: optimisticNow,
+            } as any,
+          ]);
+        } else {
+          await deleteRepostAsync(sid, reposterId, pid);
+        }
+      } catch {
+        // ignore
+      }
+
+      deps.setState({ isReady: true, db: optimisticDb as any });
+
+      const rollbackOptimistic = async () => {
+        const rollbackDb = await updateDb((prev) => {
+          const reposts = { ...((prev as any).reposts ?? {}) } as any;
+          const posts = { ...(prev as any).posts } as any;
+
+          const post = posts[pid];
+          const shouldExist = already;
+          const existsNow = Boolean(reposts[key]);
+
+          // Only change what we optimistically changed.
+          if (shouldExist && !existsNow) {
+            reposts[key] = {
+              id: key,
+              scenarioId: sid,
+              profileId: reposterId,
+              postId: pid,
+              createdAt: optimisticNow,
+            } as any;
+
+            if (post) {
+              posts[pid] = {
+                ...post,
+                repostCount: Math.max(0, Number((post as any).repostCount ?? 0) + 1),
+                updatedAt: optimisticNow,
+              } as any;
+            }
+          }
+
+          if (!shouldExist && existsNow) {
+            delete reposts[key];
+
+            if (post) {
+              posts[pid] = {
+                ...post,
+                repostCount: Math.max(0, Number((post as any).repostCount ?? 0) - 1),
+                updatedAt: optimisticNow,
+              } as any;
+            }
+          }
+
+          return { ...prev, reposts, posts };
+        });
+
+        // Best-effort rollback in SQL index BEFORE setState.
+        try {
+          const postRow = (rollbackDb as any)?.posts?.[pid] ?? null;
+          if (postRow) await upsertPostsAsync([postRow]);
+
+          if (already) {
+            await upsertRepostsAsync([
+              {
+                id: key,
+                scenarioId: sid,
+                profileId: reposterId,
+                postId: pid,
+                createdAt: optimisticNow,
+              } as any,
+            ]);
+          } else {
+            await deleteRepostAsync(sid, reposterId, pid);
+          }
+        } catch {
+          // ignore
+        }
+
+        deps.setState({ isReady: true, db: rollbackDb as any });
+      };
+
+      let res: Awaited<ReturnType<typeof apiFetch>>;
+      try {
+        res = await apiFetch({
+          path: `/reposts/posts/${encodeURIComponent(pid)}`,
+          token,
+          init: {
+            method: already ? "DELETE" : "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ scenarioId: sid, profileId: reposterId }),
+          },
+        });
+      } catch (e) {
+        await rollbackOptimistic();
+        throw e;
+      }
+
+      if (!res.ok) {
+        const msg =
+          typeof (res.json as any)?.error === "string"
+            ? String((res.json as any).error)
+            : typeof res.text === "string" && res.text.trim().length
+              ? res.text
+              : `Repost failed (HTTP ${res.status})`;
+        await rollbackOptimistic();
+        throw new Error(msg);
+      }
+
+      const reposted = Boolean((res.json as any)?.reposted);
+      const repost = (res.json as any)?.repost;
+      const post = (res.json as any)?.post;
+      const now = new Date().toISOString();
+
+      const nextDb = await updateDb((prev) => {
+        const reposts = { ...((prev as any).reposts ?? {}) } as any;
+        const posts = { ...(prev as any).posts } as any;
+
+        if (reposted) {
+          reposts[key] = {
+            id: String(repost?.id ?? key),
+            scenarioId: sid,
+            profileId: reposterId,
+            postId: pid,
+            createdAt: repost?.createdAt ? new Date(repost.createdAt).toISOString() : now,
+          } as any;
+        } else {
+          delete reposts[key];
+        }
+
+        if (post && typeof post === "object") {
+          const existing = posts[pid] ?? {};
+          posts[pid] = {
+            ...existing,
+            ...post,
+            id: String(post?.id ?? pid),
+            scenarioId: String(post?.scenarioId ?? post?.scenario_id ?? sid),
+            authorProfileId: String(post?.authorProfileId ?? post?.author_profile_id ?? existing?.authorProfileId ?? ""),
+            authorUserId:
+              String(post?.authorUserId ?? post?.author_user_id ?? existing?.authorUserId ?? "").trim() || undefined,
+            text: String(post?.text ?? existing?.text ?? ""),
+            imageUrls: Array.isArray(post?.imageUrls ?? post?.image_urls)
+              ? (post?.imageUrls ?? post?.image_urls).map(String)
+              : (existing?.imageUrls ?? []),
+            replyCount: Number(post?.replyCount ?? post?.reply_count ?? existing?.replyCount ?? 0),
+            repostCount: Number(post?.repostCount ?? post?.repost_count ?? existing?.repostCount ?? 0),
+            likeCount: Number(post?.likeCount ?? post?.like_count ?? existing?.likeCount ?? 0),
+            parentPostId: post?.parentPostId ?? post?.parent_post_id ?? existing?.parentPostId,
+            quotedPostId: post?.quotedPostId ?? post?.quoted_post_id ?? existing?.quotedPostId,
+            insertedAt: post?.insertedAt
+              ? new Date(post.insertedAt).toISOString()
+              : post?.inserted_at
+                ? new Date(post.inserted_at).toISOString()
+                : (existing?.insertedAt ?? now),
+            createdAt: post?.createdAt
+              ? new Date(post.createdAt).toISOString()
+              : post?.created_at
+                ? new Date(post.created_at).toISOString()
+                : (existing?.createdAt ?? now),
+            updatedAt: post?.updatedAt
+              ? new Date(post.updatedAt).toISOString()
+              : post?.updated_at
+                ? new Date(post.updated_at).toISOString()
+                : now,
+            postType: post?.postType ?? post?.post_type ?? existing?.postType,
+            meta: post?.meta ?? existing?.meta,
+            isPinned: post?.isPinned ?? post?.is_pinned ?? existing?.isPinned,
+            pinOrder: post?.pinOrder ?? post?.pin_order ?? existing?.pinOrder,
+          } as any;
+        }
+
+        return { ...prev, reposts, posts };
+      });
+
+      // Keep SQL index in sync with authoritative result BEFORE setState.
+      try {
+        const postRow = (nextDb as any)?.posts?.[pid] ?? null;
+        if (postRow) await upsertPostsAsync([postRow]);
+
+        if (reposted) {
+          const r = (nextDb as any)?.reposts?.[key] ?? null;
+          if (r) await upsertRepostsAsync([r]);
+        } else {
+          await deleteRepostAsync(sid, reposterId, pid);
+        }
+      } catch {
+        // ignore
+      }
+
+      deps.setState({ isReady: true, db: nextDb as any });
+      return;
+    }
+
+    const next = await updateDb((prev) => {
+      const selectedProfileId = (prev as any).selectedProfileByScenario?.[sid];
+      if (!selectedProfileId) return prev;
+
+      const reposterId = String(selectedProfileId);
+      const post = prev.posts[pid];
+      if (!post) return prev;
+
+      const key = `${reposterId}|${pid}`;
+      const reposts = { ...((prev as any).reposts ?? {}) };
+
+      const already = !!reposts?.[key];
+      const now = new Date().toISOString();
+
+      if (already) {
+        delete reposts[key];
+      } else {
+        reposts[key] = {
+          id: key,
+          scenarioId: sid,
+          profileId: reposterId,
+          postId: pid,
+          createdAt: now,
+        } as Repost;
+      }
+
+      return {
+        ...prev,
+        reposts,
+        posts: {
+          ...prev.posts,
+          [pid]: {
+            ...post,
+            repostCount: Math.max(0, ((post as any).repostCount ?? 0) + (already ? -1 : 1)),
+            updatedAt: now,
+          } as any,
+        },
+      };
+    });
+
+    // Keep SQL index in sync BEFORE setState.
+    try {
+      const postRow = (next as any)?.posts?.[pid] ?? null;
+      if (postRow) await upsertPostsAsync([postRow]);
+
+      const selectedProfileId = (next as any).selectedProfileByScenario?.[sid];
+      const reposterId = selectedProfileId ? String(selectedProfileId) : "";
+      if (reposterId) {
+        const key = `${reposterId}|${pid}`;
+        const r = (next as any)?.reposts?.[key] ?? null;
+        if (r) {
+          await upsertRepostsAsync([r]);
+        } else {
+          await deleteRepostAsync(sid, reposterId, pid);
+        }
+      }
+    } catch {
+      // ignore
+    }
+
+    deps.setState({ isReady: true, db: next as any });
+  };
+
+  return {
+    getRepostEventForProfile,
+    isPostRepostedByProfileId,
+    isPostRepostedBySelectedProfile,
+    toggleRepost,
+  };
+}
