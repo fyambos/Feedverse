@@ -84,6 +84,31 @@ async function isScenarioOwnerOrGm(client: PoolClient, scenarioId: string, userI
   return (res.rowCount ?? 0) > 0;
 }
 
+async function isScenarioOwner(client: PoolClient, scenarioId: string, userId: string): Promise<boolean> {
+  const sid = String(scenarioId ?? "").trim();
+  const uid = String(userId ?? "").trim();
+  if (!sid || !uid) return false;
+
+  const res = await client.query(
+    "SELECT 1 FROM scenarios WHERE id = $1 AND owner_user_id::text = $2 LIMIT 1",
+    [sid, uid],
+  );
+  return (res.rowCount ?? 0) > 0;
+}
+
+async function scenarioAllowsPlayersToReorderMessages(client: PoolClient, scenarioId: string): Promise<boolean> {
+  const sid = String(scenarioId ?? "").trim();
+  if (!sid) return false;
+  const res = await client.query(
+    "SELECT allow_players_reorder_messages FROM scenarios WHERE id = $1 LIMIT 1",
+    [sid],
+  );
+  if ((res.rowCount ?? 0) === 0) return false;
+  const raw = (res.rows?.[0] as any)?.allow_players_reorder_messages;
+  if (raw == null) return true;
+  return Boolean(raw);
+}
+
 async function userOwnsAnyProfileInConversation(client: PoolClient, conversationId: string, userId: string): Promise<boolean> {
   const res = await client.query(
     `
@@ -1016,9 +1041,12 @@ export async function reorderMessagesInConversation(args: {
       return null;
     }
 
-    // Reordering changes the shared timeline; require scenario owner/GM OR
-    // ownership of a participating profile in the conversation.
-    const canReorder = (await isScenarioOwnerOrGm(client, scenarioId, uid)) || (await userOwnsAnyProfileInConversationOwned(client, cid, uid));
+    // Scenario-level policy: if enabled, allow players (participants) to reorder.
+    // If disabled, only the scenario owner may reorder.
+    const allowPlayers = await scenarioAllowsPlayersToReorderMessages(client, scenarioId);
+    const canReorder = allowPlayers
+      ? (await isScenarioOwnerOrGm(client, scenarioId, uid)) || (await userOwnsAnyProfileInConversationOwned(client, cid, uid))
+      : await isScenarioOwner(client, scenarioId, uid);
     if (!canReorder) {
       await client.query("ROLLBACK");
       return { error: "Not allowed", status: 403 };

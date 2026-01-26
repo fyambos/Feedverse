@@ -63,7 +63,8 @@ async function ensureSqliteInit(): Promise<void> {
         mode TEXT,
         createdAt TEXT,
         updatedAt TEXT,
-        profileLimitMode TEXT
+        profileLimitMode TEXT,
+        allowPlayersReorderMessages INTEGER
       );
 
       CREATE INDEX IF NOT EXISTS idx_scenarios_inviteCodeUpper ON scenarios (inviteCodeUpper);
@@ -173,6 +174,14 @@ async function ensureSqliteInit(): Promise<void> {
       );
       CREATE INDEX IF NOT EXISTS idx_message_images_msg ON message_images (messageId, idx);
     `);
+
+        // Lightweight migration for existing installs.
+        // (CREATE TABLE IF NOT EXISTS won't add new columns.)
+        try {
+          await db.execAsync("ALTER TABLE scenarios ADD COLUMN allowPlayersReorderMessages INTEGER;");
+        } catch {
+          // ignore (column may already exist)
+        }
 
     // Best-effort: let SQLite update internal stats/plans.
     try {
@@ -366,7 +375,7 @@ async function readCoreTablesSnapshot(): Promise<CoreTablesSnapshot> {
   // Scenarios + joins
   try {
     const rows = await db.getAllAsync<any>(
-      "SELECT id, name, cover, inviteCode, ownerUserId, description, mode, createdAt, updatedAt, profileLimitMode FROM scenarios;",
+      "SELECT id, name, cover, inviteCode, ownerUserId, description, mode, createdAt, updatedAt, profileLimitMode, allowPlayersReorderMessages FROM scenarios;",
     );
     const players = await db.getAllAsync<any>("SELECT scenarioId, userId FROM scenario_players ORDER BY scenarioId ASC;");
     const gms = await db.getAllAsync<any>("SELECT scenarioId, userId FROM scenario_gms ORDER BY scenarioId ASC;");
@@ -430,6 +439,8 @@ async function readCoreTablesSnapshot(): Promise<CoreTablesSnapshot> {
         updatedAt: String((r as any)?.updatedAt ?? "") || undefined,
         inviteCode: String((r as any)?.inviteCode ?? ""),
         ownerUserId: String((r as any)?.ownerUserId ?? ""),
+        allowPlayersReorderMessages:
+          (r as any)?.allowPlayersReorderMessages == null ? true : Boolean(Number((r as any).allowPlayersReorderMessages)),
         description: String((r as any)?.description ?? "") || undefined,
         mode,
         ...(gmMap.get(id)?.length ? { gmUserIds: gmMap.get(id) } : {}),
@@ -625,7 +636,7 @@ async function persistCoreTablesFromDbSnapshot(snapshot: DbV5): Promise<void> {
       if (!id) continue;
       const inviteCode = String((s as any)?.inviteCode ?? "");
       await txn.runAsync(
-        "INSERT OR REPLACE INTO scenarios (id, name, cover, inviteCode, inviteCodeUpper, ownerUserId, description, mode, createdAt, updatedAt, profileLimitMode) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);",
+        "INSERT OR REPLACE INTO scenarios (id, name, cover, inviteCode, inviteCodeUpper, ownerUserId, description, mode, createdAt, updatedAt, profileLimitMode, allowPlayersReorderMessages) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);",
         [
           id,
           String((s as any)?.name ?? ""),
@@ -638,6 +649,7 @@ async function persistCoreTablesFromDbSnapshot(snapshot: DbV5): Promise<void> {
           String((s as any)?.createdAt ?? ""),
           String((s as any)?.updatedAt ?? "") || null,
           String((s as any)?.settings?.profileLimitMode ?? "") || null,
+          (s as any)?.allowPlayersReorderMessages ? 1 : 0,
         ],
       );
 

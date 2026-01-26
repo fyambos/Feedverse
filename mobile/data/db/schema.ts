@@ -60,6 +60,7 @@ export type Scenario = {
   updatedAt?: string;
   inviteCode: string;
   ownerUserId: string;
+  allowPlayersReorderMessages?: boolean;
   description?: string;
   tags?: ScenarioTag[];
   mode: "story" | "campaign";

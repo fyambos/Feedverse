@@ -82,6 +82,9 @@ export const CreateScenarioController = async (req: Request, res: Response) => {
     const description = req.body?.description != null ? String(req.body.description) : null;
     const mode = String(req.body?.mode ?? "story").trim();
     const settings = req.body?.settings ?? {};
+    const allowPlayersReorderMessages = Boolean(
+      req.body?.allowPlayersReorderMessages ?? req.body?.allow_players_reorder_messages ?? true,
+    );
     const gmUserIds = Array.isArray(req.body?.gmUserIds) ? req.body.gmUserIds : undefined;
     const tags = Array.isArray(req.body?.tags) ? req.body.tags : undefined;
 
@@ -93,6 +96,7 @@ export const CreateScenarioController = async (req: Request, res: Response) => {
       description,
       mode,
       settings,
+      allowPlayersReorderMessages,
       gmUserIds,
       tags,
     });

@@ -112,7 +112,6 @@ export function createScenarioImportExportApi(deps: Deps) {
 
         const playerIdsRaw = raw?.player_ids ?? raw?.playerIds;
         const playerIds = Array.isArray(playerIdsRaw) ? playerIdsRaw.map(String).filter(Boolean) : [];
-
         const gmUserIdsRaw = raw?.gm_user_ids ?? raw?.gmUserIds;
         const gmUserIds = Array.isArray(gmUserIdsRaw) ? gmUserIdsRaw.map(String).filter(Boolean) : undefined;
 
@@ -124,6 +123,9 @@ export function createScenarioImportExportApi(deps: Deps) {
           ownerUserId: String(raw?.owner_user_id ?? raw?.ownerUserId ?? ""),
           description: raw?.description != null ? String(raw.description) : undefined,
           mode: raw?.mode === "campaign" ? "campaign" : "story",
+          allowPlayersReorderMessages: Boolean(
+            raw?.allow_players_reorder_messages ?? raw?.allowPlayersReorderMessages ?? sourceScenario?.allowPlayersReorderMessages ?? true,
+          ),
           playerIds,
           tags: Array.isArray(raw?.tags) ? raw.tags : undefined,
           gmUserIds,
@@ -228,6 +230,9 @@ export function createScenarioImportExportApi(deps: Deps) {
         cover: String(sourceScenario?.cover ?? "").trim(),
         description: sourceScenario?.description ?? null,
         mode: sourceScenario?.mode === "campaign" ? "campaign" : "story",
+        allowPlayersReorderMessages: Boolean(
+          sourceScenario?.allowPlayersReorderMessages ?? sourceScenario?.allow_players_reorder_messages ?? true,
+        ),
         settings: settingsForCreate ?? {},
         gmUserIds: Array.isArray(sourceScenario?.gmUserIds) ? sourceScenario.gmUserIds : undefined,
         tags: Array.isArray(sourceScenario?.tags) ? sourceScenario.tags : undefined,

@@ -8,7 +8,13 @@ jest.mock("../../config/database", () => ({
 }));
 
 describe("messages: reorder", () => {
-  const makeMockClient = (opts: { isOwnerOrGm: boolean; ownsAnyProfile: boolean; hasAllMessages: boolean }) => {
+  const makeMockClient = (opts: {
+    allowPlayersReorder: boolean;
+    isOwner: boolean;
+    isOwnerOrGm: boolean;
+    ownsAnyProfile: boolean;
+    hasAllMessages: boolean;
+  }) => {
     const client: any = {
       query: jest.fn(async (sql: string, params?: any[]) => {
         if (/^BEGIN/.test(sql) || /^COMMIT/.test(sql) || /^ROLLBACK/.test(sql)) return { rows: [], rowCount: 0 };
@@ -26,6 +32,19 @@ describe("messages: reorder", () => {
         // isScenarioOwnerOrGm
         if (sql.includes("FROM scenarios") && sql.includes("owner_user_id") && sql.includes("gm_user_ids")) {
           return { rows: opts.isOwnerOrGm ? [{ "1": 1 }] : [], rowCount: opts.isOwnerOrGm ? 1 : 0 };
+        }
+
+        // scenarioAllowsPlayersToReorderMessages
+        if (/SELECT\s+allow_players_reorder_messages\s+FROM\s+scenarios/i.test(sql)) {
+          return {
+            rows: [{ allow_players_reorder_messages: opts.allowPlayersReorder ? 1 : 0 }],
+            rowCount: 1,
+          };
+        }
+
+        // isScenarioOwner (strict owner check)
+        if (/SELECT\s+1\s+FROM\s+scenarios\s+WHERE\s+id\s*=\s*\$1\s+AND\s+owner_user_id::text\s*=\s*\$2/i.test(sql)) {
+          return { rows: opts.isOwner ? [{ "1": 1 }] : [], rowCount: opts.isOwner ? 1 : 0 };
         }
 
         // userOwnsAnyProfileInConversationOwned
@@ -65,7 +84,13 @@ describe("messages: reorder", () => {
   });
 
   it("persists reorder when requester is owner/gm", async () => {
-    const client = makeMockClient({ isOwnerOrGm: true, ownsAnyProfile: false, hasAllMessages: true });
+    const client = makeMockClient({
+      allowPlayersReorder: true,
+      isOwner: true,
+      isOwnerOrGm: true,
+      ownsAnyProfile: false,
+      hasAllMessages: true,
+    });
     (pool.connect as jest.Mock).mockResolvedValue(client);
 
     const res = await reorderMessagesInConversation({
@@ -79,7 +104,13 @@ describe("messages: reorder", () => {
   });
 
   it("persists reorder when requester owns a participating profile", async () => {
-    const client = makeMockClient({ isOwnerOrGm: false, ownsAnyProfile: true, hasAllMessages: true });
+    const client = makeMockClient({
+      allowPlayersReorder: true,
+      isOwner: false,
+      isOwnerOrGm: false,
+      ownsAnyProfile: true,
+      hasAllMessages: true,
+    });
     (pool.connect as jest.Mock).mockResolvedValue(client);
 
     const res = await reorderMessagesInConversation({
@@ -92,8 +123,14 @@ describe("messages: reorder", () => {
     expect(client.query).toHaveBeenCalledWith("COMMIT");
   });
 
-  it("denies reorder when requester is not owner/gm and owns no participating profile", async () => {
-    const client = makeMockClient({ isOwnerOrGm: false, ownsAnyProfile: false, hasAllMessages: true });
+  it("denies reorder for a player when scenario disallows it", async () => {
+    const client = makeMockClient({
+      allowPlayersReorder: false,
+      isOwner: false,
+      isOwnerOrGm: false,
+      ownsAnyProfile: true,
+      hasAllMessages: true,
+    });
     (pool.connect as jest.Mock).mockResolvedValue(client);
 
     const res = await reorderMessagesInConversation({
@@ -106,8 +143,34 @@ describe("messages: reorder", () => {
     expect(client.query).toHaveBeenCalledWith("ROLLBACK");
   });
 
+  it("allows reorder for owner even when scenario disallows players", async () => {
+    const client = makeMockClient({
+      allowPlayersReorder: false,
+      isOwner: true,
+      isOwnerOrGm: true,
+      ownsAnyProfile: false,
+      hasAllMessages: true,
+    });
+    (pool.connect as jest.Mock).mockResolvedValue(client);
+
+    const res = await reorderMessagesInConversation({
+      conversationId: "cid-1",
+      userId: "user-1",
+      orderedMessageIds: ["11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222"],
+    });
+
+    expect(res).toEqual({ ok: true });
+    expect(client.query).toHaveBeenCalledWith("COMMIT");
+  });
+
   it("returns 404 when some ids are missing", async () => {
-    const client = makeMockClient({ isOwnerOrGm: true, ownsAnyProfile: false, hasAllMessages: false });
+    const client = makeMockClient({
+      allowPlayersReorder: true,
+      isOwner: true,
+      isOwnerOrGm: true,
+      ownsAnyProfile: false,
+      hasAllMessages: false,
+    });
     (pool.connect as jest.Mock).mockResolvedValue(client);
 
     const res = await reorderMessagesInConversation({

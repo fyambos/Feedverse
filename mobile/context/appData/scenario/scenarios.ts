@@ -93,6 +93,12 @@ export function createScenariosApi(deps: Deps) {
         cover: String(raw?.cover ?? raw?.cover_url ?? (fallback as any)?.cover ?? ""),
         inviteCode: String(raw?.invite_code ?? raw?.inviteCode ?? (fallback as any)?.inviteCode ?? ""),
         ownerUserId: String(raw?.owner_user_id ?? raw?.ownerUserId ?? (fallback as any)?.ownerUserId ?? ""),
+        allowPlayersReorderMessages:
+          raw?.allow_players_reorder_messages != null
+            ? Boolean(raw.allow_players_reorder_messages)
+            : raw?.allowPlayersReorderMessages != null
+              ? Boolean(raw.allowPlayersReorderMessages)
+              : ((fallback as any)?.allowPlayersReorderMessages ?? true),
         description: raw?.description != null ? String(raw.description) : (fallback as any)?.description,
         mode:
           raw?.mode === "campaign" || raw?.mode === "story"
@@ -134,6 +140,7 @@ export function createScenariosApi(deps: Deps) {
         description: (s as any)?.description ?? null,
         mode: (s as any)?.mode === "campaign" ? "campaign" : "story",
         settings: (s as any)?.settings ?? {},
+        allowPlayersReorderMessages: Boolean((s as any)?.allowPlayersReorderMessages ?? true),
         gmUserIds: Array.isArray((s as any)?.gmUserIds) ? (s as any)?.gmUserIds : undefined,
         tags: Array.isArray((s as any)?.tags) ? (s as any)?.tags : undefined,
       };
