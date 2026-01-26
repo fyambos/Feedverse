@@ -99,6 +99,21 @@ async function userOwnsAnyProfileInConversation(client: PoolClient, conversation
   return (res.rowCount ?? 0) > 0;
 }
 
+async function userOwnsAnyProfileInConversationOwned(client: PoolClient, conversationId: string, userId: string): Promise<boolean> {
+  const res = await client.query(
+    `
+    SELECT 1
+    FROM conversation_participants cp
+    JOIN profiles p ON p.id = cp.profile_id
+    WHERE cp.conversation_id = $1
+      AND p.owner_user_id = $2
+    LIMIT 1
+  `,
+    [conversationId, userId],
+  );
+  return (res.rowCount ?? 0) > 0;
+}
+
 async function userCanActAsSender(client: PoolClient, scenarioId: string, userId: string, senderProfileId: string): Promise<boolean> {
   // Fetch the profile row so we can log helpful debug information when access is denied.
   const resRow = await client.query<{
@@ -965,6 +980,121 @@ export async function deleteMessage(args: {
     }
     console.error("deleteMessage failed", e);
     return { error: "Delete failed", status: 400 };
+  } finally {
+    client.release();
+  }
+}
+
+export async function reorderMessagesInConversation(args: {
+  conversationId: string;
+  userId: string;
+  orderedMessageIds: string[];
+}): Promise<{ ok: true } | { error: string; status: number } | null> {
+  const cid = String(args.conversationId ?? "").trim();
+  const uid = String(args.userId ?? "").trim();
+  const ids = Array.isArray(args.orderedMessageIds) ? args.orderedMessageIds.map(String).map((s) => s.trim()).filter(Boolean) : [];
+
+  if (!cid || !uid) return null;
+  if (ids.length < 2) return { error: "orderedMessageIds must have at least 2 ids", status: 400 };
+
+  const uniqueIds = Array.from(new Set(ids));
+  if (uniqueIds.length !== ids.length) return { error: "orderedMessageIds must be unique", status: 400 };
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const scenarioId = await getConversationScenarioId(client, cid);
+    if (!scenarioId) {
+      await client.query("ROLLBACK");
+      return { error: "Conversation not found", status: 404 };
+    }
+
+    const okScenario = await scenarioAccess(client, scenarioId, uid);
+    if (!okScenario) {
+      await client.query("ROLLBACK");
+      return null;
+    }
+
+    // Reordering changes the shared timeline; require scenario owner/GM OR
+    // ownership of a participating profile in the conversation.
+    const canReorder = (await isScenarioOwnerOrGm(client, scenarioId, uid)) || (await userOwnsAnyProfileInConversationOwned(client, cid, uid));
+    if (!canReorder) {
+      await client.query("ROLLBACK");
+      return { error: "Not allowed", status: 403 };
+    }
+
+    // Ensure all ids exist in this conversation and compute the base timestamp.
+    const existing = await client.query<{ id: string; created_at: string }>(
+      `
+      SELECT id, created_at
+      FROM messages
+      WHERE conversation_id = $1
+        AND id = ANY($2::uuid[])
+    `,
+      [cid, uniqueIds],
+    );
+
+    if ((existing.rowCount ?? 0) !== uniqueIds.length) {
+      await client.query("ROLLBACK");
+      return { error: "One or more messages not found in conversation", status: 404 };
+    }
+
+    let startMs: number | null = null;
+    for (const row of existing.rows) {
+      const ms = Date.parse(String((row as any).created_at ?? ""));
+      if (!Number.isFinite(ms)) continue;
+      startMs = startMs == null ? ms : Math.min(startMs, ms);
+    }
+    if (startMs == null) startMs = Date.now();
+
+    // Apply the requested ordering by rewriting created_at.
+    // (Messages are rendered chronologically; this is the existing ordering mechanism.)
+    await client.query(
+      `
+      WITH ordered AS (
+        SELECT $2::uuid[] AS ids
+      ),
+      ord AS (
+        SELECT ids[i] AS id, i AS ord
+        FROM ordered, generate_subscripts(ids, 1) AS i
+      )
+      UPDATE messages m
+      SET
+        created_at = ($3::timestamptz + ((ord.ord - 1) * interval '1 second')),
+        updated_at = NOW() AT TIME ZONE 'UTC'
+      FROM ord
+      WHERE m.id = ord.id
+        AND m.conversation_id = $1
+    `,
+      [cid, ids, new Date(startMs).toISOString()],
+    );
+
+    // Keep last_message_at correct after timestamp updates.
+    await client.query(
+      `
+      UPDATE conversations
+      SET last_message_at = (
+        SELECT MAX(created_at)
+        FROM messages
+        WHERE conversation_id = $1
+      ),
+      updated_at = NOW() AT TIME ZONE 'UTC'
+      WHERE id = $1
+    `,
+      [cid],
+    );
+
+    await client.query("COMMIT");
+    return { ok: true };
+  } catch (e: unknown) {
+    try {
+      await client.query("ROLLBACK");
+    } catch {
+      // ignore
+    }
+    console.error("reorderMessagesInConversation failed", e);
+    return { error: "Reorder failed", status: 400 };
   } finally {
     client.release();
   }

@@ -457,18 +457,60 @@ export function createDmMessagesApi(deps: Deps) {
     if (!sid || !cid) return;
     if (ids.length < 2) return;
 
+    // Backend only accepts UUIDs; optimistic client_* ids must not be sent.
+    const idsForServer = ids.filter((id) => deps.env.isUuidLike(id));
+
+    if (deps.env.backendEnabled) {
+      const token = String(deps.auth.token ?? "").trim();
+      const baseUrl = String(process.env.EXPO_PUBLIC_API_BASE_URL ?? "").trim();
+      if (!token || !baseUrl) throw new Error("Missing backend auth");
+      if (!deps.env.isUuidLike(cid)) throw new Error("Invalid conversation id");
+
+      if (idsForServer.length < 2) {
+        return;
+      }
+
+      // Persist reorder on the server. The client still updates local timestamps
+      // to reflect the new ordering in the UI.
+      const res = await apiFetch({
+        path: `/conversations/${encodeURIComponent(cid)}/messages/reorder`,
+        token,
+        init: {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ orderedMessageIds: idsForServer }),
+        },
+      });
+
+      if (!res.ok) {
+        const msg =
+          typeof res.json?.error === "string"
+            ? String(res.json.error)
+            : typeof res.json?.message === "string"
+              ? String(res.json.message)
+              : String(res.text ?? "").trim() || `Request failed (${res.status})`;
+        throw new Error(msg);
+      }
+    }
+
     const nextDb = await updateDb((prev) => {
       const messages = { ...((prev as any).messages ?? {}) } as Record<string, Message>;
       const conversations = { ...((prev as any).conversations ?? {}) } as Record<string, Conversation>;
 
+      // Apply reorder to messages we currently have locally.
+      // (In practice the UI constructs ids from local messages, but be defensive.)
+      const idsToApply: string[] = [];
       const existing: Message[] = [];
       for (const mid of ids) {
         const m = messages[mid];
-        if (!m) return prev;
-        if (String((m as any).scenarioId ?? "") !== sid) return prev;
-        if (String((m as any).conversationId ?? "") !== cid) return prev;
+        if (!m) continue;
+        if (String((m as any).scenarioId ?? "") !== sid) continue;
+        if (String((m as any).conversationId ?? "") !== cid) continue;
+        idsToApply.push(mid);
         existing.push(m);
       }
+
+      if (idsToApply.length < 2) return prev;
 
       let startMs: number | null = null;
       for (const m of existing) {
@@ -478,8 +520,8 @@ export function createDmMessagesApi(deps: Deps) {
       }
       if (startMs == null) startMs = Date.now();
 
-      for (let i = 0; i < ids.length; i++) {
-        const mid = ids[i];
+      for (let i = 0; i < idsToApply.length; i++) {
+        const mid = idsToApply[i];
         const m = messages[mid];
         if (!m) continue;
         messages[mid] = { ...m, createdAt: new Date(startMs + i * 1000).toISOString() } as any;
@@ -487,8 +529,14 @@ export function createDmMessagesApi(deps: Deps) {
 
       const conv = conversations[cid];
       if (conv && String((conv as any).scenarioId ?? "") === sid) {
-        const lastMessageAt = new Date(startMs + (ids.length - 1) * 1000).toISOString();
-        conversations[cid] = { ...conv, lastMessageAt, updatedAt: new Date().toISOString() } as any;
+        const lastMessageAt = new Date(startMs + (idsToApply.length - 1) * 1000).toISOString();
+        conversations[cid] = {
+          ...conv,
+          lastMessageAt,
+          updatedAt: new Date().toISOString(),
+          // This is what the conversation screen uses to order messages.
+          messageIds: idsToApply,
+        } as any;
       }
 
       return { ...(prev as any), conversations, messages } as any;

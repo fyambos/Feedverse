@@ -113,9 +113,24 @@ export async function syncConversationsForScenarioBackend(args: {
   args.conversationsSyncRef.current.lastSyncAtByScenario[sid] = nowMs;
 
   try {
-    // Get selectedProfileId for this scenario from local state (api helper isn't available yet)
-    const selectedProfileId = args.providerState.db ? ((args.providerState.db as any).selectedProfileByScenario?.[sid] ?? null) : null;
-    const query = selectedProfileId ? `?selectedProfileId=${encodeURIComponent(selectedProfileId)}` : "";
+    // Get selectedProfileId for this scenario from local state (api helper isn't available yet).
+    // In backend mode the inbox is selected-profile-only; if we don't have a valid owned selection,
+    // skip syncing instead of hitting the backend with a bad request.
+    const rawSelected = args.providerState.db ? ((args.providerState.db as any).selectedProfileByScenario?.[sid] ?? null) : null;
+    const selectedProfileId = rawSelected == null ? "" : String(rawSelected ?? "").trim();
+    if (!selectedProfileId || selectedProfileId === "null" || selectedProfileId === "undefined") return;
+    if (!args.env.isUuidLike(selectedProfileId)) return;
+
+    const selectedProfile = (args.providerState.db as any)?.profiles?.[selectedProfileId];
+    if (!selectedProfile) return;
+    if (String((selectedProfile as any)?.scenarioId ?? "") !== sid) return;
+    const authUserId = String(args.auth.userId ?? "").trim();
+    if (authUserId) {
+      const ownerUserId = String((selectedProfile as any)?.ownerUserId ?? "").trim();
+      if (!ownerUserId || ownerUserId !== authUserId) return;
+    }
+
+    const query = `?selectedProfileId=${encodeURIComponent(selectedProfileId)}`;
     const res = await apiFetch({
       path: `/scenarios/${encodeURIComponent(sid)}/conversations${query}`,
       token,
@@ -197,18 +212,10 @@ export async function syncConversationsForScenarioBackend(args: {
         } as any;
       }
 
-      // Remove conversations for this scenario that are no longer on server.
-      for (const [id, c] of Object.entries(conversations)) {
-        if (String((c as any).scenarioId ?? "") !== sid) continue;
-        if (seen.has(String(id))) continue;
-        delete (conversations as any)[id];
-        // also drop cached messages for removed conversations
-        for (const [mid, m] of Object.entries(messages)) {
-          if (String((m as any).scenarioId ?? "") !== sid) continue;
-          if (String((m as any).conversationId ?? "") !== String(id)) continue;
-          delete (messages as any)[mid];
-        }
-      }
+      // NOTE: Do NOT delete local conversations that aren't returned by this sync.
+      // The server list can be filtered (e.g. selectedProfileId) and we also want
+      // to be resilient to transient backend errors. Deleting here can make DMs
+      // "disappear" from the inbox.
 
       return { ...(prev as any), conversations, messages } as any;
     });

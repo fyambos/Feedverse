@@ -24,7 +24,7 @@ conversationRouter.get(
   "/scenarios/:scenarioId/conversations",
   authMiddleware,
   validateParams(scenarioIdParam),
-  validateQuery(z.object({ selectedProfileId: z.string().uuid().optional() }).passthrough()),
+  validateQuery(z.object({ selectedProfileId: z.string().uuid() }).passthrough()),
   async (req, res) => {
   const scenarioId = String(req.params.scenarioId ?? "");
   const userId = String((req as any).user?.id ?? "");

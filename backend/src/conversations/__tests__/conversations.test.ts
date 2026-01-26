@@ -15,12 +15,11 @@ describe('conversation list visibility rules', () => {
         // scenarioAccess
         if (sql.includes('FROM scenarios s')) return { rows: [{ '1': 1 }], rowCount: 1 };
 
-        // profile existence check
-        if (sql.includes('SELECT 1 FROM profiles WHERE scenario_id')) return { rows: [{ '1': 1 }], rowCount: 1 };
-
-        // profile owner/is_public lookup
-        if (sql.includes('SELECT owner_user_id, is_public FROM profiles')) {
-          return { rows: [{ owner_user_id: opts.ownerUserId ?? null, is_public: opts.isPublic ?? false }], rowCount: 1 };
+        // selected profile must be owned by the user in this scenario
+        if (sql.includes('SELECT 1 FROM profiles WHERE id = $1 AND scenario_id = $2 AND owner_user_id = $3')) {
+          const requestedOwner = String(params?.[2] ?? '');
+          const ok = !!requestedOwner && String(opts.ownerUserId ?? '') === requestedOwner;
+          return ok ? { rows: [{ '1': 1 }], rowCount: 1 } : { rows: [], rowCount: 0 };
         }
 
         // main conversations select
@@ -54,13 +53,12 @@ describe('conversation list visibility rules', () => {
 
   afterEach(() => jest.resetAllMocks());
 
-  it('allows listing when selected profile is public and not owned', async () => {
+  it('denies listing when selected profile is not owned (even if public)', async () => {
     const client = makeConvMockClient({ ownerUserId: 'other', isPublic: true, hasConversations: true });
     (pool.connect as jest.Mock).mockResolvedValue(client);
 
     const out = await listConversationsForScenario({ scenarioId: 'sid-1', userId: 'user-1', selectedProfileId: 'pid-1' });
-    expect(out).not.toBeNull();
-    expect(Array.isArray(out) && out.length > 0).toBe(true);
+    expect(out).toBeNull();
   });
 
   it('allows listing when user owns the selected profile', async () => {
@@ -72,7 +70,7 @@ describe('conversation list visibility rules', () => {
     expect(Array.isArray(out) && out.length > 0).toBe(true);
   });
 
-  it('denies listing when profile is neither owned nor public', async () => {
+  it('denies listing when selected profile is not owned', async () => {
     const client = makeConvMockClient({ ownerUserId: 'other', isPublic: false, hasConversations: true });
     (pool.connect as jest.Mock).mockResolvedValue(client);
 

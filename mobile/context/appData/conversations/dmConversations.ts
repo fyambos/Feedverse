@@ -267,6 +267,17 @@ export function createDmConversationsApi(deps: Deps) {
     const sid = String(args.scenarioId ?? "").trim();
     const ids = uniqTrimmed(args.participantProfileIds);
 
+    const selectedProfileIdFromArgs = String(args.selectedProfileId ?? "").trim();
+    const selectedProfileIdFromDb = (() => {
+      try {
+        const dbNow = deps.getDb();
+        return String((dbNow as any)?.selectedProfileByScenario?.[sid] ?? "").trim();
+      } catch {
+        return "";
+      }
+    })();
+    const selectedProfileId = selectedProfileIdFromArgs || selectedProfileIdFromDb;
+
     if (!sid) return { ok: false, error: "scenarioId is required" };
     if (ids.length < 1) return { ok: false, error: "participantProfileIds must have 1+ ids" };
 
@@ -275,13 +286,16 @@ export function createDmConversationsApi(deps: Deps) {
       const baseUrl = String(process.env.EXPO_PUBLIC_API_BASE_URL ?? "").trim();
       if (!token || !baseUrl) return { ok: false, error: "Missing backend auth" };
       if (!deps.env.isUuidLike(sid)) return { ok: false, error: "Invalid scenarioId for backend mode" };
+      if (!selectedProfileId || !deps.env.isUuidLike(selectedProfileId)) {
+        return { ok: false, error: "Select a profile for this scenario first" };
+      }
 
       const res = await apiFetch({
         path: `/scenarios/${encodeURIComponent(sid)}/conversations:getOrCreate`,
         token,
         init: {
           method: "POST",
-          body: JSON.stringify({ participantProfileIds: ids, selectedProfileId: args.selectedProfileId }),
+          body: JSON.stringify({ participantProfileIds: ids, selectedProfileId }),
         },
       });
 
