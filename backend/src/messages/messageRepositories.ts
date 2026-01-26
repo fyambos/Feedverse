@@ -444,8 +444,17 @@ export async function sendMessage(args: {
           if (ownerIds.size === 0) return;
 
           // Build notification payload
-          const title = (await client2.query(`SELECT display_name FROM profiles WHERE id = $1 LIMIT 1`, [senderProfileId])).rows?.[0]?.display_name ?? "New message";
-          const body = String(row.text ?? "");
+          const senderName = String(
+            (await client2.query(`SELECT display_name FROM profiles WHERE id = $1 LIMIT 1`, [senderProfileId])).rows?.[0]?.display_name ?? "",
+          ).trim();
+          const convTitle = String(
+            (await client2.query(`SELECT title FROM conversations WHERE id = $1 LIMIT 1`, [cid])).rows?.[0]?.title ?? "",
+          ).trim();
+          const isGroupChat = (parts.rows?.length ?? 0) > 2;
+          const title = `New DM: ${senderName || "Someone"}${isGroupChat ? (convTitle ? ` — ${convTitle}` : " — Group chat") : ""}`;
+          const bodyText = String((row as any).text ?? "").trim();
+          const hasImage = Array.isArray((row as any).image_urls) && (row as any).image_urls.length > 0;
+          const body = bodyText ? (hasImage ? `[Image] ${bodyText}` : bodyText) : hasImage ? "Sent an image" : "";
 
           // Expo push token send (works with expo-notifications in EAS builds; delivers when app is closed).
           try {
@@ -459,7 +468,7 @@ export async function sendMessage(args: {
                 const profileId = String(ownerToProfileIds.get(ownerId)?.[0] ?? "").trim();
                 return {
                   to,
-                  title: String(title ?? "New message"),
+                  title: String(title ?? "New DM"),
                   body: body || undefined,
                   channelId: "default",
                   priority: "high" as const,
@@ -678,8 +687,17 @@ export async function sendMessageWithImages(args: {
 
           if (ownerIds.size === 0) return;
 
-          const title = (await client2.query(`SELECT display_name FROM profiles WHERE id = $1 LIMIT 1`, [senderProfileId])).rows?.[0]?.display_name ?? "New message";
-          const body = (String((row as any).text ?? "").trim() || (Array.isArray((row as any).image_urls) && (row as any).image_urls.length > 0 ? "Sent an image" : "New message"));
+          const senderName = String(
+            (await client2.query(`SELECT display_name FROM profiles WHERE id = $1 LIMIT 1`, [senderProfileId])).rows?.[0]?.display_name ?? "",
+          ).trim();
+          const convTitle = String(
+            (await client2.query(`SELECT title FROM conversations WHERE id = $1 LIMIT 1`, [cid])).rows?.[0]?.title ?? "",
+          ).trim();
+          const isGroupChat = (parts.rows?.length ?? 0) > 2;
+          const title = `New DM: ${senderName || "Someone"}${isGroupChat ? (convTitle ? ` — ${convTitle}` : " — Group chat") : ""}`;
+          const bodyText = String((row as any).text ?? "").trim();
+          const hasImage = Array.isArray((row as any).image_urls) && (row as any).image_urls.length > 0;
+          const body = bodyText ? (hasImage ? `[Image] ${bodyText}` : bodyText) : hasImage ? "Sent an image" : "";
 
           try {
             const repo = new UserRepository();
@@ -691,7 +709,7 @@ export async function sendMessageWithImages(args: {
                 const profileId = String(ownerToProfileIds.get(ownerId)?.[0] ?? "").trim();
                 return {
                   to,
-                  title: String(title ?? "New message"),
+                  title: String(title ?? "New DM"),
                   body: body || undefined,
                   channelId: "default",
                   priority: "high" as const,

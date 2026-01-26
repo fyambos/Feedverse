@@ -1636,6 +1636,13 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         if (!profile) return null;
         if (String((profile as any)?.scenarioId ?? "") !== String(scenarioId)) return null;
 
+        // Ensure the selected profile is actually usable by the current user.
+        // (Prevents accidentally selecting the first profile in a scenario that isn't owned/shared.)
+        if (currentUserId) {
+          const ownerId = String((profile as any)?.ownerUserId ?? "").trim();
+          if (!ownerId || ownerId !== String(currentUserId).trim()) return null;
+        }
+
         // In backend mode, selected profile ids must be server uuids.
         const token = String(auth.token ?? "").trim();
         const baseUrl = String(process.env.EXPO_PUBLIC_API_BASE_URL ?? "").trim();

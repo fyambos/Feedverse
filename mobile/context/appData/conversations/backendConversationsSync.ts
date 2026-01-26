@@ -492,8 +492,12 @@ export async function syncConversationsForScenarioBackend(args: {
                               ? String(selectedProfileId)
                               : String(ownedUnignored[0]);
 
-                          const title = senderProfile?.displayName ? `DM from ${senderProfile.displayName}` : "New message";
-                          const body = String(m.text ?? "");
+                          const senderName = String(senderProfile?.displayName ?? "").trim();
+                          const convTitle = String((conv as any)?.title ?? "").trim();
+                          const title = `New DM: ${senderName || "Someone"}${isGroupChat ? (convTitle ? ` — ${convTitle}` : " — Group chat") : ""}`;
+                          const bodyText = String(m.text ?? "").trim();
+                          const hasImage = Array.isArray((m as any)?.imageUrls) && (m as any).imageUrls.length > 0;
+                          const body = bodyText ? (hasImage ? `[Image] ${bodyText}` : bodyText) : hasImage ? "Sent an image" : "";
                           const notif = {
                             id: uuidv4(),
                             title,
