@@ -30,25 +30,18 @@ import {
 import { readDb, subscribeDbChanges, updateDb, writeDb } from "@/data/db/storage";
 import { seedDbIfNeeded } from "@/data/db/seed";
 import { createScenarioImportExportApi } from "./appData/scenario/scenarioImportExport";
-import { coerceStringArray } from "@/lib/utils/pgArrays";
 import { conversationIdFromPathname, postIdFromPathname, scenarioIdFromPathname } from "@/lib/utils/idFromPathName";
 import { useAuth } from "@/context/auth";
 import { usePathname, useRouter } from "expo-router";
 import { apiFetch } from "@/lib/api/apiClient";
-// (scenario import/export delegated to ./appData/scenarioImportExport)
 import BootSplash from "@/components/ui/BootSplash";
-
-import { getActiveConversation, setActiveConversation } from "./appData/conversations/conversationView";
-import { consumeScenarioFeedRefreshNeeded, markScenarioFeedRefreshNeeded } from "./appData/posts/feedRefresh";
-import { presentNotification, subscribeToNotifications, type AppNotification } from "./appData/scenario/notificationEvents";
+import { getActiveConversation } from "./appData/conversations/conversationView";
+import { markScenarioFeedRefreshNeeded } from "./appData/posts/feedRefresh";
 import {
-  defaultScenarioNotificationPrefsMobile,
   createScenarioNotificationPrefsApi,
-  getScenarioNotificationPrefsFromDb,
   type ScenarioNotificationPrefs,
 } from "./appData/scenario/scenarioNotificationPrefs";
 
-// Preserve historical exports from this module.
 export { getActiveConversation, setActiveConversation } from "./appData/conversations/conversationView";
 export { consumeScenarioFeedRefreshNeeded, markScenarioFeedRefreshNeeded } from "./appData/posts/feedRefresh";
 export { presentNotification, subscribeToNotifications, type AppNotification } from "./appData/scenario/notificationEvents";
@@ -73,7 +66,7 @@ import { createLikesApi } from "./appData/posts/likes";
 import { createRepostsApi } from "./appData/posts/reposts";
 import { createScenariosApi } from "./appData/scenario/scenarios";
 import { createCharacterSheetsApi } from "./appData/profiles/characterSheets";
-import { createPagingApi } from "./appData/paging";
+import { createPagingApi } from "./appData/helpers/paging";
 
 
 type AppDataState = {
