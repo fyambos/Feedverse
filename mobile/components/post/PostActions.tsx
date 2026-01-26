@@ -33,6 +33,9 @@ type Props = {
   onRepost?: () => void | Promise<void>;
   isReposted?: boolean;
 
+  onShowLikesList?: () => void;
+  onShowRepostsList?: () => void;
+
   onShare?: () => void;
 };
 
@@ -57,6 +60,9 @@ export function PostActions({
 
   onRepost,
   isReposted = false,
+
+  onShowLikesList,
+  onShowRepostsList,
 
   onShare,
 }: Props) {
@@ -137,6 +143,16 @@ export function PostActions({
 
   const showRepostCount = showActionCounts && repostCount > 0;
 
+  const openRepostsList = () => {
+    if (typeof onShowRepostsList === "function") return onShowRepostsList();
+    Alert.alert("Coming soon", "Repost list is not available yet.");
+  };
+
+  const openLikesList = () => {
+    if (typeof onShowLikesList === "function") return onShowLikesList();
+    Alert.alert("Coming soon", "Like list is not available yet.");
+  };
+
   return (
     <View style={[styles.actions, isDetail ? styles.actionsDetail : styles.actionsReply]}>
       {/* Reply */}
@@ -187,6 +203,24 @@ export function PostActions({
             }}
             onLongPress={() => {
               pop(repostScale);
+              // Preserve quote-on-long-press, but also allow opening the repost list.
+              if (typeof onShowRepostsList === "function") {
+                Alert.alert("Repost", "What do you want to do?", [
+                  {
+                    text: "View reposts",
+                    style: "default",
+                    onPress: () => openRepostsList(),
+                  },
+                  {
+                    text: "Quote",
+                    style: "default",
+                    onPress: () => onQuote(),
+                  },
+                  { text: "Cancel", style: "cancel" },
+                ]);
+                return;
+              }
+
               onQuote();
             }}
             delayLongPress={250}
@@ -253,6 +287,11 @@ export function PostActions({
               if (onLike) onLike();
               else comingSoon("Liking");
             }}
+            onLongPress={() => {
+              pop(likeScale);
+              openLikesList();
+            }}
+            delayLongPress={250}
             hitSlop={6}
             pressRetentionOffset={6}
             style={styles.iconPressable}

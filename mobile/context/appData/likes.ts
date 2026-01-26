@@ -1,5 +1,5 @@
 import type { Dispatch, SetStateAction } from "react";
-import type { DbV5, Like } from "@/data/db/schema";
+import type { DbV5, Like, Profile } from "@/data/db/schema";
 import { updateDb } from "@/data/db/storage";
 import { apiFetch } from "@/lib/api/apiClient";
 import { upsertPostsAsync, upsertLikesAsync, deleteLikeAsync } from "@/data/db/sqliteStore";
@@ -298,11 +298,139 @@ export function createLikesApi(deps: Deps) {
     return Boolean(likes[k1]) && String((likes[k1] as any)?.scenarioId ?? "") === sid;
   };
 
+  const listLikersForPost = async (scenarioId: string, postId: string): Promise<Profile[]> => {
+    const db = deps.getDb();
+    if (!db) return [];
+
+    const sid = String(scenarioId ?? "").trim();
+    const poid = String(postId ?? "").trim();
+    if (!sid || !poid) return [];
+
+    const token = String(deps.auth.token ?? "").trim();
+    const baseUrl = String(process.env.EXPO_PUBLIC_API_BASE_URL ?? "").trim();
+    if (token && baseUrl) {
+      const likesRes = await apiFetch({
+        path: `/scenarios/${encodeURIComponent(sid)}/likes`,
+        token,
+        init: { method: "GET" },
+      });
+
+      if (!likesRes.ok) {
+        const msg =
+          typeof (likesRes.json as any)?.error === "string"
+            ? String((likesRes.json as any).error)
+            : typeof likesRes.text === "string" && likesRes.text.trim().length
+              ? likesRes.text
+              : `Load likes failed (HTTP ${likesRes.status})`;
+        throw new Error(msg);
+      }
+
+      const likesRaw: any[] = Array.isArray(likesRes.json)
+        ? (likesRes.json as any[])
+        : Array.isArray((likesRes.json as any)?.likes)
+          ? ((likesRes.json as any).likes as any[])
+          : [];
+
+      const likesForPost = likesRaw
+        .filter((li) => li && typeof li === "object")
+        .filter((li) => String(li.scenarioId ?? li.scenario_id ?? "") === sid)
+        .filter((li) => String(li.postId ?? li.post_id ?? "") === poid)
+        .sort((a: any, b: any) => String(b.createdAt ?? b.created_at ?? "").localeCompare(String(a.createdAt ?? a.created_at ?? "")));
+
+      const orderedProfileIds: string[] = [];
+      const seen = new Set<string>();
+      for (const li of likesForPost) {
+        const pid = String(li.profileId ?? li.profile_id ?? "").trim();
+        if (!pid || seen.has(pid)) continue;
+        seen.add(pid);
+        orderedProfileIds.push(pid);
+      }
+
+      let nextDb: DbV5 | null = db;
+      const profilesById0 = ((nextDb as any)?.profiles ?? {}) as Record<string, Profile>;
+      const missing = orderedProfileIds.filter((pid) => !profilesById0[pid]);
+
+      if (missing.length > 0) {
+        const profilesRes = await apiFetch({
+          path: `/scenarios/${encodeURIComponent(sid)}/profiles`,
+          token,
+          init: { method: "GET" },
+        });
+
+        if (profilesRes.ok) {
+          const rawProfiles: any[] = Array.isArray(profilesRes.json)
+            ? (profilesRes.json as any[])
+            : Array.isArray((profilesRes.json as any)?.profiles)
+              ? ((profilesRes.json as any).profiles as any[])
+              : [];
+
+          const profiles: Profile[] = rawProfiles
+            .filter((p) => p && typeof p === "object")
+            .map((p) => ({
+              id: String(p.id ?? ""),
+              scenarioId: String(p.scenarioId ?? p.scenario_id ?? sid),
+              ownerUserId: String(p.ownerUserId ?? p.owner_user_id ?? ""),
+              displayName: String(p.displayName ?? p.display_name ?? ""),
+              handle: String(p.handle ?? ""),
+              avatarUrl: String(p.avatarUrl ?? p.avatar_url ?? ""),
+              headerUrl: p.headerUrl ?? p.header_url ?? undefined,
+              bio: p.bio ?? undefined,
+              isPublic: p.isPublic ?? p.is_public ?? undefined,
+              isPrivate: p.isPrivate ?? p.is_private ?? undefined,
+              joinedDate: p.joinedDate ?? p.joined_date ?? undefined,
+              location: p.location ?? undefined,
+              link: p.link ?? undefined,
+              followerCount: p.followerCount ?? p.follower_count ?? undefined,
+              followingCount: p.followingCount ?? p.following_count ?? undefined,
+              createdAt: String(p.createdAt ?? p.created_at ?? new Date().toISOString()),
+              updatedAt: p.updatedAt ?? p.updated_at ?? undefined,
+            }))
+            .filter((p) => Boolean(p.id));
+
+          nextDb = (await updateDb((prev) => {
+            const nextProfiles = { ...(prev as any).profiles } as Record<string, Profile>;
+            for (const pr of profiles) {
+              const existing = nextProfiles[String(pr.id)] ?? {};
+              nextProfiles[String(pr.id)] = { ...existing, ...pr } as any;
+            }
+            return { ...prev, profiles: nextProfiles } as any;
+          })) as any;
+
+          deps.setState({ isReady: true, db: nextDb as any });
+        }
+      }
+
+      const profilesById = (((nextDb as any)?.profiles ?? {}) as Record<string, Profile>) ?? {};
+      return orderedProfileIds.map((pid) => profilesById[pid]).filter(Boolean);
+    }
+
+    const likes = Object.values(getLikesMap(db))
+      .filter((li) => String((li as any)?.scenarioId ?? "") === sid && String((li as any)?.postId ?? "") === poid)
+      .sort((a: any, b: any) => {
+        const c = String(b.createdAt ?? "").localeCompare(String(a.createdAt ?? ""));
+        if (c !== 0) return c;
+        return String((b as any)?.profileId ?? "").localeCompare(String((a as any)?.profileId ?? ""));
+      });
+
+    const profilesById = (db as any).profiles ?? {};
+    const seen = new Set<string>();
+    const out: Profile[] = [];
+    for (const li of likes) {
+      const pid = String((li as any)?.profileId ?? "").trim();
+      if (!pid || seen.has(pid)) continue;
+      seen.add(pid);
+      const p = profilesById[pid];
+      if (p) out.push(p);
+    }
+    return out;
+  };
+
   return {
     toggleLikePost,
     toggleLike,
     isPostLikedByProfile,
     listLikedPostIdsForProfile,
     isPostLikedBySelectedProfile,
+    listLikersForPost,
   };
 }

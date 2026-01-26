@@ -1,5 +1,5 @@
 import type { Dispatch, SetStateAction } from "react";
-import type { DbV5, Repost } from "@/data/db/schema";
+import type { DbV5, Profile, Repost } from "@/data/db/schema";
 import { updateDb } from "@/data/db/storage";
 import { apiFetch } from "@/lib/api/apiClient";
 import { upsertPostsAsync, upsertRepostsAsync, deleteRepostAsync } from "@/data/db/sqliteStore";
@@ -355,10 +355,138 @@ export function createRepostsApi(deps: Deps) {
     deps.setState({ isReady: true, db: next as any });
   };
 
+  const listRepostersForPost = async (scenarioId: string, postId: string): Promise<Profile[]> => {
+    const db = deps.getDb();
+    if (!db) return [];
+
+    const sid = String(scenarioId ?? "").trim();
+    const poid = String(postId ?? "").trim();
+    if (!sid || !poid) return [];
+
+    const token = String(deps.auth.token ?? "").trim();
+    const baseUrl = String(process.env.EXPO_PUBLIC_API_BASE_URL ?? "").trim();
+    if (token && baseUrl) {
+      const repostsRes = await apiFetch({
+        path: `/scenarios/${encodeURIComponent(sid)}/reposts`,
+        token,
+        init: { method: "GET" },
+      });
+
+      if (!repostsRes.ok) {
+        const msg =
+          typeof (repostsRes.json as any)?.error === "string"
+            ? String((repostsRes.json as any).error)
+            : typeof repostsRes.text === "string" && repostsRes.text.trim().length
+              ? repostsRes.text
+              : `Load reposts failed (HTTP ${repostsRes.status})`;
+        throw new Error(msg);
+      }
+
+      const repostsRaw: any[] = Array.isArray(repostsRes.json)
+        ? (repostsRes.json as any[])
+        : Array.isArray((repostsRes.json as any)?.reposts)
+          ? ((repostsRes.json as any).reposts as any[])
+          : [];
+
+      const repostsForPost = repostsRaw
+        .filter((r) => r && typeof r === "object")
+        .filter((r) => String(r.scenarioId ?? r.scenario_id ?? "") === sid)
+        .filter((r) => String(r.postId ?? r.post_id ?? "") === poid)
+        .sort((a: any, b: any) => String(b.createdAt ?? b.created_at ?? "").localeCompare(String(a.createdAt ?? a.created_at ?? "")));
+
+      const orderedProfileIds: string[] = [];
+      const seen = new Set<string>();
+      for (const r of repostsForPost) {
+        const pid = String(r.profileId ?? r.profile_id ?? "").trim();
+        if (!pid || seen.has(pid)) continue;
+        seen.add(pid);
+        orderedProfileIds.push(pid);
+      }
+
+      let nextDb: any = db;
+      const profilesById0 = ((nextDb as any)?.profiles ?? {}) as Record<string, Profile>;
+      const missing = orderedProfileIds.filter((pid) => !profilesById0[pid]);
+
+      if (missing.length > 0) {
+        const profilesRes = await apiFetch({
+          path: `/scenarios/${encodeURIComponent(sid)}/profiles`,
+          token,
+          init: { method: "GET" },
+        });
+
+        if (profilesRes.ok) {
+          const rawProfiles: any[] = Array.isArray(profilesRes.json)
+            ? (profilesRes.json as any[])
+            : Array.isArray((profilesRes.json as any)?.profiles)
+              ? ((profilesRes.json as any).profiles as any[])
+              : [];
+
+          const profiles: Profile[] = rawProfiles
+            .filter((p) => p && typeof p === "object")
+            .map((p) => ({
+              id: String(p.id ?? ""),
+              scenarioId: String(p.scenarioId ?? p.scenario_id ?? sid),
+              ownerUserId: String(p.ownerUserId ?? p.owner_user_id ?? ""),
+              displayName: String(p.displayName ?? p.display_name ?? ""),
+              handle: String(p.handle ?? ""),
+              avatarUrl: String(p.avatarUrl ?? p.avatar_url ?? ""),
+              headerUrl: p.headerUrl ?? p.header_url ?? undefined,
+              bio: p.bio ?? undefined,
+              isPublic: p.isPublic ?? p.is_public ?? undefined,
+              isPrivate: p.isPrivate ?? p.is_private ?? undefined,
+              joinedDate: p.joinedDate ?? p.joined_date ?? undefined,
+              location: p.location ?? undefined,
+              link: p.link ?? undefined,
+              followerCount: p.followerCount ?? p.follower_count ?? undefined,
+              followingCount: p.followingCount ?? p.following_count ?? undefined,
+              createdAt: String(p.createdAt ?? p.created_at ?? new Date().toISOString()),
+              updatedAt: p.updatedAt ?? p.updated_at ?? undefined,
+            }))
+            .filter((p) => Boolean(p.id));
+
+          nextDb = await updateDb((prev) => {
+            const nextProfiles = { ...(prev as any).profiles } as Record<string, Profile>;
+            for (const pr of profiles) {
+              const existing = nextProfiles[String(pr.id)] ?? {};
+              nextProfiles[String(pr.id)] = { ...existing, ...pr } as any;
+            }
+            return { ...prev, profiles: nextProfiles } as any;
+          });
+
+          deps.setState({ isReady: true, db: nextDb as any });
+        }
+      }
+
+      const profilesById = (((nextDb as any)?.profiles ?? {}) as Record<string, Profile>) ?? {};
+      return orderedProfileIds.map((pid) => profilesById[pid]).filter(Boolean);
+    }
+
+    const reposts = Object.values(((db as any).reposts ?? {}) as Record<string, Repost>)
+      .filter((r) => String((r as any)?.scenarioId ?? "") === sid && String((r as any)?.postId ?? "") === poid)
+      .sort((a: any, b: any) => {
+        const c = String(b.createdAt ?? "").localeCompare(String(a.createdAt ?? ""));
+        if (c !== 0) return c;
+        return String((b as any)?.profileId ?? "").localeCompare(String((a as any)?.profileId ?? ""));
+      });
+
+    const profilesById = (db as any).profiles ?? {};
+    const seen = new Set<string>();
+    const out: Profile[] = [];
+    for (const r of reposts) {
+      const pid = String((r as any)?.profileId ?? "").trim();
+      if (!pid || seen.has(pid)) continue;
+      seen.add(pid);
+      const p = profilesById[pid];
+      if (p) out.push(p);
+    }
+    return out;
+  };
+
   return {
     getRepostEventForProfile,
     isPostRepostedByProfileId,
     isPostRepostedBySelectedProfile,
     toggleRepost,
+    listRepostersForPost,
   };
 }

@@ -218,6 +218,15 @@ export function Post({
     } as any);
   };
 
+  const openReactionList = (kind: "likes" | "reposts") => {
+    if (!canNavigate) return;
+    if (!sid || !item?.id) return;
+    router.push({
+      pathname: "/modal/reaction-list",
+      params: { scenarioId: sid, postId: String(item.id), kind },
+    } as any);
+  };
+
   // ===== DETAIL =====
   if (isDetail) {
     return (
@@ -289,14 +298,28 @@ export function Post({
 
             <View style={styles.countsRow}>
               {repostCount > 0 && (
-                <ThemedText style={[styles.countItem, { color: colors.text }]}>
-                  <ThemedText type="defaultSemiBold">{formatCount(repostCount)}</ThemedText> {pluralize(repostCount, "Repost")}
-                </ThemedText>
+                <Pressable
+                  onPress={() => openReactionList("reposts")}
+                  hitSlop={6}
+                  accessibilityRole="button"
+                  accessibilityLabel="View reposts"
+                >
+                  <ThemedText style={[styles.countItem, { color: colors.text }]}>
+                    <ThemedText type="defaultSemiBold">{formatCount(repostCount)}</ThemedText> {pluralize(repostCount, "Repost")}
+                  </ThemedText>
+                </Pressable>
               )}
               {likeCount > 0 && (
-                <ThemedText style={[styles.countItem, { color: colors.text }]}>
-                  <ThemedText type="defaultSemiBold">{formatCount(likeCount)}</ThemedText> {pluralize(likeCount, "Like")}
-                </ThemedText>
+                <Pressable
+                  onPress={() => openReactionList("likes")}
+                  hitSlop={6}
+                  accessibilityRole="button"
+                  accessibilityLabel="View likes"
+                >
+                  <ThemedText style={[styles.countItem, { color: colors.text }]}>
+                    <ThemedText type="defaultSemiBold">{formatCount(likeCount)}</ThemedText> {pluralize(likeCount, "Like")}
+                  </ThemedText>
+                </Pressable>
               )}
             </View>
 
@@ -320,6 +343,8 @@ export function Post({
             }}
             isReposted={isReposted}
             onRepost={onRepost}
+            onShowLikesList={() => openReactionList("likes")}
+            onShowRepostsList={() => openReactionList("reposts")}
             onShare={onShare}
           />
         )}
@@ -439,6 +464,8 @@ export function Post({
               }}
               isReposted={isReposted}
               onRepost={onRepost}
+              onShowLikesList={() => openReactionList("likes")}
+              onShowRepostsList={() => openReactionList("reposts")}
               onShare={onShare}
             />
           )}

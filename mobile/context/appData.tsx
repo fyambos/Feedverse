@@ -38,7 +38,7 @@ import { apiFetch } from "@/lib/api/apiClient";
 // (scenario import/export delegated to ./appData/scenarioImportExport)
 import BootSplash from "@/components/ui/BootSplash";
 
-import { getActiveConversation, setActiveConversation } from "./appData/conversationView";
+import { getActiveConversation, setActiveConversation } from "./appData/conversations/conversationView";
 import { consumeScenarioFeedRefreshNeeded, markScenarioFeedRefreshNeeded } from "./appData/feedRefresh";
 import { presentNotification, subscribeToNotifications, type AppNotification } from "./appData/notificationEvents";
 import {
@@ -49,7 +49,7 @@ import {
 } from "./appData/scenarioNotificationPrefs";
 
 // Preserve historical exports from this module.
-export { getActiveConversation, setActiveConversation } from "./appData/conversationView";
+export { getActiveConversation, setActiveConversation } from "./appData/conversations/conversationView";
 export { consumeScenarioFeedRefreshNeeded, markScenarioFeedRefreshNeeded } from "./appData/feedRefresh";
 export { presentNotification, subscribeToNotifications, type AppNotification } from "./appData/notificationEvents";
 export {
@@ -61,8 +61,8 @@ export {
 import { syncPostThreadForScenarioImpl } from "./appData/threadSync";
 import { createSchedulePostsSync } from "./appData/postsSync";
 import { syncProfilesForScenarioBackend } from "./appData/backendProfilesSync";
-import { syncMessagesForConversationBackend } from "./appData/backendMessagesSync";
-import { syncConversationsForScenarioBackend } from "./appData/backendConversationsSync";
+import { syncMessagesForConversationBackend } from "./appData/conversations/backendMessagesSync";
+import { syncConversationsForScenarioBackend } from "./appData/conversations/backendConversationsSync";
 import { createDmConversationsApi } from "./appData/dmConversations";
 import { createDmMessagesApi } from "./appData/dmMessages";
 import { createSendTyping } from "./appData/dmTyping";
@@ -223,6 +223,7 @@ type AppDataApi = {
   isPostLikedByProfile: (profileId: string, postId: string) => boolean;
   listLikedPostIdsForProfile: (scenarioId: string, profileId: string) => string[];
   toggleLikePost: (scenarioId: string, profileId: string, postId: string) => Promise<{ ok: boolean; liked: boolean }>;
+  listLikersForPost: (scenarioId: string, postId: string) => Promise<Profile[]>;
 
   // reposts
   toggleRepost: (scenarioId: string, postId: string) => Promise<void>;
@@ -231,6 +232,7 @@ type AppDataApi = {
   // helpers
   isPostRepostedByProfileId: (profileId: string, postId: string) => boolean;
   getRepostEventForProfile: (profileId: string, postId: string) => Repost | null;
+  listRepostersForPost: (scenarioId: string, postId: string) => Promise<Profile[]>;
 
   // pins (campaign)
   togglePinPost: (scenarioId: string, postId: string, nextPinned: boolean) => Promise<void>;
@@ -2353,6 +2355,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       listLikedPostIdsForProfile: likesApi.listLikedPostIdsForProfile,
       isPostLikedBySelectedProfile: likesApi.isPostLikedBySelectedProfile,
       toggleLikePost: likesApi.toggleLikePost,
+      listLikersForPost: likesApi.listLikersForPost,
       toggleLike: likesApi.toggleLike,
       deleteConversationCascade: async ({ scenarioId, conversationId }) => {
         const sid = String(scenarioId ?? "").trim();
@@ -2401,6 +2404,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       getRepostEventForProfile: repostsApi.getRepostEventForProfile,
       isPostRepostedByProfileId: repostsApi.isPostRepostedByProfileId,
       isPostRepostedBySelectedProfile: repostsApi.isPostRepostedBySelectedProfile,
+      listRepostersForPost: repostsApi.listRepostersForPost,
       toggleRepost: repostsApi.toggleRepost,
 
       // --- pins (campaign)
