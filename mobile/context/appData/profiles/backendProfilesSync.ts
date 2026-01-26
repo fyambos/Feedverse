@@ -1,7 +1,7 @@
 import type { CharacterSheet, ProfilePin } from "@/data/db/schema";
 import { updateDb } from "@/data/db/storage";
 import { apiFetch } from "@/lib/api/apiClient";
-import { defaultScenarioNotificationPrefsMobile } from "./scenarioNotificationPrefs";
+import { defaultScenarioNotificationPrefsMobile } from "../scenario/scenarioNotificationPrefs";
 
 type AuthLike = {
   isReady: boolean;

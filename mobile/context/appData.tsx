@@ -29,7 +29,7 @@ import {
 } from "@/data/db/sqliteCore";
 import { readDb, subscribeDbChanges, updateDb, writeDb } from "@/data/db/storage";
 import { seedDbIfNeeded } from "@/data/db/seed";
-import { createScenarioImportExportApi } from "./appData/scenarioImportExport";
+import { createScenarioImportExportApi } from "./appData/scenario/scenarioImportExport";
 import { coerceStringArray } from "@/lib/utils/pgArrays";
 import { conversationIdFromPathname, postIdFromPathname, scenarioIdFromPathname } from "@/lib/utils/idFromPathName";
 import { useAuth } from "@/context/auth";
@@ -39,40 +39,40 @@ import { apiFetch } from "@/lib/api/apiClient";
 import BootSplash from "@/components/ui/BootSplash";
 
 import { getActiveConversation, setActiveConversation } from "./appData/conversations/conversationView";
-import { consumeScenarioFeedRefreshNeeded, markScenarioFeedRefreshNeeded } from "./appData/feedRefresh";
-import { presentNotification, subscribeToNotifications, type AppNotification } from "./appData/notificationEvents";
+import { consumeScenarioFeedRefreshNeeded, markScenarioFeedRefreshNeeded } from "./appData/posts/feedRefresh";
+import { presentNotification, subscribeToNotifications, type AppNotification } from "./appData/scenario/notificationEvents";
 import {
   defaultScenarioNotificationPrefsMobile,
   createScenarioNotificationPrefsApi,
   getScenarioNotificationPrefsFromDb,
   type ScenarioNotificationPrefs,
-} from "./appData/scenarioNotificationPrefs";
+} from "./appData/scenario/scenarioNotificationPrefs";
 
 // Preserve historical exports from this module.
 export { getActiveConversation, setActiveConversation } from "./appData/conversations/conversationView";
-export { consumeScenarioFeedRefreshNeeded, markScenarioFeedRefreshNeeded } from "./appData/feedRefresh";
-export { presentNotification, subscribeToNotifications, type AppNotification } from "./appData/notificationEvents";
+export { consumeScenarioFeedRefreshNeeded, markScenarioFeedRefreshNeeded } from "./appData/posts/feedRefresh";
+export { presentNotification, subscribeToNotifications, type AppNotification } from "./appData/scenario/notificationEvents";
 export {
   defaultScenarioNotificationPrefsMobile,
   getScenarioNotificationPrefsFromDb,
   type ScenarioNotificationPrefs,
-} from "./appData/scenarioNotificationPrefs";
+} from "./appData/scenario/scenarioNotificationPrefs";
 
-import { syncPostThreadForScenarioImpl } from "./appData/threadSync";
-import { createSchedulePostsSync } from "./appData/postsSync";
-import { syncProfilesForScenarioBackend } from "./appData/backendProfilesSync";
+import { syncPostThreadForScenarioImpl } from "./appData/posts/threadSync";
+import { createSchedulePostsSync } from "./appData/posts/postsSync";
+import { syncProfilesForScenarioBackend } from "./appData/profiles/backendProfilesSync";
 import { syncMessagesForConversationBackend } from "./appData/conversations/backendMessagesSync";
 import { syncConversationsForScenarioBackend } from "./appData/conversations/backendConversationsSync";
-import { createDmConversationsApi } from "./appData/dmConversations";
-import { createDmMessagesApi } from "./appData/dmMessages";
-import { createSendTyping } from "./appData/dmTyping";
-import { createPinsApi } from "./appData/pins";
-import { createScenarioSettingsApi } from "./appData/scenarioSettings";
-import { createGmToolsApi } from "./appData/gmTools";
-import { createLikesApi } from "./appData/likes";
-import { createRepostsApi } from "./appData/reposts";
-import { createScenariosApi } from "./appData/scenarios";
-import { createCharacterSheetsApi } from "./appData/characterSheets";
+import { createDmConversationsApi } from "./appData/conversations/dmConversations";
+import { createDmMessagesApi } from "./appData/conversations/dmMessages";
+import { createSendTyping } from "./appData/conversations/dmTyping";
+import { createPinsApi } from "./appData/posts/pins";
+import { createScenarioSettingsApi } from "./appData/scenario/scenarioSettings";
+import { createGmToolsApi } from "./appData/posts/gmTools";
+import { createLikesApi } from "./appData/posts/likes";
+import { createRepostsApi } from "./appData/posts/reposts";
+import { createScenariosApi } from "./appData/scenario/scenarios";
+import { createCharacterSheetsApi } from "./appData/profiles/characterSheets";
 import { createPagingApi } from "./appData/paging";
 
 

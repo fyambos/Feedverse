@@ -3,8 +3,8 @@ import type { Conversation, Message } from "@/data/db/schema";
 import { readDb, updateDb } from "@/data/db/storage";
 import { apiFetch } from "@/lib/api/apiClient";
 import { getActiveConversation } from "./conversationView";
-import { type AppNotification, presentNotification } from "../notificationEvents";
-import { getScenarioNotificationPrefsFromDb } from "../scenarioNotificationPrefs";
+import { type AppNotification, presentNotification } from "../scenario/notificationEvents";
+import { getScenarioNotificationPrefsFromDb } from "../scenario/scenarioNotificationPrefs";
 
 type AuthLike = {
   isReady: boolean;
