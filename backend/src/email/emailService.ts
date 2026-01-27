@@ -3,6 +3,11 @@ type SendEmailArgs = {
   subject: string;
   text: string;
   html?: string;
+  attachments?: Array<{
+    filename: string;
+    contentBase64: string;
+    contentType?: string;
+  }>;
 };
 
 type FetchFn = (input: any, init?: any) => Promise<any>;
@@ -63,6 +68,21 @@ async function sendViaResend(args: SendEmailArgs): Promise<boolean> {
   if (args.html) payload.html = args.html;
   if (replyTo) payload.reply_to = replyTo;
 
+  if (Array.isArray(args.attachments) && args.attachments.length > 0) {
+    // Resend expects base64-encoded content.
+    payload.attachments = args.attachments
+      .map((a) => {
+        const filename = String(a?.filename ?? "").trim();
+        const content = String(a?.contentBase64 ?? "").trim();
+        const contentType = a?.contentType ? String(a.contentType).trim() : "";
+        if (!filename || !content) return null;
+        return contentType
+          ? { filename, content, content_type: contentType }
+          : { filename, content };
+      })
+      .filter(Boolean);
+  }
+
   const res = await fetchFn("https://api.resend.com/emails", {
     method: "POST",
     headers: {
@@ -91,6 +111,9 @@ async function sendViaNoop(args: SendEmailArgs): Promise<boolean> {
       to: args.to,
       subject: args.subject,
       text: args.text,
+      attachments: Array.isArray(args.attachments)
+        ? args.attachments.map((a) => ({ filename: a.filename, contentType: a.contentType ?? null }))
+        : [],
     });
   } else {
     // eslint-disable-next-line no-console

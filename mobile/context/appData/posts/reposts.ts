@@ -2,7 +2,7 @@ import type { Dispatch, SetStateAction } from "react";
 import type { DbV5, Profile, Repost } from "@/data/db/schema";
 import { updateDb } from "@/data/db/storage";
 import { apiFetch } from "@/lib/api/apiClient";
-import { upsertPostsAsync, upsertRepostsAsync, deleteRepostAsync } from "@/data/db/sqliteStore";
+import { upsertPostsAsync, upsertRepostsAsync, deleteRepostAsync, deletePostCascadeAsync } from "@/data/db/sqliteStore";
 
 type AuthLike = {
   token?: string | null;
@@ -205,6 +205,39 @@ export function createRepostsApi(deps: Deps) {
               ? res.text
               : `Repost failed (HTTP ${res.status})`;
         await rollbackOptimistic();
+
+        // If the post no longer exists on the server, our local cache is stale
+        // (commonly happens if you switched environments or the post was deleted).
+        if (res.status === 404 && /post not found/i.test(msg)) {
+          try {
+            const prunedDb = await updateDb((prev) => {
+              const posts = { ...(prev as any).posts } as any;
+              const reposts = { ...((prev as any).reposts ?? {}) } as any;
+
+              delete posts[pid];
+
+              // Remove repost edges pointing at this post.
+              for (const k of Object.keys(reposts)) {
+                if (k.endsWith(`|${pid}`)) delete reposts[k];
+              }
+
+              return { ...prev, posts, reposts };
+            });
+
+            try {
+              await deletePostCascadeAsync(pid);
+            } catch {
+              // ignore
+            }
+
+            deps.setState({ isReady: true, db: prunedDb as any });
+          } catch {
+            // ignore
+          }
+
+          throw new Error("Post no longer exists.");
+        }
+
         throw new Error(msg);
       }
 

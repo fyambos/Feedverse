@@ -29,6 +29,7 @@ import { Colors } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { useAppData } from "@/context/appData";
 import { useAuth } from "@/context/auth";
+import { Alert as DialogAlert } from "@/context/dialog";
 import type { Conversation, Message, Profile } from "@/data/db/schema";
 import { AuthorAvatarPicker } from "@/components/postComposer/AuthorAvatarPicker";
 import { Avatar } from "@/components/ui/Avatar";
@@ -107,6 +108,38 @@ export default function ConversationThreadScreen() {
       // ignore
     }
   }, [auth?.token, sid, cid, selectedProfileId]);
+
+  const reportMessageById = useCallback(
+    async (messageId: string, reportText?: string) => {
+      try {
+        const token = String(auth?.token ?? "").trim();
+        if (!token) {
+          DialogAlert.alert("Not signed in", "Please sign in to report messages.");
+          return;
+        }
+
+        const res = await apiFetch({
+          path: `/messages/${encodeURIComponent(String(messageId))}/report`,
+          token,
+          init: {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ message: String(reportText ?? "").trim() || undefined }),
+          },
+        });
+
+        if (!res.ok) {
+          DialogAlert.alert("Report failed", res?.json?.error ?? res.text ?? "Please try again.");
+          return;
+        }
+
+        DialogAlert.alert("Reported", "Thanks — we’ll take a look.");
+      } catch {
+        DialogAlert.alert("Report failed", "Network error. Please try again.");
+      }
+    },
+    [auth?.token],
+  );
 
   // Track which conversation is currently active (non-reactive; avoids update loops)
   useFocusEffect(
@@ -1529,7 +1562,37 @@ export default function ConversationThreadScreen() {
           // mode by long-pressing an individual message.
           if (reorderMode) {
             opts?.drag?.();
+            return;
           }
+
+          const mid = String((item as any)?.id ?? "").trim();
+          if (!mid) return;
+
+          Alert.alert("Message actions", undefined, [
+            { text: "Cancel", style: "cancel" },
+            {
+              text: "Report message",
+              style: "destructive",
+              onPress: () => {
+                DialogAlert.prompt(
+                  "Report message",
+                  "Tell us what’s wrong (optional). This sends a snapshot to support@feedverse.app.",
+                  [
+                    { text: "Cancel", style: "cancel" },
+                    {
+                      text: "Send report",
+                      style: "destructive",
+                      onPress: (value?: string) => {
+                        void reportMessageById(mid, value);
+                      },
+                    },
+                  ],
+                  "plain-text",
+                  "",
+                );
+              },
+            },
+          ]);
         }}
         delayLongPress={180}
         style={({ pressed }) => [
