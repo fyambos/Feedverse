@@ -198,6 +198,13 @@ export const ERROR_MESSAGES = {
 export const ROUTES_AUTH = {
   BASE: "/auth",
   REGISTER: "/register",
+  USERNAME_AVAILABLE: "/username-available",
+  SIGNUP_REQUEST: "/signup/request",
+  SIGNUP_CONFIRM: "/signup/confirm",
+  EMAIL_VERIFY_REQUEST: "/email/verify/request",
+  EMAIL_VERIFY_CONFIRM: "/email/verify/confirm",
+  EMAIL_CHANGE_REQUEST: "/email/change/request",
+  EMAIL_CHANGE_CONFIRM: "/email/change/confirm",
   LOGIN: "/login",
   LOGOUT: "/logout",
   REFRESH_TOKEN: "/refresh",

@@ -52,9 +52,14 @@ export default function UserSettingsScreen() {
   const scheme = useColorScheme() ?? "light";
   const colors = Colors[scheme];
 
+  const verifyGreen = scheme === "dark" ? "#22c55e" : "#16a34a";
+
   const { userId, currentUser, updateUserSettings, updateUserAvatar, updateUsername } = useAuth();
 
   const user = currentUser ?? null;
+
+  const isEmailVerified = Boolean(user?.emailVerifiedAt);
+  const canVerifyEmail = Boolean(user?.email) && !isEmailVerified;
 
   const [draft, setDraft] = useState<Required<UserSettings>>(normalizeSettings(user?.settings));
   const [avatarUrl, setAvatarUrl] = useState<string | null>(user?.avatarUrl ?? null);
@@ -204,6 +209,40 @@ export default function UserSettingsScreen() {
                     {usernameError}
                   </ThemedText>
                 ) : null}
+              </RowCard>
+
+              {/* ACCOUNT - Email */}
+              <RowCard
+                label="Email"
+                colors={colors}
+                right={
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                    {canVerifyEmail ? (
+                      <Pressable
+                        onPress={() => router.push({ pathname: "/(scenario)/settings/verify-email" } as any)}
+                        hitSlop={10}
+                      >
+                        <ThemedText type="defaultSemiBold" style={{ color: verifyGreen, fontSize: 13 }}>
+                          Verify
+                        </ThemedText>
+                      </Pressable>
+                    ) : null}
+
+                    <Ionicons name="chevron-forward" size={18} color={colors.icon} />
+                  </View>
+                }
+              >
+                <Pressable
+                  onPress={() => router.push({ pathname: "/(scenario)/settings/change-email" } as any)}
+                  hitSlop={8}
+                >
+                  <ThemedText style={{ color: colors.text }}>
+                    {user?.email ? user.email : "Add an email"}
+                  </ThemedText>
+                  <ThemedText style={{ color: colors.textSecondary, marginTop: 4 }}>
+                    {user?.email ? (isEmailVerified ? "Verified" : "Not verified") : "Add an email to secure your account"}
+                  </ThemedText>
+                </Pressable>
               </RowCard>
 
               {/* SHOW TIMESTAMPS */}

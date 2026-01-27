@@ -75,7 +75,7 @@
 
 ### Contact
 
-- For questions, data requests, or concerns, contact: feedverse.app@gmail.com
+- For questions, data requests, or concerns, contact: support@feedverse.app
 
 ### Additional Notices
 
@@ -94,13 +94,13 @@ This page explains how to request deletion, what we will remove, what may be ret
 
 App: Feedverse
 Developer / Store listing name: Feedverse
-Support contact: feedverse.app@gmail.com
+Support contact: support@feedverse.app
 
 —
 
 ### How to request deletion
 
-1. Email us at `feedverse.app@gmail.com` with the subject **Delete my Feedverse account**).
+1. Email us at `support@feedverse.app` with the subject **Delete my Feedverse account**).
 2. In the request, include:
    - The email address associated with your Feedverse account
    - Your username (if applicable)
@@ -133,7 +133,7 @@ Note: If your content is part of a collaborative scenario or quoted in other use
 - **Legal / compliance records:** Data required to comply with laws (tax, fraud investigations, court orders) may be retained for up to 1 year or longer if required by law.
 - **Aggregated / anonymized data:** Non-identifying analytics and aggregated usage data may be retained indefinitely for product improvement.
 
-If you require stricter deletion for any retained items for legal reasons, contact us at `feedverse.app@gmail.com` and we will review each request.
+If you require stricter deletion for any retained items for legal reasons, contact us at `support@feedverse.app` and we will review each request.
 
 —
 
@@ -161,7 +161,7 @@ If you require stricter deletion for any retained items for legal reasons, conta
 
 ### Dispute or additional help
 
-If you believe we have not complied with your deletion request or you have other privacy concerns, contact us at `feedverse.app@gmail.com`. You may also contact your local data protection authority for complaints in your jurisdiction.
+If you believe we have not complied with your deletion request or you have other privacy concerns, contact us at `support@feedverse.app`. You may also contact your local data protection authority for complaints in your jurisdiction.
 
 —
 

@@ -11,6 +11,13 @@ import {
   ResetPasswordController,
   RequestPasswordChangeController,
   ConfirmPasswordChangeController,
+  UsernameAvailableController,
+  SignupRequestController,
+  SignupConfirmController,
+  EmailVerifyRequestController,
+  EmailVerifyConfirmController,
+  EmailChangeRequestController,
+  EmailChangeConfirmController,
 } from "./authControllers";
 import { ROUTES_AUTH } from "../config/constants";
 import { authMiddleware } from "./authMiddleware";
@@ -39,6 +46,7 @@ const refreshBodySchema = z
   .passthrough();
 
 authRouter.post(ROUTES_AUTH.REGISTER, RegisterController);
+authRouter.get(ROUTES_AUTH.USERNAME_AVAILABLE, UsernameAvailableController);
 authRouter.post(ROUTES_AUTH.LOGIN, validateBody(loginBodySchema), LoginController);
 authRouter.post(ROUTES_AUTH.REFRESH_TOKEN, validateBody(refreshBodySchema), RefreshTokenController);
 authRouter.post(ROUTES_AUTH.LOGOUT, authMiddleware, LogoutController);
@@ -91,8 +99,59 @@ const changePasswordLimiter = skipLimits
       message: { error: "Too many requests" },
     });
 
+const signupRequestLimiter = skipLimits
+  ? (_req: any, _res: any, next: any) => next()
+  : rateLimit({
+      windowMs: 15 * 60 * 1000,
+      max: 5,
+      standardHeaders: "draft-7",
+      legacyHeaders: false,
+      keyGenerator: (req) => {
+        const ip = ipKeyGenerator(req as any);
+        const email = String((req as any).body?.email ?? "").trim().toLowerCase();
+        return `signup_req|${ip}|${email}`;
+      },
+      message: { error: "Too many requests" },
+    });
+
+const signupConfirmLimiter = skipLimits
+  ? (_req: any, _res: any, next: any) => next()
+  : rateLimit({
+      windowMs: 15 * 60 * 1000,
+      max: 10,
+      standardHeaders: "draft-7",
+      legacyHeaders: false,
+      keyGenerator: (req) => {
+        const ip = ipKeyGenerator(req as any);
+        const email = String((req as any).body?.email ?? "").trim().toLowerCase();
+        return `signup_cnf|${ip}|${email}`;
+      },
+      message: { error: "Too many requests" },
+    });
+
+const emailLimiter = skipLimits
+  ? (_req: any, _res: any, next: any) => next()
+  : rateLimit({
+      windowMs: 10 * 60 * 1000,
+      max: 10,
+      standardHeaders: "draft-7",
+      legacyHeaders: false,
+      keyGenerator: (req) => {
+        const ip = ipKeyGenerator(req as any);
+        const uid = String((req as any).user?.id ?? "");
+        return `email|${uid || ip}`;
+      },
+      message: { error: "Too many requests" },
+    });
+
 authRouter.post(ROUTES_AUTH.FORGOT_PASSWORD, forgotPasswordLimiter, ForgotPasswordController);
 authRouter.post(ROUTES_AUTH.RESET_PASSWORD, resetPasswordLimiter, ResetPasswordController);
+authRouter.post(ROUTES_AUTH.SIGNUP_REQUEST, signupRequestLimiter, SignupRequestController);
+authRouter.post(ROUTES_AUTH.SIGNUP_CONFIRM, signupConfirmLimiter, SignupConfirmController);
+authRouter.post(ROUTES_AUTH.EMAIL_VERIFY_REQUEST, authMiddleware, emailLimiter, EmailVerifyRequestController);
+authRouter.post(ROUTES_AUTH.EMAIL_VERIFY_CONFIRM, authMiddleware, emailLimiter, EmailVerifyConfirmController);
+authRouter.post(ROUTES_AUTH.EMAIL_CHANGE_REQUEST, authMiddleware, emailLimiter, EmailChangeRequestController);
+authRouter.post(ROUTES_AUTH.EMAIL_CHANGE_CONFIRM, authMiddleware, emailLimiter, EmailChangeConfirmController);
 authRouter.post(
   ROUTES_AUTH.CHANGE_PASSWORD_REQUEST,
   authMiddleware,

@@ -59,8 +59,24 @@ export const GetUserProfileController = async (req: Request, res: Response) => {
     // IMPORTANT: req.user comes from the JWT payload and can be stale.
     // Fetch the latest user record from DB so settings edits in NeonDB are reflected.
     const repo = new UserRepository();
-    const user = await repo.findById(userId);
+    let user = await repo.findById(userId);
     if (!user) return res.status(HTTP_STATUS.NOT_FOUND).json({ message: USER_MESSAGES.NOT_FOUND });
+
+    // Backfill: if the user signed up via the verified-signup flow before
+    // `users.email_verified_at` existed, mark them verified based on the
+    // consumed pending signup record.
+    try {
+      const email = String((user as any)?.email ?? "").trim();
+      const verifiedAt = (user as any)?.email_verified_at ?? null;
+      if (email && !verifiedAt) {
+        const changed = await repo.backfillEmailVerifiedAtFromSignup({ userId, email });
+        if (changed) {
+          user = await repo.findById(userId);
+        }
+      }
+    } catch {
+      // best-effort; don't block profile
+    }
 
     // Never return password hashes.
     const { password_hash: _pw, ...safe } = user as any;

@@ -162,3 +162,63 @@ export function buildPasswordChangeEmail(args: { code: string; expiresMinutes: n
 
   return { subject, text, html };
 }
+
+export function buildSignupVerifyEmail(args: { code: string; expiresMinutes: number }) {
+  const code = String(args.code ?? "").trim();
+  const expiresMinutes = Math.max(1, Number(args.expiresMinutes) || 10);
+
+  const subject = "Your Feedverse verification code";
+  const text = `Your Feedverse verification code is: ${code}\n\nThis code expires in ${expiresMinutes} minutes. If you did not request this, you can ignore this email.`;
+
+  const html = `
+  <div style="font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; line-height: 1.4;">
+    <h2 style="margin: 0 0 12px;">Verify your email</h2>
+    <p style="margin: 0 0 12px;">Enter this code to finish creating your Feedverse account:</p>
+    <div style="font-size: 28px; letter-spacing: 4px; font-weight: 700; margin: 8px 0 16px;">${code}</div>
+    <p style="margin: 0 0 12px; color: #444;">This code expires in ${expiresMinutes} minutes.</p>
+    <p style="margin: 0; color: #666; font-size: 12px;">If you did not request this, you can ignore this email.</p>
+  </div>
+  `.trim();
+
+  return { subject, text, html };
+}
+
+export function buildEmailVerifyEmail(args: { code: string; expiresMinutes: number }) {
+  const code = String(args.code ?? "").trim();
+  const expiresMinutes = Math.max(1, Number(args.expiresMinutes) || 10);
+
+  const subject = "Verify your Feedverse email";
+  const text = `Your Feedverse email verification code is: ${code}\n\nThis code expires in ${expiresMinutes} minutes. If you did not request this, you can ignore this email.`;
+
+  const html = `
+  <div style="font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; line-height: 1.4;">
+    <h2 style="margin: 0 0 12px;">Verify your email</h2>
+    <p style="margin: 0 0 12px;">Enter this code to verify your email on Feedverse:</p>
+    <div style="font-size: 28px; letter-spacing: 4px; font-weight: 700; margin: 8px 0 16px;">${code}</div>
+    <p style="margin: 0 0 12px; color: #444;">This code expires in ${expiresMinutes} minutes.</p>
+    <p style="margin: 0; color: #666; font-size: 12px;">If you did not request this, you can ignore this email.</p>
+  </div>
+  `.trim();
+
+  return { subject, text, html };
+}
+
+export function buildEmailChangeVerifyEmail(args: { code: string; expiresMinutes: number }) {
+  const code = String(args.code ?? "").trim();
+  const expiresMinutes = Math.max(1, Number(args.expiresMinutes) || 10);
+
+  const subject = "Confirm your new Feedverse email";
+  const text = `Your Feedverse email change code is: ${code}\n\nThis code expires in ${expiresMinutes} minutes. If you did not request this, please secure your account.`;
+
+  const html = `
+  <div style="font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; line-height: 1.4;">
+    <h2 style="margin: 0 0 12px;">Confirm email change</h2>
+    <p style="margin: 0 0 12px;">Enter this code to confirm your new email address:</p>
+    <div style="font-size: 28px; letter-spacing: 4px; font-weight: 700; margin: 8px 0 16px;">${code}</div>
+    <p style="margin: 0 0 12px; color: #444;">This code expires in ${expiresMinutes} minutes.</p>
+    <p style="margin: 0; color: #666; font-size: 12px;">If you did not request this, please secure your account.</p>
+  </div>
+  `.trim();
+
+  return { subject, text, html };
+}

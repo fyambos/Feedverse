@@ -40,6 +40,21 @@ type AuthState = {
     username?: string;
     name?: string;
   }) => Promise<{ ok: true } | { ok: false; error: string }>;
+
+  checkUsernameAvailable: (username: string) => Promise<
+    | { ok: true; available: boolean; normalized?: string; reason?: string }
+    | { ok: false; available: false; reason: string }
+  >;
+  requestSignupCode: (args: {
+    email: string;
+    username: string;
+  }) => Promise<{ ok: true } | { ok: false; error: string }>;
+  confirmSignup: (args: {
+    email: string;
+    username: string;
+    code: string;
+    password: string;
+  }) => Promise<{ ok: true } | { ok: false; error: string }>;
   signOut: () => Promise<void>;
 
   fetchWithAuth: (
@@ -174,6 +189,11 @@ function mapBackendUserToLocal(u: any): User {
     username: String(u?.username ?? "user"),
     name: u?.name ? String(u.name) : undefined,
     email: u?.email ? String(u.email) : undefined,
+    emailVerifiedAt: u?.email_verified_at
+      ? new Date(u.email_verified_at).toISOString()
+      : u?.emailVerifiedAt
+        ? new Date(u.emailVerifiedAt).toISOString()
+        : null,
     avatarUrl: String(u?.avatar_url ?? u?.avatarUrl ?? "") || `https://i.pravatar.cc/150?u=${encodeURIComponent(id || now)}`,
     createdAt: u?.created_at ? new Date(u.created_at).toISOString() : now,
     updatedAt: u?.updated_at ? new Date(u.updated_at).toISOString() : now,
@@ -273,15 +293,63 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    const db = await readDb();
-    const u = (db as any)?.users?.[String(userId)] ?? null;
+    // First: refresh from local cache so UI doesn't block on network.
     try {
-      setCustomTintColor(u?.settings?.customTheme);
+      const db = await readDb();
+      const u = (db as any)?.users?.[String(userId)] ?? null;
+      try {
+        setCustomTintColor(u?.settings?.customTheme);
+      } catch {
+        // ignore
+      }
+      setCurrentUser(u);
     } catch {
       // ignore
     }
-    setCurrentUser(u);
-  }, [userId]);
+
+    // If backend mode is enabled, also pull latest profile from server.
+    // This is important for flows like verify-email/change-email where the UI
+    // should update immediately after a successful request.
+    if (!apiBaseUrl() || !token) return;
+
+    try {
+      const res = await apiFetch({ path: "/users/profile", token });
+      if (!res.ok || !res.json) return;
+
+      const backendUser = res.json;
+      const uid = String(backendUser?.id ?? "").trim();
+      if (!uid) return;
+
+      const localUser = mapBackendUserToLocal(backendUser);
+      await updateDb((prev) => {
+        const existing = (prev as any).users?.[uid];
+        return {
+          ...prev,
+          users: {
+            ...(prev as any).users,
+            [uid]: {
+              ...(existing ?? {}),
+              ...localUser,
+              id: uid,
+            },
+          },
+        };
+      });
+
+      if (String(userId) === uid) {
+        const db = await readDb();
+        const u = (db as any)?.users?.[uid] ?? null;
+        try {
+          setCustomTintColor(u?.settings?.customTheme);
+        } catch {
+          // ignore
+        }
+        setCurrentUser(u);
+      }
+    } catch {
+      // ignore
+    }
+  }, [userId, token]);
 
   const ensureDbReady = useCallback(async () => {
     const existing = await readDb();
@@ -602,100 +670,70 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (baseUrl) {
         try {
-          const isAutoUsername = !args.username;
-          const base = normalizeUsernameForCreate(args.username ?? usernameFromEmail(email));
+          // Legacy direct signup path kept for older screens.
+          const res = await apiFetch({
+            path: "/auth/register",
+            init: {
+              method: "POST",
+              body: JSON.stringify({
+                email,
+                password_hash: pw,
+                username: normalizeUsernameForCreate(args.username ?? usernameFromEmail(email)),
+                name: String(args.name ?? ""),
+                avatar_url: "",
+              }),
+            },
+          });
 
-          let lastErrorMsg = "Sign up failed.";
-          for (let attempt = 0; attempt < (isAutoUsername ? 6 : 1); attempt++) {
-            const candidate = attempt === 0 ? base : withRandomTwoDigitSuffix(base);
-
-            const res = await apiFetch({
-              path: "/auth/register",
-              init: {
-                method: "POST",
-                body: JSON.stringify({
-                  email,
-                  password_hash: pw,
-                  username: candidate,
-                  name: String(args.name ?? ""),
-                  avatar_url: "",
-                }),
-              },
-            });
-
-            const json = res.json;
-
-            if (!res.ok || (Array.isArray(json?.errors) && json.errors.length > 0)) {
-              const errors = Array.isArray(json?.errors) ? json.errors : [];
-              const issues = Array.isArray(json?.details?.issues) ? json.details.issues : [];
-              const firstMsg =
-                typeof errors?.[0]?.message === "string"
-                  ? String(errors[0].message)
-                  : typeof issues?.[0]?.message === "string"
-                    ? String(issues[0].message)
+          const json = res.json;
+          if (!res.ok || (Array.isArray(json?.errors) && json.errors.length > 0)) {
+            const errors = Array.isArray(json?.errors) ? json.errors : [];
+            const issues = Array.isArray(json?.details?.issues) ? json.details.issues : [];
+            const firstMsg =
+              typeof errors?.[0]?.message === "string"
+                ? String(errors[0].message)
+                : typeof issues?.[0]?.message === "string"
+                  ? String(issues[0].message)
                   : String(json?.error ?? json?.message ?? "Sign up failed.");
-
-              lastErrorMsg = firstMsg;
-
-              const isUsernameTaken = errors.some(
-                (e: any) =>
-                  typeof e?.message === "string" &&
-                  /username is already in use/i.test(String(e.message)),
-              );
-
-              if (isAutoUsername && isUsernameTaken) {
-                continue;
-              }
-
-              return { ok: false as const, error: firstMsg };
-            }
-
-            // server returns token+user; if not, fall back to login
-            const nextToken = String(json?.token ?? "").trim();
-            const nextRefreshToken = String(json?.refreshToken ?? "").trim();
-            const nextExpiresAt = json?.accessTokenExpiresAt ? String(json.accessTokenExpiresAt) : null;
-            const user = json?.user;
-            const uid = String(user?.id ?? "").trim();
-
-            if (nextToken && uid) {
-              await ensureDbReady();
-              const localUser = mapBackendUserToLocal(user);
-              await updateDb((prev) => {
-                const existing = (prev as any).users?.[uid];
-                return {
-                  ...prev,
-                  users: {
-                    ...(prev as any).users,
-                    [uid]: {
-                      ...(existing ?? {}),
-                      ...localUser,
-                      id: uid,
-                    },
-                  },
-                };
-              });
-
-              if (!nextRefreshToken) {
-                return { ok: false as const, error: "Sign up response missing refresh token." };
-              }
-
-              await setSessionToken(nextToken);
-              await setSessionRefreshToken(nextRefreshToken);
-              await setSessionAccessTokenExpiresAt(nextExpiresAt);
-              await setSessionUserId(uid);
-              try {
-                setCustomTintColor(localUser?.settings?.customTheme);
-              } catch {
-                // ignore
-              }
-              return { ok: true as const };
-            }
-
-            // fallback: login
-            return await signIn({ identifier: email, password: pw });
+            return { ok: false as const, error: firstMsg };
           }
 
-          return { ok: false as const, error: lastErrorMsg };
+          const nextToken = String(json?.token ?? "").trim();
+          const nextRefreshToken = String(json?.refreshToken ?? "").trim();
+          const nextExpiresAt = json?.accessTokenExpiresAt ? String(json.accessTokenExpiresAt) : null;
+          const user = json?.user;
+          const uid = String(user?.id ?? "").trim();
+          if (nextToken && uid && nextRefreshToken) {
+            await ensureDbReady();
+            const localUser = mapBackendUserToLocal(user);
+            await updateDb((prev) => {
+              const existing = (prev as any).users?.[uid];
+              return {
+                ...prev,
+                users: {
+                  ...(prev as any).users,
+                  [uid]: {
+                    ...(existing ?? {}),
+                    ...localUser,
+                    id: uid,
+                  },
+                },
+              };
+            });
+
+            await setSessionToken(nextToken);
+            await setSessionRefreshToken(nextRefreshToken);
+            await setSessionAccessTokenExpiresAt(nextExpiresAt);
+            await setSessionUserId(uid);
+            try {
+              setCustomTintColor(localUser?.settings?.customTheme);
+            } catch {
+              // ignore
+            }
+            return { ok: true as const };
+          }
+
+          return await signIn({ identifier: email, password: pw });
         } catch {
           return { ok: false as const, error: "Unable to reach server." };
         }
@@ -710,7 +748,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           return { ok: false as const, error: "An account with this email already exists." };
         }
       }
-
       const taken = new Set<string>();
       for (const u of Object.values(users) as any[]) taken.add(normalizeIdentifier(u?.username));
 
@@ -754,6 +791,132 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return { ok: true as const };
     },
     [ensureDbReady, setSessionUserId, setSessionToken, setSessionRefreshToken, setSessionAccessTokenExpiresAt, signIn]
+  );
+
+  const checkUsernameAvailable = useCallback(async (username: string) => {
+    const baseUrl = apiBaseUrl();
+    const u = normalizeUsernameInput(username);
+    if (!u) return { ok: false as const, available: false as const, reason: "Invalid username." };
+
+    if (!baseUrl) {
+      // Offline mode: cannot verify against server; assume available.
+      return { ok: true as const, available: true as const, normalized: u };
+    }
+
+    const qs = encodeURIComponent(u);
+    const res = await apiFetch({ path: `/auth/username-available?username=${qs}` });
+    const json: any = res.json;
+    if (!res.ok) {
+      return {
+        ok: false as const,
+        available: false as const,
+        reason: String(json?.error ?? json?.message ?? "Request failed"),
+      };
+    }
+    return {
+      ok: true as const,
+      available: Boolean(json?.available),
+      normalized: typeof json?.normalized === "string" ? String(json.normalized) : u,
+      reason: typeof json?.reason === "string" ? String(json.reason) : undefined,
+    };
+  }, []);
+
+  const requestSignupCode = useCallback(async (args: { email: string; username: string }) => {
+    const baseUrl = apiBaseUrl();
+    const email = normalizeIdentifier(args.email);
+    const username = normalizeUsernameInput(args.username);
+
+    if (!baseUrl) return { ok: false as const, error: "Server required to sign up." };
+    if (!email) return { ok: false as const, error: "Missing email." };
+    if (!username) return { ok: false as const, error: "Missing username." };
+
+    const res = await apiFetch({
+      path: "/auth/signup/request",
+      init: {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, username }),
+      },
+    });
+    if (!res.ok) {
+      const json: any = res.json;
+      return { ok: false as const, error: String(json?.error ?? json?.message ?? "Request failed") };
+    }
+    return { ok: true as const };
+  }, []);
+
+  const confirmSignup = useCallback(
+    async (args: { email: string; username: string; code: string; password: string }) => {
+      const baseUrl = apiBaseUrl();
+      const email = normalizeIdentifier(args.email);
+      const username = normalizeUsernameInput(args.username);
+      const code = String(args.code ?? "").trim();
+      const pw = String(args.password ?? "");
+
+      if (!baseUrl) return { ok: false as const, error: "Server required to sign up." };
+      if (!email) return { ok: false as const, error: "Missing email." };
+      if (!username) return { ok: false as const, error: "Missing username." };
+      if (!code) return { ok: false as const, error: "Missing code." };
+      if (pw.length < 8) return { ok: false as const, error: "Password must be at least 8 characters." };
+
+      const res = await apiFetch({
+        path: "/auth/signup/confirm",
+        init: {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, username, code, password: pw }),
+        },
+      });
+
+      const json: any = res.json;
+      if (!res.ok || (Array.isArray(json?.errors) && json.errors.length > 0)) {
+        const errors = Array.isArray(json?.errors) ? json.errors : [];
+        const firstMsg =
+          typeof errors?.[0]?.message === "string"
+            ? String(errors[0].message)
+            : String(json?.error ?? json?.message ?? "Sign up failed.");
+        return { ok: false as const, error: firstMsg };
+      }
+
+      const nextToken = String(json?.token ?? "").trim();
+      const nextRefreshToken = String(json?.refreshToken ?? "").trim();
+      const nextExpiresAt = json?.accessTokenExpiresAt ? String(json.accessTokenExpiresAt) : null;
+      const user = json?.user;
+      const uid = String(user?.id ?? "").trim();
+      if (!nextToken || !uid || !nextRefreshToken) {
+        return { ok: false as const, error: "Sign up response missing tokens." };
+      }
+
+      await ensureDbReady();
+      const localUser = mapBackendUserToLocal(user);
+      await updateDb((prev) => {
+        const existing = (prev as any).users?.[uid];
+        return {
+          ...prev,
+          users: {
+            ...(prev as any).users,
+            [uid]: {
+              ...(existing ?? {}),
+              ...localUser,
+              id: uid,
+            },
+          },
+        };
+      });
+
+      await setSessionToken(nextToken);
+      await setSessionRefreshToken(nextRefreshToken);
+      await setSessionAccessTokenExpiresAt(nextExpiresAt);
+      await setSessionUserId(uid);
+      try {
+        setCustomTintColor(localUser?.settings?.customTheme);
+      } catch {
+        // ignore
+      }
+
+      return { ok: true as const };
+    },
+    [ensureDbReady, setSessionAccessTokenExpiresAt, setSessionRefreshToken, setSessionToken, setSessionUserId],
   );
 
   const signOut = useCallback(async () => {
@@ -1021,6 +1184,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       signInMock,
       signIn,
       signUp,
+
+      checkUsernameAvailable,
+      requestSignupCode,
+      confirmSignup,
+
       signOut,
 
       fetchWithAuth,
@@ -1038,6 +1206,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       signInMock,
       signIn,
       signUp,
+      checkUsernameAvailable,
+      requestSignupCode,
+      confirmSignup,
       signOut,
       fetchWithAuth,
       refreshCurrentUser,

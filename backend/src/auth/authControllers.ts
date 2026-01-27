@@ -14,13 +14,17 @@ import { LoginUserService, RegisterUserService } from "./authServices";
 import { upload } from "../config/multer";
 import type { RegisterResponse } from "./authModels";
 import { UserRepository } from "../users/userRepositories";
-import { createUserSession, findUserSessionByRefreshTokenHash, hashTokenSha256Hex, revokeAllUserSessions, revokeUserSessionById, rotateUserSessionRefreshToken } from "../sessions/sessionRepositories";
+import { createUserSession, findUserSessionByRefreshTokenHash, hashTokenSha256Hex, revokeAllUserSessions, revokeOtherUserSessions, revokeUserSessionById, rotateUserSessionRefreshToken } from "../sessions/sessionRepositories";
 import { z } from "zod";
 import { validateBody } from "../middleware/validationMiddleware";
 import { sendMethodNotAllowed } from "../lib/apiResponses";
 import { normalizeUsername } from "../lib/username";
 import { createOneTimeCode, consumeOneTimeCode } from "./oneTimeCodeRepositories";
-import { buildPasswordChangeEmail, buildPasswordResetEmail, sendEmail } from "../email/emailService";
+import { consumePendingSignupVerification, upsertPendingSignupVerification } from "./pendingSignupRepositories";
+import { buildEmailChangeVerifyEmail, buildEmailVerifyEmail, buildPasswordChangeEmail, buildPasswordResetEmail, buildSignupVerifyEmail, sendEmail } from "../email/emailService";
+import { validateUsername } from "../lib/username";
+import { validateEmail, validatePassword } from "./authValidators";
+import { consumePendingEmailChange, upsertPendingEmailChange } from "./pendingEmailChangeRepositories";
 
 const userRepository = new UserRepository();
 
@@ -314,6 +318,419 @@ function hashOneTimeCode(args: { userId: string; code: string }): string {
   const secret = oneTimeCodeSecret();
   return hashTokenSha256Hex(`${secret}:${uid}:${code}`);
 }
+
+function hashSignupCode(args: { email: string; code: string }): string {
+  const email = String(args.email ?? "").trim().toLowerCase();
+  const code = String(args.code ?? "").trim();
+  const secret = oneTimeCodeSecret();
+  return hashTokenSha256Hex(`${secret}:${email}:${code}`);
+}
+
+function normalizeEmail(input: unknown): string {
+  return String(input ?? "").trim().toLowerCase();
+}
+
+async function issueSessionForUser(args: { req: Request; res: Response; user: any }) {
+  const { req, res, user } = args;
+  const sessionId = crypto.randomUUID();
+  const token = signAuthToken({ user, sid: sessionId });
+  const refreshToken = randomBase64Url(Number(AUTH.REFRESH_TOKEN_BYTES) || 32);
+  const refreshTokenHash = hashTokenSha256Hex(refreshToken);
+
+  const tokenHash = hashTokenSha256Hex(token);
+  const created = await createUserSession({
+    sessionId,
+    userId: String(user.id),
+    tokenHash,
+    refreshTokenHash,
+    refreshExpiresAt: refreshExpiresAtFromNow(),
+    userAgent: req.get?.("User-Agent") ?? null,
+    ip: req.headers?.["x-forwarded-for"] ?? req.ip,
+  });
+  if (!created) {
+    return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ error: ERROR_MESSAGES.INTERNAL_SERVER_ERROR });
+  }
+
+  return res.status(HTTP_STATUS.CREATED).json({
+    message: USER_MESSAGES.CREATION_SUCCESS,
+    token,
+    refreshToken,
+    accessTokenExpiresAt: tokenExpiresAtIso(token),
+    user,
+  });
+}
+
+export const UsernameAvailableController = async (req: Request, res: Response) => {
+  if (req.method !== HTTP_METHODS.GET) {
+    return sendMethodNotAllowed(req, res);
+  }
+
+  const raw = String((req.query as any)?.username ?? "");
+  const username = normalizeUsername(raw);
+  const vErr = validateUsername(username);
+  if (vErr) {
+    return res.status(HTTP_STATUS.OK).json({ available: false, reason: vErr });
+  }
+
+  const existing = await userRepository.findByUsername(username);
+  return res.status(HTTP_STATUS.OK).json({ available: !existing, normalized: username });
+};
+
+export const SignupRequestController = [
+  validateBody(
+    z
+      .object({
+        email: z.string().trim().min(3),
+        username: z.string().trim().min(3),
+      })
+      .passthrough(),
+  ),
+  async (req: Request, res: Response) => {
+    if (req.method !== HTTP_METHODS.POST) {
+      return sendMethodNotAllowed(req, res);
+    }
+
+    const email = normalizeEmail(req.body?.email);
+    const username = normalizeUsername(req.body?.username);
+
+    const emailErr = validateEmail(email);
+    if (emailErr) return res.status(HTTP_STATUS.BAD_REQUEST).json({ error: emailErr.message });
+
+    const usernameErr = validateUsername(username);
+    if (usernameErr) return res.status(HTTP_STATUS.BAD_REQUEST).json({ error: usernameErr });
+
+    const emailExists = await userRepository.emailExists(email);
+    if (emailExists) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({ error: USER_MESSAGES.EMAIL_ALREADY_EXISTS });
+    }
+
+    const existingByUsername = await userRepository.findByUsername(username);
+    if (existingByUsername) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({ error: USER_MESSAGES.USERNAME_ALREADY_EXISTS });
+    }
+
+    const code = generate6DigitCode();
+    const expiresMinutes = 10;
+    const expiresAt = new Date(Date.now() + expiresMinutes * 60_000);
+    const codeHash = hashSignupCode({ email, code });
+
+    await upsertPendingSignupVerification({
+      email,
+      username,
+      codeHash,
+      expiresAt,
+      requestIp: req.headers?.["x-forwarded-for"] ?? req.ip,
+      requestUserAgent: req.get?.("User-Agent") ?? null,
+    });
+
+    const msg = buildSignupVerifyEmail({ code, expiresMinutes });
+    const sent = await sendEmail({
+      to: email,
+      subject: msg.subject,
+      text: msg.text,
+      html: msg.html,
+    });
+
+    if (!sent) {
+      return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ error: ERROR_MESSAGES.EXTERNAL_SERVICE_ERROR });
+    }
+
+    return res.status(HTTP_STATUS.OK).json({ ok: true });
+  },
+];
+
+export const SignupConfirmController = [
+  validateBody(
+    z
+      .object({
+        email: z.string().trim().min(3),
+        username: z.string().trim().min(3),
+        code: z.string().trim().min(4).max(12),
+        password: z.string().min(8),
+      })
+      .passthrough(),
+  ),
+  async (req: Request, res: Response) => {
+    if (req.method !== HTTP_METHODS.POST) {
+      return sendMethodNotAllowed(req, res);
+    }
+
+    const email = normalizeEmail(req.body?.email);
+    const username = normalizeUsername(req.body?.username);
+    const code = String(req.body?.code ?? "").trim();
+    const password = String(req.body?.password ?? "");
+
+    const emailErr = validateEmail(email);
+    if (emailErr) return res.status(HTTP_STATUS.BAD_REQUEST).json({ error: emailErr.message });
+
+    const usernameErr = validateUsername(username);
+    if (usernameErr) return res.status(HTTP_STATUS.BAD_REQUEST).json({ error: usernameErr });
+
+    const passwordErr = validatePassword(password);
+    if (passwordErr) return res.status(HTTP_STATUS.BAD_REQUEST).json({ error: passwordErr.message });
+
+    const codeHash = hashSignupCode({ email, code });
+    const consumed = await consumePendingSignupVerification({
+      email,
+      username,
+      codeHash,
+      maxAttempts: 5,
+      usedIp: req.headers?.["x-forwarded-for"] ?? req.ip,
+      usedUserAgent: req.get?.("User-Agent") ?? null,
+    });
+
+    if (consumed.ok === false) {
+      const msg = consumed.reason === "mismatch" ? "Username changed. Request a new code." : "Invalid code";
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({ error: msg });
+    }
+
+    const result = await RegisterUserService(
+      {
+        username,
+        name: "",
+        email,
+        password_hash: password,
+        avatar_url: "",
+      },
+      undefined,
+    );
+
+    if (result.errors) {
+      // Surface validation errors from the register service.
+      return res.status(HTTP_STATUS.OK).json({ errors: result.errors });
+    }
+
+    const createdUser = (result.user as any)?.User;
+    if (!createdUser) {
+      return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ error: ERROR_MESSAGES.INTERNAL_SERVER_ERROR });
+    }
+
+    // Signup flow verified the user's email, so mark it as verified.
+    try {
+      await userRepository.markEmailVerified(String(createdUser.id));
+    } catch {
+      // best-effort; don't block signup
+    }
+
+    const freshUser = await userRepository.findById(String(createdUser.id));
+
+    return issueSessionForUser({ req, res, user: freshUser ?? createdUser });
+  },
+];
+
+export const EmailVerifyRequestController = async (req: Request, res: Response) => {
+  if (req.method !== HTTP_METHODS.POST) {
+    return sendMethodNotAllowed(req, res);
+  }
+
+  const userId = String((req.user as any)?.id ?? "").trim();
+  if (!userId) return res.status(HTTP_STATUS.UNAUTHORIZED).json({ error: AUTH.MISSING_TOKEN });
+
+  const user = await userRepository.findById(userId);
+  const email = normalizeEmail((user as any)?.email);
+  const verifiedAt = (user as any)?.email_verified_at ?? null;
+
+  if (!email) return res.status(HTTP_STATUS.BAD_REQUEST).json({ error: "No email on account" });
+  if (verifiedAt) return res.status(HTTP_STATUS.OK).json({ ok: true, alreadyVerified: true });
+
+  const code = generate6DigitCode();
+  const expiresMinutes = 10;
+  const expiresAt = new Date(Date.now() + expiresMinutes * 60_000);
+  const codeHash = hashOneTimeCode({ userId, code });
+
+  const created = await createOneTimeCode({
+    userId,
+    purpose: "email_verify",
+    codeHash,
+    expiresAt,
+    requestIp: req.headers?.["x-forwarded-for"] ?? req.ip,
+    requestUserAgent: req.get?.("User-Agent") ?? null,
+  });
+
+  if (!created) {
+    return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ error: ERROR_MESSAGES.INTERNAL_SERVER_ERROR });
+  }
+
+  const msg = buildEmailVerifyEmail({ code, expiresMinutes });
+  const sent = await sendEmail({ to: email, subject: msg.subject, text: msg.text, html: msg.html });
+  if (!sent) {
+    return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ error: ERROR_MESSAGES.EXTERNAL_SERVICE_ERROR });
+  }
+
+  return res.status(HTTP_STATUS.OK).json({ ok: true });
+};
+
+export const EmailVerifyConfirmController = [
+  validateBody(
+    z
+      .object({
+        code: z.string().trim().min(4).max(12),
+      })
+      .passthrough(),
+  ),
+  async (req: Request, res: Response) => {
+    if (req.method !== HTTP_METHODS.POST) {
+      return sendMethodNotAllowed(req, res);
+    }
+
+    const userId = String((req.user as any)?.id ?? "").trim();
+    if (!userId) return res.status(HTTP_STATUS.UNAUTHORIZED).json({ error: AUTH.MISSING_TOKEN });
+
+    const user = await userRepository.findById(userId);
+    if (!user) return res.status(HTTP_STATUS.UNAUTHORIZED).json({ error: AUTH.INVALID_TOKEN });
+    if ((user as any)?.email_verified_at) return res.status(HTTP_STATUS.OK).json({ ok: true, alreadyVerified: true });
+
+    const code = String(req.body?.code ?? "").trim();
+    const codeHash = hashOneTimeCode({ userId, code });
+    const consumed = await consumeOneTimeCode({
+      userId,
+      purpose: "email_verify",
+      codeHash,
+      maxAttempts: 5,
+      usedIp: req.headers?.["x-forwarded-for"] ?? req.ip,
+      usedUserAgent: req.get?.("User-Agent") ?? null,
+    });
+
+    if (!consumed.ok) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({ error: "Invalid code" });
+    }
+
+    await userRepository.markEmailVerified(userId);
+    const refreshed = await userRepository.findById(userId);
+    return res.status(HTTP_STATUS.OK).json({ ok: true, user: refreshed });
+  },
+];
+
+export const EmailChangeRequestController = [
+  validateBody(
+    z
+      .object({
+        newEmail: z.string().trim().min(3),
+      })
+      .passthrough(),
+  ),
+  async (req: Request, res: Response) => {
+    if (req.method !== HTTP_METHODS.POST) {
+      return sendMethodNotAllowed(req, res);
+    }
+
+    const userId = String((req.user as any)?.id ?? "").trim();
+    if (!userId) return res.status(HTTP_STATUS.UNAUTHORIZED).json({ error: AUTH.MISSING_TOKEN });
+
+    const newEmail = normalizeEmail(req.body?.newEmail);
+    const emailErr = validateEmail(newEmail);
+    if (emailErr) return res.status(HTTP_STATUS.BAD_REQUEST).json({ error: emailErr.message });
+
+    const user = await userRepository.findById(userId);
+    if (!user) return res.status(HTTP_STATUS.UNAUTHORIZED).json({ error: AUTH.INVALID_TOKEN });
+
+    const currentEmail = normalizeEmail((user as any)?.email);
+    if (currentEmail && currentEmail === newEmail) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({ error: "That is already your email" });
+    }
+
+    const existing = await userRepository.findByEmail(newEmail);
+    if (existing && String((existing as any).id) !== userId) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({ error: USER_MESSAGES.EMAIL_ALREADY_EXISTS });
+    }
+
+    const code = generate6DigitCode();
+    const expiresMinutes = 10;
+    const expiresAt = new Date(Date.now() + expiresMinutes * 60_000);
+    const codeHash = hashOneTimeCode({ userId, code });
+
+    try {
+      await upsertPendingEmailChange({
+        userId,
+        newEmail,
+        codeHash,
+        expiresAt,
+        requestIp: req.headers?.["x-forwarded-for"] ?? req.ip,
+        requestUserAgent: req.get?.("User-Agent") ?? null,
+      });
+    } catch (e: any) {
+      if (String(e?.code ?? "") === "23505") {
+        return res.status(HTTP_STATUS.BAD_REQUEST).json({ error: USER_MESSAGES.EMAIL_ALREADY_EXISTS });
+      }
+      throw e;
+    }
+
+    const msg = buildEmailChangeVerifyEmail({ code, expiresMinutes });
+    const sent = await sendEmail({
+      to: newEmail,
+      subject: msg.subject,
+      text: msg.text,
+      html: msg.html,
+    });
+    if (!sent) {
+      return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ error: ERROR_MESSAGES.EXTERNAL_SERVICE_ERROR });
+    }
+
+    return res.status(HTTP_STATUS.OK).json({ ok: true });
+  },
+];
+
+export const EmailChangeConfirmController = [
+  validateBody(
+    z
+      .object({
+        newEmail: z.string().trim().min(3),
+        code: z.string().trim().min(4).max(12),
+      })
+      .passthrough(),
+  ),
+  async (req: Request, res: Response) => {
+    if (req.method !== HTTP_METHODS.POST) {
+      return sendMethodNotAllowed(req, res);
+    }
+
+    const userId = String((req.user as any)?.id ?? "").trim();
+    if (!userId) return res.status(HTTP_STATUS.UNAUTHORIZED).json({ error: AUTH.MISSING_TOKEN });
+
+    const newEmail = normalizeEmail(req.body?.newEmail);
+    const emailErr = validateEmail(newEmail);
+    if (emailErr) return res.status(HTTP_STATUS.BAD_REQUEST).json({ error: emailErr.message });
+
+    const code = String(req.body?.code ?? "").trim();
+    const codeHash = hashOneTimeCode({ userId, code });
+
+    const consumed = await consumePendingEmailChange({
+      userId,
+      newEmail,
+      codeHash,
+      maxAttempts: 5,
+      usedIp: req.headers?.["x-forwarded-for"] ?? req.ip,
+      usedUserAgent: req.get?.("User-Agent") ?? null,
+    });
+
+    if (consumed.ok === false) {
+      const msg = consumed.reason === "mismatch" ? "Email changed. Request a new code." : "Invalid code";
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({ error: msg });
+    }
+
+    let updated: any = null;
+    try {
+      updated = await userRepository.updateEmailAndVerify(userId, newEmail);
+    } catch (e: any) {
+      if (String(e?.code ?? "") === "23505") {
+        return res.status(HTTP_STATUS.BAD_REQUEST).json({ error: USER_MESSAGES.EMAIL_ALREADY_EXISTS });
+      }
+      throw e;
+    }
+
+    // Security: log out other devices; keep current session alive.
+    try {
+      const keepSessionId = String((req as any).authSessionId ?? "").trim();
+      if (keepSessionId) {
+        await revokeOtherUserSessions({ userId, keepSessionId });
+      }
+    } catch {
+      // best-effort
+    }
+
+    return res.status(HTTP_STATUS.OK).json({ ok: true, user: updated });
+  },
+];
 
 function generate6DigitCode(): string {
   return String(crypto.randomInt(0, 1_000_000)).padStart(6, "0");

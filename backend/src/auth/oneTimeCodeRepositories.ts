@@ -2,7 +2,8 @@ import { pool } from "../config/database";
 
 export type OneTimeCodePurpose =
   | "password_reset"
-  | "password_change";
+  | "password_change"
+  | "email_verify";
 
 function normalizeIp(ip: unknown): string | null {
   if (ip == null) return null;
