@@ -177,6 +177,7 @@ async function ensureSqliteInit(): Promise<void> {
 
         // Lightweight migration for existing installs.
         // (CREATE TABLE IF NOT EXISTS won't add new columns.)
+        // TO DO: remove in a future version once most users have migrated.
         try {
           await db.execAsync("ALTER TABLE scenarios ADD COLUMN allowPlayersReorderMessages INTEGER;");
         } catch {

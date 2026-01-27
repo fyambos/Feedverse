@@ -559,7 +559,29 @@ export default function ConversationThreadScreen() {
     return [...visibleMessages].reverse();
   }, [visibleMessages]);
 
-  const invertedRowStyle = useMemo(() => ({ transform: [{ scaleY: -1 }] as any }), []);
+  // RN's `inverted` implementation differs across platforms:
+  // - iOS: effectively flips Y.
+  // - Android (RN 0.81+): can flip both axes, which mirrors text and swaps sides.
+  // Counter-flip per row accordingly.
+  const invertedRowStyle = useMemo(
+    () => ({ transform: [Platform.OS === "android" ? ({ scale: -1 } as any) : ({ scaleY: -1 } as any)] }),
+    [],
+  );
+
+  const listContainerStyle = useMemo(() => ({ flex: 1, minHeight: 0 }), []);
+  const listStyle = useMemo(() => ({ flex: 1 }), []);
+  const listContentContainerStyle = useMemo(
+    () =>
+      reorderMode
+        ? { padding: 14, paddingBottom: 10, flexGrow: 1, justifyContent: "flex-start" as const }
+        : { padding: 14, paddingBottom: 24, flexGrow: 1, justifyContent: "flex-start" as const },
+    [reorderMode],
+  );
+
+  const keyExtractor = useCallback(
+    (m: Message) => String((m as any)?.clientMessageId ?? (m as any)?.client_message_id ?? (m as any)?.id),
+    [],
+  );
 
   const listRef = useRef<any>(null);
   const dragListRef = useRef<any>(null);
@@ -729,22 +751,29 @@ export default function ConversationThreadScreen() {
   const handleChangeText = useCallback(
     (t: string) => {
       setText(t);
-      try {
-        const pid = String(sendAsId ?? selectedProfileId ?? "").trim();
-        if (!sid || !cid || !pid) return;
-        if (!typingIsActiveRef.current) {
-          typingIsActiveRef.current = true;
-          try { app?.sendTyping?.({ scenarioId: sid, conversationId: cid, profileId: pid, typing: true }); } catch {}
+      // Defer side-effects so TextInput state/UI updates immediately (Android is sensitive here).
+      void Promise.resolve().then(() => {
+        try {
+          const pid = String(sendAsId ?? selectedProfileId ?? "").trim();
+          if (!sid || !cid || !pid) return;
+          if (!typingIsActiveRef.current) {
+            typingIsActiveRef.current = true;
+            try {
+              app?.sendTyping?.({ scenarioId: sid, conversationId: cid, profileId: pid, typing: true });
+            } catch {}
+          }
+          if (typingSendTimeoutRef.current) clearTimeout(typingSendTimeoutRef.current as any);
+          typingSendTimeoutRef.current = setTimeout(() => {
+            typingIsActiveRef.current = false;
+            try {
+              app?.sendTyping?.({ scenarioId: sid, conversationId: cid, profileId: pid, typing: false });
+            } catch {}
+            typingSendTimeoutRef.current = null;
+          }, 1500);
+        } catch {
+          // ignore
         }
-        if (typingSendTimeoutRef.current) clearTimeout(typingSendTimeoutRef.current as any);
-        typingSendTimeoutRef.current = setTimeout(() => {
-          typingIsActiveRef.current = false;
-          try { app?.sendTyping?.({ scenarioId: sid, conversationId: cid, profileId: pid, typing: false }); } catch {}
-          typingSendTimeoutRef.current = null;
-        }, 1500);
-      } catch {
-        // ignore
-      }
+      });
     },
     [sid, cid, sendAsId, selectedProfileId, app]
   );
@@ -1374,16 +1403,17 @@ export default function ConversationThreadScreen() {
     return "";
   }, [selectedProfileId, reorderMode, reorderDraft, messages, visibleMessages]);
 
-  const renderBubbleRow = (
-    item: Message,
-    opts?: {
-      onLongPress?: () => void;
-      active?: boolean;
-      drag?: () => void;
-      prev?: Message | null;
-      next?: Message | null;
-    }
-  ) => {
+  const renderBubbleRow = useCallback(
+    (
+      item: Message,
+      opts?: {
+        onLongPress?: () => void;
+        active?: boolean;
+        drag?: () => void;
+        prev?: Message | null;
+        next?: Message | null;
+      }
+    ) => {
     const senderId = String((item as any).senderProfileId ?? "");
     const isRight = senderId === String(selectedProfileId ?? "");
     const sender: Profile | null = senderId ? (getProfileById?.(senderId) ?? null) : null;
@@ -1647,7 +1677,24 @@ export default function ConversationThreadScreen() {
         </View>
       </SwipeableRow>
     );
-  };
+    },
+    [
+      colors,
+      editAllowedIds,
+      getProfileById,
+      isOneToOne,
+      lastMineMessageId,
+      openEdit,
+      reorderMode,
+      router,
+      runDeleteMessage,
+      selectedProfileId,
+      sid,
+      setLightboxIndex,
+      setLightboxOpen,
+      setLightboxUrls,
+    ],
+  );
 
   const composerAttachments =
     imageUris.length > 0 ? (
@@ -1675,6 +1722,31 @@ export default function ConversationThreadScreen() {
     ) : null;
 
   const dataForList = reorderMode ? reorderDraft ?? visibleMessagesForList : visibleMessagesForList;
+
+  const renderListItem = useCallback(
+    ({ item, drag, isActive, getIndex }: RenderItemParams<Message>) => {
+      const index = Number(getIndex?.() ?? 0);
+      const bubble = renderBubbleRow(item, {
+        drag: reorderMode ? drag : undefined,
+        active: reorderMode ? isActive : false,
+        // dataForList is newest-first; renderBubbleRow expects chronological adjacency.
+        prev: index + 1 < dataForList.length ? dataForList[index + 1] : null,
+        next: index > 0 ? dataForList[index - 1] : null,
+      });
+
+      // List is inverted, so flip each row back upright.
+      return <View style={invertedRowStyle}>{bubble}</View>;
+    },
+    [dataForList, invertedRowStyle, reorderMode, renderBubbleRow],
+  );
+
+  const handleDragEnd = useCallback(
+    ({ data: next }: { data: Message[] }) => {
+      if (!reorderMode) return;
+      setReorderDraft(next as Message[]);
+    },
+    [reorderMode],
+  );
 
   if (!isReady || !receiverProfile || !conversation) {
     return (
@@ -1802,18 +1874,14 @@ export default function ConversationThreadScreen() {
           // IMPORTANT: DraggableFlatList wraps the underlying FlatList in an outer container.
           // `style` affects the inner list; `containerStyle` must be flexed so the list
           // actually takes up height and the composer stays pinned to the bottom.
-          containerStyle={{ flex: 1, minHeight: 0 }}
-          style={{ flex: 1 }}
+          containerStyle={listContainerStyle}
+          style={listStyle}
           data={dataForList}
           {...({ invertDragDirection: reorderMode } as any)}
-          keyExtractor={(m) => String((m as any)?.clientMessageId ?? (m as any)?.client_message_id ?? (m as any)?.id)}
+          keyExtractor={keyExtractor}
           // With `inverted`, anchor content to the visual bottom (start).
           // `flexGrow: 1` also ensures short threads don't collapse upward.
-          contentContainerStyle={
-            reorderMode
-              ? { padding: 14, paddingBottom: 10, flexGrow: 1, justifyContent: "flex-start" }
-              : { padding: 14, paddingBottom: 24, flexGrow: 1, justifyContent: "flex-start" }
-          }
+          contentContainerStyle={listContentContainerStyle}
           // Keep the list inverted in all modes (chat opens at bottom instantly).
           inverted
           // In an inverted list, the header renders at the visual bottom.
@@ -1825,23 +1893,8 @@ export default function ConversationThreadScreen() {
           scrollEventThrottle={16}
           onScroll={handleScroll}
           onScrollToIndexFailed={onScrollToIndexFailed}
-          renderItem={({ item, drag, isActive, getIndex }: RenderItemParams<Message>) => {
-            const index = Number(getIndex?.() ?? 0);
-            const bubble = renderBubbleRow(item, {
-              drag: reorderMode ? drag : undefined,
-              active: reorderMode ? isActive : false,
-              // dataForList is newest-first; renderBubbleRow expects chronological adjacency.
-              prev: index + 1 < dataForList.length ? dataForList[index + 1] : null,
-              next: index > 0 ? dataForList[index - 1] : null,
-            });
-
-            // List is inverted, so flip each row back upright.
-            return <View style={invertedRowStyle}>{bubble}</View>;
-          }}
-          onDragEnd={({ data: next }) => {
-            if (!reorderMode) return;
-            setReorderDraft(next as Message[]);
-          }}
+          renderItem={renderListItem}
+          onDragEnd={handleDragEnd as any}
         />
 
         <SafeAreaView edges={["bottom"]} style={{ backgroundColor: colors.background }}>
