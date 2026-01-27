@@ -201,6 +201,10 @@ export const ROUTES_AUTH = {
   LOGIN: "/login",
   LOGOUT: "/logout",
   REFRESH_TOKEN: "/refresh",
+  FORGOT_PASSWORD: "/forgot-password",
+  RESET_PASSWORD: "/reset-password",
+  CHANGE_PASSWORD_REQUEST: "/change-password/request",
+  CHANGE_PASSWORD_CONFIRM: "/change-password/confirm",
   PROTECTED: "/protected",
 } as const;
 

@@ -1,21 +1,26 @@
 import { Request, Response } from "express";
 import crypto from "crypto";
 import jwt from "jsonwebtoken";
+import bcrypt from "bcryptjs";
 import {
   AUTH,
   ERROR_MESSAGES,
   HTTP_METHODS,
   HTTP_STATUS,
   USER_MESSAGES,
+  VALIDATION,
 } from "../config/constants";
 import { LoginUserService, RegisterUserService } from "./authServices";
 import { upload } from "../config/multer";
 import type { RegisterResponse } from "./authModels";
 import { UserRepository } from "../users/userRepositories";
-import { createUserSession, findUserSessionByRefreshTokenHash, hashTokenSha256Hex, revokeUserSessionById, rotateUserSessionRefreshToken } from "../sessions/sessionRepositories";
+import { createUserSession, findUserSessionByRefreshTokenHash, hashTokenSha256Hex, revokeAllUserSessions, revokeUserSessionById, rotateUserSessionRefreshToken } from "../sessions/sessionRepositories";
 import { z } from "zod";
 import { validateBody } from "../middleware/validationMiddleware";
 import { sendMethodNotAllowed } from "../lib/apiResponses";
+import { normalizeUsername } from "../lib/username";
+import { createOneTimeCode, consumeOneTimeCode } from "./oneTimeCodeRepositories";
+import { buildPasswordChangeEmail, buildPasswordResetEmail, sendEmail } from "../email/emailService";
 
 const userRepository = new UserRepository();
 
@@ -297,3 +302,287 @@ export const LogoutController = async (req: Request, res: Response) => {
 export const ProtectedController = async (_req: Request, res: Response) => {
   res.status(HTTP_STATUS.OK).json({ ok: true });
 };
+
+function oneTimeCodeSecret(): string {
+  const v = String(process.env.ONE_TIME_CODE_SECRET ?? "").trim();
+  return v || String(AUTH.SECRET_KEY);
+}
+
+function hashOneTimeCode(args: { userId: string; code: string }): string {
+  const uid = String(args.userId ?? "").trim();
+  const code = String(args.code ?? "").trim();
+  const secret = oneTimeCodeSecret();
+  return hashTokenSha256Hex(`${secret}:${uid}:${code}`);
+}
+
+function generate6DigitCode(): string {
+  return String(crypto.randomInt(0, 1_000_000)).padStart(6, "0");
+}
+
+function emailDebugEnabled(): boolean {
+  const v = String(process.env.EMAIL_DEBUG ?? "").trim().toLowerCase();
+  return v === "1" || v === "true" || v === "yes";
+}
+
+function maskIdentifierForLogs(raw: string): string {
+  const s = String(raw ?? "").trim();
+  if (!s) return "";
+  if (s.includes("@")) {
+    const [local, domain] = s.split("@");
+    const l = local ?? "";
+    const d = domain ?? "";
+    const lMasked = l.length <= 2 ? "**" : `${l.slice(0, 2)}***`;
+    const dParts = d.split(".");
+    const d0 = dParts[0] ?? "";
+    const d0Masked = d0.length <= 2 ? "**" : `${d0.slice(0, 2)}***`;
+    return `${lMasked}@${d0Masked}${dParts.length > 1 ? "." + dParts.slice(1).join(".") : ""}`;
+  }
+  // username-ish
+  return s.length <= 3 ? "***" : `${s.slice(0, 3)}***`;
+}
+
+async function findUserByIdentifier(identifierRaw: string) {
+  const identifier = String(identifierRaw ?? "").trim().replace(/^@+/, "").trim();
+  if (!identifier) return null;
+
+  const isEmail = /@/.test(identifier);
+  if (isEmail) {
+    const email = identifier.toLowerCase();
+    return userRepository.findByEmail(email);
+  }
+
+  const username = normalizeUsername(identifier);
+  if (!username) return null;
+  return userRepository.findByUsername(username);
+}
+
+export const ForgotPasswordController = [
+  validateBody(
+    z
+      .object({
+        identifier: z.string().trim().min(1),
+      })
+      .passthrough(),
+  ),
+  async (req: Request, res: Response) => {
+    if (req.method !== HTTP_METHODS.POST) {
+      return sendMethodNotAllowed(req, res);
+    }
+
+    // Always return OK to avoid leaking whether a user exists.
+    try {
+      const identifier = String(req.body?.identifier ?? "").trim();
+      const user = await findUserByIdentifier(identifier);
+
+      if (emailDebugEnabled()) {
+        // eslint-disable-next-line no-console
+        console.log("[auth] forgot-password", {
+          identifier: maskIdentifierForLogs(identifier),
+          userFound: Boolean(user?.id && user?.email),
+        });
+      }
+
+      if (user?.id && user?.email) {
+        const code = generate6DigitCode();
+        const expiresMinutes = 15;
+        const expiresAt = new Date(Date.now() + expiresMinutes * 60_000);
+
+        const codeHash = hashOneTimeCode({ userId: String(user.id), code });
+        await createOneTimeCode({
+          userId: String(user.id),
+          purpose: "password_reset",
+          codeHash,
+          expiresAt,
+          requestIp: req.headers?.["x-forwarded-for"] ?? req.ip,
+          requestUserAgent: req.get?.("User-Agent") ?? null,
+        });
+
+        const email = buildPasswordResetEmail({ code, expiresMinutes });
+        const sent = await sendEmail({
+          to: String(user.email),
+          subject: email.subject,
+          text: email.text,
+          html: email.html,
+        });
+
+        if (!sent) {
+          console.error("Forgot password email failed to send (noop or provider error)");
+        }
+      }
+    } catch (e) {
+      // Best-effort; do not reveal anything.
+      console.error("Forgot password failed:", e);
+    }
+
+    return res.status(HTTP_STATUS.OK).json({ ok: true });
+  },
+];
+
+export const ResetPasswordController = [
+  validateBody(
+    z
+      .object({
+        identifier: z.string().trim().min(1),
+        code: z.string().trim().min(4).max(12),
+        newPassword: z.string().min(8),
+      })
+      .passthrough(),
+  ),
+  async (req: Request, res: Response) => {
+    if (req.method !== HTTP_METHODS.POST) {
+      return sendMethodNotAllowed(req, res);
+    }
+
+    const identifier = String(req.body?.identifier ?? "").trim();
+    const code = String(req.body?.code ?? "").trim();
+    const newPassword = String(req.body?.newPassword ?? "");
+
+    const user = await findUserByIdentifier(identifier);
+    if (!user?.id) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({ error: "Invalid code" });
+    }
+
+    const codeHash = hashOneTimeCode({ userId: String(user.id), code });
+    const consumed = await consumeOneTimeCode({
+      userId: String(user.id),
+      purpose: "password_reset",
+      codeHash,
+      maxAttempts: 5,
+      usedIp: req.headers?.["x-forwarded-for"] ?? req.ip,
+      usedUserAgent: req.get?.("User-Agent") ?? null,
+    });
+
+    if (!consumed.ok) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({ error: "Invalid code" });
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    const updated = await userRepository.updatePasswordHash(String(user.id), hashedPassword);
+    if (!updated) {
+      return res
+        .status(HTTP_STATUS.INTERNAL_SERVER_ERROR)
+        .json({ error: ERROR_MESSAGES.INTERNAL_SERVER_ERROR });
+    }
+
+    await revokeAllUserSessions({ userId: String(user.id), reason: "password_reset" });
+
+    return res.status(HTTP_STATUS.OK).json({ ok: true });
+  },
+];
+
+export const RequestPasswordChangeController = [
+  validateBody(
+    z
+      .object({
+        currentPassword: z.string().min(1),
+      })
+      .passthrough(),
+  ),
+  async (req: Request, res: Response) => {
+    if (req.method !== HTTP_METHODS.POST) {
+      return sendMethodNotAllowed(req, res);
+    }
+
+    const userId = String(req.user?.id ?? "").trim();
+    if (!userId) return res.status(HTTP_STATUS.UNAUTHORIZED).json({ error: AUTH.MISSING_TOKEN });
+
+    const currentPassword = String(req.body?.currentPassword ?? "");
+    const user = await userRepository.findAuthById(userId);
+    if (!user?.password_hash || !user?.email) {
+      return res.status(HTTP_STATUS.UNAUTHORIZED).json({ error: AUTH.INVALID_TOKEN });
+    }
+
+    const ok = await bcrypt.compare(currentPassword, String(user.password_hash));
+    if (!ok) {
+      return res.status(HTTP_STATUS.UNAUTHORIZED).json({ error: VALIDATION.INVALID_PASSWORD });
+    }
+
+    const code = generate6DigitCode();
+    const expiresMinutes = 10;
+    const expiresAt = new Date(Date.now() + expiresMinutes * 60_000);
+    const codeHash = hashOneTimeCode({ userId, code });
+
+    await createOneTimeCode({
+      userId,
+      purpose: "password_change",
+      codeHash,
+      expiresAt,
+      requestIp: req.headers?.["x-forwarded-for"] ?? req.ip,
+      requestUserAgent: req.get?.("User-Agent") ?? null,
+    });
+
+    const email = buildPasswordChangeEmail({ code, expiresMinutes });
+    const sent = await sendEmail({
+      to: String(user.email),
+      subject: email.subject,
+      text: email.text,
+      html: email.html,
+    });
+
+    if (!sent) {
+      return res
+        .status(HTTP_STATUS.INTERNAL_SERVER_ERROR)
+        .json({ error: ERROR_MESSAGES.EXTERNAL_SERVICE_ERROR });
+    }
+
+    return res.status(HTTP_STATUS.OK).json({ ok: true });
+  },
+];
+
+export const ConfirmPasswordChangeController = [
+  validateBody(
+    z
+      .object({
+        currentPassword: z.string().min(1),
+        newPassword: z.string().min(8),
+        code: z.string().trim().min(4).max(12),
+      })
+      .passthrough(),
+  ),
+  async (req: Request, res: Response) => {
+    if (req.method !== HTTP_METHODS.POST) {
+      return sendMethodNotAllowed(req, res);
+    }
+
+    const userId = String(req.user?.id ?? "").trim();
+    if (!userId) return res.status(HTTP_STATUS.UNAUTHORIZED).json({ error: AUTH.MISSING_TOKEN });
+
+    const currentPassword = String(req.body?.currentPassword ?? "");
+    const newPassword = String(req.body?.newPassword ?? "");
+    const code = String(req.body?.code ?? "").trim();
+
+    const user = await userRepository.findAuthById(userId);
+    if (!user?.password_hash) {
+      return res.status(HTTP_STATUS.UNAUTHORIZED).json({ error: AUTH.INVALID_TOKEN });
+    }
+
+    const ok = await bcrypt.compare(currentPassword, String(user.password_hash));
+    if (!ok) {
+      return res.status(HTTP_STATUS.UNAUTHORIZED).json({ error: VALIDATION.INVALID_PASSWORD });
+    }
+
+    const codeHash = hashOneTimeCode({ userId, code });
+    const consumed = await consumeOneTimeCode({
+      userId,
+      purpose: "password_change",
+      codeHash,
+      maxAttempts: 5,
+      usedIp: req.headers?.["x-forwarded-for"] ?? req.ip,
+      usedUserAgent: req.get?.("User-Agent") ?? null,
+    });
+
+    if (!consumed.ok) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({ error: "Invalid code" });
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    const updated = await userRepository.updatePasswordHash(userId, hashedPassword);
+    if (!updated) {
+      return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ error: ERROR_MESSAGES.INTERNAL_SERVER_ERROR });
+    }
+
+    await revokeAllUserSessions({ userId, reason: "password_change" });
+
+    return res.status(HTTP_STATUS.OK).json({ ok: true });
+  },
+];

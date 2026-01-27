@@ -11,6 +11,12 @@ export class UserRepository {
     return result.rows[0] || null;
   }
 
+  async findAuthById(userId: string): Promise<(User & { password_hash: string }) | null> {
+    const query = "SELECT * FROM users WHERE id = $1";
+    const result = await pool.query(query, [userId]);
+    return result.rows[0] || null;
+  }
+
   async updateUsername(userId: string, username: string): Promise<void> {
     const query = "UPDATE users SET username = $1, updated_at = $2 WHERE id = $3";
     await pool.query(query, [username, new Date(), userId]);
@@ -80,6 +86,15 @@ export class UserRepository {
     const query =
       "UPDATE users SET avatar_url = $1, updated_at = $2 WHERE id = $3";
     await pool.query(query, [avatar_url, new Date(), userId]);
+  }
+
+  async updatePasswordHash(userId: string, passwordHash: string): Promise<number> {
+    const uid = String(userId ?? "").trim();
+    const hash = String(passwordHash ?? "").trim();
+    if (!uid || !hash) return 0;
+    const q = "UPDATE users SET password_hash = $1, updated_at = now() WHERE id = $2";
+    const res = await pool.query(q, [hash, uid]);
+    return Number(res.rowCount ?? 0);
   }
 
   async findByGoogleId(googleId: string): Promise<User | null> {

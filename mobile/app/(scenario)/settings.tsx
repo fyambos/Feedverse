@@ -143,7 +143,7 @@ export default function UserSettingsScreen() {
     <>
       <Stack.Screen options={{ headerShown: false }} />
 
-      <SafeAreaView edges={["top"]} style={{ flex: 1, backgroundColor: colors.background }}>
+      <SafeAreaView edges={["top", "bottom"]} style={{ flex: 1, backgroundColor: colors.background }}>
         <KeyboardAvoidingView
           style={{ flex: 1 }}
           behavior={Platform.OS === "ios" ? "padding" : undefined}
@@ -243,9 +243,26 @@ export default function UserSettingsScreen() {
                 </Pressable>
               </RowCard>
 
-              {/* SESSIONS */}
+              {/* PASSWORD */}
               <RowCard
                 label="Security"
+                colors={colors}
+                right={<Ionicons name="chevron-forward" size={18} color={colors.icon} />}
+              >
+                <Pressable
+                  onPress={() => router.push({ pathname: "/(scenario)/settings/change-password" } as any)}
+                  hitSlop={8}
+                >
+                  <ThemedText style={{ color: colors.text }}>Change password</ThemedText>
+                  <ThemedText style={{ color: colors.textSecondary, marginTop: 4 }}>
+                    Update your password with an email code
+                  </ThemedText>
+                </Pressable>
+              </RowCard>
+
+              {/* SESSIONS */}
+              <RowCard
+                label="Sessions"
                 colors={colors}
                 right={<Ionicons name="chevron-forward" size={18} color={colors.icon} />}
               >
@@ -282,9 +299,9 @@ const styles = StyleSheet.create({
   },
 
   container: {
-    flex: 1,
     paddingHorizontal: 16,
     paddingTop: 16,
+    paddingBottom: 24,
     gap: 12,
   },
 
