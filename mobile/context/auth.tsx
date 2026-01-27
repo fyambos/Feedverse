@@ -598,6 +598,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { ok: false as const, error: "Please enter a valid email address." };
       }
       if (!pw) return { ok: false as const, error: "Missing password." };
+      if (pw.length < 8) return { ok: false as const, error: "Password must be at least 8 characters." };
 
       if (baseUrl) {
         try {
@@ -626,9 +627,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
             if (!res.ok || (Array.isArray(json?.errors) && json.errors.length > 0)) {
               const errors = Array.isArray(json?.errors) ? json.errors : [];
+              const issues = Array.isArray(json?.details?.issues) ? json.details.issues : [];
               const firstMsg =
                 typeof errors?.[0]?.message === "string"
                   ? String(errors[0].message)
+                  : typeof issues?.[0]?.message === "string"
+                    ? String(issues[0].message)
                   : String(json?.error ?? json?.message ?? "Sign up failed.");
 
               lastErrorMsg = firstMsg;

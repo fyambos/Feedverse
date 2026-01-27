@@ -67,8 +67,15 @@ export const RegisterController = [
         username: z.string().trim().min(3),
         email: z.string().trim().min(3),
         password_hash: z.string().min(8),
-        name: z.string().trim().min(1).optional(),
-        avatar_url: z.string().trim().optional(),
+        // Mobile sometimes sends name: ""; treat that as missing.
+        name: z.preprocess(
+          (v) => (typeof v === "string" && v.trim().length === 0 ? undefined : v),
+          z.string().trim().min(1).optional(),
+        ),
+        avatar_url: z.preprocess(
+          (v) => (typeof v === "string" && v.trim().length === 0 ? undefined : v),
+          z.string().trim().min(1).optional(),
+        ),
       })
       // In case older clients send extra keys.
       .passthrough(),
