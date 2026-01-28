@@ -2,7 +2,7 @@
 
 **Version :** 1.0.0
 
-**Mise à jour le :** 19 janvier 2026
+**Mise à jour le :** 28 janvier 2026
 
 **Par :** [**Steven YAMBOS**](https://github.com/StevenYAMBOS)
 
@@ -26,6 +26,8 @@
   - [Supprimer un scénario](#supprimer-un-scénario)
   - [Récupérer les participants d'un scénario](#récupérer-les-participants-dun-scénario)
   - [Transférer la propriété d'un scénario](#transférer-la-propriété-dun-scénario)
+  - [Rejoindre un scénario](#rejoindre-un-scénario)
+  - [Quitter un scénario](#quitter-un-scénario)
 - [Codes de statut HTTP](#codes-de-statut-http)
 - [Gestion des erreurs](#gestion-des-erreurs)
 
@@ -2383,6 +2385,489 @@ Pour des fonctionnalités avancées, envisager :
 - Notifications automatiques au nouveau propriétaire
 - Période de confirmation avant transfert effectif
 - Restriction temporelle (cooldown entre transferts)
+
+---
+
+### Rejoindre un scénario
+
+**Endpoint :** `POST /scenarios/join`
+
+**Description :** Permet à un utilisateur authentifié de rejoindre un scénario existant en utilisant un code d'invitation. L'utilisateur devient automatiquement participant du scénario et peut ensuite créer des profils et interagir avec le contenu narratif. Cette opération est idempotente : rejoindre un scénario dont on est déjà membre ne génère pas d'erreur.
+
+**Authentification :** Requise
+
+#### Paramètres de requête
+
+Aucun paramètre dans l'URL.
+
+#### Corps de la requête
+
+**Type :** `application/json`
+
+**Structure :**
+
+```json
+{
+  "inviteCode": "string"
+}
+```
+
+**Champs requis :**
+
+| Champ | Type | Requis | Description |
+|-------|------|--------|-------------|
+| `inviteCode` | `string` | Oui | Code d'invitation du scénario (6-20 caractères, lettres majuscules et chiffres uniquement) |
+
+#### Validation
+
+- Le code d'invitation doit contenir entre 6 et 20 caractères
+- Seuls les lettres majuscules (A-Z) et chiffres (0-9) sont autorisés
+- La recherche est insensible à la casse : `KPOP2024` = `kpop2024`
+- Le code doit correspondre à un scénario existant
+
+#### Réponse de succès
+
+**Code :** `201 Created` (nouveau membre) ou `200 OK` (déjà membre)
+
+**Structure :**
+
+```json
+{
+  "message": "string",
+  "scenario": {
+    "id": "uuid",
+    "name": "string",
+    "cover": "string",
+    "invite_code": "string",
+    "owner_user_id": "uuid",
+    "description": "string | null",
+    "mode": "story | campaign",
+    "gm_user_ids": ["uuid"],
+    "settings": "object",
+    "created_at": "timestamp",
+    "updated_at": "timestamp | null"
+  },
+  "already_member": "boolean"
+}
+```
+
+**Champs de la réponse :**
+
+- `message` : Message de confirmation contextuel
+- `scenario` : Informations complètes du scénario rejoint
+- `already_member` : **`true`** si l'utilisateur était déjà membre, **`false`** si nouveau membre
+
+**Distinction des codes de statut :**
+
+- `201 Created` : L'utilisateur a été ajouté comme nouveau participant
+- `200 OK` : L'utilisateur était déjà membre (opération idempotente)
+
+#### Exemple de réponse
+
+**Nouveau membre (201 Created) :**
+
+```json
+{
+  "message": "Vous avez rejoint le scénario avec succès",
+  "scenario": {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "name": "K-Pop Universe",
+    "cover": "https://cdn.feedverse.com/covers/550e8400.jpg",
+    "invite_code": "KPOP2024",
+    "owner_user_id": "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
+    "description": "Un univers narratif autour de groupes K-Pop fictifs",
+    "mode": "story",
+    "gm_user_ids": ["6ba7b810-9dad-11d1-80b4-00c04fd430c8"],
+    "settings": {
+      "profileLimitMode": "per_owner"
+    },
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-06-20T14:22:00Z"
+  },
+  "already_member": false
+}
+```
+
+**Déjà membre (200 OK) :**
+
+```json
+{
+  "message": "Vous êtes déjà membre de ce scénario",
+  "scenario": {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "name": "K-Pop Universe",
+    "cover": "https://cdn.feedverse.com/covers/550e8400.jpg",
+    "invite_code": "KPOP2024",
+    "owner_user_id": "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
+    "description": "Un univers narratif autour de groupes K-Pop fictifs",
+    "mode": "story",
+    "gm_user_ids": ["6ba7b810-9dad-11d1-80b4-00c04fd430c8"],
+    "settings": {
+      "profileLimitMode": "per_owner"
+    },
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-06-20T14:22:00Z"
+  },
+  "already_member": true
+}
+```
+
+#### Exemple de code
+
+**JavaScript (Fetch API) :**
+
+```javascript
+const joinScenario = async (inviteCode) => {
+  const response = await fetch('https://api.feedverse.com/v1/scenarios/join', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ inviteCode })
+  });
+
+  const data = await response.json();
+  
+  if (data.already_member) {
+    console.log('Déjà membre de ce scénario');
+  } else {
+    console.log('Nouveau membre ajouté !');
+  }
+  
+  return data.scenario;
+};
+
+await joinScenario('KPOP2024');
+```
+
+**cURL :**
+
+```bash
+curl -X POST https://api.feedverse.com/v1/scenarios/join \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "inviteCode": "KPOP2024"
+  }'
+```
+
+#### Codes de statut
+
+| Code | Description |
+|------|-------------|
+| `200` | Succès - Déjà membre du scénario |
+| `201` | Créé - Ajouté comme nouveau membre |
+| `400` | Requête invalide - Code d'invitation incorrect ou format invalide |
+| `401` | Non autorisé - Token invalide ou expiré |
+| `500` | Erreur serveur interne |
+
+#### Erreurs possibles
+
+**400 Bad Request - Code manquant :**
+
+```json
+{
+  "message": "Erreur de validation",
+  "errors": [
+    {
+      "fields": "invite_code",
+      "message": "Le code d'invitation est requis"
+    }
+  ]
+}
+```
+
+**400 Bad Request - Code trop court :**
+
+```json
+{
+  "message": "Erreur de validation",
+  "errors": [
+    {
+      "fields": "invite_code",
+      "message": "Le code d'invitation doit contenir au moins 6 caractères"
+    }
+  ]
+}
+```
+
+**400 Bad Request - Format invalide :**
+
+```json
+{
+  "message": "Erreur de validation",
+  "errors": [
+    {
+      "fields": "invite_code",
+      "message": "Le code d'invitation ne peut contenir que des lettres majuscules et des chiffres"
+    }
+  ]
+}
+```
+
+**400 Bad Request - Code introuvable :**
+
+```json
+{
+  "message": "Erreur de validation",
+  "errors": [
+    {
+      "fields": "invite_code",
+      "message": "Code d'invitation invalide ou scénario introuvable"
+    }
+  ]
+}
+```
+
+**401 Unauthorized :**
+
+```json
+{
+  "message": "Token invalide ou expiré"
+}
+```
+
+#### Cas d'usage
+
+**Invitation par lien :**
+
+Un créateur partage un lien contenant le code d'invitation. Les utilisateurs cliquent sur le lien et rejoignent automatiquement le scénario.
+
+**Scénarios collaboratifs :**
+
+Permet la création de groupes narratifs où plusieurs utilisateurs incarnent différents personnages dans le même univers.
+
+**Gestion des permissions :**
+
+Une fois membre, l'utilisateur peut créer des profils, publier des posts et interagir avec le contenu du scénario.
+
+---
+
+### Quitter un scénario
+
+**Endpoint :** `POST /scenarios/:id/leave`
+
+**Description :** Permet à un utilisateur authentifié de quitter définitivement un scénario dont il est membre. L'utilisateur perd alors l'accès à tous les contenus du scénario. Cette action nécessite que l'utilisateur ait préalablement supprimé tous ses profils dans le scénario. Le propriétaire du scénario ne peut pas quitter son propre scénario sans d'abord transférer la propriété.
+
+**Authentification :** Requise
+
+#### Paramètres de requête
+
+**Paramètres d'URL :**
+
+| Paramètre | Type | Requis | Description |
+|-----------|------|--------|-------------|
+| `id` | `uuid` | Oui | Identifiant unique du scénario à quitter |
+
+**Exemple :** `/scenarios/550e8400-e29b-41d4-a716-446655440000/leave`
+
+#### Corps de la requête
+
+Aucun corps de requête nécessaire.
+
+#### Validation
+
+- L'identifiant doit être un UUID valide au format v4
+- L'utilisateur doit être membre du scénario
+- L'utilisateur ne doit pas être le propriétaire du scénario
+- L'utilisateur ne doit avoir aucun profil actif dans le scénario
+
+#### Réponse de succès
+
+**Code :** `200 OK`
+
+**Structure :**
+
+```json
+{
+  "message": "string",
+  "scenario_id": "uuid"
+}
+```
+
+**Champs de la réponse :**
+
+- `message` : Message de confirmation
+- `scenario_id` : Identifiant du scénario quitté
+
+#### Exemple de réponse
+
+```json
+{
+  "message": "Vous avez quitté le scénario avec succès",
+  "scenario_id": "550e8400-e29b-41d4-a716-446655440000"
+}
+```
+
+#### Exemple de code
+
+**JavaScript (Fetch API) :**
+
+```javascript
+const leaveScenario = async (scenarioId) => {
+  const response = await fetch(
+    `https://api.feedverse.com/v1/scenarios/${scenarioId}/leave`,
+    {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      }
+    }
+  );
+
+  if (!response.ok) {
+    const error = await response.json();
+    if (error.errors?.some(e => e.fields === 'profiles')) {
+      console.error('Supprimez vos profils avant de quitter');
+    }
+    throw new Error(error.message);
+  }
+
+  const data = await response.json();
+  console.log(`Scénario ${data.scenario_id} quitté`);
+  return data;
+};
+
+await leaveScenario('550e8400-e29b-41d4-a716-446655440000');
+```
+
+**cURL :**
+
+```bash
+curl -X POST https://api.feedverse.com/v1/scenarios/550e8400-e29b-41d4-a716-446655440000/leave \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json"
+```
+
+#### Codes de statut
+
+| Code | Description |
+|------|-------------|
+| `200` | Succès - Scénario quitté |
+| `400` | Requête invalide - Profils existants ou propriétaire |
+| `401` | Non autorisé - Token invalide ou expiré |
+| `404` | Non trouvé - Scénario inexistant ou identifiant invalide |
+| `500` | Erreur serveur interne |
+
+#### Erreurs possibles
+
+**400 Bad Request - Profils existants :**
+
+```json
+{
+  "message": "Erreur de validation",
+  "errors": [
+    {
+      "fields": "profiles",
+      "message": "Vous devez supprimer vos profils avant de quitter le scénario"
+    }
+  ]
+}
+```
+
+**400 Bad Request - Propriétaire :**
+
+```json
+{
+  "message": "Erreur de validation",
+  "errors": [
+    {
+      "fields": "user",
+      "message": "Le propriétaire ne peut pas quitter son propre scénario"
+    }
+  ]
+}
+```
+
+**400 Bad Request - Non membre :**
+
+```json
+{
+  "message": "Erreur de validation",
+  "errors": [
+    {
+      "fields": "user",
+      "message": "Vous n'êtes pas membre de ce scénario"
+    }
+  ]
+}
+```
+
+**404 Not Found - Scénario inexistant :**
+
+```json
+{
+  "message": "Erreur de validation",
+  "errors": [
+    {
+      "fields": "id",
+      "message": "Scénario introuvable"
+    }
+  ]
+}
+```
+
+**404 Not Found - UUID invalide :**
+
+```json
+{
+  "message": "Erreur de validation",
+  "errors": [
+    {
+      "fields": "id",
+      "message": "Format d'identifiant invalide"
+    }
+  ]
+}
+```
+
+**401 Unauthorized :**
+
+```json
+{
+  "message": "Token invalide ou expiré"
+}
+```
+
+#### Règles métier
+
+**Protection du propriétaire :**
+
+Le propriétaire ne peut pas quitter son propre scénario. Il doit d'abord utiliser l'endpoint `POST /scenarios/:id/transfer` pour transférer la propriété à un autre membre avant de pouvoir quitter.
+
+**Suppression des profils obligatoire :**
+
+L'utilisateur doit supprimer tous ses profils avant de quitter. Cette règle évite les données orphelines et garantit l'intégrité narrative du scénario. Les profils peuvent contenir des posts, des likes, des messages qui doivent être nettoyés au préalable.
+
+**Vérification de membership :**
+
+Tenter de quitter un scénario dont on n'est pas membre génère une erreur claire plutôt qu'une opération silencieuse.
+
+#### Cas d'usage
+
+**Désengagement narratif :**
+
+Un utilisateur ne souhaite plus participer à l'univers narratif et se retire complètement du scénario.
+
+**Nettoyage de compte :**
+
+Suppression des participations aux scénarios inactifs ou non pertinents.
+
+**Workflow de départ :**
+
+1. Supprimer tous les profils via l'endpoint approprié
+2. Appeler `/scenarios/:id/leave` pour quitter définitivement
+3. Perte d'accès immédiate à tous les contenus du scénario
+
+**Alternative pour propriétaire :**
+
+Si le propriétaire souhaite quitter :
+
+1. Transférer la propriété via `POST /scenarios/:id/transfer`
+2. Supprimer ses profils
+3. Quitter via `POST /scenarios/:id/leave`
 
 ---
 
