@@ -222,4 +222,22 @@ export class ScenarioRepository {
       client.release();
     }
   }
+
+  async findByInviteCode(inviteCode: string): Promise<Scenario | null> {
+    const query =
+      "SELECT * FROM scenarios WHERE UPPER(invite_code) = UPPER($1)";
+    const result = await pool.query(query, [inviteCode]);
+    return result.rows[0] || null;
+  }
+
+  async isUserMember(scenarioId: string, userId: string): Promise<boolean> {
+    const query = `
+      SELECT EXISTS(
+        SELECT 1 FROM scenario_players 
+        WHERE scenario_id = $1 AND user_id = $2
+      )
+    `;
+    const result = await pool.query(query, [scenarioId, userId]);
+    return result.rows[0].exists;
+  }
 }

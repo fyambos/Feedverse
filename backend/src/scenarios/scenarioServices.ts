@@ -10,12 +10,15 @@ import {
   UpdateScenarioData,
   UpdateScenarioRequest,
   UpdateScenarioResponse,
+  JoinScenarioRequest,
+  JoinScenarioResponse,
 } from "./scenarioModels";
 import {
   validateScenarioName,
   validateScenarioDescription,
   validateInviteCode,
   validateScenarioMode,
+  validateJoinScenarioRequest,
 } from "./scenarioValidators";
 import { APP_CONFIG, SCENARIO_MESSAGES } from "../config/constants";
 import { ScenarioRepository } from "./scenarioRepositories";
@@ -469,4 +472,57 @@ export const TransferScenarioOwnershipService = async (
   };
 
   return { scenario };
+};
+
+export const JoinScenarioService = async (
+  data: JoinScenarioRequest,
+  userId: string,
+): Promise<{
+  data?: JoinScenarioResponse;
+  errors?: ValidationError[];
+}> => {
+  const validationError = validateJoinScenarioRequest(data);
+  if (validationError) {
+    return { errors: [validationError] };
+  }
+
+  const { inviteCode } = data;
+
+  const scenario = await scenarioRepository.findByInviteCode(inviteCode);
+
+  if (!scenario) {
+    return {
+      errors: [
+        {
+          fields: SCENARIO_MESSAGES.INVITE_CODE,
+          message: SCENARIO_MESSAGES.INVITE_CODE_NOT_FOUND,
+        },
+      ],
+    };
+  }
+
+  const isAlreadyMember = await scenarioRepository.isUserMember(
+    scenario.id,
+    userId,
+  );
+
+  if (isAlreadyMember) {
+    return {
+      data: {
+        message: SCENARIO_MESSAGES.ALREADY_MEMBER,
+        scenario,
+        already_member: true,
+      },
+    };
+  }
+
+  await scenarioRepository.addPlayer(scenario.id, userId);
+
+  return {
+    data: {
+      message: SCENARIO_MESSAGES.JOIN_SUCCESS,
+      scenario,
+      already_member: false,
+    },
+  };
 };

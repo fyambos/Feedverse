@@ -13,7 +13,9 @@ import {
   GetScenarioPlayersService,
   TransferScenarioOwnershipService,
   UpdateScenarioService,
+  JoinScenarioService,
 } from "./scenarioServices";
+import { JoinScenarioRequest } from "./scenarioModels";
 import { upload } from "../config/multer";
 
 export const CreateScenarioController = [
@@ -289,5 +291,50 @@ export const TransferScenarioOwnershipController = async (
     res
       .status(HTTP_STATUS.INTERNAL_SERVER_ERROR)
       .json({ error: ERROR_MESSAGES.INTERNAL_SERVER_ERROR });
+  }
+};
+
+export const JoinScenarioController = async (req: Request, res: Response) => {
+  if (req.method !== HTTP_METHODS.POST) {
+    return res
+      .status(HTTP_STATUS.BAD_REQUEST)
+      .send(ERROR_MESSAGES.METHOD_NOT_ALLOWED);
+  }
+
+  try {
+    const userId: string = req.user.id;
+
+    if (!userId) {
+      return res.status(HTTP_STATUS.UNAUTHORIZED).json({
+        error: AUTH.INVALID_TOKEN,
+      });
+    }
+
+    const requestData: JoinScenarioRequest = req.body;
+
+    const result = await JoinScenarioService(requestData, userId);
+
+    if (result.errors) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        message: ERROR_MESSAGES.VALIDATION_ERROR,
+        errors: result.errors,
+      });
+    }
+
+    const statusCode = result.data?.already_member
+      ? HTTP_STATUS.OK
+      : HTTP_STATUS.CREATED;
+
+    res.status(statusCode).json({
+      message: result.data?.message,
+      scenario: result.data?.scenario,
+      already_member: result.data?.already_member,
+    });
+  } catch (error: unknown) {
+    console.error("Erreur lors de la jonction au scénario:", error);
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      message: ERROR_MESSAGES.INTERNAL_SERVER_ERROR,
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
   }
 };

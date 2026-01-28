@@ -89,3 +89,13 @@ export interface TransferScenarioOwnershipResponse {
   message: string;
   scenario: Scenario;
 }
+
+export interface JoinScenarioRequest {
+  inviteCode: string;
+}
+
+export interface JoinScenarioResponse {
+  message: string;
+  scenario: Scenario;
+  already_member: boolean;
+}

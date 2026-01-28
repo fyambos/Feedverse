@@ -95,3 +95,23 @@ export const validateScenarioMode = (mode: string): ValidationError | null => {
 
   return null;
 };
+
+export const validateJoinScenarioRequest = (
+  data: unknown,
+): ValidationError | null => {
+  if (!data || typeof data !== "object") {
+    return {
+      fields: "body",
+      message: "Le corps de la requête est invalide",
+    };
+  }
+
+  const { inviteCode } = data as { inviteCode?: string };
+
+  const inviteCodeError = validateInviteCode(inviteCode || "");
+  if (inviteCodeError) {
+    return inviteCodeError;
+  }
+
+  return null;
+};

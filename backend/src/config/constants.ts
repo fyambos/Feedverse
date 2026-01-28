@@ -121,6 +121,9 @@ export const SCENARIO_MESSAGES = {
   UNAUTHORIZED: "Votre email Google n'est pas vérifié",
   NEW_OWNER_NOT_FOUND: "Le nouvel utilisateur propriétaire est introuvable",
   CANNOT_TRANSFER_TO_SELF: "Vous êtes déjà propriétaire de ce scénario",
+  JOIN_SUCCESS: "Vous avez rejoint le scénario avec succès",
+  ALREADY_MEMBER: "Vous êtes déjà membre de ce scénario",
+  INVITE_CODE_NOT_FOUND: "Code d'invitation invalide ou scénario introuvable",
 } as const;
 
 export const SCENARIO_VALIDATION_RULES = {
@@ -236,6 +239,7 @@ export const ROUTES_SCENARIOS = {
   CREATE: "/create",
   PLAYERS: "/players",
   TRANSFER: "/transfer",
+  JOIN: "/join",
 } as const;
 
 // ============================================================================
