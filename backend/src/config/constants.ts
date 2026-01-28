@@ -5,14 +5,19 @@ loadEnv();
 // DATABASE
 // ============================================================================
 
-export const DATABASE_URL = process.env.DATABASE_URL;
+// Prefer the conventional DATABASE_URL (Railway/Render/Heroku). Keep DB_URL as a legacy alias.
+export const DATABASE_URL = process.env.DATABASE_URL ?? process.env.DB_URL;
 export const DATABASE_HOST = process.env.DB_HOST;
 export const DATABASE_USER = process.env.DB_USER;
 export const DATABASE_PORT: number =
   parseInt(<string>process.env.DB_PORT, 10) || 5432;
 export const DATABASE_PASSWORD = process.env.DB_PASSWORD;
 export const DATABASE_NAME = process.env.DB_NAME;
-export const DATABASE_SSL_MODE = Boolean(process.env.DB_SSLMODE);
+export const DATABASE_SSL_MODE: boolean = (() => {
+  const raw = String(process.env.DB_SSLMODE ?? "").trim().toLowerCase();
+  if (!raw) return false;
+  return raw === "1" || raw === "true" || raw === "require";
+})();
 
 // Postgres pool tuning (pg.Pool options)
 export const DB_POOL_MAX: number =
@@ -193,9 +198,20 @@ export const ERROR_MESSAGES = {
 export const ROUTES_AUTH = {
   BASE: "/auth",
   REGISTER: "/register",
+  USERNAME_AVAILABLE: "/username-available",
+  SIGNUP_REQUEST: "/signup/request",
+  SIGNUP_CONFIRM: "/signup/confirm",
+  EMAIL_VERIFY_REQUEST: "/email/verify/request",
+  EMAIL_VERIFY_CONFIRM: "/email/verify/confirm",
+  EMAIL_CHANGE_REQUEST: "/email/change/request",
+  EMAIL_CHANGE_CONFIRM: "/email/change/confirm",
   LOGIN: "/login",
   LOGOUT: "/logout",
   REFRESH_TOKEN: "/refresh",
+  FORGOT_PASSWORD: "/forgot-password",
+  RESET_PASSWORD: "/reset-password",
+  CHANGE_PASSWORD_REQUEST: "/change-password/request",
+  CHANGE_PASSWORD_CONFIRM: "/change-password/confirm",
   PROTECTED: "/protected",
 } as const;
 
@@ -238,7 +254,7 @@ export const TEST_DATA = {
 
 export const APP_CONFIG = {
   ENVIRONMENT: "http://localhost",
-  SERVER_PORT: process.env.SERVER_PORT,
+  SERVER_PORT: Number.parseInt(String(process.env.PORT ?? process.env.SERVER_PORT ?? "8080"), 10) || 8080,
   TIMEZONE: "Europe/Paris",
   DEFAULT_LOCALE: "fr-FR",
   MAX_REQUEST_TIMEOUsT_MS: 30000,

@@ -37,6 +37,7 @@ export async function CreateScenarioService(args: {
   description?: string | null;
   mode: string;
   settings?: unknown;
+  allowPlayersReorderMessages?: boolean;
   gmUserIds?: string[];
   tags?: Array<{ key?: string; name?: string; color?: string; id?: string }>;
 }) {
@@ -50,6 +51,7 @@ export async function CreateScenarioService(args: {
     description: args.description,
     mode: args.mode,
     settings: args.settings,
+    allowPlayersReorderMessages: Boolean(args.allowPlayersReorderMessages ?? true),
     gmUserIds: args.gmUserIds,
     tags: args.tags,
   });
@@ -65,6 +67,7 @@ export async function UpdateScenarioService(args: {
     description: string | null;
     mode: string;
     settings: unknown;
+    allowPlayersReorderMessages: boolean;
     gmUserIds: string[];
     tags: Array<{ key?: string; name?: string; color?: string; id?: string }>;
   }>;

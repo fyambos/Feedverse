@@ -70,7 +70,7 @@ export default function TabLayout() {
 
   const { userId } = useAuth();
   const app = useAppData() as any;
-  const { isReady, db, getSelectedProfileId } = app;
+  const { isReady, db, getSelectedProfileId, setSelectedProfileId } = app;
 
   const seedKey = useMemo(() => String((db as any)?.seededAt ?? ""), [db]);
 
@@ -96,27 +96,28 @@ export default function TabLayout() {
       return;
     }
 
-    const uid = String(userId ?? "").trim();
-    const profilesMap = (db as any)?.profiles ?? {};
-
-    const hasAnyProfileInScenario = Object.values(profilesMap).some((p: any) => {
-      return String(p?.scenarioId) === sid && String(p?.ownerUserId) === uid;
-    });
+    // If there's a stored selection but it doesn't resolve to a valid usable profile,
+    // clear it so it doesn't hang around in the DB.
+    const rawStored = (db as any)?.selectedProfileByScenario?.[String(sid)] ?? null;
+    const rawStoredId = rawStored == null ? "" : String(rawStored);
+    const hasStored = rawStoredId && rawStoredId !== "null" && rawStoredId !== "undefined";
 
     gateRanRef.current = gateKey; // lock BEFORE navigating
 
-    if (hasAnyProfileInScenario) {
-      router.replace({
-        pathname: "/modal/select-profile",
-        params: { scenarioId: sid, forced: "1" },
-      } as any);
-    } else {
-      router.replace({
-        pathname: "/modal/create-profile",
-        params: { scenarioId: sid, mode: "create", forced: "1" },
-      } as any);
+    if (hasStored) {
+      try {
+        void setSelectedProfileId?.(sid, null as any);
+      } catch {
+        // ignore
+      }
     }
-  }, [isReady, sid, seedKey, selectedProfileId, userId, db, pathname]);
+
+    // Always send the user to the selection screen so they can pick OR create.
+    router.replace({
+      pathname: "/modal/select-profile",
+      params: { scenarioId: sid, forced: "1" },
+    } as any);
+  }, [isReady, sid, seedKey, selectedProfileId, userId, db, pathname, setSelectedProfileId]);
 
   // ---- SYNC: when a deep-link changes scenarioId, carry that across tabs ----
   useEffect(() => {

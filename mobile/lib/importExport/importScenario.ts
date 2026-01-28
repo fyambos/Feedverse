@@ -396,6 +396,14 @@ export function importScenarioFromJson(raw: any, opts: ImportOptions): ImportRes
     });
   }
 
+  // 10.5) choose a default selected profile (only if it's actually owned by the current user)
+  const hasSelectionAlready = Boolean((db.selectedProfileByScenario ?? ({} as any))[targetScenarioId]);
+  const firstOwnedImportedProfile = importedProfiles.find(
+    (p) => String((p as any)?.ownerUserId ?? "").trim() === String(opts.currentUserId ?? "").trim()
+  );
+  const defaultSelectedProfileId =
+    !hasSelectionAlready && firstOwnedImportedProfile?.id ? String(firstOwnedImportedProfile.id) : null;
+
   // 11) build next db (merge)
   const nextDb: DbV5 = {
     ...db,
@@ -427,9 +435,7 @@ export function importScenarioFromJson(raw: any, opts: ImportOptions): ImportRes
     },
     selectedProfileByScenario: {
       ...(db.selectedProfileByScenario ?? {}),
-      ...(!((db.selectedProfileByScenario ?? {}) as any)[targetScenarioId] && importedProfiles.length > 0
-        ? { [targetScenarioId]: String(importedProfiles[0].id) }
-        : {}),
+      ...(defaultSelectedProfileId ? { [targetScenarioId]: defaultSelectedProfileId } : {}),
     },
   };
 

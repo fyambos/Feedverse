@@ -265,6 +265,7 @@ export class ScenarioRepository {
     description?: string | null;
     mode: string;
     settings?: unknown;
+    allowPlayersReorderMessages?: boolean;
     gmUserIds?: string[];
     tags?: Array<{ key?: string; name?: string; color?: string; id?: string }>;
   }): Promise<ScenarioRow> {
@@ -297,9 +298,10 @@ export class ScenarioRepository {
           description,
           mode,
           gm_user_ids,
-          settings
+          settings,
+          allow_players_reorder_messages
         ) VALUES (
-          $1, $2, $3, $4, $5, $6, $7::uuid[], $8::jsonb
+          $1, $2, $3, $4, $5, $6, $7::uuid[], $8::jsonb, $9
         )
         RETURNING *
         `,
@@ -312,6 +314,7 @@ export class ScenarioRepository {
           mode,
           gmDeduped,
           args.settings ?? {},
+          Boolean(args.allowPlayersReorderMessages ?? true),
         ],
       );
 
@@ -387,6 +390,7 @@ export class ScenarioRepository {
       description: string | null;
       mode: string;
       settings: unknown;
+      allowPlayersReorderMessages: boolean;
       gmUserIds: string[];
       tags: Array<{ key?: string; name?: string; color?: string; id?: string }>;
     }>;
@@ -427,6 +431,9 @@ export class ScenarioRepository {
       if (p.description !== undefined) addSet("description", p.description == null ? null : String(p.description));
       if (p.mode !== undefined) addSet("mode", String(p.mode ?? "").trim());
       if (p.settings !== undefined) addSet("settings", p.settings ?? {}, "jsonb");
+      if (p.allowPlayersReorderMessages !== undefined) {
+        addSet("allow_players_reorder_messages", Boolean(p.allowPlayersReorderMessages));
+      }
 
       if (p.gmUserIds !== undefined) {
         const gm = Array.isArray(p.gmUserIds) ? p.gmUserIds.map(String).filter(Boolean) : [];
@@ -744,9 +751,9 @@ export class ScenarioRepository {
     await pool.query(
       `
       INSERT INTO scenario_players (scenario_id, user_id)
-      SELECT $1, $2
+      SELECT $1::uuid, $2::uuid
       WHERE NOT EXISTS (
-        SELECT 1 FROM scenario_players WHERE scenario_id = $1 AND user_id::text = $2
+        SELECT 1 FROM scenario_players WHERE scenario_id = $1::uuid AND user_id = $2::uuid
       )
       `,
       [scenarioId, userId],

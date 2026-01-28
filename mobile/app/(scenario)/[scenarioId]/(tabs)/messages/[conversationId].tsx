@@ -6,8 +6,6 @@ import {
   Animated,
   Alert,
   ActivityIndicator,
-  FlatList,
-  InteractionManager,
   Keyboard,
   KeyboardAvoidingView,
   Modal,
@@ -25,13 +23,13 @@ import DraggableFlatList, { type RenderItemParams } from "react-native-draggable
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 
 import { ThemedText } from "@/components/themed-text";
-import { presentNotification } from "@/context/appData";
 import TypingIndicator from "@/components/ui/TypingIndicator";
 import { ThemedView } from "@/components/themed-view";
 import { Colors } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { useAppData } from "@/context/appData";
 import { useAuth } from "@/context/auth";
+import { Alert as DialogAlert } from "@/context/dialog";
 import type { Conversation, Message, Profile } from "@/data/db/schema";
 import { AuthorAvatarPicker } from "@/components/postComposer/AuthorAvatarPicker";
 import { Avatar } from "@/components/ui/Avatar";
@@ -47,6 +45,9 @@ import { clearDraft, loadDraft, makeDraftKey, saveDraft } from "@/lib/drafts";
 const SEND_BTN_SCALE_DOWN = 0.92;
 const SEND_BTN_SCALE_DOWN_MS = 60;
 export default function ConversationThreadScreen() {
+
+  // Force re-render when the local DB mutates in-place (common in this appData store).
+  const [messageVersion, setMessageVersion] = useState(0);
 
   const navigation = useNavigation();
 
@@ -108,6 +109,38 @@ export default function ConversationThreadScreen() {
     }
   }, [auth?.token, sid, cid, selectedProfileId]);
 
+  const reportMessageById = useCallback(
+    async (messageId: string, reportText?: string) => {
+      try {
+        const token = String(auth?.token ?? "").trim();
+        if (!token) {
+          DialogAlert.alert("Not signed in", "Please sign in to report messages.");
+          return;
+        }
+
+        const res = await apiFetch({
+          path: `/messages/${encodeURIComponent(String(messageId))}/report`,
+          token,
+          init: {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ message: String(reportText ?? "").trim() || undefined }),
+          },
+        });
+
+        if (!res.ok) {
+          DialogAlert.alert("Report failed", res?.json?.error ?? res.text ?? "Please try again.");
+          return;
+        }
+
+        DialogAlert.alert("Reported", "Thanks — we’ll take a look.");
+      } catch {
+        DialogAlert.alert("Report failed", "Network error. Please try again.");
+      }
+    },
+    [auth?.token],
+  );
+
   // Track which conversation is currently active (non-reactive; avoids update loops)
   useFocusEffect(
     useCallback(() => {
@@ -128,6 +161,9 @@ export default function ConversationThreadScreen() {
         app?.syncMessagesForConversation?.({ scenarioId: sid, conversationId: cid, limit: 200 });
         // If we're currently viewing this thread, immediately mark read.
         void markConversationRead();
+
+        // Also force a render even if the DB store mutates in place.
+        setMessageVersion((v) => v + 1);
       }
     };
     const unsubscribe = subscribeToMessageEvents(handler);
@@ -400,15 +436,16 @@ export default function ConversationThreadScreen() {
 
   const [reorderMode, setReorderMode] = useState(false);
   const [reorderDraft, setReorderDraft] = useState<Message[] | null>(null);
-
-  // Show a full-white loading screen briefly when opening a conversation
-  const [openLoading, setOpenLoading] = useState<boolean>(true);
+  const [reorderSaving, setReorderSaving] = useState(false);
+  const lastScrollOffsetRef = useRef(0);
+  const reorderEnterOffsetRef = useRef<number | "bottom" | null>(null);
+  const didRestoreReorderScrollRef = useRef(false);
+  const suppressAutoScrollRef = useRef(false);
 
   // Pagination (client-side incremental load from local messages map)
   const PAGE_SIZE = 15;
   const [visibleCount, setVisibleCount] = useState<number>(PAGE_SIZE);
   const loadingOlderRef = useRef(false);
-  const [maintainMinIndex, setMaintainMinIndex] = useState(0);
 
   const [editOpen, setEditOpen] = useState(false);
   const [editMessageId, setEditMessageId] = useState<string | null>(null);
@@ -430,8 +467,6 @@ export default function ConversationThreadScreen() {
   useFocusEffect(
     useCallback(() => {
       if (!isReady || !sid || !cid || !selectedProfileId) return () => void 0;
-
-      let cancelled = false;
 
       (async () => {
         try {
@@ -456,9 +491,7 @@ export default function ConversationThreadScreen() {
         }
       })();
 
-      return () => {
-        cancelled = true;
-      };
+      return () => void 0;
     }, [isReady, sid, cid, selectedProfileId, app])
   );
 
@@ -477,7 +510,7 @@ export default function ConversationThreadScreen() {
     }
   }, [isOneToOne, otherProfileId, selectedProfileId]);
 
-  const messagesMap: Record<string, Message> = useMemo(() => ((db as any)?.messages ?? {}) as any, [db]);
+  const messagesMap: Record<string, Message> = useMemo(() => ((db as any)?.messages ?? {}) as any, [db, messageVersion]);
   const messageIds: string[] | null = useMemo(() => {
     const ids = (conversation as any)?.messageIds;
     if (!Array.isArray(ids)) return null;
@@ -543,7 +576,7 @@ export default function ConversationThreadScreen() {
       return String((a as any).id ?? "").localeCompare(String((b as any).id ?? ""));
     });
     return out;
-  }, [isReady, sid, cid, messagesMap, messageIds]);
+  }, [isReady, sid, cid, messagesMap, messageIds, messageVersion]);
 
   // Messages currently visible in UI (last `visibleCount` messages)
   const visibleMessages = useMemo(() => {
@@ -552,41 +585,51 @@ export default function ConversationThreadScreen() {
     return messages.slice(start);
   }, [messages, visibleCount]);
 
-  const listRef = useRef<FlatList<Message> | null>(null);
+  // For a chat UX that opens at the bottom instantly, we render the list
+  // inverted with newest-first data.
+  const visibleMessagesForList = useMemo(() => {
+    if (!visibleMessages || visibleMessages.length === 0) return [] as Message[];
+    return [...visibleMessages].reverse();
+  }, [visibleMessages]);
+
+  // RN's `inverted` implementation differs across platforms:
+  // - iOS: effectively flips Y.
+  // - Android (RN 0.81+): can flip both axes, which mirrors text and swaps sides.
+  // Counter-flip per row accordingly.
+  const invertedRowStyle = useMemo(
+    () => ({ transform: [Platform.OS === "android" ? ({ scale: -1 } as any) : ({ scaleY: -1 } as any)] }),
+    [],
+  );
+
+  const listContainerStyle = useMemo(() => ({ flex: 1, minHeight: 0 }), []);
+  const listStyle = useMemo(() => ({ flex: 1 }), []);
+  const listContentContainerStyle = useMemo(
+    () =>
+      reorderMode
+        ? { padding: 14, paddingBottom: 10, flexGrow: 1, justifyContent: "flex-start" as const }
+        : { padding: 14, paddingBottom: 24, flexGrow: 1, justifyContent: "flex-start" as const },
+    [reorderMode],
+  );
+
+  const keyExtractor = useCallback(
+    (m: Message) => String((m as any)?.clientMessageId ?? (m as any)?.client_message_id ?? (m as any)?.id),
+    [],
+  );
+
+  const listRef = useRef<any>(null);
   const dragListRef = useRef<any>(null);
 
-  // --- scrolling helpers (non-inverted list) ---
-  const didInitialScrollRef = useRef(false);
-  const didListLayoutRef = useRef(false);
+  // --- scrolling helpers (inverted chat list) ---
   const isNearBottomRef = useRef(true);
   const prevMsgCountRef = useRef(0);
 
-  // Small debounced scroll-to-end to avoid landing in the middle while items/images finish layout.
-  const scrollDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
   const scrollToBottom = useCallback((animated: boolean) => {
-    if (scrollDebounceRef.current) clearTimeout(scrollDebounceRef.current);
-
-    // Wait for layout + interactions, then scroll.
-    // Use a slightly longer debounce for animated scrolls and schedule a follow-up
-    // fallback scroll to make sure very long lists actually reach the end.
-    const delay = animated ? 120 : 20;
-    scrollDebounceRef.current = setTimeout(() => {
-      requestAnimationFrame(() => {
-        InteractionManager.runAfterInteractions(() => {
-          try {
-            listRef.current?.scrollToEnd({ animated });
-          } catch {}
-          // Follow-up: sometimes the first scroll lands short due to late layout/images.
-          // Schedule one more non-animated jump shortly after to ensure exact bottom.
-          setTimeout(() => {
-            try {
-              listRef.current?.scrollToEnd({ animated: false });
-            } catch {}
-          }, 160);
-        });
-      });
-    }, delay);
+    // In an inverted list, offset 0 is the visual bottom.
+    try {
+      listRef.current?.scrollToOffset?.({ offset: 0, animated });
+    } catch {
+      // ignore
+    }
   }, []);
 
   // When the keyboard opens, keep the list pinned to the bottom if the user
@@ -624,54 +667,17 @@ export default function ConversationThreadScreen() {
     };
   }, [reorderMode, scrollToBottom]);
 
-  const handleListLayout = useCallback(() => {
-    didListLayoutRef.current = true;
-
-    // When we first get a real layout, ensure we are at the bottom.
-    if (!reorderMode && !didInitialScrollRef.current && messages.length > 0) {
-      didInitialScrollRef.current = true;
-      scrollToBottom(false);
-    }
-  }, [reorderMode, messages.length, scrollToBottom]);
-
-  const handleContentSizeChange = useCallback((_w: number, _h: number) => {
-    if (reorderMode) return;
-
-    // If we don't have the list layout yet, don't try to scroll; we'll do it in onLayout.
-    if (!didListLayoutRef.current) return;
-
-    // First time we have content: jump to bottom without animation.
-    if (!didInitialScrollRef.current && messages.length > 0) {
-      didInitialScrollRef.current = true;
-      scrollToBottom(false);
-      return;
-    }
-
-    // Keep pinned only if user is already near bottom.
-    if (isNearBottomRef.current) {
-      scrollToBottom(true);
-    }
-  }, [reorderMode, messages.length, scrollToBottom]);
-
-  // Load older messages (increase visibleCount) and preserve scroll position
+  // Load older messages (increase visibleCount).
+  // With an inverted list (newest-first), older messages are appended, which
+  // doesn't require scroll offset anchoring.
   const loadOlderMessages = useCallback(() => {
     if (loadingOlderRef.current) return;
     if (visibleMessages.length >= messages.length) return;
     loadingOlderRef.current = true;
-
-    // When prepending items, maintainVisibleContentPosition anchors the first visible
-    // item with index >= minIndexForVisible. Set it to the number of newly-added items
-    // so we anchor on an existing (previously-visible) message, not the new page.
     const nextCount = Math.min(messages.length, visibleCount + PAGE_SIZE);
-    const added = Math.max(0, nextCount - visibleCount);
-    setMaintainMinIndex(added);
-
     setVisibleCount(nextCount);
-
-    // Release lock + reset anchor after layout settles.
     setTimeout(() => {
       loadingOlderRef.current = false;
-      setMaintainMinIndex(0);
     }, 140);
   }, [messages.length, visibleMessages.length, visibleCount]);
 
@@ -680,10 +686,13 @@ export default function ConversationThreadScreen() {
   }, []);
 
   const handleScroll = useCallback((e: any) => {
-    const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent;
-    const paddingToBottom = 220;
-    const distanceFromBottom = contentSize.height - (layoutMeasurement.height + contentOffset.y);
-    const nearBottom = distanceFromBottom <= paddingToBottom;
+    const { contentOffset } = e.nativeEvent;
+    // In an inverted list, y=0 is the bottom.
+    const nearBottom = Number(contentOffset?.y ?? 0) <= 48;
+
+    try {
+      lastScrollOffsetRef.current = Number(contentOffset?.y ?? 0) || 0;
+    } catch {}
 
     isNearBottomRef.current = nearBottom;
 
@@ -692,45 +701,21 @@ export default function ConversationThreadScreen() {
       setShowNewMessages(false);
       setNewMsgCount(0);
     }
-    // Track if user is near the very top; we will page only after scroll ends.
-    try {
-      const nearTopThreshold = 12;
-      isNearTopRef.current = contentOffset.y <= nearTopThreshold;
-    } catch {}
   }, []);
 
-  const isNearTopRef = useRef(false);
-  const loadOlderCooldownRef = useRef<{ lastAtMs: number }>({ lastAtMs: 0 });
-  const maybeLoadOlderAfterScroll = useCallback(() => {
-    if (reorderMode) return;
-    if (!isNearTopRef.current) return;
-    if (loadingOlderRef.current) return;
-    if (visibleMessages.length >= messages.length) return;
-
-    const now = Date.now();
-    if (now - loadOlderCooldownRef.current.lastAtMs < 350) return;
-    loadOlderCooldownRef.current.lastAtMs = now;
-
+  const handleEndReached = useCallback(() => {
     loadOlderMessages();
-  }, [reorderMode, visibleMessages.length, messages.length, loadOlderMessages]);
+  }, [loadOlderMessages]);
 
   const syncOnceRef = useRef<string | null>(null);
 
   useEffect(() => {
-    didInitialScrollRef.current = false;
-    didListLayoutRef.current = false;
     prevMsgCountRef.current = 0;
     isNearBottomRef.current = true;
-    // reset open-loading when conversation changes
-    setOpenLoading(true);
-    // Scroll to bottom immediately (before layout or sync)
-    setTimeout(() => {
-      try {
-        listRef.current?.scrollToEnd({ animated: false });
-      } catch {}
-    }, 0);
-    const t = setTimeout(() => setOpenLoading(false), 100);
-    return () => clearTimeout(t);
+    setShowNewMessages(false);
+    setNewMsgCount(0);
+    setVisibleCount(PAGE_SIZE);
+    // No scroll-to-end on open; inverted list renders at bottom instantly.
   }, [sid, cid]);
 
   useEffect(() => {
@@ -744,6 +729,9 @@ export default function ConversationThreadScreen() {
     (async () => {
       try {
         await app?.syncMessagesForConversation?.({ scenarioId: sid, conversationId: cid, limit: 200 });
+
+        // Ensure this screen re-renders even if the DB store mutates in place.
+        setMessageVersion((v) => v + 1);
       } catch {
         // ignore
       }
@@ -796,22 +784,29 @@ export default function ConversationThreadScreen() {
   const handleChangeText = useCallback(
     (t: string) => {
       setText(t);
-      try {
-        const pid = String(sendAsId ?? selectedProfileId ?? "").trim();
-        if (!sid || !cid || !pid) return;
-        if (!typingIsActiveRef.current) {
-          typingIsActiveRef.current = true;
-          try { app?.sendTyping?.({ scenarioId: sid, conversationId: cid, profileId: pid, typing: true }); } catch {}
+      // Defer side-effects so TextInput state/UI updates immediately (Android is sensitive here).
+      void Promise.resolve().then(() => {
+        try {
+          const pid = String(sendAsId ?? selectedProfileId ?? "").trim();
+          if (!sid || !cid || !pid) return;
+          if (!typingIsActiveRef.current) {
+            typingIsActiveRef.current = true;
+            try {
+              app?.sendTyping?.({ scenarioId: sid, conversationId: cid, profileId: pid, typing: true });
+            } catch {}
+          }
+          if (typingSendTimeoutRef.current) clearTimeout(typingSendTimeoutRef.current as any);
+          typingSendTimeoutRef.current = setTimeout(() => {
+            typingIsActiveRef.current = false;
+            try {
+              app?.sendTyping?.({ scenarioId: sid, conversationId: cid, profileId: pid, typing: false });
+            } catch {}
+            typingSendTimeoutRef.current = null;
+          }, 1500);
+        } catch {
+          // ignore
         }
-        if (typingSendTimeoutRef.current) clearTimeout(typingSendTimeoutRef.current as any);
-        typingSendTimeoutRef.current = setTimeout(() => {
-          typingIsActiveRef.current = false;
-          try { app?.sendTyping?.({ scenarioId: sid, conversationId: cid, profileId: pid, typing: false }); } catch {}
-          typingSendTimeoutRef.current = null;
-        }, 1500);
-      } catch {
-        // ignore
-      }
+      });
     },
     [sid, cid, sendAsId, selectedProfileId, app]
   );
@@ -907,7 +902,7 @@ export default function ConversationThreadScreen() {
     const showAvatar = !isOneToOne;
 
     return (
-      <View style={styles.typingRowWrap}>
+      <View style={[styles.typingRowWrap, invertedRowStyle]}>
         {showAvatar ? (
           <View style={styles.typingRowAvatar}>
             <Avatar
@@ -920,60 +915,116 @@ export default function ConversationThreadScreen() {
         <TypingIndicator names={typingProfileIds.map(String)} variant="thread" />
       </View>
     );
-  }, [reorderMode, typingProfileIds, isOneToOne, getProfileById, colors.border]);
+  }, [reorderMode, typingProfileIds, isOneToOne, getProfileById, colors.border, invertedRowStyle]);
 
   useEffect(() => {
     if (!reorderMode) {
       setReorderDraft(null);
+      reorderEnterOffsetRef.current = null;
+      didRestoreReorderScrollRef.current = false;
       return;
     }
-    setReorderDraft(messages);
-  }, [reorderMode, messages]);
 
-  // When entering reorder mode, ensure the draggable list scrolls to bottom.
-  useEffect(() => {
-    if (!reorderMode) return;
+    // Seed on entry, then when paging loads older messages, merge them into the
+    // draft without clobbering the user's current reordered state.
+    setReorderDraft((prev) => {
+      const nextVisible = Array.isArray(visibleMessagesForList) ? visibleMessagesForList : ([] as Message[]);
+      if (!prev || prev.length === 0) return nextVisible;
 
-    let cancelled = false;
-
-    const tryScrollToBottom = async () => {
-        // wait for a frame and any pending interactions/layout
-        await new Promise((res) => requestAnimationFrame(() => res(undefined)));
-        await new Promise((res) => InteractionManager.runAfterInteractions(() => res(undefined)));
-
-      const maxTries = 4;
-      for (let i = 0; i < maxTries; i++) {
-        if (cancelled) return;
-
-        try {
-          if (dragListRef.current?.scrollToEnd) {
-            try { dragListRef.current.scrollToEnd({ animated: false }); } catch {}
-          }
-
-          if (dragListRef.current?.scrollToIndex) {
-            try {
-              const len = (dragListRef.current?.props?.data?.length ?? messages.length) - 1;
-              if (len >= 0) dragListRef.current.scrollToIndex({ index: len, animated: false });
-            } catch {}
-          }
-
-          if (dragListRef.current?.scrollToOffset) {
-            try { dragListRef.current.scrollToOffset({ offset: 9999999, animated: false }); } catch {}
-          }
-        } catch {}
-
-        // short pause for layout to settle before retrying
-        // eslint-disable-next-line no-await-in-loop
-        await new Promise((res) => setTimeout(res, 80));
+      const prevIds = new Set(prev.map((m) => String((m as any)?.id ?? "")).filter(Boolean));
+      const toAdd: Message[] = [];
+      for (const m of nextVisible) {
+        const id = String((m as any)?.id ?? "").trim();
+        if (!id || prevIds.has(id)) continue;
+        toAdd.push(m);
       }
-    };
 
-    void tryScrollToBottom();
+      if (toAdd.length === 0) return prev;
 
-    return () => {
-      cancelled = true;
-    };
-  }, [reorderMode, messages.length]);
+      // In the inverted (newest-first) list, paging adds older messages at the end.
+      return [...prev, ...toAdd];
+    });
+  }, [reorderMode, visibleMessagesForList]);
+
+  const exitReorderMode = useCallback(() => {
+    // Keep this lightweight; the list stays mounted.
+    setReorderSaving(false);
+    setReorderMode(false);
+    setReorderDraft(null);
+    reorderEnterOffsetRef.current = null;
+    didRestoreReorderScrollRef.current = false;
+
+    // Release any temporary suppression.
+    suppressAutoScrollRef.current = false;
+  }, []);
+
+  const enterReorderMode = useCallback(() => {
+    if (reorderMode) return;
+
+    // Do NOT expand from `visibleMessages` to full `messages` here.
+    // That transition is what causes the scroll offset to reset to 0 on entry.
+    setReorderMode(true);
+  }, [reorderMode, visibleCount, messages.length]);
+
+  const onSaveReorder = useCallback(async () => {
+    if (!sid || !cid) return;
+    if (reorderSaving) return;
+    // Reorder only the currently visible slice to avoid scroll jumps.
+    // When persisting, merge that reordered slice back into the full local order.
+    const sliceForList = reorderDraft ?? visibleMessagesForList;
+    // Backend expects chronological ordering (oldest->newest). List data is newest-first.
+    const sliceChrono = [...sliceForList].reverse();
+    const sliceIds = sliceChrono.map((m) => String((m as any).id)).map((s) => s.trim()).filter(Boolean);
+    const fullIds = messages.map((m) => String((m as any).id)).map((s) => s.trim()).filter(Boolean);
+
+    let ids = sliceIds;
+    if (fullIds.length >= sliceIds.length && sliceIds.length > 0) {
+      const n = sliceIds.length;
+      const suffix = fullIds.slice(fullIds.length - n);
+
+      const a = new Set(suffix);
+      const b = new Set(sliceIds);
+      const sameSet = a.size === b.size && Array.from(a).every((v) => b.has(v));
+
+      if (sameSet) {
+        ids = [...fullIds.slice(0, fullIds.length - n), ...sliceIds];
+      }
+    }
+
+    // De-dupe while preserving order.
+    const seen = new Set<string>();
+    ids = ids.filter((x) => {
+      if (!x) return false;
+      if (seen.has(x)) return false;
+      seen.add(x);
+      return true;
+    });
+
+    if (ids.length < 2) {
+      setReorderMode(false);
+      return;
+    }
+
+    try {
+      setReorderSaving(true);
+      await reorderMessagesInConversation?.({ scenarioId: sid, conversationId: cid, orderedMessageIds: ids });
+      exitReorderMode();
+    } catch (e: any) {
+      Alert.alert(
+        "Could not reorder",
+        formatErrorMessage(e, "Could not save message order"),
+        [
+          { text: "Stay", style: "cancel" },
+          { text: "Exit reorder", style: "destructive", onPress: exitReorderMode },
+        ],
+      );
+    } finally {
+      setReorderSaving(false);
+    }
+  }, [sid, cid, reorderDraft, visibleMessagesForList, messages, reorderMessagesInConversation, reorderSaving, exitReorderMode]);
+
+  // Note: we intentionally do NOT auto-scroll when entering reorder mode.
+  // Long-press reorder should preserve the user's current scroll position.
 
   const oneToOneSide: "left" | "right" = useMemo(() => {
     // right = selected profile ("you"), left = other participant
@@ -1385,16 +1436,17 @@ export default function ConversationThreadScreen() {
     return "";
   }, [selectedProfileId, reorderMode, reorderDraft, messages, visibleMessages]);
 
-  const renderBubbleRow = (
-    item: Message,
-    opts?: {
-      onLongPress?: () => void;
-      active?: boolean;
-      drag?: () => void;
-      prev?: Message | null;
-      next?: Message | null;
-    }
-  ) => {
+  const renderBubbleRow = useCallback(
+    (
+      item: Message,
+      opts?: {
+        onLongPress?: () => void;
+        active?: boolean;
+        drag?: () => void;
+        prev?: Message | null;
+        next?: Message | null;
+      }
+    ) => {
     const senderId = String((item as any).senderProfileId ?? "");
     const isRight = senderId === String(selectedProfileId ?? "");
     const sender: Profile | null = senderId ? (getProfileById?.(senderId) ?? null) : null;
@@ -1510,7 +1562,37 @@ export default function ConversationThreadScreen() {
           // mode by long-pressing an individual message.
           if (reorderMode) {
             opts?.drag?.();
+            return;
           }
+
+          const mid = String((item as any)?.id ?? "").trim();
+          if (!mid) return;
+
+          Alert.alert("Message actions", undefined, [
+            { text: "Cancel", style: "cancel" },
+            {
+              text: "Report message",
+              style: "destructive",
+              onPress: () => {
+                DialogAlert.prompt(
+                  "Report message",
+                  "Tell us what’s wrong (optional). This sends a snapshot to support@feedverse.app.",
+                  [
+                    { text: "Cancel", style: "cancel" },
+                    {
+                      text: "Send report",
+                      style: "destructive",
+                      onPress: (value?: string) => {
+                        void reportMessageById(mid, value);
+                      },
+                    },
+                  ],
+                  "plain-text",
+                  "",
+                );
+              },
+            },
+          ]);
         }}
         delayLongPress={180}
         style={({ pressed }) => [
@@ -1658,7 +1740,24 @@ export default function ConversationThreadScreen() {
         </View>
       </SwipeableRow>
     );
-  };
+    },
+    [
+      colors,
+      editAllowedIds,
+      getProfileById,
+      isOneToOne,
+      lastMineMessageId,
+      openEdit,
+      reorderMode,
+      router,
+      runDeleteMessage,
+      selectedProfileId,
+      sid,
+      setLightboxIndex,
+      setLightboxOpen,
+      setLightboxUrls,
+    ],
+  );
 
   const composerAttachments =
     imageUris.length > 0 ? (
@@ -1685,13 +1784,32 @@ export default function ConversationThreadScreen() {
       </View>
     ) : null;
 
-  const dataForList = reorderMode ? reorderDraft ?? messages : visibleMessages;
+  const dataForList = reorderMode ? reorderDraft ?? visibleMessagesForList : visibleMessagesForList;
 
-  const renderBubble = ({ item, index }: { item: Message; index: number }) =>
-    renderBubbleRow(item, {
-      prev: index > 0 ? dataForList[index - 1] : null,
-      next: index + 1 < dataForList.length ? dataForList[index + 1] : null,
-    });
+  const renderListItem = useCallback(
+    ({ item, drag, isActive, getIndex }: RenderItemParams<Message>) => {
+      const index = Number(getIndex?.() ?? 0);
+      const bubble = renderBubbleRow(item, {
+        drag: reorderMode ? drag : undefined,
+        active: reorderMode ? isActive : false,
+        // dataForList is newest-first; renderBubbleRow expects chronological adjacency.
+        prev: index + 1 < dataForList.length ? dataForList[index + 1] : null,
+        next: index > 0 ? dataForList[index - 1] : null,
+      });
+
+      // List is inverted, so flip each row back upright.
+      return <View style={invertedRowStyle}>{bubble}</View>;
+    },
+    [dataForList, invertedRowStyle, reorderMode, renderBubbleRow],
+  );
+
+  const handleDragEnd = useCallback(
+    ({ data: next }: { data: Message[] }) => {
+      if (!reorderMode) return;
+      setReorderDraft(next as Message[]);
+    },
+    [reorderMode],
+  );
 
   if (!isReady || !receiverProfile || !conversation) {
     return (
@@ -1710,13 +1828,19 @@ export default function ConversationThreadScreen() {
         <View style={[styles.header, { borderBottomColor: colors.border }]}>
           <View style={styles.headerSide}>
             <Pressable
-              onPress={() => router.back()}
+              onPress={() => {
+                if (reorderMode) {
+                  exitReorderMode();
+                  return;
+                }
+                router.back();
+              }}
               hitSlop={12}
               style={({ pressed }) => [styles.headerBtn, pressed && { opacity: 0.7 }]}
               accessibilityRole="button"
               accessibilityLabel="Back"
             >
-              <Ionicons name="chevron-back" size={22} color={colors.text} />
+              <Ionicons name={reorderMode ? "close" : "chevron-back"} size={22} color={colors.text} />
             </Pressable>
           </View>
 
@@ -1747,7 +1871,7 @@ export default function ConversationThreadScreen() {
                 }}
                 onLongPress={() => {
                   // Enter reorder mode when the avatar is long-pressed (GC or DM)
-                  setReorderMode(true);
+                  enterReorderMode();
                 }}
                 disabled={false}
                 hitSlop={12}
@@ -1764,15 +1888,18 @@ export default function ConversationThreadScreen() {
 
           <View style={styles.headerSide}>
             {reorderMode ? (
-              <Pressable
-                onPress={() => setReorderMode(false)}
-                hitSlop={12}
-                style={({ pressed }) => [styles.headerBtn, pressed && { opacity: 0.7 }]}
-                accessibilityRole="button"
-                accessibilityLabel="Done"
-              >
-                <Ionicons name="checkmark" size={20} color={colors.tint} />
-              </Pressable>
+              <View style={{ flexDirection: "row", gap: 8 }}>
+                <Pressable
+                  onPress={onSaveReorder}
+                  hitSlop={12}
+                  style={({ pressed }) => [styles.headerBtn, pressed && { opacity: 0.7 }]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Done"
+                  disabled={reorderSaving}
+                >
+                  <Ionicons name="checkmark" size={20} color={colors.tint} />
+                </Pressable>
+              </View>
             ) : null}
           </View>
         </View>
@@ -1800,52 +1927,38 @@ export default function ConversationThreadScreen() {
             </Pressable>
           </View>
         ) : null}
-        {reorderMode ? (
-          <DraggableFlatList
-            ref={(r) => {
-              dragListRef.current = r;
-            }}
-            data={dataForList}
-            keyExtractor={(m) => String((m as any)?.clientMessageId ?? (m as any)?.client_message_id ?? (m as any)?.id)}
-            contentContainerStyle={{ padding: 14, paddingBottom: 10 }}
-            activationDistance={12}
-            dragItemOverflow
-            renderItem={({ item, drag, isActive, getIndex }: RenderItemParams<Message>) => {
-              const index = Number(getIndex?.() ?? 0);
-              return renderBubbleRow(item, {
-                drag,
-                active: isActive,
-                prev: index > 0 ? dataForList[index - 1] : null,
-                next: index + 1 < dataForList.length ? dataForList[index + 1] : null,
-              });
-            }}
-            onDragEnd={({ data: next }) => {
-              setReorderDraft(next);
-              if (!sid || !cid) return;
-              const ids = next.map((m) => String((m as any).id));
-              void reorderMessagesInConversation?.({ scenarioId: sid, conversationId: cid, orderedMessageIds: ids });
-            }}
-          />
-        ) : (
-          <FlatList
-            ref={(r) => {
-              listRef.current = r;
-            }}
-            data={dataForList}
-            keyExtractor={(m) => String((m as any)?.clientMessageId ?? (m as any)?.client_message_id ?? (m as any)?.id)}
-            renderItem={renderBubble}
-            contentContainerStyle={{ padding: 14, paddingBottom: 24, flexGrow: 1 }}
-            ListFooterComponent={typingFooter}
-            maintainVisibleContentPosition={{ minIndexForVisible: maintainMinIndex }}
-            scrollEventThrottle={16}
-            onScroll={handleScroll}
-            onScrollEndDrag={maybeLoadOlderAfterScroll}
-            onMomentumScrollEnd={maybeLoadOlderAfterScroll}
-            onLayout={handleListLayout}
-            onContentSizeChange={handleContentSizeChange}
-            onScrollToIndexFailed={onScrollToIndexFailed}
-          />
-        )}
+        <DraggableFlatList
+          ref={(r) => {
+            // Keep a single list instance mounted so we don't reset scroll position
+            // when toggling reorder mode.
+            dragListRef.current = r;
+            listRef.current = r as any;
+          }}
+          // IMPORTANT: DraggableFlatList wraps the underlying FlatList in an outer container.
+          // `style` affects the inner list; `containerStyle` must be flexed so the list
+          // actually takes up height and the composer stays pinned to the bottom.
+          containerStyle={listContainerStyle}
+          style={listStyle}
+          data={dataForList}
+          {...({ invertDragDirection: reorderMode } as any)}
+          keyExtractor={keyExtractor}
+          // With `inverted`, anchor content to the visual bottom (start).
+          // `flexGrow: 1` also ensures short threads don't collapse upward.
+          contentContainerStyle={listContentContainerStyle}
+          // Keep the list inverted in all modes (chat opens at bottom instantly).
+          inverted
+          // In an inverted list, the header renders at the visual bottom.
+          ListHeaderComponent={reorderMode ? null : typingFooter}
+          onEndReached={handleEndReached}
+          onEndReachedThreshold={0.25}
+          activationDistance={12}
+          dragItemOverflow={reorderMode}
+          scrollEventThrottle={16}
+          onScroll={handleScroll}
+          onScrollToIndexFailed={onScrollToIndexFailed}
+          renderItem={renderListItem}
+          onDragEnd={handleDragEnd as any}
+        />
 
         <SafeAreaView edges={["bottom"]} style={{ backgroundColor: colors.background }}>
           {composerAttachments}

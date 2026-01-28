@@ -16,7 +16,7 @@ import { useFocusEffect } from "@react-navigation/native";
 import { SwipeableRow } from "@/components/ui/SwipeableRow";
 import { canEditPost } from "@/lib/access/permission";
 import { Avatar } from "@/components/ui/Avatar";
-import { Alert } from "@/context/dialog";
+import { Alert, useDialog } from "@/context/dialog";
 import { formatErrorMessage } from "@/lib/utils/format";
 import { scenarioIdFromPathname } from "@/lib/utils/idFromPathName";
 
@@ -39,12 +39,14 @@ export default function HomeScreen() {
   const auth = useAuth();
   const { userId } = auth;
   const app = useAppData() as any;
+  const { dialog } = useDialog();
 
   const {
     isReady,
     db,
 
     listPostsPage,
+    refreshPostsForScenario,
     getProfileById,
     getPostById,
     deletePost,
@@ -92,16 +94,17 @@ export default function HomeScreen() {
 
     const isCampaign = String((scenario as any)?.mode ?? "story") === "campaign";
 
-    const actions: any[] = [
+    const actions: Array<{ text: string; variant?: "default" | "cancel" | "destructive"; onPress: () => void; icon?: any }> = [
       {
         text: "Profile",
+        icon: { name: "person-circle-outline" as const },
         onPress: () => {
           if (!profileId) {
             router.push({
-                    pathname: "/modal/select-profile",
-                    params: { scenarioId: sid },
-                  } as any);
-                  return;
+              pathname: "/modal/select-profile",
+              params: { scenarioId: sid },
+            } as any);
+            return;
           }
           router.push({
             pathname: "/(scenario)/[scenarioId]/home/profile/[profileId]",
@@ -111,10 +114,22 @@ export default function HomeScreen() {
       },
     ];
 
+    actions.push({
+      text: "Players",
+      icon: { name: "people-outline" as const },
+      onPress: () => {
+        router.push({
+          pathname: "/(scenario)/[scenarioId]/players",
+          params: { scenarioId: sid },
+        } as any);
+      },
+    });
+
     // Add "View pins" only in campaign mode, before View Settings
     if (isCampaign) {
       actions.push({
         text: "View pins",
+        icon: { name: "pin-outline" as const },
         onPress: () => {
           router.push({
             pathname: "/(scenario)/[scenarioId]/pins",
@@ -127,6 +142,7 @@ export default function HomeScreen() {
     actions.push(
       {
         text: "View Settings",
+        icon: { name: "settings-outline" as const },
         onPress: () => {
           router.push({
             pathname: "/modal/create-scenario",
@@ -136,13 +152,15 @@ export default function HomeScreen() {
       },
       {
         text: "Notification settings",
+        icon: { name: "notifications-outline" as const },
         onPress: () => {
           router.push(`/(scenario)/${sid}/notifications-settings` as any);
         },
       },
       {
         text: "Mute all notifications",
-        style: "destructive",
+        variant: "destructive",
+        icon: { name: "notifications-off-outline" as const },
         onPress: async () => {
           try {
             await app?.updateScenarioNotificationPrefs?.(sid, { muteAll: true });
@@ -152,9 +170,10 @@ export default function HomeScreen() {
           }
         },
       },
-      { text: "Export…", onPress: exportThisScenario },
+      { text: "Export…", icon: { name: "download-outline" as const }, onPress: exportThisScenario },
       {
         text: "Back to home",
+        icon: { name: "home-outline" as const },
         onPress: () => {
           try {
             router.dismissAll();
@@ -162,11 +181,27 @@ export default function HomeScreen() {
           router.replace("/" as any);
         },
       },
-      { text: "Cancel", style: "cancel" }
+      { text: "Cancel", variant: "cancel", onPress: () => undefined }
     );
 
-    Alert.alert("Scenario menu", "", actions);
-  }, [app, exportThisScenario, selectedProfile?.id, sid]);
+    // Use the app's custom dialog modal instead of the native RN Alert.
+    dialog({
+      title: "Scenario menu",
+      message: "",
+      buttons: actions.map((a) => ({
+        text: a.text,
+        variant: a.variant ?? "default",
+        icon: a.icon,
+        onPress: () => {
+          // Support async handlers without blocking UI.
+          try {
+            const res = a.onPress?.();
+            void res;
+          } catch {}
+        },
+      })),
+    }).catch(() => void 0);
+  }, [app, dialog, exportThisScenario, selectedProfile?.id, sid]);
 
   // ===== FEED =====
   const [items, setItems] = useState<any[]>([]);
@@ -329,7 +364,22 @@ export default function HomeScreen() {
 
     try {
       listRef.current?.scrollToOffset({ offset: 0, animated: true });
+
+      // Force posts sync (including replies) in backend mode.
+      // This bypasses the normal throttle.
+      try {
+        refreshPostsForScenario?.(sid);
+      } catch {}
+
       loadFirstPage();
+
+      // The forced sync is async; reload shortly after so new replies show up.
+      setTimeout(() => {
+        try {
+          loadFirstPageRef.current();
+        } catch {}
+      }, 450);
+
       // bump a tick so FlatList re-renders items (updates relative timestamps)
       setRefreshTick(Date.now());
       // shallow-clone current items to ensure rows receive new object references
@@ -338,7 +388,7 @@ export default function HomeScreen() {
       setRefreshing(false);
       loadingLock.current = false;
     }
-  }, [isReady, loadFirstPage]);
+  }, [isReady, loadFirstPage, refreshPostsForScenario, sid]);
 
   // Ensure the feed loads on first focus (some backend sync paths can populate
   // the DB after the initial render). Also refresh when a post/delete flagged it.

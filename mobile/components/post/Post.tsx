@@ -22,6 +22,7 @@ import { PostQuoted } from "@/components/post/PostQuoted";
 import { useUserSettings } from "@/hooks/useUserSettings";
 import { useAppData } from "@/context/appData";
 import { useAuth } from "@/context/auth";
+import { Alert } from "@/context/dialog";
 
 import { PostTypeBadge } from "@/components/post/PostTypeBadge";
 import { PostMenu } from "@/components/post/PostMenu";
@@ -143,7 +144,7 @@ export function Post({
   const appData = useAppData() as any;
   const { getSelectedProfileId, getCharacterSheetByProfileId, upsertCharacterSheet, upsertPost, toggleLike } = appData;
 
-  const { userId, currentUser } = useAuth();
+  const { userId, currentUser, fetchWithAuth } = useAuth();
   const currentUserId: string | null = userId ?? currentUser?.id ?? null;
 
   // Try to get the scenario object (supports different appData shapes)
@@ -183,7 +184,43 @@ export function Post({
   };
 
   const onReportPost = () => {
-    // placeholder
+    const pid = String((item as any)?.id ?? "").trim();
+    if (!pid) return;
+
+    // Close the menu immediately so the dialog isn't stacked under it.
+    setMenuOpen(false);
+
+    Alert.prompt(
+      "Report post",
+      "Tell us what’s wrong (optional). This sends a snapshot to support@feedverse.app.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Send report",
+          style: "destructive",
+          onPress: async (value?: string) => {
+            try {
+              const res = await fetchWithAuth(`/posts/${encodeURIComponent(pid)}/report`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ message: String(value ?? "").trim() || undefined }),
+              });
+
+              if (!res.ok) {
+                Alert.alert("Report failed", res?.json?.error ?? res.text ?? "Please try again.");
+                return;
+              }
+
+              Alert.alert("Reported", "Thanks — we’ll take a look.");
+            } catch {
+              Alert.alert("Report failed", "Network error. Please try again.");
+            }
+          },
+        },
+      ],
+      "plain-text",
+      "",
+    );
   };
 
   function openProfile(view?: ProfileViewState) {
@@ -215,6 +252,15 @@ export function Post({
     router.push({
       pathname: "/modal/create-post",
       params: { scenarioId: sid, quotedPostId: String(item.id) },
+    } as any);
+  };
+
+  const openReactionList = (kind: "likes" | "reposts") => {
+    if (!canNavigate) return;
+    if (!sid || !item?.id) return;
+    router.push({
+      pathname: "/modal/reaction-list",
+      params: { scenarioId: sid, postId: String(item.id), kind },
     } as any);
   };
 
@@ -289,14 +335,28 @@ export function Post({
 
             <View style={styles.countsRow}>
               {repostCount > 0 && (
-                <ThemedText style={[styles.countItem, { color: colors.text }]}>
-                  <ThemedText type="defaultSemiBold">{formatCount(repostCount)}</ThemedText> {pluralize(repostCount, "Repost")}
-                </ThemedText>
+                <Pressable
+                  onPress={() => openReactionList("reposts")}
+                  hitSlop={6}
+                  accessibilityRole="button"
+                  accessibilityLabel="View reposts"
+                >
+                  <ThemedText style={[styles.countItem, { color: colors.text }]}>
+                    <ThemedText type="defaultSemiBold">{formatCount(repostCount)}</ThemedText> {pluralize(repostCount, "Repost")}
+                  </ThemedText>
+                </Pressable>
               )}
               {likeCount > 0 && (
-                <ThemedText style={[styles.countItem, { color: colors.text }]}>
-                  <ThemedText type="defaultSemiBold">{formatCount(likeCount)}</ThemedText> {pluralize(likeCount, "Like")}
-                </ThemedText>
+                <Pressable
+                  onPress={() => openReactionList("likes")}
+                  hitSlop={6}
+                  accessibilityRole="button"
+                  accessibilityLabel="View likes"
+                >
+                  <ThemedText style={[styles.countItem, { color: colors.text }]}>
+                    <ThemedText type="defaultSemiBold">{formatCount(likeCount)}</ThemedText> {pluralize(likeCount, "Like")}
+                  </ThemedText>
+                </Pressable>
               )}
             </View>
 
@@ -320,6 +380,8 @@ export function Post({
             }}
             isReposted={isReposted}
             onRepost={onRepost}
+            onShowLikesList={() => openReactionList("likes")}
+            onShowRepostsList={() => openReactionList("reposts")}
             onShare={onShare}
           />
         )}
@@ -439,6 +501,8 @@ export function Post({
               }}
               isReposted={isReposted}
               onRepost={onRepost}
+              onShowLikesList={() => openReactionList("likes")}
+              onShowRepostsList={() => openReactionList("reposts")}
               onShare={onShare}
             />
           )}

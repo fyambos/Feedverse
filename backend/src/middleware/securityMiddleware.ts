@@ -69,8 +69,7 @@ export function createRateLimitMiddleware(): RequestHandler {
       // Prefer user-bound limits when authenticated, else fall back to IP.
       // Also partition by endpoint group so one noisy endpoint doesn't block others.
       const userId = (req as any)?.user?.id ? String((req as any).user.id) : "";
-      const ip = String((req as any).ip ?? "");
-      const principal = userId ? `u:${userId}` : `ip:${ipKeyGenerator(ip)}`;
+      const principal = userId ? `u:${userId}` : `ip:${ipKeyGenerator(req as any)}`;
 
       // At app-level middleware, baseUrl is usually empty, so derive group from the URL path.
       const rawUrl = String((req as any).originalUrl ?? req.url ?? req.path ?? "");

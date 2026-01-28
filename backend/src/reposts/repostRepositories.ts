@@ -7,6 +7,7 @@ import { mapPostRowToApi } from "../posts/postModels";
 import { sendExpoPush } from "../push/expoPush";
 import { UserRepository } from "../users/userRepositories";
 import { getScenarioNotificationPrefs } from "../notifications/scenarioNotificationPrefs";
+import { bumpNotificationCooldownIfAllowed } from "../notifications/notificationCooldowns";
 
 async function scenarioAccess(client: PoolClient, scenarioId: string, userId: string): Promise<boolean> {
   const res = await client.query(
@@ -239,6 +240,20 @@ export async function toggleRepost(args: {
                 if (prefs?.ignoredProfileIds?.includes(recipientProfileId)) return;
               } catch {
                 // best-effort
+              }
+
+              // Prevent spam: only notify once per cooldown window for same recipient+actor+post.
+              try {
+                const ok = await bumpNotificationCooldownIfAllowed(client2, {
+                  recipientUserId: recipientOwnerId,
+                  kind: "repost",
+                  actorProfileId: profileId,
+                  postId,
+                  cooldownMinutes: 15,
+                });
+                if (!ok) return;
+              } catch {
+                // best-effort: if cooldown check fails, keep prior behavior
               }
 
               const title = `${senderLabel} reposted your ${parentPostId ? "reply" : "post"}`;

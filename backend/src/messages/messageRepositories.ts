@@ -45,6 +45,8 @@ import websocketService from "../realtime/websocketService";
 import { sendExpoPush } from "../push/expoPush";
 import { UserRepository } from "../users/userRepositories";
 import { listScenarioNotificationPrefsByUserIds } from "../notifications/scenarioNotificationPrefs";
+import { sendEmail } from "../email/emailService";
+import { buildReportEmail } from "../reports/reportEmail";
 
 async function scenarioAccess(client: PoolClient, scenarioId: string, userId: string): Promise<boolean> {
   const res = await client.query(
@@ -84,6 +86,31 @@ async function isScenarioOwnerOrGm(client: PoolClient, scenarioId: string, userI
   return (res.rowCount ?? 0) > 0;
 }
 
+async function isScenarioOwner(client: PoolClient, scenarioId: string, userId: string): Promise<boolean> {
+  const sid = String(scenarioId ?? "").trim();
+  const uid = String(userId ?? "").trim();
+  if (!sid || !uid) return false;
+
+  const res = await client.query(
+    "SELECT 1 FROM scenarios WHERE id = $1 AND owner_user_id::text = $2 LIMIT 1",
+    [sid, uid],
+  );
+  return (res.rowCount ?? 0) > 0;
+}
+
+async function scenarioAllowsPlayersToReorderMessages(client: PoolClient, scenarioId: string): Promise<boolean> {
+  const sid = String(scenarioId ?? "").trim();
+  if (!sid) return false;
+  const res = await client.query(
+    "SELECT allow_players_reorder_messages FROM scenarios WHERE id = $1 LIMIT 1",
+    [sid],
+  );
+  if ((res.rowCount ?? 0) === 0) return false;
+  const raw = (res.rows?.[0] as any)?.allow_players_reorder_messages;
+  if (raw == null) return true;
+  return Boolean(raw);
+}
+
 async function userOwnsAnyProfileInConversation(client: PoolClient, conversationId: string, userId: string): Promise<boolean> {
   const res = await client.query(
     `
@@ -92,6 +119,21 @@ async function userOwnsAnyProfileInConversation(client: PoolClient, conversation
     JOIN profiles p ON p.id = cp.profile_id
     WHERE cp.conversation_id = $1
       AND (p.owner_user_id = $2 OR p.is_public = true)
+    LIMIT 1
+  `,
+    [conversationId, userId],
+  );
+  return (res.rowCount ?? 0) > 0;
+}
+
+async function userOwnsAnyProfileInConversationOwned(client: PoolClient, conversationId: string, userId: string): Promise<boolean> {
+  const res = await client.query(
+    `
+    SELECT 1
+    FROM conversation_participants cp
+    JOIN profiles p ON p.id = cp.profile_id
+    WHERE cp.conversation_id = $1
+      AND p.owner_user_id = $2
     LIMIT 1
   `,
     [conversationId, userId],
@@ -128,18 +170,6 @@ async function userCanActAsSender(client: PoolClient, scenarioId: string, userId
   const isPublic = Boolean(profile.is_public);
 
   const allowed = ownerMatches || isPublic === true;
-  /* 
-  if (!allowed) {
-    console.log("userCanActAsSender: denied", {
-      senderProfileId: profile.id,
-      scenarioId: profile.scenario_id,
-      owner_user_id: profile.owner_user_id,
-      is_public: profile.is_public,
-      requestUserId: userId,
-    });
-  }
-  */
-
   return allowed;
 }
 
@@ -444,8 +474,17 @@ export async function sendMessage(args: {
           if (ownerIds.size === 0) return;
 
           // Build notification payload
-          const title = (await client2.query(`SELECT display_name FROM profiles WHERE id = $1 LIMIT 1`, [senderProfileId])).rows?.[0]?.display_name ?? "New message";
-          const body = String(row.text ?? "");
+          const senderName = String(
+            (await client2.query(`SELECT display_name FROM profiles WHERE id = $1 LIMIT 1`, [senderProfileId])).rows?.[0]?.display_name ?? "",
+          ).trim();
+          const convTitle = String(
+            (await client2.query(`SELECT title FROM conversations WHERE id = $1 LIMIT 1`, [cid])).rows?.[0]?.title ?? "",
+          ).trim();
+          const isGroupChat = (parts.rows?.length ?? 0) > 2;
+          const title = `New DM: ${senderName || "Someone"}${isGroupChat ? (convTitle ? ` — ${convTitle}` : " — Group chat") : ""}`;
+          const bodyText = String((row as any).text ?? "").trim();
+          const hasImage = Array.isArray((row as any).image_urls) && (row as any).image_urls.length > 0;
+          const body = bodyText ? (hasImage ? `[Image] ${bodyText}` : bodyText) : hasImage ? "Sent an image" : "";
 
           // Expo push token send (works with expo-notifications in EAS builds; delivers when app is closed).
           try {
@@ -459,7 +498,7 @@ export async function sendMessage(args: {
                 const profileId = String(ownerToProfileIds.get(ownerId)?.[0] ?? "").trim();
                 return {
                   to,
-                  title: String(title ?? "New message"),
+                  title: String(title ?? "New DM"),
                   body: body || undefined,
                   channelId: "default",
                   priority: "high" as const,
@@ -678,8 +717,17 @@ export async function sendMessageWithImages(args: {
 
           if (ownerIds.size === 0) return;
 
-          const title = (await client2.query(`SELECT display_name FROM profiles WHERE id = $1 LIMIT 1`, [senderProfileId])).rows?.[0]?.display_name ?? "New message";
-          const body = (String((row as any).text ?? "").trim() || (Array.isArray((row as any).image_urls) && (row as any).image_urls.length > 0 ? "Sent an image" : "New message"));
+          const senderName = String(
+            (await client2.query(`SELECT display_name FROM profiles WHERE id = $1 LIMIT 1`, [senderProfileId])).rows?.[0]?.display_name ?? "",
+          ).trim();
+          const convTitle = String(
+            (await client2.query(`SELECT title FROM conversations WHERE id = $1 LIMIT 1`, [cid])).rows?.[0]?.title ?? "",
+          ).trim();
+          const isGroupChat = (parts.rows?.length ?? 0) > 2;
+          const title = `New DM: ${senderName || "Someone"}${isGroupChat ? (convTitle ? ` — ${convTitle}` : " — Group chat") : ""}`;
+          const bodyText = String((row as any).text ?? "").trim();
+          const hasImage = Array.isArray((row as any).image_urls) && (row as any).image_urls.length > 0;
+          const body = bodyText ? (hasImage ? `[Image] ${bodyText}` : bodyText) : hasImage ? "Sent an image" : "";
 
           try {
             const repo = new UserRepository();
@@ -691,7 +739,7 @@ export async function sendMessageWithImages(args: {
                 const profileId = String(ownerToProfileIds.get(ownerId)?.[0] ?? "").trim();
                 return {
                   to,
-                  title: String(title ?? "New message"),
+                  title: String(title ?? "New DM"),
                   body: body || undefined,
                   channelId: "default",
                   priority: "high" as const,
@@ -831,6 +879,8 @@ export async function updateMessage(args: {
       SET
         text = $2,
         sender_profile_id = $3,
+        edited_by_user_id = $4,
+        edited_by_profile_id = $3,
         updated_at = NOW() AT TIME ZONE 'UTC',
         edited_at = NOW() AT TIME ZONE 'UTC'
       WHERE id = $1
@@ -847,7 +897,7 @@ export async function updateMessage(args: {
         updated_at,
         edited_at
     `,
-      [mid, text, finalSender],
+      [mid, text, finalSender, uid],
     );
 
     const row = res.rows[0];
@@ -947,6 +997,404 @@ export async function deleteMessage(args: {
     }
     console.error("deleteMessage failed", e);
     return { error: "Delete failed", status: 400 };
+  } finally {
+    client.release();
+  }
+}
+
+export async function reorderMessagesInConversation(args: {
+  conversationId: string;
+  userId: string;
+  orderedMessageIds: string[];
+}): Promise<{ ok: true } | { error: string; status: number } | null> {
+  const cid = String(args.conversationId ?? "").trim();
+  const uid = String(args.userId ?? "").trim();
+  const ids = Array.isArray(args.orderedMessageIds) ? args.orderedMessageIds.map(String).map((s) => s.trim()).filter(Boolean) : [];
+
+  if (!cid || !uid) return null;
+  if (ids.length < 2) return { error: "orderedMessageIds must have at least 2 ids", status: 400 };
+
+  const uniqueIds = Array.from(new Set(ids));
+  if (uniqueIds.length !== ids.length) return { error: "orderedMessageIds must be unique", status: 400 };
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const scenarioId = await getConversationScenarioId(client, cid);
+    if (!scenarioId) {
+      await client.query("ROLLBACK");
+      return { error: "Conversation not found", status: 404 };
+    }
+
+    const okScenario = await scenarioAccess(client, scenarioId, uid);
+    if (!okScenario) {
+      await client.query("ROLLBACK");
+      return null;
+    }
+
+    // Scenario-level policy: if enabled, allow players (participants) to reorder.
+    // If disabled, only the scenario owner may reorder.
+    const allowPlayers = await scenarioAllowsPlayersToReorderMessages(client, scenarioId);
+    const canReorder = allowPlayers
+      ? (await isScenarioOwnerOrGm(client, scenarioId, uid)) || (await userOwnsAnyProfileInConversationOwned(client, cid, uid))
+      : await isScenarioOwner(client, scenarioId, uid);
+    if (!canReorder) {
+      await client.query("ROLLBACK");
+      return { error: "Not allowed", status: 403 };
+    }
+
+    // Ensure all ids exist in this conversation and compute the base timestamp.
+    const existing = await client.query<{ id: string; created_at: string }>(
+      `
+      SELECT id, created_at
+      FROM messages
+      WHERE conversation_id = $1
+        AND id = ANY($2::uuid[])
+    `,
+      [cid, uniqueIds],
+    );
+
+    if ((existing.rowCount ?? 0) !== uniqueIds.length) {
+      await client.query("ROLLBACK");
+      return { error: "One or more messages not found in conversation", status: 404 };
+    }
+
+    let startMs: number | null = null;
+    for (const row of existing.rows) {
+      const ms = Date.parse(String((row as any).created_at ?? ""));
+      if (!Number.isFinite(ms)) continue;
+      startMs = startMs == null ? ms : Math.min(startMs, ms);
+    }
+    if (startMs == null) startMs = Date.now();
+
+    // Apply the requested ordering by rewriting created_at.
+    // (Messages are rendered chronologically; this is the existing ordering mechanism.)
+    await client.query(
+      `
+      WITH ordered AS (
+        SELECT $2::uuid[] AS ids
+      ),
+      ord AS (
+        SELECT ids[i] AS id, i AS ord
+        FROM ordered, generate_subscripts(ids, 1) AS i
+      )
+      UPDATE messages m
+      SET
+        created_at = ($3::timestamptz + ((ord.ord - 1) * interval '1 second')),
+        updated_at = NOW() AT TIME ZONE 'UTC'
+      FROM ord
+      WHERE m.id = ord.id
+        AND m.conversation_id = $1
+    `,
+      [cid, ids, new Date(startMs).toISOString()],
+    );
+
+    // Keep last_message_at correct after timestamp updates.
+    await client.query(
+      `
+      UPDATE conversations
+      SET last_message_at = (
+        SELECT MAX(created_at)
+        FROM messages
+        WHERE conversation_id = $1
+      ),
+      updated_at = NOW() AT TIME ZONE 'UTC'
+      WHERE id = $1
+    `,
+      [cid],
+    );
+
+    await client.query("COMMIT");
+    return { ok: true };
+  } catch (e: unknown) {
+    try {
+      await client.query("ROLLBACK");
+    } catch {
+      // ignore
+    }
+    console.error("reorderMessagesInConversation failed", e);
+    return { error: "Reorder failed", status: 400 };
+  } finally {
+    client.release();
+  }
+}
+
+function getSupportEmail(): string {
+  return String(process.env.SUPPORT_EMAIL ?? "support@feedverse.app").trim() || "support@feedverse.app";
+}
+
+async function contentReportsTableExists(client: PoolClient): Promise<boolean> {
+  try {
+    const res = await client.query(
+      `
+      SELECT 1
+      FROM information_schema.tables
+      WHERE table_schema = 'public'
+        AND table_name = 'content_reports'
+      LIMIT 1
+    `,
+    );
+    return (res.rowCount ?? 0) > 0;
+  } catch {
+    return false;
+  }
+}
+
+export async function reportMessage(args: {
+  messageId: string;
+  userId: string;
+  reportMessage?: string | null;
+  requestId?: string | null;
+  userAgent?: string | null;
+  ip?: string | null;
+}): Promise<{ ok: true } | { error: string; status: number } | null> {
+  const mid = String(args.messageId ?? "").trim();
+  const uid = String(args.userId ?? "").trim();
+  const reportMessage = String(args.reportMessage ?? "").trim();
+  if (!mid || !uid) return null;
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const existing = await client.query<{ scenario_id: string; conversation_id: string }>(
+      "SELECT scenario_id, conversation_id FROM messages WHERE id = $1 LIMIT 1",
+      [mid],
+    );
+    const row0 = existing.rows[0];
+    if (!row0) {
+      await client.query("ROLLBACK");
+      return { error: "Message not found", status: 404 };
+    }
+
+    const canSee = await userOwnsAnyProfileInConversation(client, String(row0.conversation_id), uid);
+    if (!canSee) {
+      await client.query("ROLLBACK");
+      return null;
+    }
+
+    const details = await client.query(
+      `
+      SELECT
+        m.id,
+        m.scenario_id,
+        m.conversation_id,
+        m.sender_profile_id,
+        m.sender_user_id,
+        m.edited_by_profile_id,
+        m.edited_by_user_id,
+        m.text,
+        m.kind,
+        m.image_urls,
+        m.created_at,
+        m.updated_at,
+        m.edited_at,
+        c.title AS conversation_title,
+        sp.display_name AS sender_profile_display_name,
+        sp.handle AS sender_profile_handle,
+        su.username AS sender_username,
+        su.email AS sender_email,
+        ep.display_name AS edited_profile_display_name,
+        ep.handle AS edited_profile_handle,
+        eu.username AS edited_username,
+        eu.email AS edited_email,
+        ru.username AS reporter_username,
+        ru.email AS reporter_email
+      FROM messages m
+      LEFT JOIN conversations c ON c.id = m.conversation_id
+      LEFT JOIN profiles sp ON sp.id = m.sender_profile_id
+      LEFT JOIN users su ON su.id = m.sender_user_id
+      LEFT JOIN profiles ep ON ep.id = m.edited_by_profile_id
+      LEFT JOIN users eu ON eu.id = m.edited_by_user_id
+      LEFT JOIN users ru ON ru.id = $2
+      WHERE m.id = $1
+      LIMIT 1
+    `,
+      [mid, uid],
+    );
+
+    const row = details.rows?.[0] as any;
+    if (!row) {
+      await client.query("ROLLBACK");
+      return { error: "Message not found", status: 404 };
+    }
+
+    const snapshot = {
+      kind: "message",
+      reportedAt: new Date().toISOString(),
+      reporter: {
+        userId: uid,
+        username: row.reporter_username ?? null,
+        email: row.reporter_email ?? null,
+      },
+      message: {
+        id: row.id,
+        scenarioId: row.scenario_id,
+        conversationId: row.conversation_id,
+        conversationTitle: row.conversation_title ?? null,
+        text: row.text,
+        kind: row.kind,
+        imageUrls: row.image_urls,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+        senderProfileId: row.sender_profile_id,
+        senderUserId: row.sender_user_id,
+        senderProfileDisplayName: row.sender_profile_display_name ?? null,
+        senderProfileHandle: row.sender_profile_handle ?? null,
+      },
+      createdBy: {
+        userId: row.sender_user_id ?? null,
+        username: row.sender_username ?? null,
+        email: row.sender_email ?? null,
+        profileId: row.sender_profile_id ?? null,
+        profileDisplayName: row.sender_profile_display_name ?? null,
+        profileHandle: row.sender_profile_handle ?? null,
+      },
+      lastEditedBy: {
+        editedAt: row.edited_at ?? null,
+        userId: row.edited_by_user_id ?? null,
+        username: row.edited_username ?? null,
+        email: row.edited_email ?? null,
+        profileId: row.edited_by_profile_id ?? null,
+        profileDisplayName: row.edited_profile_display_name ?? null,
+        profileHandle: row.edited_profile_handle ?? null,
+      },
+      report: {
+        message: reportMessage || null,
+      },
+      request: {
+        requestId: args.requestId ?? null,
+        userAgent: args.userAgent ?? null,
+        ip: args.ip ?? null,
+      },
+    };
+
+    // Best-effort persistence for audit/search.
+    try {
+      if (await contentReportsTableExists(client)) {
+        await client.query(
+          `
+          INSERT INTO content_reports (
+            kind,
+            entity_id,
+            scenario_id,
+            conversation_id,
+            reporter_user_id,
+            report_message,
+            snapshot,
+            request_id,
+            user_agent,
+            ip,
+            created_at
+          ) VALUES (
+            'message',
+            $1,
+            $2,
+            $3,
+            $4,
+            $5,
+            $6::jsonb,
+            $7,
+            $8,
+            $9,
+            NOW() AT TIME ZONE 'UTC'
+          )
+        `,
+          [
+            mid,
+            String(row.scenario_id),
+            String(row.conversation_id),
+            uid,
+            reportMessage || null,
+            JSON.stringify(snapshot),
+            args.requestId ?? null,
+            args.userAgent ?? null,
+            args.ip ?? null,
+          ],
+        );
+      }
+    } catch {
+      // ignore
+    }
+
+    await client.query("COMMIT");
+
+    const supportEmail = getSupportEmail();
+    const subject = `[Feedverse] Message report ${mid}`;
+
+    const emailBody = buildReportEmail({
+      kind: "message",
+      subjectId: mid,
+      summary: {
+        reporterUserId: uid,
+        reporterUsername: row.reporter_username ?? null,
+        reporterEmail: row.reporter_email ?? null,
+        scenarioId: row.scenario_id ?? null,
+        conversationId: row.conversation_id ?? null,
+        conversationTitle: row.conversation_title ?? null,
+        createdAt: row.created_at ?? null,
+        editedAt: row.edited_at ?? null,
+        createdByUserId: row.sender_user_id ?? null,
+        createdByUsername: row.sender_username ?? null,
+        createdByEmail: row.sender_email ?? null,
+        createdByProfileId: row.sender_profile_id ?? null,
+        createdByProfileHandle: row.sender_profile_handle ?? null,
+        createdByProfileDisplayName: row.sender_profile_display_name ?? null,
+        editedByUserId: row.edited_by_user_id ?? null,
+        editedByUsername: row.edited_username ?? null,
+        editedByEmail: row.edited_email ?? null,
+        editedByProfileId: row.edited_by_profile_id ?? null,
+        editedByProfileHandle: row.edited_profile_handle ?? null,
+        editedByProfileDisplayName: row.edited_profile_display_name ?? null,
+        reportMessage: reportMessage || null,
+      },
+      content: {
+        message: {
+          id: String(row.id),
+          conversationId: String(row.conversation_id),
+          text: String(row.text ?? ""),
+          imageUrls: Array.isArray(row.image_urls) ? row.image_urls.map(String) : [],
+          createdAt: row.created_at ? new Date(row.created_at).toISOString() : new Date().toISOString(),
+          updatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : undefined,
+          editedAt: row.edited_at ? new Date(row.edited_at).toISOString() : undefined,
+          kind: (row.kind ?? "text") as MessageApi["kind"],
+          scenarioId: String(row.scenario_id ?? ""),
+          senderProfileId: String(row.sender_profile_id ?? ""),
+          senderUserId: String(row.sender_user_id ?? ""),
+        },
+      },
+    });
+
+    const snapshotJson = JSON.stringify(snapshot, null, 2);
+    const snapshotBase64 = Buffer.from(snapshotJson, "utf8").toString("base64");
+
+    const sent = await sendEmail({
+      to: supportEmail,
+      subject,
+      text: emailBody.text,
+      html: emailBody.html,
+      attachments: [
+        {
+          filename: `message-report-${mid}-snapshot.json`,
+          contentBase64: snapshotBase64,
+          contentType: "application/json",
+        },
+      ],
+    });
+    if (!sent) {
+      return { error: "Report recorded but email send failed", status: 500 };
+    }
+
+    return { ok: true };
+  } catch (e: unknown) {
+    try {
+      await client.query("ROLLBACK");
+    } catch {
+      // ignore
+    }
+    console.error("reportMessage failed", e);
+    return { error: "Report failed", status: 400 };
   } finally {
     client.release();
   }

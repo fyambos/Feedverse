@@ -146,6 +146,11 @@ export default function CreateScenarioModal() {
     return m === "per_scenario" ? "per_scenario" : "per_owner";
   });
 
+  const [allowPlayersReorderMessages, setAllowPlayersReorderMessages] = useState<boolean>(() => {
+    const raw = (existing as any)?.allowPlayersReorderMessages;
+    return Boolean(raw ?? true);
+  });
+
   // cover: picked image uri
   const [cover, setCover] = useState<string>(String(existing?.cover ?? "").trim());
   const [pickingCover, setPickingCover] = useState(false);
@@ -182,6 +187,8 @@ export default function CreateScenarioModal() {
     // hydrate setting from scenario.settings
     const m = (existing as any)?.settings?.profileLimitMode;
     setProfileLimitMode(m === "per_scenario" ? "per_scenario" : "per_owner");
+
+    setAllowPlayersReorderMessages(Boolean((existing as any)?.allowPlayersReorderMessages ?? true));
   }, [isEdit, existing]);
 
   // determine if we can switch back to per_owner (only relevant when editing)
@@ -379,6 +386,7 @@ export default function CreateScenarioModal() {
         String(description).trim().slice(0, SCENARIO_LIMITS.MAX_DESCRIPTION) || undefined,
       cover: String(cover).trim(),
       inviteCode: String(inviteCode).trim(),
+      allowPlayersReorderMessages: Boolean(allowPlayersReorderMessages),
       updatedAt: now,
       tags: tags.map((t) => ({
         id: `t_${t.key}`,
@@ -448,6 +456,7 @@ export default function CreateScenarioModal() {
     description,
     cover,
     inviteCode,
+    allowPlayersReorderMessages,
     tags,
     upsertScenario,
     mode,
@@ -590,6 +599,34 @@ export default function CreateScenarioModal() {
                   trackColor={{ false: colors.border, true: colors.tint }}
                   thumbColor={colors.card}
                   ios_backgroundColor={colors.border}
+                />
+              </View>
+            </RowCard>
+
+            {/* Message reorder permissions */}
+            <RowCard label="Message reorder" colors={colors} right={null}>
+              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                <View style={{ flex: 1, paddingRight: 12 }}>
+                  <ThemedText style={{ color: colors.text, fontWeight: "800" }}>
+                    Allow players to reorder
+                  </ThemedText>
+                  <ThemedText style={{ color: colors.textSecondary, fontSize: 12, marginTop: 4 }}>
+                    {allowPlayersReorderMessages
+                      ? "Any player in the conversation can reorder messages."
+                      : "Only the scenario owner can reorder messages."}
+                  </ThemedText>
+                </View>
+
+                <Switch
+                  value={allowPlayersReorderMessages}
+                  onValueChange={(v) => {
+                    if (!canEdit) return;
+                    setAllowPlayersReorderMessages(Boolean(v));
+                  }}
+                  trackColor={{ false: colors.border, true: colors.tint }}
+                  thumbColor={colors.card}
+                  ios_backgroundColor={colors.border}
+                  disabled={!canEdit}
                 />
               </View>
             </RowCard>

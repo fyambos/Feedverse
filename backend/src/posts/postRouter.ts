@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { authMiddleware } from "../auth/authMiddleware";
-import { DeletePostController, UpdatePostController, UploadPostImagesController } from "./postControllers";
+import { DeletePostController, ReportPostController, UpdatePostController, UploadPostImagesController } from "./postControllers";
 import { z } from "zod";
 import { validateBody, validateParams } from "../middleware/validationMiddleware";
 
@@ -19,6 +19,19 @@ postRouter.patch(
 	UpdatePostController,
 );
 postRouter.post("/:id/images", authMiddleware, validateParams(idParamSchema), UploadPostImagesController);
+postRouter.post(
+	"/:id/report",
+	authMiddleware,
+	validateParams(idParamSchema),
+	validateBody(
+		z
+			.object({
+				message: z.string().trim().max(2000).optional(),
+			})
+			.passthrough(),
+	),
+	ReportPostController,
+);
 postRouter.delete("/:id", authMiddleware, validateParams(idParamSchema), DeletePostController);
 
 export default postRouter;

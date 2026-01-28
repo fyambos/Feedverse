@@ -2,7 +2,7 @@
 import { Router } from "express";
 import { authMiddleware } from "../auth/authMiddleware";
 import { upload } from "../config/multer";
-import { deleteMessage, listMessages, sendMessage, sendMessageWithImages, updateMessage } from "./messageRepositories";
+import { deleteMessage, listMessages, reorderMessagesInConversation, reportMessage, sendMessage, sendMessageWithImages, updateMessage } from "./messageRepositories";
 import { z } from "zod";
 import { validateBody, validateParams, validateQuery } from "../middleware/validationMiddleware";
 
@@ -40,6 +40,30 @@ messageRouter.get(
   if (out == null) return res.status(403).json({ error: "Forbidden" });
 
   return res.json(out);
+  },
+);
+
+messageRouter.post(
+  "/conversations/:conversationId/messages/reorder",
+  authMiddleware,
+  validateParams(conversationIdParam),
+  validateBody(
+    z
+      .object({
+        orderedMessageIds: z.array(z.string().uuid()).min(2).max(5000),
+      })
+      .passthrough(),
+  ),
+  async (req, res) => {
+    const conversationId = String(req.params.conversationId ?? "");
+    const userId = String((req as any).user?.id ?? "");
+    const orderedMessageIds = Array.isArray(req.body?.orderedMessageIds) ? req.body.orderedMessageIds : [];
+
+    const out = await reorderMessagesInConversation({ conversationId, userId, orderedMessageIds });
+    if (out == null) return res.status(403).json({ error: "Forbidden" });
+    if ("error" in out) return res.status(out.status).json({ error: out.error });
+
+    return res.json(out);
   },
 );
 
@@ -105,6 +129,38 @@ messageRouter.put(
   if ("error" in out) return res.status(out.status).json({ error: out.error });
 
   return res.json(out);
+  },
+);
+
+messageRouter.post(
+  "/messages/:messageId/report",
+  authMiddleware,
+  validateParams(messageIdParam),
+  validateBody(
+    z
+      .object({
+        message: z.string().trim().max(2000).optional(),
+      })
+      .passthrough(),
+  ),
+  async (req, res) => {
+    const messageId = String(req.params.messageId ?? "");
+    const userId = String((req as any).user?.id ?? "");
+    const reportText = req.body?.message != null ? String(req.body.message) : null;
+
+    const out = await reportMessage({
+      messageId,
+      userId,
+      reportMessage: reportText,
+      requestId: (req as any).requestId ?? null,
+      userAgent: req.get?.("User-Agent") ?? null,
+      ip: (req.headers?.["x-forwarded-for"] as any) ?? (req as any).ip ?? null,
+    });
+
+    if (out == null) return res.status(403).json({ error: "Forbidden" });
+    if ("error" in out) return res.status(out.status).json({ error: out.error });
+
+    return res.json(out);
   },
 );
 

@@ -23,6 +23,7 @@ export type User = {
   settings?: UserSettings;
   name?: string;
   email?: string;
+  emailVerifiedAt?: string | null;
   passwordHash?: string;
 };
 
@@ -60,6 +61,7 @@ export type Scenario = {
   updatedAt?: string;
   inviteCode: string;
   ownerUserId: string;
+  allowPlayersReorderMessages?: boolean;
   description?: string;
   tags?: ScenarioTag[];
   mode: "story" | "campaign";

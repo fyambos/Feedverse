@@ -1,0 +1,55 @@
+diff --git a/node_modules/react-native-draggable-flatlist/src/components/DraggableFlatList.tsx b/node_modules/react-native-draggable-flatlist/src/components/DraggableFlatList.tsx
+index 7c88afc..9aac1ec 100644
+--- a/node_modules/react-native-draggable-flatlist/src/components/DraggableFlatList.tsx
++++ b/node_modules/react-native-draggable-flatlist/src/components/DraggableFlatList.tsx
+@@ -271,6 +271,10 @@ function DraggableFlatListInner<T>(props: DraggableFlatListProps<T>) {
+   );
+ 
+   const gestureDisabled = useSharedValue(false);
++  // Custom escape hatch: allow apps to invert vertical drag translation.
++  // Useful when rendering an inverted list but wanting drag to follow the finger.
++  // Not part of the upstream public API.
++  const invertDragDirection = !!(props as any)?.invertDragDirection;
+ 
+   const panGesture = Gesture.Pan()
+     .onBegin((evt) => {
+@@ -281,20 +285,35 @@ function DraggableFlatListInner<T>(props: DraggableFlatListProps<T>) {
+     .onUpdate((evt) => {
+       if (gestureDisabled.value) return;
+       panGestureState.value = evt.state;
+-      const translation = horizontalAnim.value
++      const rawTranslation = horizontalAnim.value
+         ? evt.translationX
+         : evt.translationY;
++      const translation = horizontalAnim.value
++        ? rawTranslation
++        : invertDragDirection
++          ? -rawTranslation
++          : rawTranslation;
+       touchTranslate.value = translation;
+     })
+     .onEnd((evt) => {
+       if (gestureDisabled.value) return;
+       // Set touch val to current translate val
+       isTouchActiveNative.value = false;
+-      const translation = horizontalAnim.value
++      const rawTranslation = horizontalAnim.value
+         ? evt.translationX
+         : evt.translationY;
+-
+-      touchTranslate.value = translation + autoScrollDistance.value;
++      const translation = horizontalAnim.value
++        ? rawTranslation
++        : invertDragDirection
++          ? -rawTranslation
++          : rawTranslation;
++      const auto = horizontalAnim.value
++        ? 0
++        : invertDragDirection
++          ? -autoScrollDistance.value
++          : autoScrollDistance.value;
++
++      touchTranslate.value = translation + auto;
+       panGestureState.value = evt.state;
+ 
+       // Only call onDragEnd if actually dragging a cell

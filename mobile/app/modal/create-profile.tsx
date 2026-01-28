@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
+  ActivityIndicator,
   KeyboardAvoidingView,
-  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -132,7 +132,10 @@ export default function CreateProfileModal() {
   const [link, setLink] = useState((existing as any)?.link ?? "");
 
   const [submitting, setSubmitting] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const deleteProfileRef = useRef(false);
+
+  const busy = submitting || deleting;
 
   /* -------------------------------------------------------------------------- */
   /* Submit                                                                     */
@@ -240,10 +243,11 @@ export default function CreateProfileModal() {
   const onConfirmDelete = async () => {
     if (!existing) return;
     if (!canDelete) return;
-    if (submitting) return;
+    if (busy) return;
     if (deleteProfileRef.current) return;
     deleteProfileRef.current = true;
 
+    setDeleting(true);
     setSubmitting(true);
     try {
       const res = await deleteProfileCascade(String(sid), String(existing.id));
@@ -257,6 +261,7 @@ export default function CreateProfileModal() {
     } finally {
       deleteProfileRef.current = false;
       setSubmitting(false);
+      setDeleting(false);
     }
   };
 
@@ -278,7 +283,12 @@ export default function CreateProfileModal() {
               // keep layout stable when the close button is hidden
               <View style={{ width: 24, height: 24 }} />
             ) : (
-              <Pressable onPress={() => router.back()} hitSlop={12}>
+              <Pressable
+                onPress={() => router.back()}
+                disabled={busy}
+                hitSlop={12}
+                style={({ pressed }) => [{ opacity: busy ? 0.35 : pressed ? 0.7 : 1 }]}
+              >
                 <Ionicons name="close" size={24} color={colors.text} />
               </Pressable>
             )}
@@ -287,9 +297,9 @@ export default function CreateProfileModal() {
 
             <Pressable
               onPress={submit}
-              disabled={submitting}
+              disabled={busy}
               hitSlop={12}
-              style={({ pressed }) => [{ opacity: submitting ? 0.5 : pressed ? 0.7 : 1 }]}
+              style={({ pressed }) => [{ opacity: busy ? 0.5 : pressed ? 0.7 : 1 }]}
             >
               <ThemedText style={{ color: colors.tint, fontWeight: "800" }}>
                 {isEdit ? "Save" : "Create"}
@@ -392,17 +402,20 @@ export default function CreateProfileModal() {
                       ]
                     );
                   }}
-                  disabled={submitting}
+                    disabled={busy}
                   style={({ pressed }) => [
                     styles.deleteBtn,
                     {
                       borderColor: colors.border,
                       backgroundColor: pressed ? colors.pressed : (colors as any).card,
-                      opacity: submitting ? 0.6 : 1,
+                        opacity: busy ? 0.6 : 1,
                     },
                   ]}
                 >
-                  <ThemedText style={styles.deleteText}>Delete profile</ThemedText>
+                    <View style={styles.deleteBtnContent}>
+                      {deleting ? <ActivityIndicator size="small" color="#ff3b30" /> : null}
+                      <ThemedText style={styles.deleteText}>Delete profile</ThemedText>
+                    </View>
                 </Pressable>
               </View>
             ) : null}
@@ -477,6 +490,12 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     alignItems: "center",
     justifyContent: "center",
+  },
+  deleteBtnContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
   },
   deleteText: {
     color: "#ff3b30",

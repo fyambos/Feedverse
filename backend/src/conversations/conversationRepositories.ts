@@ -139,22 +139,13 @@ export async function listConversationsForScenario(args: { scenarioId: string; u
     const ok = await scenarioAccess(client, sid, userId);
     if (!ok) return null;
 
-    // Check that the selected profile is in the scenario
-    const profileCheck = await client.query(
-      `SELECT 1 FROM profiles WHERE scenario_id = $1 AND id = $2 LIMIT 1`,
-      [sid, selectedProfileId],
+    // Enforce selected-profile-only inbox. The selected profile must be owned by the user.
+    const selectedMeta = await client.query(
+      `SELECT 1 FROM profiles WHERE id = $1 AND scenario_id = $2 AND owner_user_id = $3 LIMIT 1`,
+      [selectedProfileId, sid, userId],
     );
-    if (profileCheck.rowCount === 0) return null;
+    if ((selectedMeta.rowCount ?? 0) === 0) return null;
 
-    // Enforce visibility: selected profile must be owned by the requester or be public
-    const profileMeta = await client.query(`SELECT owner_user_id, is_public FROM profiles WHERE id = $1 LIMIT 1`, [selectedProfileId]);
-    const p = profileMeta.rows?.[0];
-    if (!p) return null;
-    const ownerMatches = String(p.owner_user_id ?? "") === userId;
-    const isPublic = Boolean(p.is_public);
-    if (!ownerMatches && !isPublic) return null;
-
-    // Filter conversations by selectedProfileId participation
     const res = await client.query<ConversationRow>(
       `
       SELECT

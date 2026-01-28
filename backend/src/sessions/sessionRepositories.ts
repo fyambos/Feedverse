@@ -352,3 +352,34 @@ export async function revokeOtherUserSessions(args: {
   const revokedCount = Number.isFinite(count) ? count : 0;
   return { revokedCount };
 }
+
+export async function revokeAllUserSessions(args: {
+  userId: string;
+  reason: string;
+}): Promise<{ revokedCount: number } | null> {
+  const exists = await userSessionsTableExists();
+  if (!exists) return null;
+
+  const userId = String(args.userId ?? "").trim();
+  const reason = String(args.reason ?? "").trim() || "security";
+  if (!userId) return null;
+
+  const res = await pool.query<{ revoked_count: string }>(
+    `
+    WITH updated AS (
+      UPDATE user_sessions
+      SET revoked_at = now(),
+          revoked_reason = $2
+      WHERE user_id = $1
+        AND revoked_at IS NULL
+      RETURNING 1
+    )
+    SELECT COUNT(*)::text AS revoked_count FROM updated
+    `,
+    [userId, reason],
+  );
+
+  const count = Number.parseInt(String(res.rows?.[0]?.revoked_count ?? "0"), 10);
+  const revokedCount = Number.isFinite(count) ? count : 0;
+  return { revokedCount };
+}

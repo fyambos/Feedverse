@@ -50,6 +50,8 @@ export default function ScenarioListScreen() {
     isReady,
     listScenarios,
     db,
+    getSelectedProfileId,
+    setSelectedProfileId,
     syncScenarios,
     syncProfilesForScenario,
     transferScenarioOwnership,
@@ -251,10 +253,21 @@ export default function ScenarioListScreen() {
     if (!sid) return;
 
     // if you already have a selected profile for this scenario => go in
-    const selected = (db as any)?.selectedProfileByScenario?.[sid];
+    const selected = getSelectedProfileId?.(sid) ?? null;
     if (selected) {
       router.push(`/(scenario)/${sid}/home` as any);
       return;
+    }
+
+    // If a stale selection exists (e.g. profile deleted or not usable), clear it.
+    try {
+      const rawStored = (db as any)?.selectedProfileByScenario?.[sid] ?? null;
+      const rawStoredId = rawStored == null ? "" : String(rawStored);
+      if (rawStoredId && rawStoredId !== "null" && rawStoredId !== "undefined") {
+        void setSelectedProfileId?.(sid, null as any);
+      }
+    } catch {
+      // ignore
     }
 
     // In backend mode, go through profile selection for SERVER scenarios.
@@ -271,33 +284,13 @@ export default function ScenarioListScreen() {
       return;
     }
 
-    // otherwise check if you own ANY profile in this scenario
-    const uid = String(userId ?? "").trim();
-    const profilesMap = (db as any)?.profiles ?? {};
-    const hasAnyProfileInScenario = Object.values(profilesMap).some((p: any) => {
-      return String(p?.scenarioId) === sid && String(p?.ownerUserId) === uid;
-    });
-
-    if (hasAnyProfileInScenario) {
-      // you have profiles but none selected -> go pick one
-      router.push({
-        pathname: "/modal/select-profile",
-        params: {
-          scenarioId: sid,
-          returnTo: encodeURIComponent(`/(scenario)/${sid}/home`),
-          replace: "1",
-        },
-      } as any);
-      return;
-    }
-
-    // no profile at all -> force create
+    // Always go through selection so the user can pick OR create.
     router.push({
-      pathname: "/modal/create-profile",
+      pathname: "/modal/select-profile",
       params: {
         scenarioId: sid,
-        mode: "create",
-        forced: "1", // to hide cancel/back in the modal
+        returnTo: encodeURIComponent(`/(scenario)/${sid}/home`),
+        replace: "1",
       },
     } as any);
   };
@@ -501,6 +494,15 @@ export default function ScenarioListScreen() {
     }, 0);
   };
 
+  const openPlayersForMenuScenario = () => {
+    const sid = String(menu.scenarioId ?? "").trim();
+    if (!sid) return;
+    closeScenarioMenu();
+    setTimeout(() => {
+      router.push(`/(scenario)/${sid}/players` as any);
+    }, 0);
+  };
+
   const muteAllNotificationsForMenuScenario = () => {
     const sid = String(menu.scenarioId ?? "").trim();
     if (!sid) return;
@@ -559,6 +561,22 @@ export default function ScenarioListScreen() {
             <Ionicons name="copy-outline" size={18} color={colors.text} />
             <ThemedText style={{ color: colors.text, fontSize: 15, fontWeight: "600" }}>
               Copy Invite Code
+            </ThemedText>
+          </Pressable>
+
+          <View style={[styles.menuDivider, { backgroundColor: colors.border }]} />
+
+          {/* Players */}
+          <Pressable
+            onPress={openPlayersForMenuScenario}
+            style={({ pressed }) => [
+              styles.menuItem,
+              { backgroundColor: pressed ? colors.pressed : "transparent" },
+            ]}
+          >
+            <Ionicons name="people-outline" size={18} color={colors.text} />
+            <ThemedText style={{ color: colors.text, fontSize: 15, fontWeight: "700" }}>
+              Players
             </ThemedText>
           </Pressable>
 

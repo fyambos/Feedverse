@@ -5,8 +5,10 @@ import { sendMethodNotAllowed } from "../lib/apiResponses";
 import {
   CreatePostForScenarioService,
   DeletePostService,
+  GetPostThreadForScenarioService,
   ListPostsForScenarioService,
   ListPostsPageForScenarioService,
+  ReportPostService,
   UpdatePostService,
   UploadPostImagesService,
 } from "./postServices";
@@ -37,6 +39,31 @@ export const ListScenarioPostsController = async (req: Request, res: Response) =
     return res.status(HTTP_STATUS.OK).json(page);
   } catch (error: unknown) {
     console.error("Erreur récupération posts:", error);
+    return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ error: ERROR_MESSAGES.INTERNAL_SERVER_ERROR });
+  }
+};
+
+export const GetScenarioPostThreadController = async (req: Request, res: Response) => {
+  if (req.method !== HTTP_METHODS.GET) {
+    return sendMethodNotAllowed(req, res);
+  }
+
+  try {
+    const userId = String(req.user?.id ?? "").trim();
+    if (!userId) return res.status(HTTP_STATUS.UNAUTHORIZED).json({ error: "Unauthorized" });
+
+    const scenarioId = String(req.params?.id ?? "").trim();
+    if (!scenarioId) return res.status(HTTP_STATUS.BAD_REQUEST).json({ error: "scenarioId is required" });
+
+    const postId = String((req.params as any)?.postId ?? "").trim();
+    if (!postId) return res.status(HTTP_STATUS.BAD_REQUEST).json({ error: "postId is required" });
+
+    const result = await GetPostThreadForScenarioService(userId, scenarioId, postId);
+    if (!result) return res.status(HTTP_STATUS.FORBIDDEN).json({ error: "Not allowed" });
+
+    return res.status(HTTP_STATUS.OK).json(result);
+  } catch (error: unknown) {
+    console.error("GetScenarioPostThreadController failed", error);
     return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ error: ERROR_MESSAGES.INTERNAL_SERVER_ERROR });
   }
 };
@@ -109,6 +136,39 @@ export const UpdatePostController = async (req: Request, res: Response) => {
     return res.status(HTTP_STATUS.OK).json({ post: result.post });
   } catch (error: unknown) {
     console.error("Erreur mise à jour post:", error);
+    return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ error: ERROR_MESSAGES.INTERNAL_SERVER_ERROR });
+  }
+};
+
+export const ReportPostController = async (req: Request, res: Response) => {
+  if (req.method !== HTTP_METHODS.POST) {
+    return res.status(HTTP_STATUS.BAD_REQUEST).json({ error: ERROR_MESSAGES.METHOD_NOT_ALLOWED });
+  }
+
+  try {
+    const userId = String(req.user?.id ?? "").trim();
+    if (!userId) return res.status(HTTP_STATUS.UNAUTHORIZED).json({ error: "Unauthorized" });
+
+    const postId = String(req.params?.id ?? "").trim();
+    if (!postId) return res.status(HTTP_STATUS.BAD_REQUEST).json({ error: "postId is required" });
+
+    const reportMessage = req.body?.message != null ? String(req.body.message) : null;
+
+    const out = await ReportPostService({
+      userId,
+      postId,
+      reportMessage,
+      requestId: (req as any).requestId ?? null,
+      userAgent: req.get?.("User-Agent") ?? null,
+      ip: (req.headers?.["x-forwarded-for"] as any) ?? (req as any).ip ?? null,
+    });
+
+    if (!out) return res.status(HTTP_STATUS.FORBIDDEN).json({ error: "Not allowed" });
+    if ("error" in out) return res.status(out.status).json({ error: out.error });
+
+    return res.status(HTTP_STATUS.OK).json(out);
+  } catch (error: unknown) {
+    console.error("ReportPostController failed", error);
     return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ error: ERROR_MESSAGES.INTERNAL_SERVER_ERROR });
   }
 };
