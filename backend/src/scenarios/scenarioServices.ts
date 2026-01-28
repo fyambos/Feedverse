@@ -12,6 +12,7 @@ import {
   UpdateScenarioResponse,
   JoinScenarioRequest,
   JoinScenarioResponse,
+  LeaveScenarioResponse,
 } from "./scenarioModels";
 import {
   validateScenarioName,
@@ -523,6 +524,101 @@ export const JoinScenarioService = async (
       message: SCENARIO_MESSAGES.JOIN_SUCCESS,
       scenario,
       already_member: false,
+    },
+  };
+};
+
+export const LeaveScenarioService = async (
+  scenarioId: string,
+  userId: string,
+): Promise<{
+  data?: LeaveScenarioResponse;
+  errors?: ValidationError[];
+}> => {
+  const uuidRegex =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+  if (!uuidRegex.test(scenarioId)) {
+    return {
+      errors: [
+        {
+          fields: "id",
+          message: "Format d'identifiant invalide",
+        },
+      ],
+    };
+  }
+
+  const scenario = await scenarioRepository.findById(scenarioId);
+
+  if (!scenario) {
+    return {
+      errors: [
+        {
+          fields: "id",
+          message: SCENARIO_MESSAGES.NOT_FOUND,
+        },
+      ],
+    };
+  }
+
+  if (scenario.owner_user_id === userId) {
+    return {
+      errors: [
+        {
+          fields: "user",
+          message: SCENARIO_MESSAGES.OWNER_CANNOT_LEAVE,
+        },
+      ],
+    };
+  }
+
+  const isMember = await scenarioRepository.isUserMember(scenarioId, userId);
+
+  if (!isMember) {
+    return {
+      errors: [
+        {
+          fields: "user",
+          message: SCENARIO_MESSAGES.NOT_MEMBER,
+        },
+      ],
+    };
+  }
+
+  const profileCount = await scenarioRepository.getUserProfilesInScenario(
+    scenarioId,
+    userId,
+  );
+
+  if (profileCount > 0) {
+    return {
+      errors: [
+        {
+          fields: "profiles",
+          message: SCENARIO_MESSAGES.CANNOT_LEAVE_WITH_PROFILES,
+        },
+      ],
+    };
+  }
+
+  const removed = await scenarioRepository.removePlayer(scenarioId, userId);
+
+  if (!removed) {
+    return {
+      errors: [
+        {
+          fields: "scenario",
+          message: SCENARIO_MESSAGES.LEAVE_FAILED,
+        },
+      ],
+    };
+  }
+
+  return {
+    data: {
+      message: SCENARIO_MESSAGES.LEAVE_SUCCESS,
+      scenario_id: scenarioId,
     },
   };
 };

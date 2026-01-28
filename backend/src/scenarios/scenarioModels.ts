@@ -99,3 +99,8 @@ export interface JoinScenarioResponse {
   scenario: Scenario;
   already_member: boolean;
 }
+
+export interface LeaveScenarioResponse {
+  message: string;
+  scenario_id: string;
+}

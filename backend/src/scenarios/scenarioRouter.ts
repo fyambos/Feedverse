@@ -8,6 +8,8 @@ import {
   DeleteScenarioController,
   GetScenarioPlayersController,
   TransferScenarioOwnershipController,
+  JoinScenarioController,
+  LeaveScenarioController,
 } from "./scenarioControllers";
 import { ROUTES_SCENARIOS } from "../config/constants";
 import { authMiddleware } from "../auth/authMiddleware";
@@ -41,6 +43,16 @@ scenarioRouter.post(
   ROUTES_SCENARIOS.BY_ID + ROUTES_SCENARIOS.TRANSFER,
   authMiddleware,
   TransferScenarioOwnershipController,
+);
+scenarioRouter.post(
+  ROUTES_SCENARIOS.JOIN,
+  authMiddleware,
+  JoinScenarioController,
+);
+scenarioRouter.post(
+  `${ROUTES_SCENARIOS.BY_ID}${ROUTES_SCENARIOS.LEAVE}`,
+  authMiddleware,
+  LeaveScenarioController,
 );
 
 export default scenarioRouter;

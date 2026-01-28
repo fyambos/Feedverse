@@ -124,6 +124,12 @@ export const SCENARIO_MESSAGES = {
   JOIN_SUCCESS: "Vous avez rejoint le scénario avec succès",
   ALREADY_MEMBER: "Vous êtes déjà membre de ce scénario",
   INVITE_CODE_NOT_FOUND: "Code d'invitation invalide ou scénario introuvable",
+  LEAVE_SUCCESS: "Vous avez quitté le scénario avec succès",
+  LEAVE_FAILED: "Impossible de quitter le scénario",
+  OWNER_CANNOT_LEAVE: "Le propriétaire ne peut pas quitter son propre scénario",
+  NOT_MEMBER: "Vous n'êtes pas membre de ce scénario",
+  CANNOT_LEAVE_WITH_PROFILES:
+    "Vous devez supprimer vos profils avant de quitter le scénario",
 } as const;
 
 export const SCENARIO_VALIDATION_RULES = {
@@ -240,6 +246,7 @@ export const ROUTES_SCENARIOS = {
   PLAYERS: "/players",
   TRANSFER: "/transfer",
   JOIN: "/join",
+  LEAVE: "/leave",
 } as const;
 
 // ============================================================================

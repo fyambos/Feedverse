@@ -240,4 +240,37 @@ export class ScenarioRepository {
     const result = await pool.query(query, [scenarioId, userId]);
     return result.rows[0].exists;
   }
+
+  async removePlayer(scenarioId: string, userId: string): Promise<boolean> {
+    const query = `
+      DELETE FROM scenario_players
+      WHERE scenario_id = $1 AND user_id = $2
+      RETURNING scenario_id
+    `;
+    const result = await pool.query(query, [scenarioId, userId]);
+    return result.rowCount !== null && result.rowCount > 0;
+  }
+
+  async countPlayers(scenarioId: string): Promise<number> {
+    const query = `
+      SELECT COUNT(*) as count
+      FROM scenario_players
+      WHERE scenario_id = $1
+    `;
+    const result = await pool.query(query, [scenarioId]);
+    return parseInt(result.rows[0].count, 10);
+  }
+
+  async getUserProfilesInScenario(
+    scenarioId: string,
+    userId: string,
+  ): Promise<number> {
+    const query = `
+      SELECT COUNT(*) as count
+      FROM profiles
+      WHERE scenario_id = $1 AND owner_user_id = $2
+    `;
+    const result = await pool.query(query, [scenarioId, userId]);
+    return parseInt(result.rows[0].count, 10);
+  }
 }
