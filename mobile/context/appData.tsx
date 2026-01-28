@@ -1637,10 +1637,12 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         if (String((profile as any)?.scenarioId ?? "") !== String(scenarioId)) return null;
 
         // Ensure the selected profile is actually usable by the current user.
-        // (Prevents accidentally selecting the first profile in a scenario that isn't owned/shared.)
+        // Usable means either owned by the current user, OR a shared/public profile.
         if (currentUserId) {
           const ownerId = String((profile as any)?.ownerUserId ?? "").trim();
-          if (!ownerId || ownerId !== String(currentUserId).trim()) return null;
+          const isPublic = Boolean((profile as any)?.isPublic);
+          const isOwnedByMe = ownerId && ownerId === String(currentUserId).trim();
+          if (!isOwnedByMe && !isPublic) return null;
         }
 
         // In backend mode, selected profile ids must be server uuids.

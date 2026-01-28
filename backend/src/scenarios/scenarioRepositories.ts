@@ -751,9 +751,9 @@ export class ScenarioRepository {
     await pool.query(
       `
       INSERT INTO scenario_players (scenario_id, user_id)
-      SELECT $1, $2
+      SELECT $1::uuid, $2::uuid
       WHERE NOT EXISTS (
-        SELECT 1 FROM scenario_players WHERE scenario_id = $1 AND user_id::text = $2
+        SELECT 1 FROM scenario_players WHERE scenario_id = $1::uuid AND user_id = $2::uuid
       )
       `,
       [scenarioId, userId],

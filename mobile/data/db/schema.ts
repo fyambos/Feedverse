@@ -23,6 +23,7 @@ export type User = {
   settings?: UserSettings;
   name?: string;
   email?: string;
+  emailVerifiedAt?: string | null;
   passwordHash?: string;
 };
 

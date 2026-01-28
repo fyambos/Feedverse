@@ -77,12 +77,22 @@ async function main() {
     console.log("Detected local IP:", ip);
     console.log("Using backend URL:", backendUrl);
 
-    // ensure on beta branch
+    // ensure on an allowed branch
     try {
       const out = spawnSync("git", ["rev-parse", "--abbrev-ref", "HEAD"], { encoding: "utf8" });
       const branch = (out.stdout || "").trim();
-      if (branch !== "beta") {
-        console.error(`Not on 'beta' branch (current: ${branch}). Please switch to beta with "git checkout beta"`);
+      const allowedExact = new Set(["beta", "website"]);
+      const allowedPrefixes = ["beta/", "beta-", "website/", "website-"];
+      const ok =
+        allowedExact.has(branch) ||
+        allowedPrefixes.some((p) => branch.startsWith(p));
+
+      if (!ok) {
+        console.error(
+          `Not on an allowed branch (current: ${branch}). Please switch to one of: ${Array.from(allowedExact).join(
+            ", ",
+          )}`,
+        );
         process.exit(1);
       }
     } catch (e) {

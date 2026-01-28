@@ -11,6 +11,8 @@ import { sendExpoPush } from "../push/expoPush";
 import { UserRepository } from "../users/userRepositories";
 import { listScenarioNotificationPrefsByUserIds } from "../notifications/scenarioNotificationPrefs";
 import { getScenarioNotificationPrefs } from "../notifications/scenarioNotificationPrefs";
+import { sendEmail } from "../email/emailService";
+import { buildReportEmail } from "../reports/reportEmail";
 
 async function scenarioAccess(client: PoolClient, scenarioId: string, userId: string): Promise<boolean> {
   const res = await client.query(
@@ -416,6 +418,9 @@ export async function createPostForScenario(args: {
         meta,
         is_pinned,
         pin_order,
+        edited_at,
+        edited_by_user_id,
+        edited_by_profile_id,
         updated_at
       ) VALUES (
         $1,
@@ -435,6 +440,9 @@ export async function createPostForScenario(args: {
         $15::jsonb,
         $16,
         $17,
+        NULL,
+        NULL,
+        NULL,
         NOW() AT TIME ZONE 'UTC'
       )
       ON CONFLICT (id) DO UPDATE
@@ -452,6 +460,42 @@ export async function createPostForScenario(args: {
         meta = EXCLUDED.meta,
         is_pinned = EXCLUDED.is_pinned,
         pin_order = EXCLUDED.pin_order,
+        edited_at = CASE
+          WHEN (
+            posts.text IS DISTINCT FROM EXCLUDED.text OR
+            posts.image_urls IS DISTINCT FROM EXCLUDED.image_urls OR
+            posts.post_type IS DISTINCT FROM EXCLUDED.post_type OR
+            posts.meta IS DISTINCT FROM EXCLUDED.meta OR
+            posts.is_pinned IS DISTINCT FROM EXCLUDED.is_pinned OR
+            posts.pin_order IS DISTINCT FROM EXCLUDED.pin_order
+          )
+          THEN NOW() AT TIME ZONE 'UTC'
+          ELSE posts.edited_at
+        END,
+        edited_by_user_id = CASE
+          WHEN (
+            posts.text IS DISTINCT FROM EXCLUDED.text OR
+            posts.image_urls IS DISTINCT FROM EXCLUDED.image_urls OR
+            posts.post_type IS DISTINCT FROM EXCLUDED.post_type OR
+            posts.meta IS DISTINCT FROM EXCLUDED.meta OR
+            posts.is_pinned IS DISTINCT FROM EXCLUDED.is_pinned OR
+            posts.pin_order IS DISTINCT FROM EXCLUDED.pin_order
+          )
+          THEN EXCLUDED.author_user_id
+          ELSE posts.edited_by_user_id
+        END,
+        edited_by_profile_id = CASE
+          WHEN (
+            posts.text IS DISTINCT FROM EXCLUDED.text OR
+            posts.image_urls IS DISTINCT FROM EXCLUDED.image_urls OR
+            posts.post_type IS DISTINCT FROM EXCLUDED.post_type OR
+            posts.meta IS DISTINCT FROM EXCLUDED.meta OR
+            posts.is_pinned IS DISTINCT FROM EXCLUDED.is_pinned OR
+            posts.pin_order IS DISTINCT FROM EXCLUDED.pin_order
+          )
+          THEN EXCLUDED.author_profile_id
+          ELSE posts.edited_by_profile_id
+        END,
         updated_at = NOW() AT TIME ZONE 'UTC'
       RETURNING
         id,
@@ -995,6 +1039,16 @@ export async function updatePost(args: {
 
   const setParts: string[] = [];
   const values: any[] = [];
+  let didEditContent = false;
+
+  const contentColumns = new Set([
+    "text",
+    "image_urls",
+    "post_type",
+    "meta",
+    "is_pinned",
+    "pin_order",
+  ]);
 
   for (const [k, col, cast] of allowed) {
     if (!(k in patch)) continue;
@@ -1012,6 +1066,8 @@ export async function updatePost(args: {
     } else {
       setParts.push(`${col} = $${values.length}`);
     }
+
+    if (contentColumns.has(col)) didEditContent = true;
   }
 
   if (setParts.length === 0) return { error: "No valid fields to update", status: 400 };
@@ -1042,8 +1098,13 @@ export async function updatePost(args: {
 
     const sql = `
       UPDATE posts
-      SET ${setParts.join(", ")}, updated_at = NOW() AT TIME ZONE 'UTC'
-      WHERE id = $${values.length + 1}
+      SET
+        ${setParts.join(", ")},
+        edited_at = CASE WHEN $${values.length + 1} THEN NOW() AT TIME ZONE 'UTC' ELSE edited_at END,
+        edited_by_user_id = CASE WHEN $${values.length + 1} THEN $${values.length + 2} ELSE edited_by_user_id END,
+        edited_by_profile_id = CASE WHEN $${values.length + 1} THEN $${values.length + 3} ELSE edited_by_profile_id END,
+        updated_at = NOW() AT TIME ZONE 'UTC'
+      WHERE id = $${values.length + 4}
       RETURNING
         id,
         scenario_id,
@@ -1065,7 +1126,13 @@ export async function updatePost(args: {
         updated_at
     `;
 
-    const res = await client.query<PostRow>(sql, [...values, pid]);
+    const res = await client.query<PostRow>(sql, [
+      ...values,
+      didEditContent,
+      uid,
+      String(row0.author_profile_id),
+      pid,
+    ]);
     const row = res.rows[0];
     if (!row) {
       await client.query("ROLLBACK");
@@ -1138,8 +1205,11 @@ export async function uploadPostImages(args: {
         UPDATE posts
         SET
           image_urls = COALESCE(image_urls, '{}'::text[]) || $1::text[],
+          edited_at = NOW() AT TIME ZONE 'UTC',
+          edited_by_user_id = $2,
+          edited_by_profile_id = $3,
           updated_at = NOW() AT TIME ZONE 'UTC'
-        WHERE id = $2
+        WHERE id = $4
         RETURNING
           id,
           scenario_id,
@@ -1160,7 +1230,7 @@ export async function uploadPostImages(args: {
           pin_order,
           updated_at
       `,
-      [uploadedUrls, pid],
+      [uploadedUrls, uid, String(row0.author_profile_id), pid],
     );
 
     const row = res.rows[0];
@@ -1273,6 +1343,278 @@ export async function deletePost(args: {
     }
     console.error("deletePost failed", e);
     return { error: "Delete failed", status: 400 };
+  } finally {
+    client.release();
+  }
+}
+
+function getSupportEmail(): string {
+  return String(process.env.SUPPORT_EMAIL ?? "support@feedverse.app").trim() || "support@feedverse.app";
+}
+
+async function contentReportsTableExists(client: PoolClient): Promise<boolean> {
+  try {
+    const res = await client.query(
+      `
+      SELECT 1
+      FROM information_schema.tables
+      WHERE table_schema = 'public'
+        AND table_name = 'content_reports'
+      LIMIT 1
+    `,
+    );
+    return (res.rowCount ?? 0) > 0;
+  } catch {
+    return false;
+  }
+}
+
+export async function reportPost(args: {
+  postId: string;
+  userId: string;
+  reportMessage?: string | null;
+  requestId?: string | null;
+  userAgent?: string | null;
+  ip?: string | null;
+}): Promise<{ ok: true } | { error: string; status: number } | null> {
+  const pid = String(args.postId ?? "").trim();
+  const uid = String(args.userId ?? "").trim();
+  const reportMessage = String(args.reportMessage ?? "").trim();
+  if (!pid || !uid) return null;
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const existing = await client.query<{ scenario_id: string }>(
+      "SELECT scenario_id FROM posts WHERE id = $1 LIMIT 1",
+      [pid],
+    );
+    const row0 = existing.rows[0];
+    if (!row0) {
+      await client.query("ROLLBACK");
+      return { error: "Post not found", status: 404 };
+    }
+
+    const canSee = await scenarioAccess(client, String(row0.scenario_id), uid);
+    if (!canSee) {
+      await client.query("ROLLBACK");
+      return null;
+    }
+
+    const details = await client.query(
+      `
+      SELECT
+        p.id,
+        p.scenario_id,
+        p.author_user_id,
+        p.author_profile_id,
+        p.text,
+        p.image_urls,
+        p.post_type,
+        p.meta,
+        p.parent_post_id,
+        p.quoted_post_id,
+        p.inserted_at,
+        p.created_at,
+        p.updated_at,
+        p.edited_at,
+        p.edited_by_user_id,
+        p.edited_by_profile_id,
+        ap.display_name AS author_profile_display_name,
+        ap.handle AS author_profile_handle,
+        ep.display_name AS edited_profile_display_name,
+        ep.handle AS edited_profile_handle,
+        au.username AS author_username,
+        au.email AS author_email,
+        eu.username AS edited_username,
+        eu.email AS edited_email,
+        ru.username AS reporter_username,
+        ru.email AS reporter_email
+      FROM posts p
+      LEFT JOIN profiles ap ON ap.id = p.author_profile_id
+      LEFT JOIN profiles ep ON ep.id = p.edited_by_profile_id
+      LEFT JOIN users au ON au.id = p.author_user_id
+      LEFT JOIN users eu ON eu.id = p.edited_by_user_id
+      LEFT JOIN users ru ON ru.id = $2
+      WHERE p.id = $1
+      LIMIT 1
+    `,
+      [pid, uid],
+    );
+
+    const row = details.rows?.[0] as any;
+    if (!row) {
+      await client.query("ROLLBACK");
+      return { error: "Post not found", status: 404 };
+    }
+
+    const snapshot = {
+      kind: "post",
+      reportedAt: new Date().toISOString(),
+      reporter: {
+        userId: uid,
+        username: row.reporter_username ?? null,
+        email: row.reporter_email ?? null,
+      },
+      post: {
+        id: row.id,
+        scenarioId: row.scenario_id,
+        text: row.text,
+        imageUrls: row.image_urls,
+        postType: row.post_type,
+        meta: row.meta,
+        parentPostId: row.parent_post_id,
+        quotedPostId: row.quoted_post_id,
+        insertedAt: row.inserted_at,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      },
+      createdBy: {
+        userId: row.author_user_id,
+        username: row.author_username ?? null,
+        email: row.author_email ?? null,
+        profileId: row.author_profile_id,
+        profileDisplayName: row.author_profile_display_name ?? null,
+        profileHandle: row.author_profile_handle ?? null,
+      },
+      lastEditedBy: {
+        editedAt: row.edited_at ?? null,
+        userId: row.edited_by_user_id ?? null,
+        username: row.edited_username ?? null,
+        email: row.edited_email ?? null,
+        profileId: row.edited_by_profile_id ?? null,
+        profileDisplayName: row.edited_profile_display_name ?? null,
+        profileHandle: row.edited_profile_handle ?? null,
+      },
+      report: {
+        message: reportMessage || null,
+      },
+      request: {
+        requestId: args.requestId ?? null,
+        userAgent: args.userAgent ?? null,
+        ip: args.ip ?? null,
+      },
+    };
+
+    const emailBody = buildReportEmail({
+      kind: "post",
+      subjectId: pid,
+      summary: {
+        reporterUserId: uid,
+        reporterUsername: row.reporter_username ?? null,
+        reporterEmail: row.reporter_email ?? null,
+        scenarioId: row.scenario_id,
+        createdAt: row.created_at ?? null,
+        editedAt: row.edited_at ?? null,
+        createdByUserId: row.author_user_id ?? null,
+        createdByUsername: row.author_username ?? null,
+        createdByEmail: row.author_email ?? null,
+        createdByProfileId: row.author_profile_id ?? null,
+        createdByProfileHandle: row.author_profile_handle ?? null,
+        createdByProfileDisplayName: row.author_profile_display_name ?? null,
+        editedByUserId: row.edited_by_user_id ?? null,
+        editedByUsername: row.edited_username ?? null,
+        editedByEmail: row.edited_email ?? null,
+        editedByProfileId: row.edited_by_profile_id ?? null,
+        editedByProfileHandle: row.edited_profile_handle ?? null,
+        editedByProfileDisplayName: row.edited_profile_display_name ?? null,
+        reportMessage: reportMessage || null,
+      },
+      content: {
+        post: {
+          id: String(row.id),
+          scenarioId: String(row.scenario_id),
+          text: String(row.text ?? ""),
+          imageUrls: Array.isArray(row.image_urls) ? row.image_urls.map(String) : [],
+          createdAt: row.created_at ? new Date(row.created_at).toISOString() : new Date().toISOString(),
+          updatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : null,
+          postType: String(row.post_type ?? "rp"),
+        },
+      },
+    });
+
+    // Best-effort persistence for audit/search.
+    try {
+      if (await contentReportsTableExists(client)) {
+        await client.query(
+          `
+          INSERT INTO content_reports (
+            kind,
+            entity_id,
+            scenario_id,
+            conversation_id,
+            reporter_user_id,
+            report_message,
+            snapshot,
+            request_id,
+            user_agent,
+            ip,
+            created_at
+          ) VALUES (
+            'post',
+            $1,
+            $2,
+            NULL,
+            $3,
+            $4,
+            $5::jsonb,
+            $6,
+            $7,
+            $8,
+            NOW() AT TIME ZONE 'UTC'
+          )
+        `,
+          [
+            pid,
+            String(row.scenario_id),
+            uid,
+            reportMessage || null,
+            JSON.stringify(snapshot),
+            args.requestId ?? null,
+            args.userAgent ?? null,
+            args.ip ?? null,
+          ],
+        );
+      }
+    } catch {
+      // ignore
+    }
+
+    await client.query("COMMIT");
+
+    const supportEmail = getSupportEmail();
+    const subject = `[Feedverse] Post report ${pid}`;
+
+    const snapshotJson = JSON.stringify(snapshot, null, 2);
+    const snapshotBase64 = Buffer.from(snapshotJson, "utf8").toString("base64");
+
+    const sent = await sendEmail({
+      to: supportEmail,
+      subject,
+      text: emailBody.text,
+      html: emailBody.html,
+      attachments: [
+        {
+          filename: `post-report-${pid}-snapshot.json`,
+          contentBase64: snapshotBase64,
+          contentType: "application/json",
+        },
+      ],
+    });
+    if (!sent) {
+      return { error: "Report recorded but email send failed", status: 500 };
+    }
+
+    return { ok: true };
+  } catch (e: unknown) {
+    try {
+      await client.query("ROLLBACK");
+    } catch {
+      // ignore
+    }
+    console.error("reportPost failed", e);
+    return { error: "Report failed", status: 400 };
   } finally {
     client.release();
   }

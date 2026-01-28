@@ -158,7 +158,7 @@ export default function LoginScreen() {
         </Pressable>
 
         <Pressable
-          onPress={() => {}}
+          onPress={() => router.push('/(auth)/forgot-password' as any)}
           style={({ pressed }) => [styles.linkBtn, pressed && { opacity: 0.7 }]}
           hitSlop={10}
         >

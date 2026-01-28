@@ -6,7 +6,13 @@ import { User } from "./userModels";
 
 export class UserRepository {
   async findById(userId: string): Promise<User | null> {
-    const query = "SELECT id, username, name, email, avatar_url, settings, created_at, updated_at FROM users WHERE id = $1";
+    const query = "SELECT id, username, name, email, email_verified_at, avatar_url, settings, created_at, updated_at FROM users WHERE id = $1";
+    const result = await pool.query(query, [userId]);
+    return result.rows[0] || null;
+  }
+
+  async findAuthById(userId: string): Promise<(User & { password_hash: string }) | null> {
+    const query = "SELECT * FROM users WHERE id = $1";
     const result = await pool.query(query, [userId]);
     return result.rows[0] || null;
   }
@@ -80,6 +86,74 @@ export class UserRepository {
     const query =
       "UPDATE users SET avatar_url = $1, updated_at = $2 WHERE id = $3";
     await pool.query(query, [avatar_url, new Date(), userId]);
+  }
+
+  async updatePasswordHash(userId: string, passwordHash: string): Promise<number> {
+    const uid = String(userId ?? "").trim();
+    const hash = String(passwordHash ?? "").trim();
+    if (!uid || !hash) return 0;
+    const q = "UPDATE users SET password_hash = $1, updated_at = now() WHERE id = $2";
+    const res = await pool.query(q, [hash, uid]);
+    return Number(res.rowCount ?? 0);
+  }
+
+  async markEmailVerified(userId: string): Promise<number> {
+    const uid = String(userId ?? "").trim();
+    if (!uid) return 0;
+    const q = "UPDATE users SET email_verified_at = now(), updated_at = now() WHERE id = $1";
+    const res = await pool.query(q, [uid]);
+    return Number(res.rowCount ?? 0);
+  }
+
+  async updateEmailAndVerify(userId: string, email: string): Promise<User | null> {
+    const uid = String(userId ?? "").trim();
+    const e = String(email ?? "").trim().toLowerCase();
+    if (!uid || !e) return null;
+
+    const q = `
+      UPDATE users
+      SET email = $2,
+          email_verified_at = now(),
+          updated_at = now()
+      WHERE id = $1
+      RETURNING id, username, name, email, email_verified_at, avatar_url, settings, created_at, updated_at
+    `;
+
+    const res = await pool.query(q, [uid, e]);
+    return res.rows?.[0] ?? null;
+  }
+
+  /**
+   * Best-effort backfill for older accounts that completed verified-signup
+   * before `users.email_verified_at` existed.
+   */
+  async backfillEmailVerifiedAtFromSignup(args: { userId: string; email: string }): Promise<boolean> {
+    const userId = String(args.userId ?? "").trim();
+    const email = String(args.email ?? "").trim().toLowerCase();
+    if (!userId || !email) return false;
+
+    const res = await pool.query(
+      `
+      UPDATE users u
+      SET email_verified_at = COALESCE(u.email_verified_at, p.used_at, now()),
+          updated_at = now()
+      FROM (
+        SELECT used_at
+        FROM pending_signup_verifications
+        WHERE lower(trim(email)) = lower(trim($2))
+          AND used_at IS NOT NULL
+        ORDER BY used_at DESC
+        LIMIT 1
+      ) p
+      WHERE u.id = $1
+        AND u.email_verified_at IS NULL
+        AND u.email IS NOT NULL
+      RETURNING u.id
+      `,
+      [userId, email],
+    );
+
+    return Number(res.rowCount ?? 0) > 0;
   }
 
   async findByGoogleId(googleId: string): Promise<User | null> {

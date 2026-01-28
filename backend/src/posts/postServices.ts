@@ -4,6 +4,7 @@ import {
   getPostThreadForScenario,
   listPostsForScenario,
   listPostsPageForScenario,
+  reportPost,
   updatePost,
   uploadPostImages,
 } from "./postRepositories";
@@ -38,4 +39,22 @@ export const UploadPostImagesService = async (args: { userId: string; postId: st
 
 export const GetPostThreadForScenarioService = async (userId: string, scenarioId: string, postId: string) => {
   return await getPostThreadForScenario({ userId, scenarioId, postId });
+};
+
+export const ReportPostService = async (args: {
+  userId: string;
+  postId: string;
+  reportMessage?: string | null;
+  requestId?: string | null;
+  userAgent?: string | null;
+  ip?: string | null;
+}) => {
+  return await reportPost({
+    userId: args.userId,
+    postId: args.postId,
+    reportMessage: args.reportMessage ?? null,
+    requestId: args.requestId ?? null,
+    userAgent: args.userAgent ?? null,
+    ip: args.ip ?? null,
+  });
 };
